@@ -247,13 +247,13 @@ def write_video(images: list, output_path: str, fps: int) -> bool:
 # § 4  辅助函数：单帧处理
 # ──────────────────────────────────────────────────────────────
 
-def process_single_frame(entry, target_size_tuple=None):
+def process_single_frame(file_path, target_size_tuple=None):
     """
     处理单个图像文件：读取、标准化、调整大小（如果需要）。
     返回处理后的图像及其原始尺寸。
     """
     try:
-        img = normalize_channels(imageio.imread(entry.path))
+        img = normalize_channels(imageio.imread(file_path))
         h, w = img.shape[:2]
         if target_size_tuple:
             tw, th = target_size_tuple
@@ -261,7 +261,9 @@ def process_single_frame(entry, target_size_tuple=None):
                 img = resize_image(img, tw, th)
         return img, (w, h)
     except Exception as exc:
-        print(f"  跳过：{entry.name}  [{exc}]")
+        # 从文件路径中提取文件名
+        file_name = os.path.basename(file_path)
+        print(f"  跳过：{file_name}  [{exc}]")
         return None, None
 
 # ──────────────────────────────────────────────────────────────
@@ -319,13 +321,15 @@ def main():
     total = len(sorted_files)
     s = max(1, min(start_frame, total))
     e = total if end_frame is None else max(s, min(end_frame, total))
-    selected = sorted_files[s - 1:e]
-    print(f"帧范围：第 {s} ~ {e} 帧（共 {len(selected)} 帧）")
+    selected_entries = sorted_files[s - 1:e]
+    # 提取文件路径列表，用于并行处理
+    selected_paths = [entry.path for entry in selected_entries]
+    print(f"帧范围：第 {s} ~ {e} 帧（共 {len(selected_entries)} 帧）")
 
     # ── 5.5 确定目标尺寸（先读取部分样本）──────────────────────────
     # 为了确定目标尺寸，我们先处理前几帧（最多10帧）来获取尺寸分布
-    sample_size = min(10, len(selected))
-    sample_files = selected[:sample_size]
+    sample_size = min(10, len(selected_entries))
+    sample_files = selected_entries[:sample_size]
     print(f"采样 {sample_size} 帧以确定主流尺寸...")
     sample_images = []
     sample_sizes = []
@@ -357,7 +361,7 @@ def main():
         num_workers = mp.cpu_count()
     elif num_workers < 0:
         num_workers = max(1, mp.cpu_count() + num_workers)  # 负数表示减少核心数
-    num_workers = max(1, min(num_workers, len(selected)))
+    num_workers = max(1, min(num_workers, len(selected_paths)))
     print(f"使用 {num_workers} 个工作进程")
 
     # 使用进程池
@@ -367,7 +371,7 @@ def main():
     with mp.Pool(processes=num_workers) as pool:
         # 使用 imap 以保持顺序并流式处理
         # 使用 partial 固定 target_size_tuple 参数
-        for i, (img, size) in enumerate(pool.imap(partial(process_single_frame, target_size_tuple=(tw, th)), selected)):
+        for i, (img, size) in enumerate(pool.imap(partial(process_single_frame, target_size_tuple=(tw, th)), selected_paths)):
             if img is not None:
                 images.append(img)
                 sizes.append(size)
@@ -375,7 +379,7 @@ def main():
                     n_resized += 1
             # 可选：显示进度
             if (i + 1) % 10 == 0:
-                print(f"  已处理 {i + 1}/{len(selected)} 帧")
+                print(f"  已处理 {i + 1}/{len(selected_paths)} 帧")
 
     if not images:
         print("未读取到有效图片，退出")
