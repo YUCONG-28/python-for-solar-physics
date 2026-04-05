@@ -9,38 +9,38 @@ from astropy.io import fits
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-import os  # 用于文件路径处理
+import os  # For file path processing
 
-# 修改字体设置部分
+# Modify font settings
 plt.rcParams["font.family"] = ["SimHei", "Microsoft YaHei", "sans-serif"]
-plt.rcParams["axes.unicode_minus"] = False  # 解决负号显示问题
+plt.rcParams["axes.unicode_minus"] = False  # Fix minus sign display issue
 
 def process_hxi_fits(input_dir, output_dir):
-    # 检查输入文件夹是否存在
+    # Check if input directory exists
     if not os.path.exists(input_dir):
-        print(f"错误：输入文件夹 '{input_dir}' 不存在！")
+        print(f"Error: Input directory '{input_dir}' does not exist!")
         return
     
-    # 创建输出文件夹（如果不存在）
+    # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     
-    # 获取文件夹中所有FITS文件
+    # Get all FITS files in the directory
     fits_files = [f for f in os.listdir(input_dir) if f.endswith('.fits')]
     
     if not fits_files:
-        print(f"警告：在 '{input_dir}' 中未找到任何FITS文件！")
+        print(f"Warning: No FITS files found in '{input_dir}'!")
         return
     
-    # 遍历处理每个FITS文件
+    # Process each FITS file
     for fits_file in fits_files:
         try:
-            # 构建完整文件路径
+            # Build full file path
             file_path = os.path.join(input_dir, fits_file)
-            print(f"正在处理: {file_path}")
+            print(f"Processing: {file_path}")
             
-            # 打开FITS文件
+            # Open FITS file
             with fits.open(file_path) as hdul:
-                # 提取数据
+                # Extract data
                 h1 = hdul[1].data
                 h3 = hdul[3].data
                 CTS = h3['CTS_THINTHICK']
@@ -49,54 +49,54 @@ def process_hxi_fits(input_dir, output_dir):
                 C2 = CTS[:, 2]
                 C3 = CTS[:, 3]
                 
-                # 计算时间序列
+                # Calculate time series
                 base_time = datetime(2018, 12, 31, 16, 00, 00)
                 utc_times = [base_time + timedelta(seconds=t) for t in h1.TIME]
                 
-                # 创建图像
+                # Create figure
                 plt.figure(figsize=(25, 16))
                 ax1 = plt.gca()
                 
-                # 绘制光变曲线
+                # Plot light curves
                 plt.semilogy(utc_times, C0, label='HXI 10-20 keV')
                 plt.semilogy(utc_times, C1, label='HXI 20-50 keV')
                 plt.semilogy(utc_times, C2, label='HXI 50-100 keV')
                 plt.semilogy(utc_times, C3, label='HXI 100-300 keV')
                 
-                # 设置坐标轴和标题
+                # Set axis labels and title
                 plt.ylabel("Counts s⁻¹ detector⁻¹", fontsize=22, labelpad=12)
                 plt.legend(loc='upper left', ncol=1, fontsize=18)
                 
-                # 添加分钟级网格线
+                # Add minute-level grid lines
                 ax1.xaxis.set_minor_locator(mdates.MinuteLocator())
                 ax1.xaxis.grid(True, which='minor', linestyle='--', color='gray', alpha=0.5)
                 
-                # 设置时间格式
+                # Set time format
                 plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-                plt.gcf().autofmt_xdate()  # 自动旋转日期标签
-                plt.xlabel("时间 (UTC)", fontsize=22, labelpad=12)
+                plt.gcf().autofmt_xdate()  # Auto-rotate date labels
+                plt.xlabel("Time (UTC)", fontsize=22, labelpad=12)
                 
-                # 使用文件名作为部分标题
+                # Use filename as part of title
                 file_name = os.path.splitext(fits_file)[0]
                 plt.title(f"{file_name}", fontsize=22, fontweight="bold")
                 
-                # 保存图像（使用FITS文件名作为图像名）
+                # Save image (use FITS filename as image name)
                 img_name = f"{file_name}.png"
                 img_path = os.path.join(output_dir, img_name)
                 plt.savefig(img_path, dpi=300, bbox_inches='tight')
                 plt.show()
-                print(f"图像已保存至: {img_path}")
+                print(f"Image saved to: {img_path}")
                 
-                plt.close()  # 关闭图像以释放内存
+                plt.close()  # Close figure to free memory
                 
         except Exception as e:
-            print(f"处理文件 {fits_file} 时出错: {str(e)}")
+            print(f"Error processing file {fits_file}: {str(e)}")
 
 if __name__ == "__main__":
-    # 配置输入输出文件夹路径（可根据需要修改）
-    INPUT_DIRECTORY = 'D:/spike_topping_type_III/HXR/2025_05_03'  # FITS文件所在文件夹
-    OUTPUT_DIRECTORY = 'D:/spike_topping_type_III/HXR/2025_05_03'  # 图像保存文件夹
+    # Configure input and output directory paths (modify as needed)
+    INPUT_DIRECTORY = 'D:/spike_topping_type_III/HXR/2025_05_03'  # FITS file directory
+    OUTPUT_DIRECTORY = 'D:/spike_topping_type_III/HXR/2025_05_03'  # Image save directory
     
-    # 执行处理函数
+    # Execute processing function
     process_hxi_fits(INPUT_DIRECTORY, OUTPUT_DIRECTORY)
-    print("处理完成！")
+    print("Processing complete!")
