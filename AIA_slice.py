@@ -1,6 +1,8 @@
+# -*- coding: utf-8 -*-
 """
-AIA_slice.py
-对选定时间的选定区域（任意形状）做切片，画出该区域随时间变化的图像。
+Created on Sun Apr  5 19:57:17 2026
+
+@author: Lee
 """
 
 import numpy as np
