@@ -17,9 +17,9 @@ from collections import Counter
 # ╚══════════════════════════════════════════════════════════════╝
 
 fps           = 12          # 视频帧率
-input_dir     = r'D:\spike_topping_type_III\2025\20250428\AIA\131'
+input_dir     = r'D:\spike_topping_type_III\2025\20250428\AIA\multi_band'
 output_dir    = r'D:\spike_topping_type_III\2025\20250428\AIA\video'
-video_name    = "AIA_171_test.mp4"
+video_name    = "AIA_multi_band.mp4"
 target_suffix = ".png"      # 目标文件扩展名（大小写不敏感）
 
 # 帧范围（基于排序后的索引，从 1 开始）
