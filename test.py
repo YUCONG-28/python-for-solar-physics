@@ -71,7 +71,7 @@ class PlotConfig:
     minor_tick_interval: int = 2
 
     # 保存路径（留空仅弹窗）
-    save_path: str = r'C:\Users\Lee\Desktop\SDU'
+    save_path: str = r'C:\Users\Lee\Desktop'
     dpi:       int = 300
     
     # 需要高亮显示的频率列表（MHz）
