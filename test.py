@@ -8,6 +8,7 @@ Created on Sun Nov 23 00:19:30 2025
 
 import time
 import datetime
+import os
 from dataclasses import dataclass, field
 from typing import Optional, List
 from concurrent.futures import ThreadPoolExecutor
@@ -411,8 +412,25 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
     plt.tight_layout()
 
     if cfg.save_path:
-        fig.savefig(cfg.save_path, dpi=cfg.dpi, bbox_inches='tight')
-        print(f"图像已保存: {cfg.save_path}")
+        # 确保保存路径是完整的文件路径
+        save_path = cfg.save_path
+        # 如果路径是目录，则生成默认文件名
+        if os.path.isdir(save_path):
+            # 使用日期和频率范围生成文件名
+            date_str = cso_l.dateobs[:10].replace('-', '')
+            f_start_str = int(cfg.f_start)
+            f_end_str = int(cfg.f_end)
+            filename = f"CSO_spectrogram_{date_str}_{f_start_str}_{f_end_str}.png"
+            save_path = os.path.join(save_path, filename)
+        # 确保目录存在
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=cfg.dpi, bbox_inches='tight')
+        print(f"图像已保存: {save_path}")
+    else:
+        print("未指定保存路径，仅显示图形")
+
+    # 显示图形
+    plt.show()
 
 
 # ============================================================
