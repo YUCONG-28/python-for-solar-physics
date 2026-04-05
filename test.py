@@ -236,8 +236,8 @@ def read_cso_fits(fn: str):
                 polar = polars[ii] * 2
                 results.append(LazySpectrogram(
                     raw[ii], time_, freq_, polar, dateobs, unit, dt_base))
-            print(f"  双偏振  全量: {raw.shape}  "
-                  f"({raw.nbytes/1e9:.2f} GB，未载入内存)")
+            print(f"  Dual polarization  Full: {raw.shape}  "
+                  f"({raw.nbytes/1e9:.2f} GB, not loaded into memory)")
 
         return results, hdu
 
@@ -247,11 +247,11 @@ def read_cso_fits(fn: str):
 
 
 # ============================================================
-#  辅助：预计算 bin 大小
+#  Helper: Pre-calculate bin sizes
 # ============================================================
 
 def calc_bin_sizes(spec: LazySpectrogram, cfg: PlotConfig):
-    """根据实际切片范围和目标点数计算 t_bin / f_bin"""
+    """Calculate t_bin / f_bin based on actual slice range and target point count"""
     t1s = (cfg.t_start - spec.dt_base).total_seconds()
     t2s = (cfg.t_end   - spec.dt_base).total_seconds()
     ti0, ti1 = _find_range(spec.time, t1s, t2s)
@@ -264,7 +264,7 @@ def calc_bin_sizes(spec: LazySpectrogram, cfg: PlotConfig):
 
 
 # ============================================================
-#  偏振比 & log10
+#  Polarization ratio & log10
 # ============================================================
 
 def calc_polarization_ratio(Z_r: np.ndarray, Z_l: np.ndarray) -> np.ndarray:
@@ -279,7 +279,7 @@ def _safe_log10(arr: np.ndarray) -> np.ndarray:
 
 
 # ============================================================
-#  主流程
+#  Main process
 # ============================================================
 
 @timing_decorator
@@ -287,13 +287,13 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
     cso_l = next((d for d in data_list if 'LL' in d.polar), None)
     cso_r = next((d for d in data_list if 'RR' in d.polar), None)
     if cso_l is None or cso_r is None:
-        raise ValueError("未找到完整的 LL 和 RR 数据")
+        raise ValueError("Complete LL and RR data not found")
 
-    # 预计算 bin（基于实际切片范围）
+    # Pre-calculate bin (based on actual slice range)
     t_bin, f_bin = calc_bin_sizes(cso_l, cfg)
 
-    # 并行边读边降采样
-    print("分块读取 + 降采样（并行）...")
+    # Parallel reading + downsampling
+    print("Block reading + downsampling (parallel)...")
     kwargs = dict(t1=cfg.t_start, t2=cfg.t_end,
                   f1=cfg.f_start, f2=cfg.f_end,
                   t_bin=t_bin, f_bin=f_bin,
@@ -305,17 +305,17 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         Z_l, tt, freq = fut_l.result()
         Z_r, _,  _    = fut_r.result()
 
-    # 派生量
+    # Derived quantities
     Z_sum = Z_l + Z_r
     ratio = calc_polarization_ratio(Z_r, Z_l)
 
-    # 时间轴向量化转换
+    # Time axis vectorized conversion
     epoch       = np.datetime64(cso_l.dt_base)
     datetime_tt = epoch + (tt * 1e6).astype('timedelta64[us]')
     dt_list     = datetime_tt.astype('datetime64[ms]').astype(datetime.datetime)
     xx, yy      = np.meshgrid(mdates.date2num(dt_list), freq)
 
-    # 组装子图
+    # Assemble subplots
     items    = []
     date_str = cso_l.dateobs[:10]
 
@@ -353,7 +353,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
                           cbar_label='Polarization Ratio'))
 
     if not items:
-        print("未选择任何绘图项，退出")
+        print("No plot items selected, exiting")
         return
 
     n = len(items)
@@ -376,15 +376,15 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         ax.tick_params(axis='x', labelsize=8, rotation=0)
         ax.tick_params(axis='y', labelsize=8)
         
-        # 如果指定了需要高亮的频率，则添加水平线
+        # If frequencies to highlight are specified, add horizontal lines
         if cfg.highlight_freqs is not None:
             for freq in cfg.highlight_freqs:
-                # 确保频率在显示范围内
+                # Ensure frequency is within display range
                 if cfg.f_start <= freq <= cfg.f_end:
-                    # 添加水平线
+                    # Add horizontal line
                     ax.axhline(y=freq, color='red', linestyle='--', linewidth=2, alpha=0.8)
-                    # 添加文本标签
-                    # 使用时间轴的最小值作为x位置
+                    # Add text label
+                    # Use the minimum value of time axis as x position
                     x_min = mdates.date2num(dt_list[0])
                     x_max = mdates.date2num(dt_list[-1])
                     x_pos = x_min + 0.01 * (x_max - x_min)
@@ -399,7 +399,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
                         bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', alpha=0.5)
                     )
                 else:
-                    print(f"Warning: 频率 {freq} MHz 不在显示范围 [{cfg.f_start}, {cfg.f_end}] 内，跳过。")
+                    print(f"Warning: Frequency {freq} MHz is not within display range [{cfg.f_start}, {cfg.f_end}], skipping.")
 
     axs[-1].set_xlabel('Time (UT)', fontsize=10)
     for ax in axs:
@@ -412,35 +412,35 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
     plt.tight_layout()
 
     if cfg.save_path:
-        # 确保保存路径是完整的文件路径
+        # Ensure save path is a complete file path
         save_path = cfg.save_path
-        # 如果路径是目录，则生成默认文件名
+        # If path is a directory, generate default filename
         if os.path.isdir(save_path):
-            # 使用日期和频率范围生成文件名
+            # Use date and frequency range to generate filename
             date_str = cso_l.dateobs[:10].replace('-', '')
             f_start_str = int(cfg.f_start)
             f_end_str = int(cfg.f_end)
             filename = f"CSO_spectrogram_{date_str}_{f_start_str}_{f_end_str}.png"
             save_path = os.path.join(save_path, filename)
-        # 确保目录存在
+        # Ensure directory exists
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         fig.savefig(save_path, dpi=cfg.dpi, bbox_inches='tight')
-        print(f"图像已保存: {save_path}")
+        print(f"Image saved: {save_path}")
     else:
-        print("未指定保存路径，仅显示图形")
+        print("No save path specified, only displaying graph")
 
-    # 显示图形
+    # Display graph
     plt.show()
 
 
 # ============================================================
-#  入口
+#  Entry point
 # ============================================================
 
 if __name__ == '__main__':
-    cfg = PlotConfig()   # 所有参数已在 PlotConfig 中统一定义
-    # 如果需要高亮特定频率，可以在这里设置
-    # 例如：cfg.highlight_freqs = [238.0, 300.0]
+    cfg = PlotConfig()   # All parameters are defined uniformly in PlotConfig
+    # If you need to highlight specific frequencies, you can set them here
+    # For example: cfg.highlight_freqs = [238.0, 300.0]
 
     t0 = time.perf_counter()
     data_list, hdu = read_cso_fits(cfg.file_path)
@@ -449,4 +449,4 @@ if __name__ == '__main__':
     finally:
         hdu.close()
 
-    print(f"\n总耗时: {time.perf_counter() - t0:.2f} s")
+    print(f"\nTotal time: {time.perf_counter() - t0:.2f} s")
