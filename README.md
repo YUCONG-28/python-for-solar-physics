@@ -1,7 +1,3 @@
-下面是一个**更偏科研项目风格 + 更吸引 GitHub star 的 README.md 模板**（已加入 badge、结构优化、学术表达、更专业语气），可以直接复制使用：
-
----
-
 # ☀️ Solar Physics Data Processing & Visualization Toolkit
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)]()
@@ -136,35 +132,3 @@ This project is licensed under the MIT License.
 ## ⭐ Support
 
 If you find this project useful for your research, consider giving it a ⭐ on GitHub — it helps increase visibility and supports further development.
-
----
-
-### 🔥（额外建议，让这个 README 更“爆 star”）
-
-你可以再加三样东西，效果会明显提升：
-
-1. **真实论文级图片（最重要）**
-
-   * AIA + HMI 叠加
-   * Radio + EUV
-   * Neupert effect 曲线
-
-2. **一句“杀手级卖点”放在最上面**
-   比如：
-
-   > *From raw solar data to publication-ready figures in minutes.*
-
-3. **加一个 demo notebook**
-
-   * `demo.ipynb`（别人一跑就出图）
-
----
-
-如果你愿意，我可以帮你再做一个**“顶级开源项目风格版本（对标 SunPy / AI astrophysics 项目）”**，包括：
-
-* banner 设计
-* README 排版美化
-* 示例图布局（类似 Nature 风格）
-* repo 结构优化
-
-直接把你的仓库定位提升一个档次。
