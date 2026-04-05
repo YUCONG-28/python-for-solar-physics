@@ -246,12 +246,11 @@ def write_video(images: list, output_path: str, fps: int) -> bool:
 # § 4  辅助函数：单帧处理
 # ──────────────────────────────────────────────────────────────
 
-def process_single_frame(args, target_size_tuple=None):
+def process_single_frame(entry, target_size_tuple=None):
     """
     处理单个图像文件：读取、标准化、调整大小（如果需要）。
     返回处理后的图像及其原始尺寸。
     """
-    entry, target_size_tuple = args
     try:
         img = normalize_channels(imageio.imread(entry.path))
         h, w = img.shape[:2]
@@ -269,6 +268,7 @@ def process_single_frame(args, target_size_tuple=None):
 # ──────────────────────────────────────────────────────────────
 
 def main():
+    global num_workers  # 声明 num_workers 为全局变量
     # ── 5.1 基本校验 ─────────────────────────────────────────────
     if not os.path.isdir(input_dir):
         raise FileNotFoundError(f"输入文件夹不存在：{input_dir}")
@@ -359,15 +359,13 @@ def main():
     num_workers = max(1, min(num_workers, len(selected)))
     print(f"使用 {num_workers} 个工作进程")
 
-    # 准备参数
-    process_args = [(entry, (tw, th)) for entry in selected]
-
     # 使用进程池
     images = []
     sizes = []
     n_resized = 0
     with mp.Pool(processes=num_workers) as pool:
         # 使用 imap 以保持顺序并流式处理
+        # 使用 partial 固定 target_size_tuple 参数
         for i, (img, size) in enumerate(pool.imap(partial(process_single_frame, target_size_tuple=(tw, th)), selected)):
             if img is not None:
                 images.append(img)
