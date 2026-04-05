@@ -10,6 +10,9 @@ import imageio.v2 as imageio
 import numpy as np
 from datetime import datetime, timedelta
 from collections import Counter
+import multiprocessing as mp
+from functools import partial
+import sys
 
 
 # ╔══════════════════════════════════════════════════════════════╗
@@ -44,6 +47,10 @@ sort_by = 'filename'
 #   None      自动选择（使用出现次数最多的尺寸，并对齐到 16 的倍数）
 #   (w, h)    强制指定，例如 (1024, 1024)
 target_size = None
+
+# ── 并行处理 ────────────────────────────────────────────────
+# 使用的 CPU 核心数（0 = 自动检测，1 = 单进程，>1 = 多进程）
+num_workers = 0             # 0 表示使用所有可用核心
 
 # ╚══════════════════════════════════════════════════════════════╝
 
@@ -236,16 +243,38 @@ def write_video(images: list, output_path: str, fps: int) -> bool:
 
 
 # ──────────────────────────────────────────────────────────────
-# § 4  主流程
+# § 4  辅助函数：单帧处理
+# ──────────────────────────────────────────────────────────────
+
+def process_single_frame(args, target_size_tuple=None):
+    """
+    处理单个图像文件：读取、标准化、调整大小（如果需要）。
+    返回处理后的图像及其原始尺寸。
+    """
+    entry, target_size_tuple = args
+    try:
+        img = normalize_channels(imageio.imread(entry.path))
+        h, w = img.shape[:2]
+        if target_size_tuple:
+            tw, th = target_size_tuple
+            if w != tw or h != th:
+                img = resize_image(img, tw, th)
+        return img, (w, h)
+    except Exception as exc:
+        print(f"  跳过：{entry.name}  [{exc}]")
+        return None, None
+
+# ──────────────────────────────────────────────────────────────
+# § 5  主流程
 # ──────────────────────────────────────────────────────────────
 
 def main():
-    # ── 4.1 基本校验 ─────────────────────────────────────────────
+    # ── 5.1 基本校验 ─────────────────────────────────────────────
     if not os.path.isdir(input_dir):
         raise FileNotFoundError(f"输入文件夹不存在：{input_dir}")
     os.makedirs(output_dir, exist_ok=True)
 
-    # ── 4.2 扫描文件 ─────────────────────────────────────────────
+    # ── 5.2 扫描文件 ─────────────────────────────────────────────
     suffix_lower = target_suffix.lower()
     with os.scandir(input_dir) as it:
         all_files = [e for e in it
@@ -256,7 +285,7 @@ def main():
         return
     print(f"扫描到 {len(all_files)} 个文件")
 
-    # ── 4.3 排序 ─────────────────────────────────────────────────
+    # ── 5.3 排序 ─────────────────────────────────────────────────
     if sort_by == 'filename':
         print("排序方式：文件名时间戳")
         parsed, failed = [], []
@@ -285,53 +314,83 @@ def main():
         print("排序方式：文件修改时间（mtime）")
         sorted_files = sorted(all_files, key=lambda e: e.stat().st_mtime)
 
-    # ── 4.4 帧范围截取 ───────────────────────────────────────────
+    # ── 5.4 帧范围截取 ───────────────────────────────────────────
     total = len(sorted_files)
     s = max(1, min(start_frame, total))
     e = total if end_frame is None else max(s, min(end_frame, total))
     selected = sorted_files[s - 1:e]
     print(f"帧范围：第 {s} ~ {e} 帧（共 {len(selected)} 帧）")
 
-    # ── 4.5 读取并标准化图像 ─────────────────────────────────────
-    print("读取图像…")
-    images, sizes = [], []
-    for entry in selected:
+    # ── 5.5 确定目标尺寸（先读取部分样本）──────────────────────────
+    # 为了确定目标尺寸，我们先处理前几帧（最多10帧）来获取尺寸分布
+    sample_size = min(10, len(selected))
+    sample_files = selected[:sample_size]
+    print(f"采样 {sample_size} 帧以确定主流尺寸...")
+    sample_images = []
+    sample_sizes = []
+    for entry in sample_files:
         try:
             img = normalize_channels(imageio.imread(entry.path))
-            images.append(img)
-            sizes.append((img.shape[1], img.shape[0]))   # (w, h)
+            sample_images.append(img)
+            sample_sizes.append((img.shape[1], img.shape[0]))
         except Exception as exc:
-            print(f"  跳过：{entry.name}  [{exc}]")
+            print(f"  采样跳过：{entry.name}  [{exc}]")
+
+    if not sample_sizes:
+        print("采样失败，无法确定尺寸，退出")
+        return
+
+    if target_size:
+        tw, th = align16(target_size[0]), align16(target_size[1])
+        print(f"目标尺寸（用户指定，16 对齐）：{tw}×{th}")
+    else:
+        (tw, th), cnt = Counter(sample_sizes).most_common(1)[0]
+        tw, th = align16(tw), align16(th)
+        print(f"目标尺寸（主流尺寸，16 对齐）：{tw}×{th}"
+              f"  （在 {len(sample_sizes)} 个样本中 {cnt} 帧原生此尺寸）")
+
+    # ── 5.6 并行处理所有帧 ───────────────────────────────────────
+    print("并行处理图像…")
+    # 确定工作进程数
+    if num_workers == 0:
+        num_workers = mp.cpu_count()
+    elif num_workers < 0:
+        num_workers = max(1, mp.cpu_count() + num_workers)  # 负数表示减少核心数
+    num_workers = max(1, min(num_workers, len(selected)))
+    print(f"使用 {num_workers} 个工作进程")
+
+    # 准备参数
+    process_args = [(entry, (tw, th)) for entry in selected]
+
+    # 使用进程池
+    images = []
+    sizes = []
+    n_resized = 0
+    with mp.Pool(processes=num_workers) as pool:
+        # 使用 imap 以保持顺序并流式处理
+        for i, (img, size) in enumerate(pool.imap(partial(process_single_frame, target_size_tuple=(tw, th)), selected)):
+            if img is not None:
+                images.append(img)
+                sizes.append(size)
+                if size != (tw, th):
+                    n_resized += 1
+            # 可选：显示进度
+            if (i + 1) % 10 == 0:
+                print(f"  已处理 {i + 1}/{len(selected)} 帧")
 
     if not images:
         print("未读取到有效图片，退出")
         return
 
-    # ── 4.6 确定目标尺寸 ─────────────────────────────────────────
-    if target_size:
-        tw, th = align16(target_size[0]), align16(target_size[1])
-        print(f"目标尺寸（用户指定，16 对齐）：{tw}×{th}")
-    else:
-        (tw, th), cnt = Counter(sizes).most_common(1)[0]
-        tw, th = align16(tw), align16(th)
-        print(f"目标尺寸（主流尺寸，16 对齐）：{tw}×{th}"
-              f"  （{cnt}/{len(images)} 帧原生此尺寸）")
-
-    # ── 4.7 统一帧尺寸 ───────────────────────────────────────────
-    final, n_resized = [], 0
-    for img in images:
-        if img.shape[1] != tw or img.shape[0] != th:
-            img = resize_image(img, tw, th)
-            n_resized += 1
-        final.append(img)
-
     if n_resized:
         print(f"已缩放 {n_resized} 帧至 {tw}×{th}")
 
-    # ── 4.8 写出视频 ─────────────────────────────────────────────
+    # ── 5.7 写出视频 ─────────────────────────────────────────────
     output_path = os.path.join(output_dir, video_name)
-    write_video(final, output_path, fps)
+    write_video(images, output_path, fps)
 
 
 if __name__ == '__main__':
+    # 在 Windows 上，multiprocessing 需要保护主模块
+    mp.freeze_support()
     main()
