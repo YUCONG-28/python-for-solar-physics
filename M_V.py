@@ -253,7 +253,7 @@ def write_video(images: list, output_path: str, fps: int) -> bool:
     try:
         import cv2
         # 使用更兼容的 FourCC 编码
-        fourcc = cv2.VideoWriter_fourcc(*'avc1')  # 另一种 H.264 表示
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 另一种 H.264 表示
         out = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
         if out.isOpened():
             for img in images:
