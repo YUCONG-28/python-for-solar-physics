@@ -188,58 +188,87 @@ def align16(n: int) -> int:
 
 def write_video(images: list, output_path: str, fps: int) -> bool:
     """
-    依次尝试 imageio → OpenCV → FFmpeg 写出视频。
+    优先使用 FFmpeg 写出视频，确保最大兼容性。
     images: RGB uint8 ndarray 列表，所有帧尺寸必须一致。
     """
     h, w = images[0].shape[:2]
     n    = len(images)
+    
+    # 确保宽度和高度是偶数（yuv420p 要求）
+    if w % 2 != 0 or h % 2 != 0:
+        print(f"[WARN] 视频尺寸 {w}×{h} 不是偶数，调整为 {w - w%2}×{h - h%2}")
+        new_w = w - w % 2
+        new_h = h - h % 2
+        # 调整所有图像尺寸
+        resized_images = []
+        for img in images:
+            resized_images.append(resize_image(img, new_w, new_h))
+        images = resized_images
+        w, h = new_w, new_h
 
-    # 方案 1：imageio
+    # 方案 1：FFmpeg 命令行（最可靠）
     try:
-        imageio.mimwrite(output_path, images, fps=fps)
-        print(f"[OK] 视频已保存：{output_path}")
+        import subprocess, tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # 保存为 PNG 序列
+            for i, img in enumerate(images):
+                # 使用 imageio 保存 PNG
+                imageio.imwrite(os.path.join(tmpdir, f"{i:06d}.png"), img)
+            
+            # 构建 FFmpeg 命令
+            cmd = [
+                'ffmpeg', '-y',
+                '-framerate', str(fps),
+                '-i', os.path.join(tmpdir, '%06d.png'),
+                '-c:v', 'libx264',        # H.264 编码
+                '-pix_fmt', 'yuv420p',    # 兼容的像素格式
+                '-preset', 'medium',      # 编码速度与质量的平衡
+                '-crf', '23',             # 质量因子（18-28，越小质量越好）
+                '-movflags', '+faststart', # 使视频能够流式播放
+                '-vf', 'format=yuv420p',  # 确保输出为 yuv420p
+                output_path
+            ]
+            # 运行 FFmpeg
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=False)
+            if result.returncode == 0:
+                print(f"[OK] 视频已保存（FFmpeg）：{output_path}")
+                print(f"  {n} 帧 | {fps} fps | {w}×{h}")
+                print(f"  编码：H.264 (libx264), 像素格式：yuv420p")
+                return True
+            else:
+                print(f"  [FFmpeg] 失败：{result.stderr[-500:]}")
+    except Exception as e:
+        print(f"  [FFmpeg] 异常：{e}")
+
+    # 方案 2：imageio（备用）
+    try:
+        imageio.mimwrite(output_path, images, fps=fps, codec='libx264', pixelformat='yuv420p')
+        print(f"[OK] 视频已保存（imageio）：{output_path}")
         print(f"  {n} 帧 | {fps} fps | {w}×{h}")
         return True
     except Exception as e:
         print(f"  [imageio] 失败：{e}")
 
-    # 方案 2：OpenCV
+    # 方案 3：OpenCV（最后尝试）
     try:
         import cv2
-        out = cv2.VideoWriter(output_path,
-                              cv2.VideoWriter_fourcc(*'mp4v'),
-                              fps, (w, h))
-        for img in images:
-            out.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-        out.release()
-        print(f"[OK] 视频已保存（OpenCV）：{output_path}")
-        return True
+        # 使用更兼容的 FourCC 编码
+        fourcc = cv2.VideoWriter_fourcc(*'avc1')  # 另一种 H.264 表示
+        out = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+        if out.isOpened():
+            for img in images:
+                # 转换为 BGR
+                out.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+            out.release()
+            print(f"[OK] 视频已保存（OpenCV）：{output_path}")
+            return True
+        else:
+            print(f"  [OpenCV] 无法打开 VideoWriter")
     except Exception as e:
         print(f"  [OpenCV] 失败：{e}")
 
-    # 方案 3：FFmpeg 命令行
-    try:
-        import subprocess, tempfile
-        with tempfile.TemporaryDirectory() as tmpdir:
-            for i, img in enumerate(images):
-                imageio.imwrite(os.path.join(tmpdir, f"{i:06d}.png"), img)
-            cmd = [
-                'ffmpeg', '-y',
-                '-framerate', str(fps),
-                '-i', os.path.join(tmpdir, '%06d.png'),
-                '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
-                '-preset', 'slow', '-crf', '18',
-                output_path
-            ]
-            r = subprocess.run(cmd, capture_output=True, text=True)
-            if r.returncode == 0:
-                print(f"[OK] 视频已保存（FFmpeg）：{output_path}")
-                return True
-            print(f"  [FFmpeg] 失败：{r.stderr[-400:]}")
-    except Exception as e:
-        print(f"  [FFmpeg] 异常：{e}")
-
-    print("[ERROR] 所有写入方案均失败，请检查 imageio / opencv-python / ffmpeg 安装情况")
+    print("[ERROR] 所有写入方案均失败，请确保已安装 FFmpeg 并添加到系统路径")
+    print("        或者安装 imageio[ffmpeg]：pip install imageio[ffmpeg]")
     return False
 
 
