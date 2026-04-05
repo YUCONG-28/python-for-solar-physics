@@ -43,8 +43,8 @@ class PlotConfig:
 
     # 降采样后的目标格点数（时间 / 频率方向）
     # 越大图越精细但越慢；None = 不降采样
-    rebin_t_target: int = 10000
-    rebin_f_target: int = 10000
+    rebin_t_target: int = 1000
+    rebin_f_target: int = 1000
 
     # 分块读取时单块峰值内存上限（MB），调小可进一步降低内存压力
     chunk_mem_mb: int = 28
@@ -70,11 +70,11 @@ class PlotConfig:
     minor_tick_interval: int = 2
 
     # 保存路径（留空仅弹窗）
-    save_path: str = r'D:\spike_topping_type_III\2025\20250124\DEM\select_0337\RS'
+    save_path: str = r'C:\Users\Lee\Desktop\SDU'
     dpi:       int = 300
     
     # 需要高亮显示的频率列表（MHz）
-    highlight_freqs: Optional[List[float]] = field(default_factory=lambda: None)
+    highlight_freqs: Optional[List[float]] = field(default_factory=lambda: [238,285])
 
 
 # ============================================================
@@ -413,8 +413,6 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
     if cfg.save_path:
         fig.savefig(cfg.save_path, dpi=cfg.dpi, bbox_inches='tight')
         print(f"图像已保存: {cfg.save_path}")
-
-    plt.show()
 
 
 # ============================================================
