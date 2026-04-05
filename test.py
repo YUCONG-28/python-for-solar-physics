@@ -9,6 +9,7 @@ Created on Sun Nov 23 00:19:30 2025
 import time
 import datetime
 from dataclasses import dataclass, field
+from typing import Optional, List
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 
@@ -71,6 +72,9 @@ class PlotConfig:
     # 保存路径（留空仅弹窗）
     save_path: str = r'D:\spike_topping_type_III\2025\20250124\DEM\select_0337\RS'
     dpi:       int = 300
+    
+    # 需要高亮显示的频率列表（MHz）
+    highlight_freqs: Optional[List[float]] = field(default_factory=lambda: None)
 
 
 # ============================================================
@@ -370,6 +374,31 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         cbar.set_label(item['cbar_label'], fontsize=9)
         ax.tick_params(axis='x', labelsize=8, rotation=0)
         ax.tick_params(axis='y', labelsize=8)
+        
+        # 如果指定了需要高亮的频率，则添加水平线
+        if cfg.highlight_freqs is not None:
+            for freq in cfg.highlight_freqs:
+                # 确保频率在显示范围内
+                if cfg.f_start <= freq <= cfg.f_end:
+                    # 添加水平线
+                    ax.axhline(y=freq, color='red', linestyle='--', linewidth=2, alpha=0.8)
+                    # 添加文本标签
+                    # 使用时间轴的最小值作为x位置
+                    x_min = mdates.date2num(dt_list[0])
+                    x_max = mdates.date2num(dt_list[-1])
+                    x_pos = x_min + 0.01 * (x_max - x_min)
+                    ax.text(
+                        x_pos,
+                        freq + 0.01 * (cfg.f_end - cfg.f_start),
+                        f'{freq} MHz',
+                        color='red',
+                        fontsize=9,
+                        verticalalignment='bottom',
+                        horizontalalignment='left',
+                        bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', alpha=0.5)
+                    )
+                else:
+                    print(f"Warning: 频率 {freq} MHz 不在显示范围 [{cfg.f_start}, {cfg.f_end}] 内，跳过。")
 
     axs[-1].set_xlabel('Time (UT)', fontsize=10)
     for ax in axs:
@@ -394,6 +423,8 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
 
 if __name__ == '__main__':
     cfg = PlotConfig()   # 所有参数已在 PlotConfig 中统一定义
+    # 如果需要高亮特定频率，可以在这里设置
+    # 例如：cfg.highlight_freqs = [238.0, 300.0]
 
     t0 = time.perf_counter()
     data_list, hdu = read_cso_fits(cfg.file_path)
