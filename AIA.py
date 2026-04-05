@@ -65,7 +65,7 @@ class AIAConfig:
     max_workers: Optional[int] = 16
 
     # 多波段同图：False 时与原先一致（逐文件单图）；True 时按各波段目录内时间排序后的第 k 个文件对齐到同一画布
-    multi_band_composite: bool = True
+    multi_band_composite: bool = False
     multi_band_wavelengths: Optional[Tuple[int, ...]] = None  # 六波段参考排布为 (94,131,171,193,211,304) 对应 2×3 上行 94–131–171、下行 193–211–304；None 时按数字子目录名排序（通常即此顺序）
     multi_band_output_subdir: str = "multi_band"
     multi_band_merge_axes: bool = True  # 保留字段以兼容旧配置；拼图模式固定为无缝拼接，仅角标显示波段与时间
