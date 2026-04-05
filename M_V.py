@@ -40,7 +40,7 @@ end_frame   = None          # 结束帧（含），None = 处理到最后一帧
 #   2025053_071600_353.png          → 年积日（YYYYDDD）+时间
 #   149MHz_202553_071600_353.png    → 仅含 HHMMSS，按时间相对排序
 #
-# 当部分文件无法解析时间戳时，这些文件将按 mtime 追加到末尾。
+# 当部分文件无法解析时间戳时，这些文件将按文件夹默认顺序追加到末尾。
 sort_by = 'filename'
 
 # ── 目标分辨率 ────────────────────────────────────────────────
@@ -328,10 +328,10 @@ def main():
         parsed.sort(key=lambda x: x[0])
 
         if failed:
-            failed_sorted = sorted(failed, key=lambda x: x[1].stat().st_mtime)
+            failed_sorted = failed  # 保留文件夹默认顺序（os.scandir 顺序）
             sample = ', '.join(f.name for _, f in failed[:3])
             tail   = f' ... 共 {len(failed)} 个' if len(failed) > 3 else ''
-            print(f"  [WARN] 无法解析时间戳（按 mtime 追加到末尾）：{sample}{tail}")
+            print(f"  [WARN] 无法解析时间戳（按文件夹默认顺序追加到末尾）：{sample}{tail}")
         else:
             failed_sorted = []
 

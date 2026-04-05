@@ -47,7 +47,7 @@ class AIAConfig:
     output_dir: Optional[str] = None
     start_idx: int            = 0
     end_idx:   Optional[int]  = None
-    roi_bounds: Tuple[float, float, float, float] = (-1100, -900, -30, 220) # (xmin, xmax, ymin, ymax)
+    roi_bounds: Tuple[float, float, float, float] = (-1100, -900, 0, 200) # (xmin, xmax, ymin, ymax)
     user_vmin: Optional[float] = None
     user_vmax: Optional[float] = None
     user_cmap: Optional[str]   = None
@@ -74,6 +74,8 @@ class AIAConfig:
     # 拼图子图间距（matplotlib 中为相对子图宽/高的比例，约 0.03–0.1 可见缝）
     multi_band_wspace: float = 0.06
     multi_band_hspace: float = 0.06
+    # 保存时画布四周的绝对留白（英寸）；单图与拼图共用
+    figure_pad_inches: float = 0.15
     # 主标题（日期 YYYY-MM-DD）字号；单图与拼图共用
     figure_suptitle_fontsize: float = 34
     # 单图模式下子图顶部的时间标题字号（位于主标题下方）
@@ -91,7 +93,8 @@ def _resolve_files(input_path: Path, start_idx: int, end_idx: Optional[int]) -> 
     if input_path.is_file():
         file_list = [input_path]
     elif input_path.is_dir():
-        file_list = sorted(input_path.rglob('*.fits'))
+        # 按时间字符串（而非路径字符串）升序排列，保证单图模式下输出顺序与观测时间一致
+        file_list = sorted(input_path.rglob('*.fits'), key=lambda p: _parse_timestr(p))
     else:
         raise ValueError(f"无效的路径: {input_path}")
 
@@ -189,15 +192,22 @@ def _build_multi_band_slots(cfg: AIAConfig, wavelengths: Tuple[int, ...]) -> Lis
     per_band: List[List[Path]] = []
     for w in wavelengths:
         all_f = _sorted_fits_for_band(data_path, w, cfg.use_band_subdirs)
+        # 双保险：对切片前的完整列表再次按时间字符串升序排列，
+        # 确保无论文件系统返回顺序如何，各波段文件均严格按观测时间从小到大排列。
+        all_f = sorted(all_f, key=lambda p: _parse_timestr(p))
         sliced = _slice_band_files(all_f, cfg.start_idx, cfg.end_idx)
         if not sliced:
             raise ValueError(f"波段 {w} 在索引范围 [{cfg.start_idx}, {cfg.end_idx}) 内没有 FITS 文件")
+        # 切片后再排一次，防止 start_idx/end_idx 引入乱序（理论上不会，但作为防御性编程）
+        sliced = sorted(sliced, key=lambda p: _parse_timestr(p))
         per_band.append(sliced)
     m = min(len(x) for x in per_band)
     if any(len(x) != m for x in per_band):
         print(
             f"提示: 各波段可用文件数不同，已按时间排序后取最短长度 {m} 帧对齐（第 k 帧拼到同一张图）。"
         )
+    # 构造槽位：slot[i] = (band0的第i个时间文件, band1的第i个时间文件, ...)
+    # 从第 1 张拼图到第 m 张拼图，每个波段的文件均按时间从小到大递进。
     return [tuple(band[i] for band in per_band) for i in range(m)]
 
 
@@ -356,10 +366,14 @@ def _process_single_worker(file_path: Path, cfg: AIAConfig) -> Tuple[bool, str]:
             fig.suptitle(
                 date_ymd,
                 fontsize=cfg.figure_suptitle_fontsize,
-                y=1.0,
+                y=0.98,
                 fontweight="medium",
             )
-            fig.subplots_adjust(top=0.86)
+            # 有主标题：顶部留出标题高度 + 边缘留白；左右底部为轴标签留足空间
+            fig.subplots_adjust(left=0.13, right=0.95, top=0.85, bottom=0.11)
+        else:
+            # 无主标题：四边统一留白，为轴标签与刻度留足空间
+            fig.subplots_adjust(left=0.13, right=0.95, top=0.93, bottom=0.11)
 
         # 6. 保存图片 (文件名直接用时间)
         if cfg.save_image and cfg.output_dir:
@@ -367,8 +381,8 @@ def _process_single_worker(file_path: Path, cfg: AIAConfig) -> Tuple[bool, str]:
             save_dir.mkdir(parents=True, exist_ok=True)
             # 输出名字：时间字符串.png (如果你需要jpg，这里改成.jpg即可)
             save_path = save_dir / f"{time_str}.png"
-            # 核心修改：保存时设置 facecolor='white'
-            fig.savefig(save_path, dpi=cfg.dpi, bbox_inches='tight', facecolor='white', pad_inches=0.1)
+            fig.savefig(save_path, dpi=cfg.dpi, bbox_inches='tight', facecolor='white',
+                        pad_inches=cfg.figure_pad_inches)
         
         return True, ""
 
@@ -490,14 +504,14 @@ def _process_multi_band_worker(
             fig.suptitle(
                 date_ymd,
                 fontsize=cfg.figure_suptitle_fontsize,
-                y=0.95,
+                y=0.97,
                 fontweight="medium",
             )
         fig.subplots_adjust(
-            left=0.02,
-            right=0.98,
-            top=0.90 if date_ymd else 0.96,
-            bottom=0.02,
+            left=0.04,
+            right=0.96,
+            top=0.89 if date_ymd else 0.95,
+            bottom=0.04,
         )
 
         if cfg.save_image and cfg.output_dir:
@@ -509,7 +523,7 @@ def _process_multi_band_worker(
                 dpi=cfg.dpi,
                 bbox_inches="tight",
                 facecolor="white",
-                pad_inches=0.02,
+                pad_inches=cfg.figure_pad_inches,
             )
 
         return True, ""
