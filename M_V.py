@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Created on Wed Sep 28 23:00:00 2025
 
@@ -196,7 +197,7 @@ def write_video(images: list, output_path: str, fps: int) -> bool:
     # 方案 1：imageio
     try:
         imageio.mimwrite(output_path, images, fps=fps)
-        print(f"✓ 视频已保存：{output_path}")
+        print(f"[OK] 视频已保存：{output_path}")
         print(f"  {n} 帧 | {fps} fps | {w}×{h}")
         return True
     except Exception as e:
@@ -211,7 +212,7 @@ def write_video(images: list, output_path: str, fps: int) -> bool:
         for img in images:
             out.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
         out.release()
-        print(f"✓ 视频已保存（OpenCV）：{output_path}")
+        print(f"[OK] 视频已保存（OpenCV）：{output_path}")
         return True
     except Exception as e:
         print(f"  [OpenCV] 失败：{e}")
@@ -232,13 +233,13 @@ def write_video(images: list, output_path: str, fps: int) -> bool:
             ]
             r = subprocess.run(cmd, capture_output=True, text=True)
             if r.returncode == 0:
-                print(f"✓ 视频已保存（FFmpeg）：{output_path}")
+                print(f"[OK] 视频已保存（FFmpeg）：{output_path}")
                 return True
             print(f"  [FFmpeg] 失败：{r.stderr[-400:]}")
     except Exception as e:
         print(f"  [FFmpeg] 异常：{e}")
 
-    print("✗ 所有写入方案均失败，请检查 imageio / opencv-python / ffmpeg 安装情况")
+    print("[ERROR] 所有写入方案均失败，请检查 imageio / opencv-python / ffmpeg 安装情况")
     return False
 
 
@@ -298,8 +299,8 @@ def main():
         if failed:
             failed_sorted = sorted(failed, key=lambda x: x[1].stat().st_mtime)
             sample = ', '.join(f.name for _, f in failed[:3])
-            tail   = f' … 共 {len(failed)} 个' if len(failed) > 3 else ''
-            print(f"  ⚠ 无法解析时间戳（按 mtime 追加到末尾）：{sample}{tail}")
+            tail   = f' ... 共 {len(failed)} 个' if len(failed) > 3 else ''
+            print(f"  [WARN] 无法解析时间戳（按 mtime 追加到末尾）：{sample}{tail}")
         else:
             failed_sorted = []
 
