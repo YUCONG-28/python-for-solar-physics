@@ -1,9 +1,24 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Nov 23 00:19:30 2025
+CSO Spectrogram Plotting and Analysis Tool
 
-@author: Severus
+This script provides a comprehensive solution for processing and visualizing
+Chinese Solar Radio Telescope (CSO) spectrogram data from FITS files.
+It employs memory-efficient techniques to handle large datasets while
+maintaining high performance through parallel processing and intelligent
+downsampling.
 
+Key Features:
+- Memory-mapped I/O for handling large FITS files without loading entire datasets
+- Parallel processing of polarization channels (LL and RR)
+- Configurable downsampling to balance resolution and performance
+- Multiple visualization options: individual polarizations, total intensity, polarization ratio
+- Frequency highlighting with customizable markers
+- Flexible output options: display, save to file, or both
+
+Author: Severus
+Created: Sun Nov 23 00:19:30 2025
+Last Modified: 2026-04-07
 """
 
 import time
@@ -22,67 +37,71 @@ from tqdm import tqdm
 
 
 # ============================================================
-#  ★ 所有可调参数，只需修改这里 ★
+#  ★ CONFIGURATION PARAMETERS - MODIFY ONLY HERE ★
 # ============================================================
 @dataclass
 class PlotConfig:
-    # 文件路径
+    """Configuration class for CSO spectrogram plotting parameters."""
+    
+    # File path
     file_path: str = (
         r'D:\spike_topping_type_III\2025\20250124'
         r'\OROCH_MWRS01_SRSP_L1_05M_20250124044743_V01.01.fits'
     )
 
-    # 时间范围（UTC）
+    # Time range (UTC)
     t_start: datetime.datetime = field(
         default_factory=lambda: datetime.datetime(2025, 1, 24, 4, 46, 0))
     t_end:   datetime.datetime = field(
         default_factory=lambda: datetime.datetime(2025, 1, 24, 4, 48, 30))
 
-    # 频率范围（MHz）
+    # Frequency range (MHz)
     f_start: float = 0.0
     f_end:   float = 600.0
 
-    # 降采样后的目标格点数（时间 / 频率方向）
-    # 越大图越精细但越慢；None = 不降采样
+    # Target number of grid points after downsampling (time / frequency axes)
+    # Larger values produce finer plots but are slower; None = no downsampling
     rebin_t_target: int = 1000
     rebin_f_target: int = 1000
 
-    # 分块读取时单块峰值内存上限（MB），调小可进一步降低内存压力
+    # Peak memory limit per chunk during block reading (MB)
+    # Lower values reduce memory pressure further
     chunk_mem_mb: int = 28
 
-    # 绘图开关
+    # Plot toggles
     plot_ll:    bool = False
     plot_rr:    bool = False
     plot_sum:   bool = True
     plot_ratio: bool = True
 
-    # 色标百分位裁剪
+    # Color scale percentile clipping
     vmin_pct:     float = 0.1
     vmax_pct:     float = 99.9
     sum_vmin_pct: float = 0.1
     sum_vmax_pct: float = 99.9
 
-    # 图像尺寸
+    # Figure dimensions
     fig_width:      float = 12.0
-    fig_height_per: float = 3.0   # 每子图高度（英寸）
+    fig_height_per: float = 3.0   # Height per subplot (inches)
 
-    # 时间轴刻度（秒）
+    # Time axis tick intervals (seconds)
     major_tick_interval: int = 10
     minor_tick_interval: int = 2
 
-    # 保存路径（留空仅弹窗）
+    # Save path (empty for display only)
     save_path: str = r'C:\Users\Lee\Desktop'
     dpi:       int = 300
     
-    # 需要高亮显示的频率列表（MHz）
-    highlight_freqs: Optional[List[float]] = field(default_factory=lambda: [238,285])
+    # List of frequencies to highlight (MHz)
+    highlight_freqs: Optional[List[float]] = field(default_factory=lambda: [238, 285])
 
 
 # ============================================================
-#  工具
+#  UTILITY FUNCTIONS
 # ============================================================
 
 def timing_decorator(func):
+    """Decorator to measure and print function execution time."""
     @wraps(func)
     def wrapper(*args, **kwargs):
         t0 = time.perf_counter()
@@ -93,7 +112,7 @@ def timing_decorator(func):
 
 
 def _find_range(arr: np.ndarray, lo: float, hi: float):
-    """searchsorted 快速定位范围索引，含边界保护"""
+    """Fast range index lookup using searchsorted with boundary protection."""
     if lo > hi:
         lo, hi = hi, lo
     i0 = int(np.clip(np.searchsorted(arr, lo, side='left'),  0, len(arr)-1))
@@ -102,13 +121,14 @@ def _find_range(arr: np.ndarray, lo: float, hi: float):
 
 
 # ============================================================
-#  惰性频谱容器
+#  LAZY SPECTROGRAM CONTAINER
 # ============================================================
 
 class LazySpectrogram:
     """
-    只持有 FITS memmap 引用 + 元数据，不具化大数组。
-    read_slice_rebinned() 边读边降采样，峰值内存极低。
+    Container that holds FITS memmap references and metadata without loading
+    the full array into memory. The read_slice_rebinned() method performs
+    on-the-fly downsampling with minimal peak memory usage.
     """
     __slots__ = ('_raw', 'time', 'freq', 'polar', 'dateobs', 'unit', 'dt_base')
 
@@ -128,12 +148,13 @@ class LazySpectrogram:
                             t_bin: int, f_bin: int,
                             chunk_mem_mb: int = 64):
         """
-        分块从 memmap 读取并立即做 block-mean，峰值内存 ≈ chunk_mem_mb。
-
-        流程：
-          1. 计算索引并对齐到 bin 整数倍
-          2. 每次读 chunk_cols_raw 列（≈chunk_mem_mb / freq行数）
-          3. 每块做 reshape+mean 得到降采样结果，写入输出数组
+        Read from memmap in chunks and immediately apply block-mean downsampling.
+        Peak memory usage is approximately chunk_mem_mb.
+        
+        Process:
+          1. Calculate indices and align to bin multiples
+          2. Read chunk_cols_raw columns per iteration (≈chunk_mem_mb / freq rows)
+          3. Reshape+mean each chunk for downsampling, write to output array
         """
         t1s = (t1 - self.dt_base).total_seconds()
         t2s = (t2 - self.dt_base).total_seconds()
@@ -144,7 +165,7 @@ class LazySpectrogram:
         n_freq_raw = fi1 - fi0 + 1
         n_time_raw = ti1 - ti0 + 1
 
-        # 对齐到 bin 整数倍
+        # Align to bin multiples
         n_freq_trim = (n_freq_raw // f_bin) * f_bin
         n_time_trim = (n_time_raw // t_bin) * t_bin
         n_freq_out  = n_freq_trim // f_bin
@@ -152,11 +173,11 @@ class LazySpectrogram:
 
         raw_mb = n_freq_raw * n_time_raw * 4 / 1e6
         out_mb = n_freq_out * n_time_out  * 4 / 1e6
-        print(f"    [{self.polar}] 原始: {n_freq_raw}×{n_time_raw} "
-              f"({raw_mb:.0f} MB)  ->  输出: {n_freq_out}×{n_time_out} "
+        print(f"    [{self.polar}] Raw: {n_freq_raw}×{n_time_raw} "
+              f"({raw_mb:.0f} MB)  ->  Output: {n_freq_out}×{n_time_out} "
               f"({out_mb:.1f} MB)")
 
-        # 每次读取的列数：使内存 ≈ chunk_mem_mb，且必须是 t_bin 整数倍
+        # Columns per chunk: keep memory ≈ chunk_mem_mb, must be multiple of t_bin
         cols_per_chunk = max(t_bin,
                              (int(chunk_mem_mb * 1e6 / (n_freq_trim * 4))
                               // t_bin) * t_bin)
@@ -165,20 +186,20 @@ class LazySpectrogram:
         out_col = 0
 
         for col0 in tqdm(range(0, n_time_trim, cols_per_chunk),
-                         desc=f"    读取{self.polar}", leave=False):
+                         desc=f"    Reading {self.polar}", leave=False):
             col1   = min(col0 + cols_per_chunk, n_time_trim)
-            n_cols = ((col1 - col0) // t_bin) * t_bin   # 对齐
+            n_cols = ((col1 - col0) // t_bin) * t_bin   # Alignment
             if n_cols == 0:
                 continue
 
-            # 触发实际磁盘 I/O，立即 copy 为 float32
+            # Trigger actual disk I/O, immediately copy to float32
             chunk = np.array(
                 self._raw[fi0 : fi0 + n_freq_trim,
                           ti0 + col0 : ti0 + col0 + n_cols],
                 dtype=np.float32
             )   # (n_freq_trim, n_cols)
 
-            # 同时做 freq 和 time 的 block-mean
+            # Perform block-mean for both frequency and time axes
             n_t_chunk = n_cols // t_bin
             chunk_rb = (chunk
                         .reshape(n_freq_out, f_bin, n_t_chunk, t_bin)
@@ -196,14 +217,14 @@ class LazySpectrogram:
 
 
 # ============================================================
-#  数据读取
+#  DATA READING FUNCTIONS
 # ============================================================
 
 @timing_decorator
 def read_cso_fits(fn: str):
     """
-    打开 FITS，读取元数据，返回 (LazySpectrogram列表, hdu句柄)。
-    hdu 须在所有 read_slice_rebinned() 完成后关闭。
+    Open FITS file, read metadata, and return (list of LazySpectrogram, hdu handle).
+    The hdu must remain open until all read_slice_rebinned() calls complete.
     """
     hdu = fits.open(fn, memmap=True)
     try:
@@ -229,14 +250,14 @@ def read_cso_fits(fn: str):
         if raw.ndim == 2:
             results.append(LazySpectrogram(
                 raw, time_, freq_, polars, dateobs, unit, dt_base))
-            print(f"  单偏振: {polars}  尺寸: {raw.shape}  "
-                  f"({raw.nbytes/1e9:.2f} GB，未载入内存)")
+            print(f"  Single polarization: {polars}  Size: {raw.shape}  "
+                  f"({raw.nbytes/1e9:.2f} GB, not loaded into memory)")
         elif raw.ndim == 3:
             for ii in range(raw.shape[0]):
                 polar = polars[ii] * 2
                 results.append(LazySpectrogram(
                     raw[ii], time_, freq_, polar, dateobs, unit, dt_base))
-            print(f"  Dual polarization  Full: {raw.shape}  "
+            print(f"  Dual polarization  Full size: {raw.shape}  "
                   f"({raw.nbytes/1e9:.2f} GB, not loaded into memory)")
 
         return results, hdu
@@ -247,11 +268,11 @@ def read_cso_fits(fn: str):
 
 
 # ============================================================
-#  Helper: Pre-calculate bin sizes
+#  HELPER FUNCTIONS
 # ============================================================
 
 def calc_bin_sizes(spec: LazySpectrogram, cfg: PlotConfig):
-    """Calculate t_bin / f_bin based on actual slice range and target point count"""
+    """Calculate t_bin / f_bin based on actual slice range and target point count."""
     t1s = (cfg.t_start - spec.dt_base).total_seconds()
     t2s = (cfg.t_end   - spec.dt_base).total_seconds()
     ti0, ti1 = _find_range(spec.time, t1s, t2s)
@@ -263,36 +284,36 @@ def calc_bin_sizes(spec: LazySpectrogram, cfg: PlotConfig):
     return t_bin, f_bin
 
 
-# ============================================================
-#  Polarization ratio & log10
-# ============================================================
-
 def calc_polarization_ratio(Z_r: np.ndarray, Z_l: np.ndarray) -> np.ndarray:
+    """Calculate polarization ratio (R-L)/(R+L) with safe division."""
     denom = Z_r + Z_l
     denom[denom == 0] = np.float32(1e-10)
     return (Z_r - Z_l) / denom
 
 
 def _safe_log10(arr: np.ndarray) -> np.ndarray:
+    """Compute base-10 logarithm safely, handling non-positive values."""
     with np.errstate(divide='ignore', invalid='ignore'):
         return np.log10(np.where(arr > 0, arr, np.nan))
 
 
 # ============================================================
-#  Main process
+#  MAIN PROCESSING AND PLOTTING
 # ============================================================
 
 @timing_decorator
 def process_and_plot(cfg: PlotConfig, data_list: list):
+    """Main processing pipeline: read data, compute derived quantities, and generate plots."""
+    # Extract LL and RR polarization data
     cso_l = next((d for d in data_list if 'LL' in d.polar), None)
     cso_r = next((d for d in data_list if 'RR' in d.polar), None)
     if cso_l is None or cso_r is None:
         raise ValueError("Complete LL and RR data not found")
 
-    # Pre-calculate bin (based on actual slice range)
+    # Pre-calculate bin sizes based on actual slice range
     t_bin, f_bin = calc_bin_sizes(cso_l, cfg)
 
-    # Parallel reading + downsampling
+    # Parallel reading with downsampling
     print("Block reading + downsampling (parallel)...")
     kwargs = dict(t1=cfg.t_start, t2=cfg.t_end,
                   f1=cfg.f_start, f2=cfg.f_end,
@@ -305,17 +326,17 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         Z_l, tt, freq = fut_l.result()
         Z_r, _,  _    = fut_r.result()
 
-    # Derived quantities
+    # Compute derived quantities
     Z_sum = Z_l + Z_r
     ratio = calc_polarization_ratio(Z_r, Z_l)
 
-    # Time axis vectorized conversion
+    # Prepare time axis for plotting
     epoch       = np.datetime64(cso_l.dt_base)
     datetime_tt = epoch + (tt * 1e6).astype('timedelta64[us]')
     dt_list     = datetime_tt.astype('datetime64[ms]').astype(datetime.datetime)
     xx, yy      = np.meshgrid(mdates.date2num(dt_list), freq)
 
-    # Assemble subplots
+    # Assemble plot items based on configuration
     items    = []
     date_str = cso_l.dateobs[:10]
 
@@ -356,6 +377,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         print("No plot items selected, exiting")
         return
 
+    # Create figure and subplots
     n = len(items)
     fig, axs = plt.subplots(n, 1,
                              figsize=(cfg.fig_width, cfg.fig_height_per * n),
@@ -364,6 +386,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
     if n == 1:
         axs = [axs]
 
+    # Plot each item
     for ax, item in zip(axs, items):
         im = ax.pcolormesh(xx, yy, item['data'][:-1, :-1],
                            shading='flat',
@@ -376,15 +399,13 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         ax.tick_params(axis='x', labelsize=8, rotation=0)
         ax.tick_params(axis='y', labelsize=8)
         
-        # If frequencies to highlight are specified, add horizontal lines
+        # Add frequency highlight lines if specified
         if cfg.highlight_freqs is not None:
             for freq in cfg.highlight_freqs:
-                # Ensure frequency is within display range
                 if cfg.f_start <= freq <= cfg.f_end:
                     # Add horizontal line
                     ax.axhline(y=freq, color='red', linestyle='--', linewidth=2, alpha=0.8)
                     # Add text label
-                    # Use the minimum value of time axis as x position
                     x_min = mdates.date2num(dt_list[0])
                     x_max = mdates.date2num(dt_list[-1])
                     x_pos = x_min + 0.01 * (x_max - x_min)
@@ -401,6 +422,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
                 else:
                     print(f"Warning: Frequency {freq} MHz is not within display range [{cfg.f_start}, {cfg.f_end}], skipping.")
 
+    # Configure time axis
     axs[-1].set_xlabel('Time (UT)', fontsize=10)
     for ax in axs:
         ax.xaxis.set_major_locator(
@@ -411,37 +433,36 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
 
     plt.tight_layout()
 
+    # Save or display the figure
     if cfg.save_path:
-        # Ensure save path is a complete file path
         save_path = cfg.save_path
-        # If path is a directory, generate default filename
         if os.path.isdir(save_path):
-            # Use date and frequency range to generate filename
             date_str = cso_l.dateobs[:10].replace('-', '')
             f_start_str = int(cfg.f_start)
             f_end_str = int(cfg.f_end)
             filename = f"CSO_spectrogram_{date_str}_{f_start_str}_{f_end_str}.png"
             save_path = os.path.join(save_path, filename)
-        # Ensure directory exists
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         fig.savefig(save_path, dpi=cfg.dpi, bbox_inches='tight')
         print(f"Image saved: {save_path}")
     else:
         print("No save path specified, only displaying graph")
 
-    # Display graph
     plt.show()
 
 
 # ============================================================
-#  Entry point
+#  ENTRY POINT
 # ============================================================
 
 if __name__ == '__main__':
-    cfg = PlotConfig()   # All parameters are defined uniformly in PlotConfig
-    # If you need to highlight specific frequencies, you can set them here
-    # For example: cfg.highlight_freqs = [238.0, 300.0]
+    # Initialize configuration with default parameters
+    cfg = PlotConfig()
+    
+    # Optional: customize highlight frequencies here
+    # Example: cfg.highlight_freqs = [238.0, 300.0]
 
+    # Execute processing pipeline
     t0 = time.perf_counter()
     data_list, hdu = read_cso_fits(cfg.file_path)
     try:
@@ -449,4 +470,4 @@ if __name__ == '__main__':
     finally:
         hdu.close()
 
-    print(f"\nTotal time: {time.perf_counter() - t0:.2f} s")
+    print(f"\nTotal execution time: {time.perf_counter() - t0:.2f} s")
