@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 """
+Created on Sun Nov 23 00:19:30 2025
+
+@author: Severus
+
+"""
+
+"""
 CSO Spectrogram Plotting and Analysis Tool
 
 This script provides a comprehensive solution for processing and visualizing
@@ -15,10 +22,6 @@ Key Features:
 - Multiple visualization options: individual polarizations, total intensity, polarization ratio
 - Frequency highlighting with customizable markers
 - Flexible output options: display, save to file, or both
-
-Author: Severus
-Created: Sun Nov 23 00:19:30 2025
-Last Modified: 2026-04-07
 """
 
 import time
@@ -45,15 +48,15 @@ class PlotConfig:
     
     # File path
     file_path: str = (
-        r'D:\spike_topping_type_III\2025\20250124'
-        r'\OROCH_MWRS01_SRSP_L1_05M_20250124044743_V01.01.fits'
+        r'D:\spike_topping_type_III\2024\20240110'
+        r'\OROCH_MWRS01_SRSP_L1_05M_20240110064840_V01.01.fits'
     )
 
     # Time range (UTC)
     t_start: datetime.datetime = field(
-        default_factory=lambda: datetime.datetime(2025, 1, 24, 4, 46, 0))
+        default_factory=lambda: datetime.datetime(2024, 1, 10, 6, 48, 0))
     t_end:   datetime.datetime = field(
-        default_factory=lambda: datetime.datetime(2025, 1, 24, 4, 48, 30))
+        default_factory=lambda: datetime.datetime(2024, 1, 10, 6, 50, 0))
 
     # Frequency range (MHz)
     f_start: float = 0.0
@@ -89,11 +92,11 @@ class PlotConfig:
     minor_tick_interval: int = 2
 
     # Save path (empty for display only)
-    save_path: str = r'C:\Users\Lee\Desktop'
+    save_path: str = r'D:\spike_topping_type_III\2024\20240110'
     dpi:       int = 300
     
     # List of frequencies to highlight (MHz)
-    highlight_freqs: Optional[List[float]] = field(default_factory=lambda: [238, 285])
+    highlight_freqs: Optional[List[float]] = field(default_factory=lambda: [149, 164, 190, 205, 223, 238, 285, 300])
 
 
 # ============================================================
