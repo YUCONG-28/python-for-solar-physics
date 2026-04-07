@@ -462,14 +462,65 @@ if __name__ == '__main__':
     # Initialize configuration with default parameters
     cfg = PlotConfig()
     
-    # Optional: customize highlight frequencies here
-    # Example: cfg.highlight_freqs = [238.0, 300.0]
-
+    # ============================================================
+    #  USER CUSTOMIZATION AREA - MODIFY AS NEEDED
+    # ============================================================
+    
+    # Example 1: Use manual color scale limits (e.g., 0-10)
+    # cfg.use_percentile_clipping = False
+    # cfg.manual_vmin = 0.0
+    # cfg.manual_vmax = 10.0
+    # cfg.manual_sum_vmin = 0.0
+    # cfg.manual_sum_vmax = 10.0
+    
+    # Example 2: Adjust CPU core usage
+    # cfg.max_workers = 1  # Use single core for memory conservation
+    # cfg.max_workers = None  # Auto-detect based on available memory
+    
+    # Example 3: Customize highlight frequencies
+    # cfg.highlight_freqs = [149.0, 164.0, 190.0, 205.0, 223.0, 238.0, 285.0, 300.0]
+    
+    # Example 4: Adjust memory usage
+    # cfg.chunk_mem_mb = 50  # Increase chunk size for faster processing
+    # cfg.chunk_mem_mb = 10  # Decrease chunk size for memory-constrained systems
+    
+    # ============================================================
+    #  EXECUTION
+    # ============================================================
+    
+    print("=" * 60)
+    print("CSO Spectrogram Plotting Tool")
+    print("=" * 60)
+    print(f"File: {os.path.basename(cfg.file_path)}")
+    print(f"Time range: {cfg.t_start} to {cfg.t_end}")
+    print(f"Frequency range: {cfg.f_start} to {cfg.f_end} MHz")
+    print(f"Color scale method: {'Manual limits' if not cfg.use_percentile_clipping else 'Percentile clipping'}")
+    if not cfg.use_percentile_clipping:
+        print(f"  Manual limits - LL/RR: [{cfg.manual_vmin}, {cfg.manual_vmax}]")
+        print(f"  Manual limits - Sum: [{cfg.manual_sum_vmin}, {cfg.manual_sum_vmax}]")
+    else:
+        print(f"  Percentile clipping - LL/RR: [{cfg.vmin_pct}%, {cfg.vmax_pct}%]")
+        print(f"  Percentile clipping - Sum: [{cfg.sum_vmin_pct}%, {cfg.sum_vmax_pct}%]")
+    
+    # Display memory information
+    total_gb, available_gb, usage_percent = get_system_memory_info()
+    if total_gb > 0:
+        print(f"System memory: {total_gb:.1f} GB total, {available_gb:.1f} GB available ({usage_percent:.1f}% used)")
+    
+    print(f"Memory configuration:")
+    print(f"  - Chunk memory: {cfg.chunk_mem_mb} MB")
+    print(f"  - Max workers: {cfg.max_workers if cfg.max_workers is not None else 'Auto-detect'}")
+    print("=" * 60)
+    
     # Execute processing pipeline
     t0 = time.perf_counter()
     data_list, hdu = read_cso_fits(cfg.file_path)
     try:
         process_and_plot(cfg, data_list)
+    except Exception as e:
+        print(f"Error during processing: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         hdu.close()
 
