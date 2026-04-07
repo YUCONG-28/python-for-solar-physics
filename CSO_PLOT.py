@@ -61,7 +61,7 @@ class PlotConfig:
 
     # Frequency range (MHz)
     f_start: float = 0.0
-    f_end:   float = 600.0
+    f_end:   float = 400.0
 
     # Target number of grid points after downsampling (time / frequency axes)
     # Larger values produce finer plots but are slower; None = no downsampling
