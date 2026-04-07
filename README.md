@@ -82,9 +82,7 @@ pip install -r requirements.txt
 > *(You can place your figures in `/figures` and display them here)*
 
 ```markdown
-![AIA + HMI Overlay](figures/aia_hmi_overlay.png)
-![Radio + EUV Overlay](figures/radio_euv_overlay.png)
-![GOES Neupert Effect](figures/goes_neupert.png)
+loading...
 ```
 
 ---
@@ -105,7 +103,6 @@ This project aims to provide a **unified, reproducible, and extensible framework
 
 ## 🛠️ Roadmap
 
-* [ ] Automated DEM pipeline
 * [ ] Machine learning integration for feature detection
 * [ ] Interactive visualization (Jupyter / web-based)
 * [ ] Expanded support for additional instruments

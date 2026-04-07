@@ -60,8 +60,8 @@ class PlotConfig:
         default_factory=lambda: datetime.datetime(2024, 1, 10, 6, 50, 0))
 
     # Frequency range (MHz)
-    f_start: float = 0.0
-    f_end:   float = 350.0
+    f_start: float = 80
+    f_end:   float = 320.0
 
     # Target number of grid points after downsampling (time / frequency axes)
     # Larger values produce finer plots but are slower; None = no downsampling
@@ -95,12 +95,12 @@ class PlotConfig:
     # Method 2: Manual absolute limits (used when use_percentile_clipping = False)
     # Set these to specific values like 0.0 and 10.0
     # Individual polarization limits
-    manual_ll_vmin: Optional[float] = None
-    manual_ll_vmax: Optional[float] = None
-    manual_rr_vmin: Optional[float] = None
-    manual_rr_vmax: Optional[float] = None
+    manual_ll_vmin: Optional[float] = 1.8
+    manual_ll_vmax: Optional[float] = 5
+    manual_rr_vmin: Optional[float] = 1.8
+    manual_rr_vmax: Optional[float] = 5
     # Sum and ratio limits
-    manual_sum_vmin: Optional[float] = 1.8
+    manual_sum_vmin: Optional[float] = 2.2
     manual_sum_vmax: Optional[float] = 5
     manual_ratio_vmin: Optional[float] = -1.0
     manual_ratio_vmax: Optional[float] = 1.0
@@ -505,6 +505,12 @@ def get_color_limits(data: np.ndarray, cfg: PlotConfig,
                 vmin = cfg.manual_ratio_vmin
             if hasattr(cfg, 'manual_ratio_vmax'):
                 vmax = cfg.manual_ratio_vmax
+            # ✅ FIX: Enforce symmetric color scale so that 0 always maps to
+            # white in the 'bwr' colormap, regardless of user-supplied limits.
+            if vmin is not None and vmax is not None:
+                max_abs = max(abs(vmin), abs(vmax))
+                vmin = -max_abs
+                vmax = max_abs
         
         # If manual limits are not set, fall back to data range
         if vmin is None or vmax is None:
@@ -674,22 +680,19 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
     else:
         print(f"Processing in parallel with {optimal_workers} workers...")
         with ThreadPoolExecutor(max_workers=optimal_workers) as exe:
-            futures = []
-            futures.append(exe.submit(cso_l.read_slice_rebinned, **kwargs))
-            futures.append(exe.submit(cso_r.read_slice_rebinned, **kwargs))
-            
-            # Collect results as they complete
-            results = []
-            for future in as_completed(futures):
-                results.append(future.result())
-            
-            # Sort results to ensure LL comes first
-            if 'LL' in str(results[0][0]):  # Check which result is LL
-                Z_l, tt, freq = results[0]
-                Z_r, _, _ = results[1]
-            else:
-                Z_l, tt, freq = results[1]
-                Z_r, _, _ = results[0]
+            # ✅ FIX: Tag each future with its polarization key so results
+            # can be correctly identified regardless of completion order.
+            future_to_polar = {
+                exe.submit(cso_l.read_slice_rebinned, **kwargs): 'LL',
+                exe.submit(cso_r.read_slice_rebinned, **kwargs): 'RR',
+            }
+            results_dict = {}
+            for future in as_completed(future_to_polar):
+                polar_key = future_to_polar[future]
+                results_dict[polar_key] = future.result()
+
+            Z_l, tt, freq = results_dict['LL']
+            Z_r, _, _ = results_dict['RR']
 
     # Debug: Check LL and RR data statistics
     print(f"Data statistics before polarization calculation:")
