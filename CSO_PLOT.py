@@ -396,7 +396,19 @@ def calc_bin_sizes(spec: LazySpectrogram, cfg: PlotConfig):
 
 
 def calc_polarization_ratio(Z_r: np.ndarray, Z_l: np.ndarray) -> np.ndarray:
-    """Calculate polarization ratio (R-L)/(R+L) with safe division."""
+    """
+    Calculate polarization ratio (R-L)/(R+L) with safe division.
+    
+    Note:
+        The result ranges from -1 to 1:
+        - Positive values indicate R > L (right-handed dominance)
+        - Negative values indicate L > R (left-handed dominance)
+        - Zero indicates equal intensity (unpolarized)
+        
+    Color mapping:
+        - 'bwr' colormap: blue for negative, white for 0, red for positive
+        - This ensures correct visual representation of polarization direction
+    """
     # Ensure we're working with float32 for consistency
     Z_r = Z_r.astype(np.float32)
     Z_l = Z_l.astype(np.float32)
@@ -410,14 +422,14 @@ def calc_polarization_ratio(Z_r: np.ndarray, Z_l: np.ndarray) -> np.ndarray:
         denom = denom.copy()  # Make a copy to avoid modifying original
         denom[zero_mask] = np.float32(1e-10)
     
-    # Calculate ratio
+    # Calculate ratio (R-L)/(R+L)
     ratio = (Z_r - Z_l) / denom
     
     # Ensure ratio is within [-1, 1] range (numerical stability)
     ratio = np.clip(ratio, -1.0, 1.0)
     
     # Debug information
-    print(f"  Polarization ratio statistics:")
+    print(f"  Polarization ratio (R-L)/(R+L) statistics:")
     print(f"    Min: {np.nanmin(ratio):.4f}, Max: {np.nanmax(ratio):.4f}")
     print(f"    Mean: {np.nanmean(ratio):.4f}, Std: {np.nanstd(ratio):.4f}")
     print(f"    Positive (R>L): {np.sum(ratio > 0.01) / np.sum(np.isfinite(ratio)):.2%}")
@@ -428,7 +440,7 @@ def calc_polarization_ratio(Z_r: np.ndarray, Z_l: np.ndarray) -> np.ndarray:
     test_r = np.float32(10.0)
     test_l = np.float32(5.0)
     test_ratio = (test_r - test_l) / (test_r + test_l)
-    print(f"  Formula test: R={test_r}, L={test_l} => ratio={test_ratio:.3f} (should be {(10-5)/(10+5):.3f})")
+    print(f"  Formula test: R={test_r}, L={test_l} => (R-L)/(R+L)={test_ratio:.3f} (should be {(10-5)/(10+5):.3f})")
     
     return ratio
 
@@ -696,6 +708,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
     
     # Compute derived quantities
     Z_sum = Z_l + Z_r
+    # Calculate polarization ratio (R-L)/(R+L)
     ratio = calc_polarization_ratio(Z_r, Z_l)
 
     # Prepare time axis for plotting (optimized)
@@ -763,21 +776,26 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
             max_abs = max(abs(vmin), abs(vmax))
             vmin = -max_abs
             vmax = max_abs
-            print(f"  Adjusted ratio color scale to symmetric: [{vmin:.3f}, {vmax:.3f}]")
+            print(f"  Adjusted polarization ratio color scale to symmetric: [{vmin:.3f}, {vmax:.3f}]")
         
         # Add title indicating polarization direction
         mean_ratio = np.nanmean(ratio)
-        if mean_ratio > 0.1:
-            pol_direction = "(Right-handed dominant)"
-        elif mean_ratio < -0.1:
-            pol_direction = "(Left-handed dominant)"
+        if mean_ratio > 0.01:
+            pol_direction = "(R > L, Right-handed, positive values)"
+        elif mean_ratio < -0.01:
+            pol_direction = "(L > R, Left-handed, negative values)"
         else:
-            pol_direction = "(Unpolarized)"
+            pol_direction = "(R ≈ L, Unpolarized)"
+        
+        # Verify color mapping
+        print(f"  Color mapping verification:")
+        print(f"    vmin={vmin:.3f} (blue), vmax={vmax:.3f} (red)")
+        print(f"    Mean ratio={mean_ratio:.3f} -> should be {'red' if mean_ratio > 0 else 'blue' if mean_ratio < 0 else 'white'}")
         
         items.append(dict(
             data=ratio,
-            title=f'CSO/CBSm Polarization (R-L)/(R+L) {pol_direction}',
-            cmap='bwr',
+            title=f'CSO/CBSm Polarization Ratio (R-L)/(R+L) {pol_direction}',
+            cmap='bwr',  # Blue-White-Red colormap: blue for negative, white for 0, red for positive
             vmin=vmin,
             vmax=vmax,
             cbar_label='Polarization Ratio (R-L)/(R+L)'
@@ -888,7 +906,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
 def test_polarization_formula():
     """Test function to verify polarization ratio calculation."""
     print("\n" + "="*60)
-    print("Testing Polarization Ratio Formula")
+    print("Testing Polarization Ratio Formula (R-L)/(R+L)")
     print("="*60)
     
     # Test cases
@@ -906,7 +924,7 @@ def test_polarization_formula():
             np.array([l_val], dtype=np.float32)
         )[0]
         print(f"{name}: R={r_val}, L={l_val}")
-        print(f"  Expected: {expected:.4f}, Calculated: {ratio:.4f}")
+        print(f"  Expected (R-L)/(R+L): {expected:.4f}, Calculated: {ratio:.4f}")
         print(f"  Difference: {abs(ratio - expected):.6f}")
         print()
 
