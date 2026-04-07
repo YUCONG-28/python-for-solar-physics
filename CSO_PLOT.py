@@ -307,6 +307,9 @@ def _safe_log10(arr: np.ndarray) -> np.ndarray:
 @timing_decorator
 def process_and_plot(cfg: PlotConfig, data_list: list):
     """Main processing pipeline: read data, compute derived quantities, and generate plots."""
+    # Validate configuration
+    validate_config(cfg)
+    
     # Extract LL and RR polarization data
     cso_l = next((d for d in data_list if 'LL' in d.polar), None)
     cso_r = next((d for d in data_list if 'RR' in d.polar), None)
@@ -315,66 +318,131 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
 
     # Pre-calculate bin sizes based on actual slice range
     t_bin, f_bin = calc_bin_sizes(cso_l, cfg)
+    
+    # Estimate data size for worker optimization
+    t1s = (cfg.t_start - cso_l.dt_base).total_seconds()
+    t2s = (cfg.t_end   - cso_l.dt_base).total_seconds()
+    ti0, ti1 = _find_range(cso_l.time, t1s, t2s)
+    fi0, fi1 = _find_range(cso_l.freq, cfg.f_start, cfg.f_end)
+    n_t = ti1 - ti0 + 1
+    n_f = fi1 - fi0 + 1
+    estimated_data_size_mb = (n_t * n_f * 4) / (1024 * 1024)  # 4 bytes per float32
+    
+    # Optimize number of workers considering memory constraints
+    optimal_workers, estimated_peak_memory = optimize_workers(
+        cfg, estimated_data_size_mb, cfg.chunk_mem_mb
+    )
+    
+    print(f"Memory configuration:")
+    print(f"  - Chunk memory limit: {cfg.chunk_mem_mb} MB per worker")
+    print(f"  - Estimated data size: {estimated_data_size_mb:.1f} MB")
+    print(f"  - Optimal workers: {optimal_workers}")
+    print(f"  - Estimated peak memory: {estimated_peak_memory:.1f} MB")
+    
+    # Warn if memory usage might be high
+    if estimated_peak_memory > 2000:  # 2GB threshold
+        print(f"⚠️  Warning: Estimated peak memory ({estimated_peak_memory:.1f} MB) is high.")
+        print(f"   Consider reducing chunk_mem_mb or max_workers.")
 
     # Parallel reading with downsampling
-    print("Block reading + downsampling (parallel)...")
+    print("Block reading + downsampling...")
     kwargs = dict(t1=cfg.t_start, t2=cfg.t_end,
                   f1=cfg.f_start, f2=cfg.f_end,
                   t_bin=t_bin, f_bin=f_bin,
                   chunk_mem_mb=cfg.chunk_mem_mb)
 
-    with ThreadPoolExecutor(max_workers=2) as exe:
-        fut_l = exe.submit(cso_l.read_slice_rebinned, **kwargs)
-        fut_r = exe.submit(cso_r.read_slice_rebinned, **kwargs)
-        Z_l, tt, freq = fut_l.result()
-        Z_r, _,  _    = fut_r.result()
+    # Use optimized number of workers
+    # If we have only 1 worker, process sequentially to control memory
+    if optimal_workers == 1:
+        print("Processing sequentially with 1 worker for memory control...")
+        Z_l, tt, freq = cso_l.read_slice_rebinned(**kwargs)
+        Z_r, _, _ = cso_r.read_slice_rebinned(**kwargs)
+    else:
+        print(f"Processing in parallel with {optimal_workers} workers...")
+        with ThreadPoolExecutor(max_workers=optimal_workers) as exe:
+            futures = []
+            futures.append(exe.submit(cso_l.read_slice_rebinned, **kwargs))
+            futures.append(exe.submit(cso_r.read_slice_rebinned, **kwargs))
+            
+            # Collect results as they complete
+            results = []
+            for future in as_completed(futures):
+                results.append(future.result())
+            
+            # Sort results to ensure LL comes first
+            if 'LL' in str(results[0][0]):  # Check which result is LL
+                Z_l, tt, freq = results[0]
+                Z_r, _, _ = results[1]
+            else:
+                Z_l, tt, freq = results[1]
+                Z_r, _, _ = results[0]
 
     # Compute derived quantities
     Z_sum = Z_l + Z_r
     ratio = calc_polarization_ratio(Z_r, Z_l)
 
-    # Prepare time axis for plotting
-    epoch       = np.datetime64(cso_l.dt_base)
+    # Prepare time axis for plotting (optimized)
+    epoch = np.datetime64(cso_l.dt_base)
+    # Vectorized time conversion
     datetime_tt = epoch + (tt * 1e6).astype('timedelta64[us]')
-    dt_list     = datetime_tt.astype('datetime64[ms]').astype(datetime.datetime)
-    xx, yy      = np.meshgrid(mdates.date2num(dt_list), freq)
+    dt_list = datetime_tt.astype('datetime64[ms]').astype(datetime.datetime)
+    
+    # Create meshgrid for plotting
+    xx, yy = np.meshgrid(mdates.date2num(dt_list), freq)
 
     # Assemble plot items based on configuration
-    items    = []
+    items = []
     date_str = cso_l.dateobs[:10]
+    
+    # Helper function to create plot item
+    def create_plot_item(data, title, cmap, cbar_label, is_sum_plot=False):
+        vmin, vmax = get_color_limits(data, cfg, is_sum_plot)
+        return dict(
+            data=data,
+            title=title,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            cbar_label=cbar_label
+        )
 
     if cfg.plot_ll:
         Z_log = _safe_log10(Z_l)
-        items.append(dict(data=Z_log,
-                          title=f'CSO/CBSm {cso_l.polar} {date_str}',
-                          cmap='jet',
-                          vmin=np.nanpercentile(Z_log, cfg.vmin_pct),
-                          vmax=np.nanpercentile(Z_log, cfg.vmax_pct),
-                          cbar_label=r'log$_{10}$ Brightness Temp (K)'))
+        items.append(create_plot_item(
+            Z_log,
+            f'CSO/CBSm {cso_l.polar} {date_str}',
+            'jet',
+            r'log$_{10}$ Brightness Temp (K)'
+        ))
 
     if cfg.plot_rr:
         Z_log = _safe_log10(Z_r)
-        items.append(dict(data=Z_log,
-                          title=f'CSO/CBSm {cso_r.polar} {date_str}',
-                          cmap='jet',
-                          vmin=np.nanpercentile(Z_log, cfg.vmin_pct),
-                          vmax=np.nanpercentile(Z_log, cfg.vmax_pct),
-                          cbar_label=r'log$_{10}$ Brightness Temp (K)'))
+        items.append(create_plot_item(
+            Z_log,
+            f'CSO/CBSm {cso_r.polar} {date_str}',
+            'jet',
+            r'log$_{10}$ Brightness Temp (K)'
+        ))
 
     if cfg.plot_sum:
         Z_log = _safe_log10(Z_sum)
-        items.append(dict(data=Z_log,
-                          title=f'CSO/CBSm LL+RR {date_str}',
-                          cmap='jet',
-                          vmin=np.nanpercentile(Z_log, cfg.sum_vmin_pct),
-                          vmax=np.nanpercentile(Z_log, cfg.sum_vmax_pct),
-                          cbar_label=r'log$_{10}$ Brightness Temp (K)'))
+        items.append(create_plot_item(
+            Z_log,
+            f'CSO/CBSm LL+RR {date_str}',
+            'jet',
+            r'log$_{10}$ Brightness Temp (K)',
+            is_sum_plot=True
+        ))
 
     if cfg.plot_ratio:
-        items.append(dict(data=ratio,
-                          title='CSO/CBSm Polarization (R-L)/(R+L)',
-                          cmap='bwr', vmin=-1, vmax=1,
-                          cbar_label='Polarization Ratio'))
+        items.append(dict(
+            data=ratio,
+            title='CSO/CBSm Polarization (R-L)/(R+L)',
+            cmap='bwr',
+            vmin=-1,
+            vmax=1,
+            cbar_label='Polarization Ratio'
+        ))
 
     if not items:
         print("No plot items selected, exiting")
@@ -382,19 +450,27 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
 
     # Create figure and subplots
     n = len(items)
-    fig, axs = plt.subplots(n, 1,
-                             figsize=(cfg.fig_width, cfg.fig_height_per * n),
-                             sharex=True, sharey=True)
+    fig, axs = plt.subplots(
+        n, 1,
+        figsize=(cfg.fig_width, cfg.fig_height_per * n),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True  # Better layout management
+    )
     fig.subplots_adjust(hspace=0.15)
+    
     if n == 1:
         axs = [axs]
 
     # Plot each item
     for ax, item in zip(axs, items):
-        im = ax.pcolormesh(xx, yy, item['data'][:-1, :-1],
-                           shading='flat',
-                           cmap=item['cmap'],
-                           vmin=item['vmin'], vmax=item['vmax'])
+        im = ax.pcolormesh(
+            xx, yy, item['data'][:-1, :-1],
+            shading='flat',
+            cmap=item['cmap'],
+            vmin=item['vmin'],
+            vmax=item['vmax']
+        )
         ax.set_title(item['title'], fontsize=12)
         ax.set_ylabel('Frequency (MHz)', fontsize=10)
         cbar = fig.colorbar(im, ax=ax, pad=0.01)
@@ -407,7 +483,13 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
             for freq in cfg.highlight_freqs:
                 if cfg.f_start <= freq <= cfg.f_end:
                     # Add horizontal line
-                    ax.axhline(y=freq, color='red', linestyle='--', linewidth=2, alpha=0.8)
+                    ax.axhline(
+                        y=freq,
+                        color='red',
+                        linestyle='--',
+                        linewidth=2,
+                        alpha=0.8
+                    )
                     # Add text label
                     x_min = mdates.date2num(dt_list[0])
                     x_max = mdates.date2num(dt_list[-1])
@@ -420,7 +502,11 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
                         fontsize=9,
                         verticalalignment='bottom',
                         horizontalalignment='left',
-                        bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', alpha=0.5)
+                        bbox=dict(
+                            boxstyle='round,pad=0.2',
+                            facecolor='yellow',
+                            alpha=0.5
+                        )
                     )
                 else:
                     print(f"Warning: Frequency {freq} MHz is not within display range [{cfg.f_start}, {cfg.f_end}], skipping.")
@@ -429,12 +515,12 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
     axs[-1].set_xlabel('Time (UT)', fontsize=10)
     for ax in axs:
         ax.xaxis.set_major_locator(
-            mdates.SecondLocator(interval=cfg.major_tick_interval))
+            mdates.SecondLocator(interval=cfg.major_tick_interval)
+        )
         ax.xaxis.set_minor_locator(
-            mdates.SecondLocator(interval=cfg.minor_tick_interval))
+            mdates.SecondLocator(interval=cfg.minor_tick_interval)
+        )
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-
-    plt.tight_layout()
 
     # Save or display the figure
     if cfg.save_path:
@@ -443,7 +529,9 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
             date_str = cso_l.dateobs[:10].replace('-', '')
             f_start_str = int(cfg.f_start)
             f_end_str = int(cfg.f_end)
-            filename = f"CSO_spectrogram_{date_str}_{f_start_str}_{f_end_str}.png"
+            # Include color scale method in filename
+            scale_method = "manual" if not cfg.use_percentile_clipping else "auto"
+            filename = f"CSO_spectrogram_{date_str}_{f_start_str}_{f_end_str}_{scale_method}.png"
             save_path = os.path.join(save_path, filename)
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         fig.savefig(save_path, dpi=cfg.dpi, bbox_inches='tight')
