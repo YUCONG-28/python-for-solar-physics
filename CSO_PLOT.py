@@ -27,9 +27,10 @@ Key Features:
 import time
 import datetime
 import os
+import warnings
 from dataclasses import dataclass, field
-from typing import Optional, List
-from concurrent.futures import ThreadPoolExecutor
+from typing import Optional, List, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import wraps
 
 import numpy as np
@@ -71,17 +72,29 @@ class PlotConfig:
     # Lower values reduce memory pressure further
     chunk_mem_mb: int = 28
 
+    # Maximum number of CPU cores to use (None = auto-detect, 1 = single core)
+    max_workers: Optional[int] = 2
+
     # Plot toggles
     plot_ll:    bool = False
     plot_rr:    bool = False
     plot_sum:   bool = True
     plot_ratio: bool = True
 
-    # Color scale percentile clipping
+    # Color scale configuration - CHOOSE ONE METHOD:
+    # Method 1: Percentile-based clipping (automatic)
+    use_percentile_clipping: bool = True  # Set to False to use manual limits
     vmin_pct:     float = 0.1
     vmax_pct:     float = 99.9
     sum_vmin_pct: float = 0.1
     sum_vmax_pct: float = 99.9
+    
+    # Method 2: Manual absolute limits (used when use_percentile_clipping = False)
+    # Set these to specific values like 0.0 and 10.0
+    manual_vmin:     Optional[float] = None
+    manual_vmax:     Optional[float] = None
+    manual_sum_vmin: Optional[float] = None
+    manual_sum_vmax: Optional[float] = None
 
     # Figure dimensions
     fig_width:      float = 12.0
@@ -121,6 +134,68 @@ def _find_range(arr: np.ndarray, lo: float, hi: float):
     i0 = int(np.clip(np.searchsorted(arr, lo, side='left'),  0, len(arr)-1))
     i1 = int(np.clip(np.searchsorted(arr, hi, side='right')-1, 0, len(arr)-1))
     return i0, max(i0, i1)
+
+
+def get_system_memory_info() -> Tuple[float, float, float]:
+    """
+    Get system memory information.
+    
+    Returns:
+        Tuple of (total_memory_gb, available_memory_gb, memory_usage_percent)
+    """
+    try:
+        import psutil
+        memory = psutil.virtual_memory()
+        total_gb = memory.total / (1024**3)
+        available_gb = memory.available / (1024**3)
+        usage_percent = memory.percent
+        return total_gb, available_gb, usage_percent
+    except ImportError:
+        warnings.warn("psutil not installed, cannot get memory info")
+        return 0.0, 0.0, 0.0
+
+
+def validate_config(cfg: PlotConfig) -> None:
+    """Validate configuration parameters."""
+    if cfg.t_start >= cfg.t_end:
+        raise ValueError(f"t_start ({cfg.t_start}) must be earlier than t_end ({cfg.t_end})")
+    
+    if cfg.f_start >= cfg.f_end:
+        raise ValueError(f"f_start ({cfg.f_start}) must be less than f_end ({cfg.f_end})")
+    
+    if cfg.rebin_t_target is not None and cfg.rebin_t_target <= 0:
+        raise ValueError(f"rebin_t_target must be positive, got {cfg.rebin_t_target}")
+    
+    if cfg.rebin_f_target is not None and cfg.rebin_f_target <= 0:
+        raise ValueError(f"rebin_f_target must be positive, got {cfg.rebin_f_target}")
+    
+    if cfg.chunk_mem_mb <= 0:
+        raise ValueError(f"chunk_mem_mb must be positive, got {cfg.chunk_mem_mb}")
+    
+    # Check for max_workers attribute (may not exist in older config)
+    if hasattr(cfg, 'max_workers'):
+        if cfg.max_workers is not None and cfg.max_workers <= 0:
+            raise ValueError(f"max_workers must be positive or None, got {cfg.max_workers}")
+    
+    # Check for use_percentile_clipping attribute
+    if hasattr(cfg, 'use_percentile_clipping'):
+        if not cfg.use_percentile_clipping:
+            if hasattr(cfg, 'manual_vmin') and hasattr(cfg, 'manual_vmax'):
+                if cfg.manual_vmin is not None and cfg.manual_vmax is not None:
+                    if cfg.manual_vmin >= cfg.manual_vmax:
+                        raise ValueError(f"manual_vmin ({cfg.manual_vmin}) must be less than manual_vmax ({cfg.manual_vmax})")
+            if hasattr(cfg, 'manual_sum_vmin') and hasattr(cfg, 'manual_sum_vmax'):
+                if cfg.manual_sum_vmin is not None and cfg.manual_sum_vmax is not None:
+                    if cfg.manual_sum_vmin >= cfg.manual_sum_vmax:
+                        raise ValueError(f"manual_sum_vmin ({cfg.manual_sum_vmin}) must be less than manual_sum_vmax ({cfg.manual_sum_vmax})")
+    
+    # Warn about potential memory issues
+    if hasattr(cfg, 'max_workers') and cfg.max_workers is not None and cfg.max_workers > 2:
+        warnings.warn(f"max_workers={cfg.max_workers} is set, but only 2 workers are needed for polarization processing")
+    
+    # Check memory configuration
+    if cfg.chunk_mem_mb > 500:
+        warnings.warn(f"chunk_mem_mb={cfg.chunk_mem_mb} MB is quite high. Consider reducing for memory-constrained systems.")
 
 
 # ============================================================
@@ -298,6 +373,106 @@ def _safe_log10(arr: np.ndarray) -> np.ndarray:
     """Compute base-10 logarithm safely, handling non-positive values."""
     with np.errstate(divide='ignore', invalid='ignore'):
         return np.log10(np.where(arr > 0, arr, np.nan))
+
+
+def get_color_limits(data: np.ndarray, cfg: PlotConfig, 
+                     is_sum_plot: bool = False) -> Tuple[float, float]:
+    """
+    Get color scale limits based on configuration.
+    
+    Args:
+        data: Input data array
+        cfg: Plot configuration
+        is_sum_plot: Whether this is for the sum plot
+        
+    Returns:
+        Tuple of (vmin, vmax)
+    """
+    # Check if use_percentile_clipping attribute exists (for backward compatibility)
+    if hasattr(cfg, 'use_percentile_clipping') and not cfg.use_percentile_clipping:
+        # Use manual limits
+        if is_sum_plot:
+            vmin = cfg.manual_sum_vmin if hasattr(cfg, 'manual_sum_vmin') else None
+            vmax = cfg.manual_sum_vmax if hasattr(cfg, 'manual_sum_vmax') else None
+        else:
+            vmin = cfg.manual_vmin if hasattr(cfg, 'manual_vmin') else None
+            vmax = cfg.manual_vmax if hasattr(cfg, 'manual_vmax') else None
+        
+        # If manual limits are not set, fall back to data range
+        if vmin is None or vmax is None:
+            valid_data = data[np.isfinite(data)]
+            if len(valid_data) > 0:
+                vmin = vmin if vmin is not None else np.nanmin(valid_data)
+                vmax = vmax if vmax is not None else np.nanmax(valid_data)
+            else:
+                vmin, vmax = 0.0, 1.0
+    else:
+        # Use percentile-based clipping (default)
+        if is_sum_plot:
+            vmin = np.nanpercentile(data, cfg.sum_vmin_pct)
+            vmax = np.nanpercentile(data, cfg.sum_vmax_pct)
+        else:
+            vmin = np.nanpercentile(data, cfg.vmin_pct)
+            vmax = np.nanpercentile(data, cfg.vmax_pct)
+    
+    return float(vmin), float(vmax)
+
+
+def optimize_workers(cfg: PlotConfig, data_size_mb: float, chunk_mem_mb: int) -> Tuple[int, float]:
+    """
+    Optimize number of workers based on available memory, data size, and chunk memory.
+    
+    Args:
+        cfg: Plot configuration
+        data_size_mb: Estimated data size in MB
+        chunk_mem_mb: Memory limit per chunk
+        
+    Returns:
+        Tuple of (optimal_workers, estimated_peak_memory_mb)
+    """
+    # Maximum workers needed for polarization processing (LL and RR)
+    max_needed_workers = 2
+    
+    # Check if max_workers attribute exists (for backward compatibility)
+    if hasattr(cfg, 'max_workers') and cfg.max_workers is not None:
+        user_workers = min(cfg.max_workers, max_needed_workers)
+    else:
+        user_workers = max_needed_workers
+    
+    # Calculate memory requirements
+    # Each worker needs chunk_mem_mb for processing + data_size_mb for output
+    memory_per_worker = chunk_mem_mb + data_size_mb
+    
+    # Try to get available system memory
+    try:
+        import psutil
+        available_memory = psutil.virtual_memory().available / (1024 * 1024)  # MB
+        
+        # Calculate maximum workers based on memory
+        max_workers_by_memory = max(1, int(available_memory / memory_per_worker))
+        
+        # Apply all constraints
+        optimal_workers = min(user_workers, max_workers_by_memory, max_needed_workers)
+        
+        # Calculate estimated peak memory usage
+        estimated_peak_memory = optimal_workers * memory_per_worker
+        
+        # Safety check: ensure we don't exceed 80% of available memory
+        if estimated_peak_memory > available_memory * 0.8:
+            # Reduce workers to stay within safe limits
+            optimal_workers = max(1, int(available_memory * 0.8 / memory_per_worker))
+            estimated_peak_memory = optimal_workers * memory_per_worker
+            
+    except ImportError:
+        warnings.warn("psutil not installed, using conservative defaults")
+        # Conservative default: assume limited memory
+        optimal_workers = 1
+        estimated_peak_memory = memory_per_worker
+    
+    # Ensure at least 1 worker
+    optimal_workers = max(1, optimal_workers)
+    
+    return optimal_workers, estimated_peak_memory
 
 
 # ============================================================
@@ -597,7 +772,12 @@ if __name__ == '__main__':
     
     print(f"Memory configuration:")
     print(f"  - Chunk memory: {cfg.chunk_mem_mb} MB")
-    print(f"  - Max workers: {cfg.max_workers if cfg.max_workers is not None else 'Auto-detect'}")
+    # Check if max_workers attribute exists (for backward compatibility)
+    if hasattr(cfg, 'max_workers'):
+        max_workers_display = cfg.max_workers if cfg.max_workers is not None else 'Auto-detect'
+    else:
+        max_workers_display = 'Auto-detect (default)'
+    print(f"  - Max workers: {max_workers_display}")
     print("=" * 60)
     
     # Execute processing pipeline
