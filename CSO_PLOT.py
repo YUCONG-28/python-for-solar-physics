@@ -88,8 +88,9 @@ class PlotConfig:
     vmax_pct:     float = 99.9
     sum_vmin_pct: float = 0.1
     sum_vmax_pct: float = 99.9
-    ratio_vmin_pct: float = 0.1
-    ratio_vmax_pct: float = 99.9
+    # For ratio, we need symmetric percentiles since data ranges from -1 to 1
+    ratio_vmin_pct: float = 1.0    # Use 1st percentile for negative side
+    ratio_vmax_pct: float = 99.0   # Use 99th percentile for positive side
     
     # Method 2: Manual absolute limits (used when use_percentile_clipping = False)
     # Set these to specific values like 0.0 and 10.0
@@ -101,8 +102,8 @@ class PlotConfig:
     # Sum and ratio limits
     manual_sum_vmin: Optional[float] = 1.8
     manual_sum_vmax: Optional[float] = 5
-    manual_ratio_vmin: Optional[float] = -0.7
-    manual_ratio_vmax: Optional[float] = 0.7
+    manual_ratio_vmin: Optional[float] = -1.0
+    manual_ratio_vmax: Optional[float] = 1.0
     
     # Backward compatibility: if individual limits not set, use these
     manual_vmin: Optional[float] = None
@@ -396,9 +397,40 @@ def calc_bin_sizes(spec: LazySpectrogram, cfg: PlotConfig):
 
 def calc_polarization_ratio(Z_r: np.ndarray, Z_l: np.ndarray) -> np.ndarray:
     """Calculate polarization ratio (R-L)/(R+L) with safe division."""
+    # Ensure we're working with float32 for consistency
+    Z_r = Z_r.astype(np.float32)
+    Z_l = Z_l.astype(np.float32)
+    
+    # Calculate denominator
     denom = Z_r + Z_l
-    denom[denom == 0] = np.float32(1e-10)
-    return (Z_r - Z_l) / denom
+    
+    # Handle zero denominator
+    zero_mask = denom == 0
+    if np.any(zero_mask):
+        denom = denom.copy()  # Make a copy to avoid modifying original
+        denom[zero_mask] = np.float32(1e-10)
+    
+    # Calculate ratio
+    ratio = (Z_r - Z_l) / denom
+    
+    # Ensure ratio is within [-1, 1] range (numerical stability)
+    ratio = np.clip(ratio, -1.0, 1.0)
+    
+    # Debug information
+    print(f"  Polarization ratio statistics:")
+    print(f"    Min: {np.nanmin(ratio):.4f}, Max: {np.nanmax(ratio):.4f}")
+    print(f"    Mean: {np.nanmean(ratio):.4f}, Std: {np.nanstd(ratio):.4f}")
+    print(f"    Positive (R>L): {np.sum(ratio > 0.01) / np.sum(np.isfinite(ratio)):.2%}")
+    print(f"    Negative (L>R): {np.sum(ratio < -0.01) / np.sum(np.isfinite(ratio)):.2%}")
+    print(f"    Near zero (|ratio|<0.01): {np.sum(np.abs(ratio) < 0.01) / np.sum(np.isfinite(ratio)):.2%}")
+    
+    # Test with simple values to verify formula
+    test_r = np.float32(10.0)
+    test_l = np.float32(5.0)
+    test_ratio = (test_r - test_l) / (test_r + test_l)
+    print(f"  Formula test: R={test_r}, L={test_l} => ratio={test_ratio:.3f} (should be {(10-5)/(10+5):.3f})")
+    
+    return ratio
 
 
 def _safe_log10(arr: np.ndarray) -> np.ndarray:
@@ -647,6 +679,21 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
                 Z_l, tt, freq = results[1]
                 Z_r, _, _ = results[0]
 
+    # Debug: Check LL and RR data statistics
+    print(f"Data statistics before polarization calculation:")
+    print(f"  LL (L): Min={np.nanmin(Z_l):.2f}, Max={np.nanmax(Z_l):.2f}, Mean={np.nanmean(Z_l):.2f}")
+    print(f"  RR (R): Min={np.nanmin(Z_r):.2f}, Max={np.nanmax(Z_r):.2f}, Mean={np.nanmean(Z_r):.2f}")
+    
+    # Check which polarization is stronger
+    l_mean = np.nanmean(Z_l)
+    r_mean = np.nanmean(Z_r)
+    if l_mean > r_mean:
+        print(f"  Note: LL (L) is stronger on average (L={l_mean:.2f} vs R={r_mean:.2f})")
+    elif r_mean > l_mean:
+        print(f"  Note: RR (R) is stronger on average (R={r_mean:.2f} vs L={l_mean:.2f})")
+    else:
+        print(f"  Note: LL and RR have equal average intensity")
+    
     # Compute derived quantities
     Z_sum = Z_l + Z_r
     ratio = calc_polarization_ratio(Z_r, Z_l)
@@ -710,13 +757,30 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         # Use get_color_limits for both manual and percentile modes
         vmin, vmax = get_color_limits(ratio, cfg, "ratio")
         
+        # Ensure symmetric color scale for better visualization
+        if cfg.use_percentile_clipping:
+            # For percentile mode, ensure symmetric range
+            max_abs = max(abs(vmin), abs(vmax))
+            vmin = -max_abs
+            vmax = max_abs
+            print(f"  Adjusted ratio color scale to symmetric: [{vmin:.3f}, {vmax:.3f}]")
+        
+        # Add title indicating polarization direction
+        mean_ratio = np.nanmean(ratio)
+        if mean_ratio > 0.1:
+            pol_direction = "(Right-handed dominant)"
+        elif mean_ratio < -0.1:
+            pol_direction = "(Left-handed dominant)"
+        else:
+            pol_direction = "(Unpolarized)"
+        
         items.append(dict(
             data=ratio,
-            title='CSO/CBSm Polarization (R-L)/(R+L)',
+            title=f'CSO/CBSm Polarization (R-L)/(R+L) {pol_direction}',
             cmap='bwr',
             vmin=vmin,
             vmax=vmax,
-            cbar_label='Polarization Ratio'
+            cbar_label='Polarization Ratio (R-L)/(R+L)'
         ))
 
     if not items:
@@ -821,7 +885,36 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
 #  ENTRY POINT
 # ============================================================
 
+def test_polarization_formula():
+    """Test function to verify polarization ratio calculation."""
+    print("\n" + "="*60)
+    print("Testing Polarization Ratio Formula")
+    print("="*60)
+    
+    # Test cases
+    test_cases = [
+        ("R > L", 10.0, 5.0, (10-5)/(10+5)),  # Right-handed dominant
+        ("L > R", 5.0, 10.0, (5-10)/(5+10)),  # Left-handed dominant
+        ("R = L", 10.0, 10.0, 0.0),           # Unpolarized
+        ("R >> L", 100.0, 1.0, (100-1)/(100+1)),  # Strong right-handed
+        ("L >> R", 1.0, 100.0, (1-100)/(1+100)),  # Strong left-handed
+    ]
+    
+    for name, r_val, l_val, expected in test_cases:
+        ratio = calc_polarization_ratio(
+            np.array([r_val], dtype=np.float32),
+            np.array([l_val], dtype=np.float32)
+        )[0]
+        print(f"{name}: R={r_val}, L={l_val}")
+        print(f"  Expected: {expected:.4f}, Calculated: {ratio:.4f}")
+        print(f"  Difference: {abs(ratio - expected):.6f}")
+        print()
+
+
 if __name__ == '__main__':
+    # Run polarization formula test
+    test_polarization_formula()
+    
     # Initialize configuration with default parameters
     cfg = PlotConfig()
     
@@ -829,12 +922,21 @@ if __name__ == '__main__':
     #  USER CUSTOMIZATION AREA - MODIFY AS NEEDED
     # ============================================================
     
-    # Example 1: Use manual color scale limits (e.g., 0-10)
+    # Example 1: Use manual color scale limits with individual settings
     # cfg.use_percentile_clipping = False
-    # cfg.manual_vmin = 0.0
-    # cfg.manual_vmax = 10.0
+    # # Individual polarization limits
+    # cfg.manual_ll_vmin = 0.0
+    # cfg.manual_ll_vmax = 8.0
+    # cfg.manual_rr_vmin = 0.0
+    # cfg.manual_rr_vmax = 10.0
+    # # Sum and ratio limits
     # cfg.manual_sum_vmin = 0.0
     # cfg.manual_sum_vmax = 10.0
+    # cfg.manual_ratio_vmin = -1.0
+    # cfg.manual_ratio_vmax = 1.0
+    # # Backward compatibility (optional)
+    # cfg.manual_vmin = 0.0
+    # cfg.manual_vmax = 10.0
     
     # Example 2: Adjust CPU core usage
     # cfg.max_workers = 1  # Use single core for memory conservation
