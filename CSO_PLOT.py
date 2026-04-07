@@ -180,14 +180,34 @@ def validate_config(cfg: PlotConfig) -> None:
     # Check for use_percentile_clipping attribute
     if hasattr(cfg, 'use_percentile_clipping'):
         if not cfg.use_percentile_clipping:
+            # Check individual polarization limits
+            if hasattr(cfg, 'manual_ll_vmin') and hasattr(cfg, 'manual_ll_vmax'):
+                if cfg.manual_ll_vmin is not None and cfg.manual_ll_vmax is not None:
+                    if cfg.manual_ll_vmin >= cfg.manual_ll_vmax:
+                        raise ValueError(f"manual_ll_vmin ({cfg.manual_ll_vmin}) must be less than manual_ll_vmax ({cfg.manual_ll_vmax})")
+            
+            if hasattr(cfg, 'manual_rr_vmin') and hasattr(cfg, 'manual_rr_vmax'):
+                if cfg.manual_rr_vmin is not None and cfg.manual_rr_vmax is not None:
+                    if cfg.manual_rr_vmin >= cfg.manual_rr_vmax:
+                        raise ValueError(f"manual_rr_vmin ({cfg.manual_rr_vmin}) must be less than manual_rr_vmax ({cfg.manual_rr_vmax})")
+            
+            # Check backward compatibility limits
             if hasattr(cfg, 'manual_vmin') and hasattr(cfg, 'manual_vmax'):
                 if cfg.manual_vmin is not None and cfg.manual_vmax is not None:
                     if cfg.manual_vmin >= cfg.manual_vmax:
                         raise ValueError(f"manual_vmin ({cfg.manual_vmin}) must be less than manual_vmax ({cfg.manual_vmax})")
+            
+            # Check sum limits
             if hasattr(cfg, 'manual_sum_vmin') and hasattr(cfg, 'manual_sum_vmax'):
                 if cfg.manual_sum_vmin is not None and cfg.manual_sum_vmax is not None:
                     if cfg.manual_sum_vmin >= cfg.manual_sum_vmax:
                         raise ValueError(f"manual_sum_vmin ({cfg.manual_sum_vmin}) must be less than manual_sum_vmax ({cfg.manual_sum_vmax})")
+            
+            # Check ratio limits
+            if hasattr(cfg, 'manual_ratio_vmin') and hasattr(cfg, 'manual_ratio_vmax'):
+                if cfg.manual_ratio_vmin is not None and cfg.manual_ratio_vmax is not None:
+                    if cfg.manual_ratio_vmin >= cfg.manual_ratio_vmax:
+                        raise ValueError(f"manual_ratio_vmin ({cfg.manual_ratio_vmin}) must be less than manual_ratio_vmax ({cfg.manual_ratio_vmax})")
     
     # Warn about potential memory issues
     if hasattr(cfg, 'max_workers') and cfg.max_workers is not None and cfg.max_workers > 2:
