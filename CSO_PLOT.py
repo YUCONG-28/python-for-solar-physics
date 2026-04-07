@@ -61,7 +61,7 @@ class PlotConfig:
 
     # Frequency range (MHz)
     f_start: float = 0.0
-    f_end:   float = 400.0
+    f_end:   float = 350.0
 
     # Target number of grid points after downsampling (time / frequency axes)
     # Larger values produce finer plots but are slower; None = no downsampling
@@ -73,7 +73,7 @@ class PlotConfig:
     chunk_mem_mb: int = 28
 
     # Maximum number of CPU cores to use (None = auto-detect, 1 = single core)
-    max_workers: Optional[int] = 2
+    max_workers: Optional[int] = None
 
     # Plot toggles
     plot_ll:    bool = False
@@ -83,7 +83,7 @@ class PlotConfig:
 
     # Color scale configuration - CHOOSE ONE METHOD:
     # Method 1: Percentile-based clipping (automatic)
-    use_percentile_clipping: bool = True  # Set to False to use manual limits
+    use_percentile_clipping: bool = False  # Set to False to use manual limits
     vmin_pct:     float = 0.1
     vmax_pct:     float = 99.9
     sum_vmin_pct: float = 0.1
@@ -93,8 +93,8 @@ class PlotConfig:
     # Set these to specific values like 0.0 and 10.0
     manual_vmin:     Optional[float] = None
     manual_vmax:     Optional[float] = None
-    manual_sum_vmin: Optional[float] = None
-    manual_sum_vmax: Optional[float] = None
+    manual_sum_vmin: Optional[float] = 2
+    manual_sum_vmax: Optional[float] = 6
 
     # Figure dimensions
     fig_width:      float = 12.0
@@ -109,7 +109,7 @@ class PlotConfig:
     dpi:       int = 300
     
     # List of frequencies to highlight (MHz)
-    highlight_freqs: Optional[List[float]] = field(default_factory=lambda: [149, 164, 190, 205, 223, 238, 285, 300])
+    highlight_freqs: Optional[List[float]] = field(default_factory=lambda: [190, 205, 223, 238, 285, 300, 309])
 
 
 # ============================================================
@@ -689,8 +689,8 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
                         y=freq,
                         color='red',
                         linestyle='--',
-                        linewidth=2,
-                        alpha=0.8
+                        linewidth=1.3,
+                        alpha=0.6
                     )
                     # Add text label
                     x_min = mdates.date2num(dt_list[0])
@@ -701,13 +701,13 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
                         freq + 0.01 * (cfg.f_end - cfg.f_start),
                         f'{freq} MHz',
                         color='red',
-                        fontsize=9,
+                        fontsize=4,
                         verticalalignment='bottom',
                         horizontalalignment='left',
                         bbox=dict(
                             boxstyle='round,pad=0.2',
-                            facecolor='yellow',
-                            alpha=0.5
+                            facecolor='g',
+                            alpha=0.3
                         )
                     )
                 else:
