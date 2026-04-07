@@ -99,10 +99,10 @@ class PlotConfig:
     manual_rr_vmin: Optional[float] = None
     manual_rr_vmax: Optional[float] = None
     # Sum and ratio limits
-    manual_sum_vmin: Optional[float] = 2
-    manual_sum_vmax: Optional[float] = 6
-    manual_ratio_vmin: Optional[float] = -1
-    manual_ratio_vmax: Optional[float] = 1
+    manual_sum_vmin: Optional[float] = 1.8
+    manual_sum_vmax: Optional[float] = 5
+    manual_ratio_vmin: Optional[float] = -0.7
+    manual_ratio_vmax: Optional[float] = 0.7
     
     # Backward compatibility: if individual limits not set, use these
     manual_vmin: Optional[float] = None
