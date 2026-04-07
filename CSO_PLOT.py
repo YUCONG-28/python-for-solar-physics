@@ -88,13 +88,25 @@ class PlotConfig:
     vmax_pct:     float = 99.9
     sum_vmin_pct: float = 0.1
     sum_vmax_pct: float = 99.9
+    ratio_vmin_pct: float = 0.1
+    ratio_vmax_pct: float = 99.9
     
     # Method 2: Manual absolute limits (used when use_percentile_clipping = False)
     # Set these to specific values like 0.0 and 10.0
-    manual_vmin:     Optional[float] = None
-    manual_vmax:     Optional[float] = None
+    # Individual polarization limits
+    manual_ll_vmin: Optional[float] = None
+    manual_ll_vmax: Optional[float] = None
+    manual_rr_vmin: Optional[float] = None
+    manual_rr_vmax: Optional[float] = None
+    # Sum and ratio limits
     manual_sum_vmin: Optional[float] = 2
     manual_sum_vmax: Optional[float] = 6
+    manual_ratio_vmin: Optional[float] = -1
+    manual_ratio_vmax: Optional[float] = 1
+    
+    # Backward compatibility: if individual limits not set, use these
+    manual_vmin: Optional[float] = None
+    manual_vmax: Optional[float] = None
 
     # Figure dimensions
     fig_width:      float = 12.0
@@ -396,27 +408,59 @@ def _safe_log10(arr: np.ndarray) -> np.ndarray:
 
 
 def get_color_limits(data: np.ndarray, cfg: PlotConfig, 
-                     is_sum_plot: bool = False) -> Tuple[float, float]:
+                     plot_type: str = "ll") -> Tuple[float, float]:
     """
     Get color scale limits based on configuration.
     
     Args:
         data: Input data array
         cfg: Plot configuration
-        is_sum_plot: Whether this is for the sum plot
+        plot_type: Type of plot - "ll", "rr", "sum", or "ratio"
         
     Returns:
         Tuple of (vmin, vmax)
     """
-    # Check if use_percentile_clipping attribute exists (for backward compatibility)
+    # Check if use_percentile_clipping attribute exists and is enabled
     if hasattr(cfg, 'use_percentile_clipping') and not cfg.use_percentile_clipping:
-        # Use manual limits
-        if is_sum_plot:
-            vmin = cfg.manual_sum_vmin if hasattr(cfg, 'manual_sum_vmin') else None
-            vmax = cfg.manual_sum_vmax if hasattr(cfg, 'manual_sum_vmax') else None
-        else:
-            vmin = cfg.manual_vmin if hasattr(cfg, 'manual_vmin') else None
-            vmax = cfg.manual_vmax if hasattr(cfg, 'manual_vmax') else None
+        # Manual limits mode
+        vmin = None
+        vmax = None
+        
+        if plot_type == "ll":
+            # Try individual LL limits first
+            if hasattr(cfg, 'manual_ll_vmin') and cfg.manual_ll_vmin is not None:
+                vmin = cfg.manual_ll_vmin
+            elif hasattr(cfg, 'manual_vmin') and cfg.manual_vmin is not None:
+                vmin = cfg.manual_vmin
+                
+            if hasattr(cfg, 'manual_ll_vmax') and cfg.manual_ll_vmax is not None:
+                vmax = cfg.manual_ll_vmax
+            elif hasattr(cfg, 'manual_vmax') and cfg.manual_vmax is not None:
+                vmax = cfg.manual_vmax
+                
+        elif plot_type == "rr":
+            # Try individual RR limits first
+            if hasattr(cfg, 'manual_rr_vmin') and cfg.manual_rr_vmin is not None:
+                vmin = cfg.manual_rr_vmin
+            elif hasattr(cfg, 'manual_vmin') and cfg.manual_vmin is not None:
+                vmin = cfg.manual_vmin
+                
+            if hasattr(cfg, 'manual_rr_vmax') and cfg.manual_rr_vmax is not None:
+                vmax = cfg.manual_rr_vmax
+            elif hasattr(cfg, 'manual_vmax') and cfg.manual_vmax is not None:
+                vmax = cfg.manual_vmax
+                
+        elif plot_type == "sum":
+            if hasattr(cfg, 'manual_sum_vmin'):
+                vmin = cfg.manual_sum_vmin
+            if hasattr(cfg, 'manual_sum_vmax'):
+                vmax = cfg.manual_sum_vmax
+                
+        elif plot_type == "ratio":
+            if hasattr(cfg, 'manual_ratio_vmin'):
+                vmin = cfg.manual_ratio_vmin
+            if hasattr(cfg, 'manual_ratio_vmax'):
+                vmax = cfg.manual_ratio_vmax
         
         # If manual limits are not set, fall back to data range
         if vmin is None or vmax is None:
@@ -426,16 +470,20 @@ def get_color_limits(data: np.ndarray, cfg: PlotConfig,
                 vmax = vmax if vmax is not None else np.nanmax(valid_data)
             else:
                 vmin, vmax = 0.0, 1.0
+        return float(vmin), float(vmax)
     else:
-        # Use percentile-based clipping (default)
-        if is_sum_plot:
+        # Percentile-based clipping mode (default)
+        if plot_type == "sum":
             vmin = np.nanpercentile(data, cfg.sum_vmin_pct)
             vmax = np.nanpercentile(data, cfg.sum_vmax_pct)
+        elif plot_type == "ratio":
+            vmin = np.nanpercentile(data, cfg.ratio_vmin_pct)
+            vmax = np.nanpercentile(data, cfg.ratio_vmax_pct)
         else:
+            # For LL and RR, use the same percentiles
             vmin = np.nanpercentile(data, cfg.vmin_pct)
             vmax = np.nanpercentile(data, cfg.vmax_pct)
-    
-    return float(vmin), float(vmax)
+        return float(vmin), float(vmax)
 
 
 def optimize_workers(cfg: PlotConfig, data_size_mb: float, chunk_mem_mb: int) -> Tuple[int, float]:
@@ -523,7 +571,7 @@ def optimize_workers(cfg: PlotConfig, data_size_mb: float, chunk_mem_mb: int) ->
 @timing_decorator
 def process_and_plot(cfg: PlotConfig, data_list: list):
     """Main processing pipeline: read data, compute derived quantities, and generate plots."""
-    # Validate configuration
+    # Validate configuration (includes color scale limits validation)
     validate_config(cfg)
     
     # Extract LL and RR polarization data
@@ -617,8 +665,8 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
     date_str = cso_l.dateobs[:10]
     
     # Helper function to create plot item
-    def create_plot_item(data, title, cmap, cbar_label, is_sum_plot=False):
-        vmin, vmax = get_color_limits(data, cfg, is_sum_plot)
+    def create_plot_item(data, title, cmap, cbar_label, plot_type="ll"):
+        vmin, vmax = get_color_limits(data, cfg, plot_type)
         return dict(
             data=data,
             title=title,
@@ -634,7 +682,8 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
             Z_log,
             f'CSO/CBSm {cso_l.polar} {date_str}',
             'jet',
-            r'log$_{10}$ Brightness Temp (K)'
+            r'log$_{10}$ Brightness Temp (K)',
+            plot_type="ll"
         ))
 
     if cfg.plot_rr:
@@ -643,7 +692,8 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
             Z_log,
             f'CSO/CBSm {cso_r.polar} {date_str}',
             'jet',
-            r'log$_{10}$ Brightness Temp (K)'
+            r'log$_{10}$ Brightness Temp (K)',
+            plot_type="rr"
         ))
 
     if cfg.plot_sum:
@@ -653,16 +703,19 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
             f'CSO/CBSm LL+RR {date_str}',
             'jet',
             r'log$_{10}$ Brightness Temp (K)',
-            is_sum_plot=True
+            plot_type="sum"
         ))
 
     if cfg.plot_ratio:
+        # Use get_color_limits for both manual and percentile modes
+        vmin, vmax = get_color_limits(ratio, cfg, "ratio")
+        
         items.append(dict(
             data=ratio,
             title='CSO/CBSm Polarization (R-L)/(R+L)',
             cmap='bwr',
-            vmin=-1,
-            vmax=1,
+            vmin=vmin,
+            vmax=vmax,
             cbar_label='Polarization Ratio'
         ))
 
@@ -806,11 +859,20 @@ if __name__ == '__main__':
     print(f"Frequency range: {cfg.f_start} to {cfg.f_end} MHz")
     print(f"Color scale method: {'Manual limits' if not cfg.use_percentile_clipping else 'Percentile clipping'}")
     if not cfg.use_percentile_clipping:
-        print(f"  Manual limits - LL/RR: [{cfg.manual_vmin}, {cfg.manual_vmax}]")
+        # Display individual limits if set
+        ll_vmin = cfg.manual_ll_vmin if hasattr(cfg, 'manual_ll_vmin') and cfg.manual_ll_vmin is not None else cfg.manual_vmin
+        ll_vmax = cfg.manual_ll_vmax if hasattr(cfg, 'manual_ll_vmax') and cfg.manual_ll_vmax is not None else cfg.manual_vmax
+        rr_vmin = cfg.manual_rr_vmin if hasattr(cfg, 'manual_rr_vmin') and cfg.manual_rr_vmin is not None else cfg.manual_vmin
+        rr_vmax = cfg.manual_rr_vmax if hasattr(cfg, 'manual_rr_vmax') and cfg.manual_rr_vmax is not None else cfg.manual_vmax
+        
+        print(f"  Manual limits - LL: [{ll_vmin}, {ll_vmax}]")
+        print(f"  Manual limits - RR: [{rr_vmin}, {rr_vmax}]")
         print(f"  Manual limits - Sum: [{cfg.manual_sum_vmin}, {cfg.manual_sum_vmax}]")
+        print(f"  Manual limits - Ratio: [{cfg.manual_ratio_vmin}, {cfg.manual_ratio_vmax}]")
     else:
         print(f"  Percentile clipping - LL/RR: [{cfg.vmin_pct}%, {cfg.vmax_pct}%]")
         print(f"  Percentile clipping - Sum: [{cfg.sum_vmin_pct}%, {cfg.sum_vmax_pct}%]")
+        print(f"  Percentile clipping - Ratio: [{cfg.ratio_vmin_pct}%, {cfg.ratio_vmax_pct}%]")
     
     # Display memory information
     total_gb, available_gb, usage_percent = get_system_memory_info()
