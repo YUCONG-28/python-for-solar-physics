@@ -93,10 +93,30 @@ def timing_decorator(func):
 
 
 def _find_range(arr: np.ndarray, lo: float, hi: float):
-    """searchsorted 快速定位范围索引，含边界保护"""
+    """Fast range index lookup using searchsorted with boundary protection.
+    
+    Args:
+        arr: Sorted 1D numpy array
+        lo: Lower bound
+        hi: Upper bound
+        
+    Returns:
+        Tuple of (start_index, end_index)
+        
+    Raises:
+        ValueError: If arr is empty
+    """
+    if len(arr) == 0:
+        raise ValueError("Input array cannot be empty")
+    
     if lo > hi:
         lo, hi = hi, lo
-    i0 = int(np.clip(np.searchsorted(arr, lo, side='left'),  0, len(arr)-1))
+    
+    # Ensure array is sorted for searchsorted to work correctly
+    if not np.all(np.diff(arr) >= 0):
+        raise ValueError("Input array must be sorted in non-decreasing order")
+    
+    i0 = int(np.clip(np.searchsorted(arr, lo, side='left'), 0, len(arr)-1))
     i1 = int(np.clip(np.searchsorted(arr, hi, side='right')-1, 0, len(arr)-1))
     return i0, max(i0, i1)
 
@@ -251,15 +271,47 @@ def read_cso_fits(fn: str):
 # ============================================================
 
 def calc_bin_sizes(spec: LazySpectrogram, cfg: PlotConfig):
-    """Calculate t_bin / f_bin based on actual slice range and target point count"""
+    """Calculate t_bin / f_bin based on actual slice range and target point count.
+    
+    Args:
+        spec: LazySpectrogram instance
+        cfg: PlotConfig instance
+        
+    Returns:
+        Tuple of (t_bin, f_bin)
+        
+    Raises:
+        ValueError: If rebin targets are invalid or no data in range
+    """
+    # Validate time range
+    if cfg.t_start >= cfg.t_end:
+        raise ValueError(f"t_start ({cfg.t_start}) must be earlier than t_end ({cfg.t_end})")
+    
+    if cfg.f_start >= cfg.f_end:
+        raise ValueError(f"f_start ({cfg.f_start}) must be less than f_end ({cfg.f_end})")
+    
     t1s = (cfg.t_start - spec.dt_base).total_seconds()
     t2s = (cfg.t_end   - spec.dt_base).total_seconds()
+    
     ti0, ti1 = _find_range(spec.time, t1s, t2s)
     fi0, fi1 = _find_range(spec.freq, cfg.f_start, cfg.f_end)
+    
     n_t = ti1 - ti0 + 1
     n_f = fi1 - fi0 + 1
+    
+    if n_t <= 0 or n_f <= 0:
+        raise ValueError(f"No data in specified range: time points={n_t}, freq points={n_f}")
+    
+    # Handle rebin targets safely
+    if cfg.rebin_t_target is not None and cfg.rebin_t_target <= 0:
+        raise ValueError(f"rebin_t_target must be positive, got {cfg.rebin_t_target}")
+    
+    if cfg.rebin_f_target is not None and cfg.rebin_f_target <= 0:
+        raise ValueError(f"rebin_f_target must be positive, got {cfg.rebin_f_target}")
+    
     t_bin = max(1, n_t // cfg.rebin_t_target) if cfg.rebin_t_target else 1
     f_bin = max(1, n_f // cfg.rebin_f_target) if cfg.rebin_f_target else 1
+    
     return t_bin, f_bin
 
 
