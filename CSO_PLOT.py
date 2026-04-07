@@ -424,7 +424,7 @@ def optimize_workers(cfg: PlotConfig, data_size_mb: float, chunk_mem_mb: int) ->
     
     Args:
         cfg: Plot configuration
-        data_size_mb: Estimated data size in MB
+        data_size_mb: Estimated data size in MB (per polarization)
         chunk_mem_mb: Memory limit per chunk
         
     Returns:
@@ -433,41 +433,62 @@ def optimize_workers(cfg: PlotConfig, data_size_mb: float, chunk_mem_mb: int) ->
     # Maximum workers needed for polarization processing (LL and RR)
     max_needed_workers = 2
     
-    # Check if max_workers attribute exists (for backward compatibility)
+    # Get user's worker preference
+    user_workers = max_needed_workers
     if hasattr(cfg, 'max_workers') and cfg.max_workers is not None:
         user_workers = min(cfg.max_workers, max_needed_workers)
-    else:
-        user_workers = max_needed_workers
     
-    # Calculate memory requirements
-    # Each worker needs chunk_mem_mb for processing + data_size_mb for output
-    memory_per_worker = chunk_mem_mb + data_size_mb
+    # Calculate memory requirements more accurately
+    # For sequential processing (optimal_workers = 1):
+    #   Peak memory = chunk_mem_mb + data_size_mb (one polarization at a time)
+    # For parallel processing (optimal_workers = 2):
+    #   Peak memory = 2 * chunk_mem_mb + 2 * data_size_mb (both polarizations simultaneously)
+    # However, data_size_mb is already per polarization, so we need to adjust
     
     # Try to get available system memory
     try:
         import psutil
         available_memory = psutil.virtual_memory().available / (1024 * 1024)  # MB
         
-        # Calculate maximum workers based on memory
-        max_workers_by_memory = max(1, int(available_memory / memory_per_worker))
+        # Calculate memory for different worker counts
+        memory_for_1_worker = chunk_mem_mb + data_size_mb  # Sequential
+        memory_for_2_workers = 2 * (chunk_mem_mb + data_size_mb)  # Parallel
         
-        # Apply all constraints
-        optimal_workers = min(user_workers, max_workers_by_memory, max_needed_workers)
+        # Determine optimal workers based on memory constraints
+        if user_workers == 1:
+            # User explicitly wants 1 worker
+            optimal_workers = 1
+            estimated_peak_memory = memory_for_1_worker
+        else:
+            # Check if we can afford parallel processing
+            if memory_for_2_workers <= available_memory * 0.8:  # 80% safety margin
+                optimal_workers = 2
+                estimated_peak_memory = memory_for_2_workers
+            elif memory_for_1_worker <= available_memory * 0.8:
+                # Can't do parallel, but can do sequential
+                optimal_workers = 1
+                estimated_peak_memory = memory_for_1_worker
+                print(f"  Note: Insufficient memory for parallel processing. Switching to sequential.")
+            else:
+                # Even sequential processing exceeds memory limits
+                raise MemoryError(
+                    f"Insufficient memory. Required: {memory_for_1_worker:.1f} MB, "
+                    f"Available: {available_memory:.1f} MB. "
+                    f"Try reducing chunk_mem_mb or data range."
+                )
         
-        # Calculate estimated peak memory usage
-        estimated_peak_memory = optimal_workers * memory_per_worker
-        
-        # Safety check: ensure we don't exceed 80% of available memory
-        if estimated_peak_memory > available_memory * 0.8:
-            # Reduce workers to stay within safe limits
-            optimal_workers = max(1, int(available_memory * 0.8 / memory_per_worker))
-            estimated_peak_memory = optimal_workers * memory_per_worker
+        # Additional safety check
+        if estimated_peak_memory > available_memory * 0.9:
+            warnings.warn(
+                f"Estimated peak memory ({estimated_peak_memory:.1f} MB) exceeds 90% of "
+                f"available memory ({available_memory:.1f} MB). Consider reducing settings."
+            )
             
     except ImportError:
         warnings.warn("psutil not installed, using conservative defaults")
         # Conservative default: assume limited memory
         optimal_workers = 1
-        estimated_peak_memory = memory_per_worker
+        estimated_peak_memory = chunk_mem_mb + data_size_mb
     
     # Ensure at least 1 worker
     optimal_workers = max(1, optimal_workers)
@@ -527,10 +548,16 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
                   chunk_mem_mb=cfg.chunk_mem_mb)
 
     # Use optimized number of workers
-    # If we have only 1 worker, process sequentially to control memory
     if optimal_workers == 1:
         print("Processing sequentially with 1 worker for memory control...")
+        # Process LL first, then RR
+        print("  Processing LL polarization...")
         Z_l, tt, freq = cso_l.read_slice_rebinned(**kwargs)
+        # Explicitly delete any intermediate variables if needed
+        import gc
+        gc.collect()
+        
+        print("  Processing RR polarization...")
         Z_r, _, _ = cso_r.read_slice_rebinned(**kwargs)
     else:
         print(f"Processing in parallel with {optimal_workers} workers...")
