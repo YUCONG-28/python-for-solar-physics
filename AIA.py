@@ -1,8 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Nov 23 00:19:30 2025
-@author: Severus
+AIA FITS File Processing Module
+================================
+This module provides high-performance processing for AIA (Atmospheric Imaging Assembly)
+solar observation FITS files. It supports both single-band and multi-band composite
+visualization with configurable ROI, display parameters, and parallel processing.
 
+Features:
+- Single-band image processing with exposure time normalization
+- Multi-band composite visualization (2×3 grid for six AIA wavelengths)
+- Configurable region of interest (ROI) extraction
+- Parallel processing using multiprocessing for speed
+- Customizable display parameters (colormap, intensity range)
+- White background for publication-ready figures
+- Time-sorted file processing for chronological alignment
+
+Author: Severus
+Created on: Sun Nov 23 00:19:30 2025
 """
 
 import gc
@@ -16,7 +30,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import matplotlib
-matplotlib.use('Agg')  # 强制非交互式后端，多进程安全且防内存泄漏
+matplotlib.use('Agg')  # Force non-interactive backend for multiprocessing safety and memory leak prevention
 import matplotlib.patheffects as mpath_effects
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
@@ -28,7 +42,7 @@ from tqdm import tqdm
 
 
 # ==============================================================================
-# 全局配置
+# Global Configuration
 # ==============================================================================
 AIA_CONFIG: dict = {
     94:  {'cmap': 'sdoaia94','vmin':0.4, 'vmax': 6666},
@@ -52,11 +66,11 @@ class AIAConfig:
     user_vmax: Optional[float] = None
     user_cmap: Optional[str]   = None
     
-    # 动态 figsize 的基础宽度（英寸），高度会自动按比例计算
+    # Base width for dynamic figure size (inches), height is automatically calculated proportionally
     base_fig_width: float = 8.0 
     dpi:           int  = 300
-    show_limb:     bool = False  # 如果开启，需将 limb 颜色改为黑色
-    show_grid:     bool = True   # 默认开启以匹配参考图
+    show_limb:     bool = False  # If enabled, limb color will be changed to black
+    show_grid:     bool = True   # Enabled by default to match reference images
     show_colorbar: bool = False
     save_image:       bool = True
     show_image:       bool = False
@@ -64,21 +78,24 @@ class AIAConfig:
     
     max_workers: Optional[int] = 16
 
-    # 多波段同图：False 时与原先一致（逐文件单图）；True 时按各波段目录内时间排序后的第 k 个文件对齐到同一画布
+    # Multi-band composite: False for original behavior (single image per file); 
+    # True aligns the k-th time-sorted file from each band directory onto the same canvas
     multi_band_composite: bool = True
-    multi_band_wavelengths: Optional[Tuple[int, ...]] = None  # 六波段参考排布为 (94,131,171,193,211,304) 对应 2×3 上行 94–131–171、下行 193–211–304；None 时按数字子目录名排序（通常即此顺序）
+    multi_band_wavelengths: Optional[Tuple[int, ...]] = None  # Six-band reference layout: (94,131,171,193,211,304) 
+                                                              # corresponds to 2×3 grid: top row 94–131–171, bottom row 193–211–304;
+                                                              # None means sorting by numeric subdirectory names (usually this order)
     multi_band_output_subdir: str = "multi_band"
-    multi_band_merge_axes: bool = True  # 保留字段以兼容旧配置；拼图模式固定为无缝拼接，仅角标显示波段与时间
-    # 仅当 multi_band_composite=True 时有效：拼图完成后是否仍按原逻辑导出各 FITS 对应的单波段 PNG
+    multi_band_merge_axes: bool = True  # Kept for backward compatibility; mosaic mode uses seamless stitching with only band/time labels
+    # Only effective when multi_band_composite=True: whether to also export single-band PNGs for each FITS file after mosaic creation
     multi_band_also_save_single: bool = True
-    # 拼图子图间距（matplotlib 中为相对子图宽/高的比例，约 0.03–0.1 可见缝）
+    # Spacing between subplots in mosaic (matplotlib relative to subplot width/height, typically 0.03–0.1 for visible gaps)
     multi_band_wspace: float = 0.06
     multi_band_hspace: float = 0.06
-    # 保存时画布四周的绝对留白（英寸）；单图与拼图共用
+    # Absolute padding around canvas when saving (inches); used for both single and mosaic images
     figure_pad_inches: float = 0.15
-    # 主标题（日期 YYYY-MM-DD）字号；单图与拼图共用
+    # Main title (date YYYY-MM-DD) font size; used for both single and mosaic images
     figure_suptitle_fontsize: float = 34
-    # 单图模式下子图顶部的时间标题字号（位于主标题下方）
+    # Time title font size at the top of subplot in single-map mode (below main title)
     single_map_title_fontsize: float = 13
 
     def __post_init__(self):
@@ -87,35 +104,35 @@ class AIAConfig:
 
 
 # ==============================================================================
-# 内部工具函数
+# Internal Utility Functions
 # ==============================================================================
 def _resolve_files(input_path: Path, start_idx: int, end_idx: Optional[int]) -> list:
     if input_path.is_file():
         file_list = [input_path]
     elif input_path.is_dir():
-        # 按时间字符串（而非路径字符串）升序排列，保证单图模式下输出顺序与观测时间一致
+        # Sort by time string (not path string) in ascending order to ensure output sequence matches observation time in single-map mode
         file_list = sorted(input_path.rglob('*.fits'), key=lambda p: _parse_timestr(p))
     else:
-        raise ValueError(f"无效的路径: {input_path}")
+        raise ValueError(f"Invalid path: {input_path}")
 
     total = len(file_list)
     if total == 0:
-        raise ValueError("数据目录或其子目录中没有找到 FITS 文件！")
+        raise ValueError("No FITS files found in data directory or its subdirectories!")
 
     end = total if end_idx is None else min(end_idx, total)
     selected = file_list[start_idx:end]
-    print(f"共发现 {total} 个文件，已选择处理 {len(selected)} 个（索引: {start_idx} ~ {end - 1}）")
+    print(f"Found {total} files total, selected {len(selected)} for processing (indices: {start_idx} ~ {end - 1})")
     return selected
 
 
 def _parse_timestr(file_path: Path) -> str:
-    """精准提取格式类似于 2025-01-24T033001Z 的时间字符串"""
-    # 尝试正则匹配标准的 ISO 时间格式
+    """Precisely extract time string in format like 2025-01-24T033001Z"""
+    # Try regex matching standard ISO time format
     match = re.search(r'\d{4}-\d{2}-\d{2}T\d{6}Z', file_path.name)
     if match:
         return match.group(0)
     
-    # 备选方案
+    # Fallback approach
     parts = file_path.name.split('.')
     for part in parts:
         if 'T' in part and 'Z' in part:
@@ -153,7 +170,7 @@ def _layout_grid(n: int) -> Tuple[int, int]:
 
 
 def _layout_mosaic_grid(n: int) -> Tuple[int, int]:
-    """与常见 SDO 六波段拼图一致：2 行 × 3 列；其余数量仍用近似方阵。"""
+    """Matches common SDO six-band mosaic layout: 2 rows × 3 columns; other counts use approximate square grid."""
     if n == 6:
         return 2, 3
     return _layout_grid(n)
@@ -166,7 +183,8 @@ def _discover_wavelength_dirs(data_path: Path) -> Tuple[int, ...]:
         found.append(int(p.name))
     if not found:
         raise ValueError(
-            f"未在 {data_path} 下发现数字波段子目录；请设置 multi_band_wavelengths 或检查 use_band_subdirs / 路径。"
+            f"No numeric wavelength subdirectories found under {data_path}; "
+            f"please set multi_band_wavelengths or check use_band_subdirs / path."
         )
     return tuple(found)
 
@@ -174,7 +192,7 @@ def _discover_wavelength_dirs(data_path: Path) -> Tuple[int, ...]:
 def _sorted_fits_for_band(data_path: Path, wave: int, use_band_subdirs: bool) -> List[Path]:
     band_dir = (data_path / str(wave)) if use_band_subdirs else data_path
     if not band_dir.is_dir():
-        raise ValueError(f"波段目录不存在: {band_dir}")
+        raise ValueError(f"Band directory does not exist: {band_dir}")
     files = sorted(band_dir.rglob("*.fits"), key=lambda p: _parse_timestr(p))
     return files
 
@@ -192,27 +210,28 @@ def _build_multi_band_slots(cfg: AIAConfig, wavelengths: Tuple[int, ...]) -> Lis
     per_band: List[List[Path]] = []
     for w in wavelengths:
         all_f = _sorted_fits_for_band(data_path, w, cfg.use_band_subdirs)
-        # 双保险：对切片前的完整列表再次按时间字符串升序排列，
-        # 确保无论文件系统返回顺序如何，各波段文件均严格按观测时间从小到大排列。
+        # Double safety: sort the complete list again by time string before slicing,
+        # ensuring files from each band are strictly ordered by observation time regardless of filesystem order.
         all_f = sorted(all_f, key=lambda p: _parse_timestr(p))
         sliced = _slice_band_files(all_f, cfg.start_idx, cfg.end_idx)
         if not sliced:
-            raise ValueError(f"波段 {w} 在索引范围 [{cfg.start_idx}, {cfg.end_idx}) 内没有 FITS 文件")
-        # 切片后再排一次，防止 start_idx/end_idx 引入乱序（理论上不会，但作为防御性编程）
+            raise ValueError(f"Band {w} has no FITS files in index range [{cfg.start_idx}, {cfg.end_idx})")
+        # Sort again after slicing to prevent potential disorder from start_idx/end_idx (defensive programming)
         sliced = sorted(sliced, key=lambda p: _parse_timestr(p))
         per_band.append(sliced)
     m = min(len(x) for x in per_band)
     if any(len(x) != m for x in per_band):
         print(
-            f"提示: 各波段可用文件数不同，已按时间排序后取最短长度 {m} 帧对齐（第 k 帧拼到同一张图）。"
+            f"Note: Available file counts differ across bands; using shortest length {m} frames after time sorting "
+            f"(the k-th frame from each band will be aligned on the same canvas)."
         )
-    # 构造槽位：slot[i] = (band0的第i个时间文件, band1的第i个时间文件, ...)
-    # 从第 1 张拼图到第 m 张拼图，每个波段的文件均按时间从小到大递进。
+    # Construct slots: slot[i] = (i-th time file from band0, i-th time file from band1, ...)
+    # From the 1st mosaic to the m-th mosaic, files from each band progress from earliest to latest observation time.
     return [tuple(band[i] for band in per_band) for i in range(m)]
 
 
 def _obs_time_isot_label(aia_map: sunpy.map.GenericMap, fallback_path: Path) -> str:
-    """与参考图一致：ISO 时间 + 可选毫秒，如 2025-04-28T02:48:11.121。"""
+    """Matches reference images: ISO time + optional milliseconds, e.g., 2025-04-28T02:48:11.121."""
     try:
         return str(aia_map.date.isot)
     except Exception:
@@ -221,7 +240,7 @@ def _obs_time_isot_label(aia_map: sunpy.map.GenericMap, fallback_path: Path) -> 
 
 
 def _hide_wcs_frame_for_seamless(ax) -> None:
-    """去掉坐标刻度与轴名，子图边界无留白缝，便于多波段像素对齐拼接。"""
+    """Remove coordinate ticks and axis labels for seamless subplot boundaries, facilitating multi-band pixel-aligned mosaics."""
     lon, lat = ax.coords
     lon.set_ticks_visible(False)
     lat.set_ticks_visible(False)
@@ -233,7 +252,7 @@ def _hide_wcs_frame_for_seamless(ax) -> None:
 
 
 def _silence_heliographic_overlay(overlay) -> None:
-    """去掉 draw_grid 产生的 Stonyhurst/Carrington 轴名与刻度（保留网格线）。"""
+    """Remove Stonyhurst/Carrington axis labels and ticks produced by draw_grid (keep grid lines)."""
     if overlay is None:
         return
     try:
@@ -249,7 +268,7 @@ def _silence_heliographic_overlay(overlay) -> None:
 
 
 def _purge_stonyhurst_text_artists(ax) -> None:
-    """隐藏误留在图上的含 Stonyhurst/Carrington 字样的文字对象。"""
+    """Hide text objects accidentally left on the plot containing 'Stonyhurst' or 'Carrington' labels."""
     for txt in ax.texts:
         t = txt.get_text().lower()
         if "stonyhurst" in t or "carrington" in t:
@@ -257,7 +276,7 @@ def _purge_stonyhurst_text_artists(ax) -> None:
 
 
 def _obs_date_ymd(aia_map: sunpy.map.GenericMap, fallback_path: Optional[Path] = None) -> str:
-    """主标题用：FITS/图中观测日期，仅年月日 YYYY-MM-DD。"""
+    """For main title: observation date from FITS/image, only year-month-day YYYY-MM-DD."""
     try:
         dt = aia_map.date.to_datetime()
         return f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d}"
@@ -271,7 +290,7 @@ def _obs_date_ymd(aia_map: sunpy.map.GenericMap, fallback_path: Optional[Path] =
 
 
 # ==============================================================================
-# 单文件处理核心函数
+# Single File Processing Core Function
 # ==============================================================================
 def _process_single_worker(file_path: Path, cfg: AIAConfig) -> Tuple[bool, str]:
     current_map = None
@@ -285,21 +304,21 @@ def _process_single_worker(file_path: Path, cfg: AIAConfig) -> Tuple[bool, str]:
         exp_time = current_map.exposure_time.to_value(u.s)
         
         if exp_time <= 0:
-            return False, f"{file_path.name}: 曝光时间异常 ({exp_time}s)"
+            return False, f"{file_path.name}: Abnormal exposure time ({exp_time}s)"
 
-        # 1. 坐标与裁剪边界解析
+        # 1. Coordinate and crop boundary parsing
         tx1, tx2, ty1, ty2 = cfg.roi_bounds
         roi_bl_tx, roi_bl_ty = tx1 * u.arcsec, ty1 * u.arcsec
         roi_tr_tx, roi_tr_ty = tx2 * u.arcsec, ty2 * u.arcsec
 
-        # 2. 计算自适应 figsize (高度根据物理比例计算)
+        # 2. Calculate adaptive figsize (height based on physical aspect ratio)
         dx = abs(tx2 - tx1)
         dy = abs(ty2 - ty1)
         aspect_ratio = dy / dx if dx != 0 else 1.0
         fig_width = cfg.base_fig_width
         fig_height = fig_width * aspect_ratio
 
-        # 3. 裁剪处理
+        # 3. Crop processing
         with propagate_with_solar_surface():
             frame = current_map.coordinate_frame
             bl = SkyCoord(Tx=roi_bl_tx, Ty=roi_bl_ty, frame=frame)
@@ -314,21 +333,21 @@ def _process_single_worker(file_path: Path, cfg: AIAConfig) -> Tuple[bool, str]:
         )
         time_str = _parse_timestr(file_path)
 
-        # 4. 画图设置 (核心修改：设置背景为白色)
-        # 显式设置 figure 的 facecolor 为白色
+        # 4. Plot setup (core modification: set background to white)
+        # Explicitly set figure facecolor to white
         fig = plt.figure(figsize=(fig_width, fig_height), facecolor='white')
         ax = fig.add_subplot(projection=cutout_map)
-        # 设置 axes 的 facecolor（绘图区域内部）为白色
+        # Set axes facecolor (inside plot area) to white
         ax.set_facecolor('white')
 
         im = cutout_map.plot(axes=ax, cmap=final_cmap, norm=final_norm, annotate=False)
 
         if cfg.show_limb:
-            # 白色背景下，Limb 颜色改为黑色
+            # With white background, change limb color to black
             current_map.draw_limb(axes=ax, color='black', linewidth=0.8, alpha=0.6)
 
         if cfg.show_grid:
-            # annotate=False：不绘制 Stonyhurst 经纬网轴名/刻度；再强制清空覆盖层文字
+            # annotate=False: do not draw Stonyhurst grid axis labels/ticks; then forcibly clear overlay text
             hg_ov = cutout_map.draw_grid(
                 axes=ax,
                 color="black",
@@ -345,31 +364,31 @@ def _process_single_worker(file_path: Path, cfg: AIAConfig) -> Tuple[bool, str]:
             cbar.set_label('Intensity (DN/s)', fontsize=10)
             cbar.ax.tick_params(labelsize=9)
 
-        # 5. UI 细节精调 (匹配参考图布局)
+        # 5. UI fine-tuning (match reference image layout)
         lon, lat = ax.coords
         lon.set_axislabel('Helioprojective Longitude (Solar-X)', fontsize=10)
         lat.set_axislabel('Helioprojective Latitude (Solar-Y)', fontsize=10)
         
-        # 刻度线和标签（默认已经是黑色，在白色背景下清晰）
+        # Ticks and labels (already black by default, clear on white background)
         
-        # 刻度线向内，且四面均显示
+        # Ticks inward, displayed on all four sides
         lon.set_ticks(direction='in')
         lat.set_ticks(direction='in')
         lon.set_ticks_position('tb')
         lat.set_ticks_position('lr')
 
-        # 设置标题仅为时间（字号略小于主标题）
+        # Set title to time only (font size slightly smaller than main title)
         ax.set_title(f"{time_str}", fontsize=cfg.single_map_title_fontsize, pad=22)
 
-        # 单波段模式：不需要主标题（日期），只保留子标题（具体时间）
-        # 调整子图位置，为轴标签与刻度留足空间
+        # Single-band mode: no main title (date), only keep subtitle (specific time)
+        # Adjust subplot position to leave enough space for axis labels and ticks
         fig.subplots_adjust(left=0.13, right=0.95, top=0.93, bottom=0.11)
 
-        # 6. 保存图片 (文件名直接用时间)
+        # 6. Save image (filename uses time string directly)
         if cfg.save_image and cfg.output_dir:
             save_dir = Path(cfg.output_dir) / str(wave_val) if cfg.use_band_subdirs else Path(cfg.output_dir)
             save_dir.mkdir(parents=True, exist_ok=True)
-            # 输出名字：时间字符串.png (如果你需要jpg，这里改成.jpg即可)
+            # Output name: time_string.png (change to .jpg here if needed)
             save_path = save_dir / f"{time_str}.png"
             fig.savefig(save_path, dpi=cfg.dpi, bbox_inches='tight', facecolor='white',
                         pad_inches=cfg.figure_pad_inches)
@@ -543,24 +562,24 @@ def _process_multi_band_worker(
 
 
 # ==============================================================================
-# 批量执行入口
+# Batch Processing Entry Point
 # ==============================================================================
 def process_aia_fits(cfg: AIAConfig):
     if cfg.multi_band_composite:
         if not cfg.use_band_subdirs:
-            raise ValueError("多波段拼图要求数据按波段分子目录（use_band_subdirs=True）。")
+            raise ValueError("Multi-band mosaic requires data organized in wavelength subdirectories (use_band_subdirs=True).")
         waves = cfg.multi_band_wavelengths
         if waves is None:
             waves = _discover_wavelength_dirs(Path(cfg.data_path))
-        print(f"多波段拼图模式: 波段 {waves}")
+        print(f"Multi-band mosaic mode: wavelengths {waves}")
         slots = _build_multi_band_slots(cfg, waves)
-        print(f"共 {len(slots)} 个时间槽位（每槽 {len(waves)} 个波段同画布）")
+        print(f"Total {len(slots)} time slots (each slot contains {len(waves)} bands on the same canvas)")
 
         start_time = time.time()
         success_cnt = 0
         error_cnt = 0
         workers = cfg.max_workers or max(1, multiprocessing.cpu_count() - 1)
-        print(f"启动多进程处理拼图，分配核心数: {workers} ...")
+        print(f"Starting multiprocessing for mosaics, allocated cores: {workers} ...")
 
         with ProcessPoolExecutor(max_workers=workers) as executor:
             futures = {
@@ -575,15 +594,15 @@ def process_aia_fits(cfg: AIAConfig):
                     success_cnt += 1
                 else:
                     error_cnt += 1
-                    tqdm.write(f"\n  [失败] {msg}")
+                    tqdm.write(f"\n  [Failed] {msg}")
 
         elapsed = time.time() - start_time
         print(
-            f"\n多波段拼图完成！成功: {success_cnt}，失败: {error_cnt}，总耗时 {elapsed:.2f} 秒"
+            f"\nMulti-band mosaic completed! Success: {success_cnt}, Failed: {error_cnt}, Total time: {elapsed:.2f} seconds"
         )
         if not cfg.multi_band_also_save_single:
             return
-        print("\n--- 继续导出各波段单张图（multi_band_also_save_single=True）---")
+        print("\n--- Continuing to export single-band images (multi_band_also_save_single=True) ---")
 
     input_path = Path(cfg.data_path)
     selected_files = _resolve_files(input_path, cfg.start_idx, cfg.end_idx)
@@ -593,7 +612,7 @@ def process_aia_fits(cfg: AIAConfig):
     error_cnt = 0
 
     workers = cfg.max_workers or max(1, multiprocessing.cpu_count() - 1)
-    print(f"启动多进程处理，分配核心数: {workers} ...")
+    print(f"Starting multiprocessing, allocated cores: {workers} ...")
 
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(_process_single_worker, f, cfg): f for f in selected_files}
@@ -604,15 +623,15 @@ def process_aia_fits(cfg: AIAConfig):
                 success_cnt += 1
             else:
                 error_cnt += 1
-                tqdm.write(f"\n  [失败] {msg}")
+                tqdm.write(f"\n  [Failed] {msg}")
 
     elapsed = time.time() - start_time
-    print(f"\n处理完成！成功: {success_cnt}，失败: {error_cnt}，总耗时 {elapsed:.2f} 秒")
+    print(f"\nProcessing completed! Success: {success_cnt}, Failed: {error_cnt}, Total time: {elapsed:.2f} seconds")
 
 
 if __name__ == "__main__":
-    # 默认：单文件单图（与原先一致）
+    # Default: single file per image (same as original)
     cfg = AIAConfig(show_image=False, show_grid=True)
-    # 多波段同画布：multi_band_composite=True；若还要单波段 PNG：multi_band_also_save_single=True
-    print("--- 开始极速批量处理 AIA 数据 (白色背景版) ---")
+    # Multi-band on same canvas: multi_band_composite=True; if also want single-band PNGs: multi_band_also_save_single=True
+    print("--- Starting high-speed batch processing of AIA data (white background version) ---")
     process_aia_fits(cfg)
