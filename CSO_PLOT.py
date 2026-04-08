@@ -49,24 +49,24 @@ class PlotConfig:
     
     # File path
     file_path: str = (
-        r'D:\spike_topping_type_III\2024\20240110'
-        r'\OROCH_MWRS01_SRSP_L1_05M_20240110064840_V01.01.fits'
+        r'D:\spike_topping_type_III\2025\20250428'
+        r'\OROCH_MWRS01_SRSP_L1_05M_20250428025155_V01.01.fits'
     )
 
     # Time range (UTC)
     t_start: datetime.datetime = field(
-        default_factory=lambda: datetime.datetime(2024, 1, 10, 6, 48, 0))
+        default_factory=lambda: datetime.datetime(2025, 4, 28, 2, 54, 10))
     t_end:   datetime.datetime = field(
-        default_factory=lambda: datetime.datetime(2024, 1, 10, 6, 50, 0))
+        default_factory=lambda: datetime.datetime(2025, 4, 28, 2, 55, 30))
 
     # Frequency range (MHz)
-    f_start: float = 80
-    f_end:   float = 320.0
+    f_start: float = 160
+    f_end:   float = 340.0
 
     # Target number of grid points after downsampling (time / frequency axes)
     # Larger values produce finer plots but are slower; None = no downsampling
-    rebin_t_target: int = 1000
-    rebin_f_target: int = 1000
+    rebin_t_target: int = 10000
+    rebin_f_target: int = 10000
 
     # Peak memory limit per chunk during block reading (MB)
     # Lower values reduce memory pressure further
@@ -100,8 +100,8 @@ class PlotConfig:
     manual_rr_vmin: Optional[float] = 1.8
     manual_rr_vmax: Optional[float] = 5
     # Sum and ratio limits
-    manual_sum_vmin: Optional[float] = 2.2
-    manual_sum_vmax: Optional[float] = 5
+    manual_sum_vmin: Optional[float] = 1.7
+    manual_sum_vmax: Optional[float] = 3.3
     manual_ratio_vmin: Optional[float] = -1.0
     manual_ratio_vmax: Optional[float] = 1.0
     
@@ -118,12 +118,12 @@ class PlotConfig:
     minor_tick_interval: int = 2
 
     # Save path (empty for display only)
-    save_path: str = r'D:\spike_topping_type_III\2024\20240110'
+    save_path: str = r'D:\spike_topping_type_III\2025\20250428'
     dpi:       int = 300
     
     # List of frequencies to highlight (MHz)
-    highlight_freqs: Optional[List[float]] = field(default_factory=lambda: [190, 205, 223, 238, 285, 300, 309])
-
+    highlight_freqs: Optional[List[float]] = field(default_factory=lambda: [190, 205, 223, 238, 285, 300, 309, 324])
+    #[149, 164, 190, 205, 223, 238, 285, 300, 309, 324]
 
 # ============================================================
 #  UTILITY FUNCTIONS
@@ -782,22 +782,21 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
             print(f"  Adjusted polarization ratio color scale to symmetric: [{vmin:.3f}, {vmax:.3f}]")
         
         # Add title indicating polarization direction
-        mean_ratio = np.nanmean(ratio)
-        if mean_ratio > 0.01:
-            pol_direction = "(R > L, Right-handed, positive values)"
-        elif mean_ratio < -0.01:
-            pol_direction = "(L > R, Left-handed, negative values)"
-        else:
-            pol_direction = "(R ≈ L, Unpolarized)"
+        # mean_ratio = np.nanmean(ratio)
+        # if mean_ratio > 0.01:
+        #     pol_direction = "(R > L, Right-handed, positive values)"
+        # elif mean_ratio < -0.01:
+        #     pol_direction = "(L > R, Left-handed, negative values)"
+        # else:
+        #     pol_direction = "(R ≈ L, Unpolarized)"
         
         # Verify color mapping
         print(f"  Color mapping verification:")
         print(f"    vmin={vmin:.3f} (blue), vmax={vmax:.3f} (red)")
-        print(f"    Mean ratio={mean_ratio:.3f} -> should be {'red' if mean_ratio > 0 else 'blue' if mean_ratio < 0 else 'white'}")
         
         items.append(dict(
             data=ratio,
-            title=f'CSO/CBSm Polarization Ratio (R-L)/(R+L) {pol_direction}',
+            title=f'CSO/CBSm Polarization Ratio (R-L)/(R+L)',
             cmap='bwr',  # Blue-White-Red colormap: blue for negative, white for 0, red for positive
             vmin=vmin,
             vmax=vmax,

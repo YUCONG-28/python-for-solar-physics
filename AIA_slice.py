@@ -15,6 +15,7 @@ import sunpy.map
 from sunpy.net import Fido, attrs as a
 import astropy.units as u
 import os
+import re                          # [修复] 新增：_parse_timestr 需要
 import warnings
 import argparse
 import csv
@@ -43,6 +44,21 @@ _STAT_FUNCS: Dict[str, Tuple[Any, str]] = {
 VALID_STATS = list(_STAT_FUNCS.keys())
 
 
+# ──────────────────────────────────────────────────────────────
+# [新增] 时间字符串解析（参照 AIA.py _parse_timestr）
+# ──────────────────────────────────────────────────────────────
+def _parse_timestr(file_path: Path) -> str:
+    """精确提取文件名中形如 2025-01-24T033001Z 的时间字符串，用于按观测时间排序。"""
+    match = re.search(r'\d{4}-\d{2}-\d{2}T\d{6}Z', file_path.name)
+    if match:
+        return match.group(0)
+    # 回退：查找包含 T 与 Z 的片段
+    for part in file_path.name.split('.'):
+        if 'T' in part and 'Z' in part:
+            return part
+    return file_path.stem
+
+
 # ══════════════════════════════════════════════════════════════
 # 配置
 # ══════════════════════════════════════════════════════════════
@@ -50,9 +66,11 @@ VALID_STATS = list(_STAT_FUNCS.keys())
 class AIASliceConfig:
     """AIA 切片分析配置参数"""
     # 输入
-    input_dir:    str           = "./data"
+    input_dir:    str           = r'D:\spike_topping_type_III\2025\20250428\AIA'
     file_pattern: str           = "*aia.lev1_euv_12s*"
-    wavelength:   Optional[int] = None
+    wavelength:   Optional[int] = 94
+    # [新增] 是否在 input_dir/<wavelength>/ 子目录中查找，参照 AIA.py use_band_subdirs
+    use_band_subdirs: bool      = True
     use_fido:     bool          = False
     start_time:   Optional[str] = None
     end_time:     Optional[str] = None
@@ -64,13 +82,13 @@ class AIASliceConfig:
     # 数据处理
     statistics:  List[str] = field(default_factory=lambda: ["mean", "max", "std"])
     normalize:   bool       = False
-    max_workers: int        = 4       # 并行读取线程数
+    max_workers: int        = 16       # 并行读取线程数
 
     # 输出
-    output_dir: str  = "./output"
+    output_dir: str  = r'D:\spike_topping_type_III\2025\20250428\AIA\test'
     save_csv:   bool = True
     save_plot:  bool = True
-    plot_dpi:   int  = 150
+    plot_dpi:   int  = 300
     show_plot:  bool = True
 
     # 显示
@@ -188,6 +206,7 @@ class AIASliceProcessor:
         self.config = config
         self.file_list:    List[str]            = []
         self.region_mask:  Optional[np.ndarray] = None
+        self.coords:       Optional[Any]        = None   # [新增] 保存区域坐标
         self._data_unit:   str                  = "DN"
 
     # ── 文件查找 ───────────────────────────────────────────────
@@ -197,26 +216,46 @@ class AIASliceProcessor:
         return self._find_local_files()
 
     def _find_local_files(self) -> List[str]:
+        """
+        [修复] 参照 AIA.py 的文件查找方式：
+        1. 当 use_band_subdirs=True 且指定了 wavelength，优先在 input_dir/<wavelength>/ 子目录中搜索；
+        2. 使用 rglob('*.fits') 递归查找（与 AIA.py _sorted_fits_for_band 保持一致）；
+        3. 按 _parse_timestr 时间字符串排序（与 AIA.py 保持一致）。
+        """
         data_path = Path(self.config.input_dir)
         if not data_path.exists():
             print(f"[警告] 目录不存在: {self.config.input_dir}")
             return []
 
         wl = self.config.wavelength
-        candidates = (
-            [self.config.file_pattern]
-            if not wl else
-            [f"*{wl}*", f"*aia*{wl}*.fits", f"*AIA*{wl}*.fits"]
-        )
-        for pat in candidates:
-            files = sorted(data_path.glob(pat))
-            if files:
-                return [str(f) for f in files]
 
-        print(f"[警告] 未找到匹配文件（尝试了 {candidates}）")
-        return []
+        # 确定实际搜索目录（参照 AIA.py _sorted_fits_for_band 中的 band_dir 逻辑）
+        if wl is not None and self.config.use_band_subdirs:
+            band_dir = data_path / str(wl)
+            if band_dir.is_dir():
+                search_dir = band_dir
+            else:
+                print(f"[警告] 波段子目录不存在: {band_dir}，回退到 input_dir")
+                search_dir = data_path
+        else:
+            search_dir = data_path
+
+        # [修复] 使用 rglob 递归查找，与 AIA.py 保持一致
+        files = sorted(search_dir.rglob("*.fits"), key=lambda p: _parse_timestr(p))
+
+        if not files:
+            print(f"[警告] 未在 {search_dir} 中找到 .fits 文件")
+            return []
+
+        print(f"[文件] 在 {search_dir} 中找到 {len(files)} 个 .fits 文件（按观测时间排序）")
+        return [str(f) for f in files]
 
     def _find_via_fido(self) -> List[str]:
+        # [修复] wavelength 为 None 时跳过（避免 None * u.angstrom 报错）
+        if self.config.wavelength is None:
+            print("[Fido] 未指定波长，无法执行 Fido 查询，回退到本地查找。")
+            return self._find_local_files()
+
         print("[Fido] 正在远程查询…")
         try:
             result = Fido.search(
@@ -259,6 +298,9 @@ class AIASliceProcessor:
 
         if mask is None:
             return None
+
+        # [修复] 将坐标保存到实例，供后续分析/记录使用
+        self.coords = coords
 
         n_pixels = int(mask.sum())
         print(f"[区域] 类型={selector.region_type}，有效像素={n_pixels:,}，坐标={coords}")
@@ -496,6 +538,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--input_dir",    default="./data",         help="AIA 数据目录")
     p.add_argument("--file_pattern", default="*aia.lev1_euv_12s*", help="文件匹配模式")
     p.add_argument("--wavelength",   type=int, default=None,   help="AIA 波长（Å）")
+    p.add_argument("--no_band_subdirs", action="store_true",   help="不在波长子目录中查找")
     p.add_argument("--region_type",  choices=["rectangle","polygon"], default="rectangle")
     p.add_argument("--output_dir",   default="./output",       help="输出目录")
     p.add_argument("--statistics",   nargs="+", default=["mean","max","std"],
@@ -510,16 +553,17 @@ def build_parser() -> argparse.ArgumentParser:
 def main():
     args   = build_parser().parse_args()
     config = AIASliceConfig(
-        input_dir    = args.input_dir,
-        file_pattern = args.file_pattern,
-        wavelength   = args.wavelength,
-        region_type  = args.region_type,
-        output_dir   = args.output_dir,
-        statistics   = args.statistics,
-        max_workers  = args.max_workers,
-        normalize    = args.normalize,
-        show_plot    = not args.no_plot,
-        save_csv     = not args.no_csv,
+        input_dir        = args.input_dir,
+        file_pattern     = args.file_pattern,
+        wavelength       = args.wavelength,
+        use_band_subdirs = not args.no_band_subdirs,   # [新增] 传递子目录开关
+        region_type      = args.region_type,
+        output_dir       = args.output_dir,
+        statistics       = args.statistics,
+        max_workers      = args.max_workers,
+        normalize        = args.normalize,
+        show_plot        = not args.no_plot,
+        save_csv         = not args.no_csv,
     )
     config.validate()
 

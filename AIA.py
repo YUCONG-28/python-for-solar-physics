@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 """
+
+Author: Severus
+Created on: Sun Nov 23 00:19:30 2025
+
+"""
+
+"""
 AIA FITS File Processing Module
 ================================
 This module provides high-performance processing for AIA (Atmospheric Imaging Assembly)
@@ -14,9 +21,6 @@ Features:
 - Customizable display parameters (colormap, intensity range)
 - White background for publication-ready figures
 - Time-sorted file processing for chronological alignment
-
-Author: Severus
-Created on: Sun Nov 23 00:19:30 2025
 """
 
 import gc
