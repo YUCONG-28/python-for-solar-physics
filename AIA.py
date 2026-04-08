@@ -361,19 +361,9 @@ def _process_single_worker(file_path: Path, cfg: AIAConfig) -> Tuple[bool, str]:
         # 设置标题仅为时间（字号略小于主标题）
         ax.set_title(f"{time_str}", fontsize=cfg.single_map_title_fontsize, pad=22)
 
-        date_ymd = _obs_date_ymd(cutout_map, file_path)
-        if date_ymd:
-            fig.suptitle(
-                date_ymd,
-                fontsize=cfg.figure_suptitle_fontsize,
-                y=0.98,
-                fontweight="medium",
-            )
-            # 有主标题：顶部留出标题高度 + 边缘留白；左右底部为轴标签留足空间
-            fig.subplots_adjust(left=0.13, right=0.95, top=0.85, bottom=0.11)
-        else:
-            # 无主标题：四边统一留白，为轴标签与刻度留足空间
-            fig.subplots_adjust(left=0.13, right=0.95, top=0.93, bottom=0.11)
+        # 单波段模式：不需要主标题（日期），只保留子标题（具体时间）
+        # 调整子图位置，为轴标签与刻度留足空间
+        fig.subplots_adjust(left=0.13, right=0.95, top=0.93, bottom=0.11)
 
         # 6. 保存图片 (文件名直接用时间)
         if cfg.save_image and cfg.output_dir:
@@ -500,19 +490,33 @@ def _process_multi_band_worker(
 
         slot_label = f"{slot_idx + 1:04d}"
         date_ymd = _obs_date_ymd(current_maps[0], paths[0])
+        
+        # 多波段模式：添加主标题（日期）
         if date_ymd:
             fig.suptitle(
                 date_ymd,
                 fontsize=cfg.figure_suptitle_fontsize,
-                y=0.97,
+                y=0.97,  # 调整主标题垂直位置
                 fontweight="medium",
             )
-        fig.subplots_adjust(
-            left=0.04,
-            right=0.96,
-            top=0.89 if date_ymd else 0.95,
-            bottom=0.04,
-        )
+        
+        # 根据是否有主标题调整子图位置
+        if date_ymd:
+            # 有主标题：顶部留出标题高度，底部和两侧留出适当空间
+            fig.subplots_adjust(
+                left=0.04,
+                right=0.96,
+                top=0.89,  # 为标题留出空间
+                bottom=0.04,
+            )
+        else:
+            # 无主标题：均匀分布
+            fig.subplots_adjust(
+                left=0.04,
+                right=0.96,
+                top=0.95,
+                bottom=0.04,
+            )
 
         if cfg.save_image and cfg.output_dir:
             save_dir = Path(cfg.output_dir) / cfg.multi_band_output_subdir
