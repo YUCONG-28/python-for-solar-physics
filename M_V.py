@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 """
+
+Author: Severus
+
+Created on: Wed Sep 28 23:00:00 2025
+"""
+
+"""
 Video Generation from Image Sequences for Solar Data Visualization
 ==================================================================
 This module creates high-quality MP4 videos from a sequence of image files,
@@ -16,9 +23,6 @@ Key Features:
 - Multiple video encoding fallbacks (FFmpeg > imageio > OpenCV)
 - H.264 encoding with yuv420p pixel format for broad compatibility
 - Support for grayscale, RGB, and RGBA image formats
-
-Author: Severus
-Created on: Wed Sep 28 23:00:00 2025
 """
 
 import os
