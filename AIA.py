@@ -359,7 +359,7 @@ def _process_single_worker(file_path: Path, cfg: AIAConfig) -> Tuple[bool, str]:
         lat.set_ticks_position('lr')
 
         # 设置标题仅为时间（字号略小于主标题）
-        ax.set_title(f"{time_str}", fontsize=cfg.single_map_title_fontsize, pad=28)
+        ax.set_title(f"{time_str}", fontsize=cfg.single_map_title_fontsize, pad=22)
 
         date_ymd = _obs_date_ymd(cutout_map, file_path)
         if date_ymd:
