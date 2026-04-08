@@ -21,13 +21,13 @@ import sys
 # ╚══════════════════════════════════════════════════════════════╝
 
 fps           = 12          # 视频帧率
-input_dir     = r'D:\spike_topping_type_III\2025\20250428\AIA\304'
+input_dir     = r'D:\spike_topping_type_III\2025\20250428\AIA\multi_band'
 output_dir    = r'D:\spike_topping_type_III\2025\20250428\AIA\video'
-video_name    = "AIA_304.mp4"
+video_name    = "AIA_multi_band.mp4"
 target_suffix = ".png"      # 目标文件扩展名（大小写不敏感）
 
 # 帧范围（基于排序后的索引，从 1 开始）
-start_frame = 1             # 起始帧（含）
+start_frame = 66             # 起始帧（含）
 end_frame   = None          # 结束帧（含），None = 处理到最后一帧
 
 # ── 排序方式 ──────────────────────────────────────────────────
