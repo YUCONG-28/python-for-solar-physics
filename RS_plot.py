@@ -74,9 +74,16 @@ CONFIG = {
     "multi_band_also_save_single": False,
     
     # ---------- 色彩范围 ----------
-    "use_fixed_cbar": False,   # True: 固定范围；False: 每帧自动调整
-    "fixed_vmin":     None,    # 固定模式最小值（None → 自动统计全局最小）
-    "fixed_vmax":     None,    # 固定模式最大值（None → 自动统计全局最大）
+    # 三种模式：
+    # 1. 每帧自动调整（color_range_mode="auto"）
+    # 2. 固定为全局最大最小值（color_range_mode="global"，程序自动统计所有文件的全局最大最小值）
+    # 3. 固定为指定值（color_range_mode="fixed"，用户需指定fixed_vmin和fixed_vmax的具体数值）
+    "color_range_mode": "auto",  # "auto"、"global" 或 "fixed"
+    
+    # 固定色彩范围的最小值（仅在color_range_mode="fixed"时生效）
+    "fixed_vmin":     None,    
+    # 固定色彩范围的最大值（仅在color_range_mode="fixed"时生效）
+    "fixed_vmax":     None,
     
     # ---------- 图像呈现范围 ----------
     "use_custom_lim": True,           # True: 使用下方自定义范围；False: 使用 scale_factor 自动范围
@@ -535,8 +542,25 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
 # 主流程
 # ──────────────────────────────────────────────────────────────
 
+def _migrate_config(cfg):
+    """向后兼容：将旧的 use_fixed_cbar 配置迁移到新的 color_range_mode"""
+    if "use_fixed_cbar" in cfg:
+        use_fixed_cbar = cfg.pop("use_fixed_cbar")
+        if use_fixed_cbar:
+            # 如果设置了固定值，使用"fixed"模式，否则使用"global"模式
+            if cfg.get("fixed_vmin") is not None or cfg.get("fixed_vmax") is not None:
+                cfg["color_range_mode"] = "fixed"
+            else:
+                cfg["color_range_mode"] = "global"
+        else:
+            cfg["color_range_mode"] = "auto"
+        print(f"已迁移旧配置：use_fixed_cbar={use_fixed_cbar} -> color_range_mode={cfg['color_range_mode']}")
+    return cfg
+
 def main():
     cfg = CONFIG
+    # 迁移旧配置
+    cfg = _migrate_config(cfg)
     mode = cfg.get("mode", "single_band")
     
     # 1. 根据模式决定运行方式
@@ -601,22 +625,41 @@ def main():
         cfg = {**cfg, "_interactive": False}
         use_parallel = True
     
-    # 3. 若需固定色彩范围，先统计全局 vmin/vmax
+    # 3. 根据色彩范围模式处理 vmin/vmax
     vmin = vmax = None
-    if cfg["use_fixed_cbar"]:
+    color_range_mode = cfg.get("color_range_mode", "auto")
+    
+    if color_range_mode == "auto":
+        # 模式1：每帧自动调整，不设置全局 vmin/vmax
+        print("色彩范围模式：每帧自动调整")
+        vmin = vmax = None
+    elif color_range_mode == "global":
+        # 模式2：固定为全局最大最小值
+        print("色彩范围模式：固定为全局最大最小值")
         # 对于多波段模式，需要统计所有波段的所有文件
         if mode == "multi_band":
             # 收集所有文件
             all_files = []
             for slot in slots:
                 all_files.extend(slot)
-            vmin, vmax = compute_global_range(
-                all_files, cfg["fixed_vmin"], cfg["fixed_vmax"]
-            )
+            vmin, vmax = compute_global_range(all_files, None, None)
         else:
-            vmin, vmax = compute_global_range(
-                files, cfg["fixed_vmin"], cfg["fixed_vmax"]
-            )
+            vmin, vmax = compute_global_range(files, None, None)
+    elif color_range_mode == "fixed":
+        # 模式3：固定为指定值
+        fixed_vmin = cfg.get("fixed_vmin")
+        fixed_vmax = cfg.get("fixed_vmax")
+        
+        if fixed_vmin is None or fixed_vmax is None:
+            print("警告：color_range_mode='fixed' 但未设置 fixed_vmin 或 fixed_vmax，将回退到自动调整模式")
+            vmin = vmax = None
+        else:
+            print(f"色彩范围模式：固定为指定值 [{fixed_vmin:.3e}, {fixed_vmax:.3e}]")
+            vmin = fixed_vmin
+            vmax = fixed_vmax
+    else:
+        print(f"警告：未知的色彩范围模式 '{color_range_mode}'，将使用自动调整模式")
+        vmin = vmax = None
     
     # 4. 绘图（多进程批量 / 单进程交互）
     t0 = time.time()
