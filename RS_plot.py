@@ -114,25 +114,25 @@ CONFIG = {
 def _estimate_safe_workers(file_list: list, requested,
                             memory_per_worker_mb) -> int:
     """
-    根据可用物理内存和每个工作进程的预估内存开销，计算安全的并行进程数。
+    Estimate safe number of parallel worker processes based on available physical memory and estimated memory per worker.
 
-    参数
+    Parameters
     ----------
-    file_list            : 待处理文件列表（用于估算单帧内存）
-    requested            : 用户在 CONFIG 中指定的 max_workers（None表示自动）
-    memory_per_worker_mb : 每个工作进程预估内存（MB）；None表示自动估算
+    file_list            : list of files to be processed (used to estimate memory per frame)
+    requested            : max_workers specified by the user in CONFIG (None means auto)
+    memory_per_worker_mb : estimated memory per worker (MB); None means auto estimation
 
-    返回
+    Returns
     -------
-    安全的 worker 数量（至少为 1）
+    safe number of workers (at least 1)
     """
     try:
         import psutil
         available_mb = psutil.virtual_memory().available / (1024 ** 2)
     except ImportError:
         warnings.warn(
-            "未找到 psutil，无法自动估算内存安全值；建议执行 `pip install psutil`。"
-            "本次使用保守值 max_workers=2。"
+            "psutil not found, cannot auto-estimate memory safety; please run `pip install psutil`. "
+            "This run will use a conservative max_workers=2."
         )
         cpu_count = os.cpu_count() or 1
         return min(requested or 2, cpu_count)
@@ -157,19 +157,19 @@ def _estimate_safe_workers(file_list: list, requested,
     if requested is not None:
         if requested > mem_safe:
             warnings.warn(
-                f"[内存警告] 您设置了 max_workers={requested}，"
-                f"但根据可用内存 {available_mb:.0f} MB 和单 worker 估算 "
-                f"{memory_per_worker_mb:.0f} MB，安全上限约为 {mem_safe}。"
-                f"已自动调整为 {mem_safe}，请在 CONFIG['max_workers'] 中修改。"
+                f"[Memory warning] You set max_workers={requested}, "
+                f"but according to available memory {available_mb:.0f} MB and per-worker estimate "
+                f"{memory_per_worker_mb:.0f} MB, the safe upper limit is about {mem_safe}. "
+                f"Automatically adjusted to {mem_safe}, please modify CONFIG['max_workers']."
             )
             return mem_safe
         return requested
 
     auto = min(cpu_count, mem_safe)
     print(
-        f"[自动推算] 可用内存 {available_mb:.0f} MB，"
-        f"单 worker 估算 {memory_per_worker_mb:.0f} MB，"
-        f"CPU 核心数 {cpu_count}  →  max_workers = {auto}"
+        f"[Auto estimation] Available memory {available_mb:.0f} MB, "
+        f"per worker estimate {memory_per_worker_mb:.0f} MB, "
+        f"CPU cores {cpu_count}  →  max_workers = {auto}"
     )
     return auto
 
@@ -226,7 +226,7 @@ def calc_extent(header, img_shape):
         y_max = crval2 + (img_shape[0] - crpix2) * cdelt2
         return [x_min, x_max, y_max, y_min]
     except KeyError:
-        warnings.warn("头文件缺少 WCS 坐标关键字，使用默认 extent [-1500,1500]")
+        warnings.warn("Header lacks WCS coordinate keywords, using default extent [-1500,1500]")
         return [-1500, 1500, 1500, -1500]
 
 
@@ -239,7 +239,7 @@ def _global_range_one(fp: str):
         data, _ = read_fits(fp)
         return float(np.nanmin(data)), float(np.nanmax(data))
     except Exception as e:
-        warnings.warn(f"跳过文件 {fp}：{e}")
+        warnings.warn(f"Skipping file {fp}: {e}")
         return None
 
 
@@ -260,7 +260,7 @@ def compute_global_range(file_list: list, fixed_vmin=None, fixed_vmax=None,
     mins, maxs = [], []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(_global_range_one, fp): fp for fp in file_list}
-        with tqdm(total=len(file_list), desc="计算全局色彩范围", unit="文件") as pbar:
+        with tqdm(total=len(file_list), desc="Computing global color range", unit="files") as pbar:
             for future in as_completed(futures):
                 result = future.result()
                 if result is not None:
@@ -270,12 +270,12 @@ def compute_global_range(file_list: list, fixed_vmin=None, fixed_vmax=None,
 
     gmin = fixed_vmin if fixed_vmin is not None else float(np.nanmin(mins))
     gmax = fixed_vmax if fixed_vmax is not None else float(np.nanmax(maxs))
-    print(f"全局色彩范围：[{gmin:.3e}, {gmax:.3e}]")
+    print(f"Global color range: [{gmin:.3e}, {gmax:.3e}]")
     return gmin, gmax
 
 
 def get_time_from_header(header):
-    """从 FITS 头文件提取观测时间"""
+    """Extract observation time from FITS header."""
     date_obs = header.get("DATE-OBS", "Unknown")
     if "TIME-OBS" in header:
         return f"{date_obs} {header['TIME-OBS']}"
@@ -283,12 +283,12 @@ def get_time_from_header(header):
 
 
 def get_freq_from_header(header):
-    """从 FITS 头文件提取频率"""
+    """Extract frequency from FITS header."""
     return header.get("FREQ", header.get("FREQUENCY", None))
 
 
 def get_polar_from_header(header):
-    """从 FITS 头文件提取偏振信息"""
+    """Extract polarization information from FITS header."""
     return str(header.get("POLAR", "StokesI")).strip()
 
 
@@ -336,14 +336,14 @@ def _build_multi_band_slots(cfg: dict) -> list:
     lengths = [len(f) for f in per_band]
     if len(set(lengths)) > 1:
         min_len  = min(lengths)
-        print(f"警告：各波段文件数量不一致，使用最小数量 {min_len}")
+        print(f"Warning: number of files per band inconsistent, using the minimum count {min_len}")
         per_band = [f[:min_len] for f in per_band]
 
     # ★ 优化：zip 直接转置二维列表，替代双层 for 循环
     slots = [list(band_files) for band_files in zip(*per_band)]
 
-    print(f"构建了 {len(slots)} 个时间槽，每个槽包含 {len(freqs)} 个波段")
-    print(f"偏振方向：{polarization}")
+    print(f"Built {len(slots)} time slots, each slot contains {len(freqs)} bands")
+    print(f"Polarization: {polarization}")
     return slots
 
 
@@ -608,7 +608,7 @@ def _migrate_config(cfg):
                 cfg["color_range_mode"] = "global"
         else:
             cfg["color_range_mode"] = "auto"
-        print(f"已迁移旧配置：use_fixed_cbar={use_fixed_cbar} -> "
+        print(f"Migrated old config: use_fixed_cbar={use_fixed_cbar} -> "
               f"color_range_mode={cfg['color_range_mode']}")
     return cfg
 
@@ -623,17 +623,17 @@ def main():
 
     # ── 1. 根据模式决定文件列表 / 时间槽 ──────────────────────
     if mode == "multi_band":
-        print("运行模式：多波段合成")
+        print("Operation mode: multi-band synthesis")
         slots      = _build_multi_band_slots(cfg)
         output_dir = cfg.get("output_dir") or os.path.join(cfg["multi_band_root"], "plot")
         os.makedirs(output_dir, exist_ok=True)
-        print(f"输出目录：{output_dir}")
+        print(f"Output directory: {output_dir}")
 
         if cfg.get("multi_band_also_save_single", False):
-            print("注意：multi_band_also_save_single=True，将同时保存单波段图像")
+            print("Note: multi_band_also_save_single=True, will also save single-band images")
 
     else:
-        print("运行模式：单波段")
+        print("Operation mode: single-band")
         single_file = cfg.get("single_file_path")
 
         if single_file and os.path.isfile(single_file):
@@ -641,17 +641,17 @@ def main():
             output_dir = cfg.get("output_dir") or os.path.join(
                 os.path.dirname(single_file), "plot")
             os.makedirs(output_dir, exist_ok=True)
-            print(f"单文件模式，仅处理文件：{single_file}")
+            print(f"Single-file mode, processing only: {single_file}")
         else:
             if single_file:
-                print(f"[警告] 指定的单文件不存在：{single_file}。回退到批量处理模式。")
+                print(f"[Warning] Specified single file does not exist: {single_file}. Falling back to batch processing mode.")
             polarization = cfg.get("polarization", "RR")
             data_dir     = cfg["data_dir"]
-            print(f"单波段模式，偏振方向：{polarization}")
+            print(f"Single-band mode, polarization: {polarization}")
             output_dir = cfg.get("output_dir") or os.path.join(data_dir, "plot")
             os.makedirs(output_dir, exist_ok=True)
             files = get_sorted_fits(data_dir, cfg["start_idx"], cfg["end_idx"])
-            print(f"共选中 {len(files)} 个 FITS 文件，输出目录：{output_dir}")
+            print(f"Selected {len(files)} FITS files, output directory: {output_dir}")
 
     # ── 2. 确定运行模式（交互 / 并行） ─────────────────────────
     if cfg["show_plot"]:
@@ -663,7 +663,7 @@ def main():
                 continue
         cfg          = {**cfg, "_interactive": True}
         use_parallel = False
-        print(f"show_plot=True：交互后端 {matplotlib.get_backend()}，单进程逐帧显示")
+        print(f"show_plot=True: interactive backend {matplotlib.get_backend()}, single‑process frame‑by‑frame display")
     else:
         matplotlib.use("Agg")
         cfg          = {**cfg, "_interactive": False}
@@ -684,13 +684,13 @@ def main():
     color_range_mode = cfg.get("color_range_mode", "auto")
 
     if color_range_mode == "auto":
-        print("色彩范围模式：每帧自动调整")
+        print("Color range mode: auto adjust per frame")
 
     elif color_range_mode == "global":
-        print("色彩范围模式：固定为全局最大最小值")
+        print("Color range mode: fixed to global min/max")
         all_files = [fp for slot in slots for fp in slot] \
                     if mode == "multi_band" else files
-        # ★ 并行统计，复用 safe_workers
+        # ★ parallel statistics, reuse safe_workers
         vmin, vmax = compute_global_range(
             all_files, None, None, max_workers=safe_workers)
 
@@ -698,13 +698,13 @@ def main():
         fixed_vmin = cfg.get("fixed_vmin")
         fixed_vmax = cfg.get("fixed_vmax")
         if fixed_vmin is None or fixed_vmax is None:
-            print("警告：color_range_mode='fixed' 但未设置 fixed_vmin/vmax，回退到自动模式")
+            print("Warning: color_range_mode='fixed' but fixed_vmin/vmax not set, fallback to auto mode")
         else:
-            print(f"色彩范围模式：固定值 [{fixed_vmin:.3e}, {fixed_vmax:.3e}]")
+            print(f"Color range mode: fixed values [{fixed_vmin:.3e}, {fixed_vmax:.3e}]")
             vmin, vmax = fixed_vmin, fixed_vmax
 
     else:
-        print(f"警告：未知模式 '{color_range_mode}'，使用自动调整模式")
+        print(f"Warning: unknown mode '{color_range_mode}', using auto‑adjust mode")
 
     # ── 5. 预创建输出子目录（主进程统一完成，子进程免 makedirs）──
     if mode == "multi_band":
@@ -725,23 +725,23 @@ def main():
                     executor.submit(worker, i, slot): i
                     for i, slot in enumerate(slots)
                 }
-                with tqdm(total=len(slots), desc="多波段绘图进度", unit="槽") as pbar:
+                with tqdm(total=len(slots), desc="Multi‑band plotting progress", unit="slots") as pbar:
                     for future in as_completed(futures):
                         slot_idx = futures[future]
                         try:
                             future.result()
                         except Exception as e:
                             errors.append((slot_idx, str(e)))
-                            tqdm.write(f"[错误] 槽 {slot_idx}: {e}")
+                            tqdm.write(f"[Error] slot {slot_idx}: {e}")
                         finally:
                             pbar.update(1)
         else:
-            for i, slot in enumerate(tqdm(slots, desc="多波段绘图进度", unit="槽")):
+            for i, slot in enumerate(tqdm(slots, desc="Multi‑band plotting progress", unit="slots")):
                 try:
                     plot_multi_band_slot(i, slot, output_dir, cfg, vmin, vmax)
                 except Exception as e:
                     errors.append((i, str(e)))
-                    tqdm.write(f"[错误] 槽 {i}: {e}")
+                    tqdm.write(f"[Error] slot {i}: {e}")
 
     else:
         if use_parallel and len(files) > 1:
@@ -749,32 +749,32 @@ def main():
                              output_dir=output_dir, cfg=cfg, vmin=vmin, vmax=vmax)
             with ProcessPoolExecutor(max_workers=safe_workers) as executor:
                 futures = {executor.submit(worker, fp): fp for fp in files}
-                with tqdm(total=len(files), desc="绘图进度", unit="文件") as pbar:
+                with tqdm(total=len(files), desc="Plotting progress", unit="files") as pbar:
                     for future in as_completed(futures):
                         fp = futures[future]
                         try:
                             future.result()
                         except Exception as e:
                             errors.append((fp, str(e)))
-                            tqdm.write(f"[错误] {os.path.basename(fp)}: {e}")
+                            tqdm.write(f"[Error] {os.path.basename(fp)}: {e}")
                         finally:
                             pbar.update(1)
         else:
-            for fp in tqdm(files, desc="绘图进度", unit="文件"):
+            for fp in tqdm(files, desc="Plotting progress", unit="files"):
                 try:
                     plot_single_band(fp, output_dir, cfg, vmin, vmax)
                 except Exception as e:
                     errors.append((fp, str(e)))
-                    tqdm.write(f"[错误] {os.path.basename(fp)}: {e}")
+                    tqdm.write(f"[Error] {os.path.basename(fp)}: {e}")
 
     # ── 7. 汇总 ─────────────────────────────────────────────────
     elapsed = time.time() - t0
     total   = len(slots) if mode == "multi_band" else len(files)
     ok      = total - len(errors)
-    label   = "槽" if mode == "multi_band" else "文件"
-    print(f"\n完成！成功 {ok} / 共 {total} 个{label}，耗时 {elapsed:.1f} 秒")
+    label   = "slots" if mode == "multi_band" else "files"
+    print(f"\nDone! Success {ok} / total {total} {label}, elapsed {elapsed:.1f} sec")
     if errors:
-        print(f"失败{label}（{len(errors)} 个）：")
+        print(f"Failed {label} ({len(errors)} items):")
         for item, msg in errors:
             name = item if mode == "multi_band" else os.path.basename(item)
             print(f"  {name}: {msg}")
