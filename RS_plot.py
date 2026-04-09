@@ -414,7 +414,14 @@ def plot_single_band(file_path: str, output_dir: str, cfg: dict,
     polar     = get_polar_from_header(header)
     time_str  = get_time_from_header(header)
     file_name = os.path.basename(file_path)
-    title     = f"{file_name}   {freq} MHz  {polar}   {time_str}"
+    # 将偏振缩写转换为可读名称
+    if polar == "RR":
+        polar_display = "Right Circular (RR)"
+    elif polar == "LL":
+        polar_display = "Left Circular (LL)"
+    else:
+        polar_display = polar
+    title     = f"{file_name}   {freq} MHz  {polar_display}   {time_str}"
 
     fig, ax = plt.subplots(figsize=cfg["fig_size"])
 
@@ -553,7 +560,14 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
             ax.set_xlim(-rsun_obs * sf, rsun_obs * sf)
             ax.set_ylim(-rsun_obs * sf, rsun_obs * sf)
 
-        ax.set_title(f"{freq} MHz  {polar}",
+        # 将偏振缩写转换为可读名称
+        if polar == "RR":
+            polar_display = "Right Circular (RR)"
+        elif polar == "LL":
+            polar_display = "Left Circular (LL)"
+        else:
+            polar_display = polar
+        ax.set_title(f"{freq} MHz  {polar_display}",
                      fontsize=cfg["title_fontsize"] - 4, fontweight="bold")
 
         if idx % ncol == 0:
@@ -571,7 +585,15 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
         axes[idx].axis("off")
 
     main_time = band_info[0][2] if band_info else "Unknown"
-    fig.suptitle(f"Multi-band Radio Synthesis - {main_time}",
+    polarization = cfg.get("polarization", "RR")
+    # 将偏振缩写转换为可读名称
+    if polarization == "RR":
+        polar_display = "Right Circular"
+    elif polarization == "LL":
+        polar_display = "Left Circular"
+    else:
+        polar_display = polarization
+    fig.suptitle(f"Multi-band Radio Synthesis ({polar_display}) - {main_time}",
                  fontsize=cfg["title_fontsize"] + 4, fontweight="bold", y=0.98)
 
     plt.tight_layout(rect=[0, 0, 1, 0.96])
