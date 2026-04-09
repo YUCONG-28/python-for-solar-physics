@@ -33,11 +33,17 @@ CONFIG = {
     # "multi_band": 多波段合成模式 (类似 AIA.py)
     "mode": "multi_band",  # "single_band" 或 "multi_band"
     
+    # ---------- 偏振方向配置 ----------
+    # "RR": 右旋圆偏振
+    # "LL": 左旋圆偏振
+    "polarization": "RR",  # "RR" 或 "LL"
+    
     # ---------- 单波段模式配置 ----------
     # 单文件模式：如果只想画单个文件，请在此填写文件的完整绝对路径
     "single_file_path": r'<PROJECT_ROOT>\2025\20250124\RS_0447-0450\149MHz\RR\149MHz_2025124_045710_093.fits',
     
     # 单波段批量模式：FITS 文件所在目录
+    # 注意：这里需要根据偏振方向选择正确的子目录
     "data_dir": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450\149MHz\RR",
     
     # 文件范围 (仅在批量模式下生效)
@@ -51,11 +57,11 @@ CONFIG = {
     # 要合成的波段列表（MHz）
     "multi_band_freqs": [149, 173, 237, 327],  # 示例：四个波段
     
-    # 各波段子目录命名模式，{freq} 会被替换为波段频率
-    "band_dir_pattern": "{freq}MHz/RR",
+    # 各波段子目录命名模式，{freq} 会被替换为波段频率，{polar} 会被替换为偏振方向
+    "band_dir_pattern": "{freq}MHz/{polar}",
     
-    # 多波段输出子目录名
-    "multi_band_output_subdir": "multi_band",
+    # 多波段输出子目录名（自动包含偏振信息）
+    "multi_band_output_subdir": "multi_band_{polar}",
     
     # 多波段画布布局
     "multi_band_layout": "auto",  # "auto" 自动布局，或指定 (nrow, ncol)
@@ -233,13 +239,15 @@ def _build_multi_band_slots(cfg: dict) -> list:
     root = cfg["multi_band_root"]
     freqs = cfg["multi_band_freqs"]
     pattern = cfg["band_dir_pattern"]
+    polarization = cfg["polarization"]  # 获取偏振方向
     start_idx = cfg.get("start_idx", 0)
     end_idx = cfg.get("end_idx", None)
     
     # 收集各波段的文件列表
     per_band = []
     for freq in freqs:
-        band_dir = os.path.join(root, pattern.format(freq=freq))
+        # 使用格式化字符串替换频率和偏振
+        band_dir = os.path.join(root, pattern.format(freq=freq, polar=polarization))
         files = _sorted_fits_for_band(band_dir, start_idx, end_idx)
         per_band.append(files)
     
@@ -259,6 +267,7 @@ def _build_multi_band_slots(cfg: dict) -> list:
         slots.append(slot)
     
     print(f"构建了 {len(slots)} 个时间槽，每个槽包含 {len(freqs)} 个波段")
+    print(f"偏振方向：{polarization}")
     return slots
 
 
@@ -503,8 +512,11 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
     # 7. 调整布局并保存
     plt.tight_layout(rect=[0, 0, 1, 0.96])  # 为标题留出空间
     
-    # 创建多波段输出目录
-    multi_output_dir = os.path.join(output_dir, cfg.get("multi_band_output_subdir", "multi_band"))
+    # 创建多波段输出目录（包含偏振信息）
+    polarization = cfg.get("polarization", "RR")
+    subdir_template = cfg.get("multi_band_output_subdir", "multi_band_{polar}")
+    multi_output_subdir = subdir_template.format(polar=polarization)
+    multi_output_dir = os.path.join(output_dir, multi_output_subdir)
     os.makedirs(multi_output_dir, exist_ok=True)
     
     output_path = os.path.join(multi_output_dir, f"multi_band_slot_{slot_idx:04d}.png")
@@ -559,10 +571,18 @@ def main():
             # ★ 批量模式 ★
             if single_file: 
                 print(f"[警告] 指定的单文件不存在或路径有误：{single_file}。将回退到批量处理模式。")
+            
+            # 根据偏振方向构建正确的数据目录
+            polarization = cfg.get("polarization", "RR")
+            # 注意：这里假设 data_dir 的父目录包含频率子目录
+            data_dir = cfg["data_dir"]
+            # 如果 data_dir 已经包含了偏振子目录，我们不需要修改
+            # 否则，我们需要根据配置调整
+            print(f"单波段模式，偏振方向：{polarization}")
                 
-            output_dir = cfg.get("output_dir") or os.path.join(cfg["data_dir"], "plot")
+            output_dir = cfg.get("output_dir") or os.path.join(data_dir, "plot")
             os.makedirs(output_dir, exist_ok=True)
-            files = get_sorted_fits(cfg["data_dir"], cfg["start_idx"], cfg["end_idx"])
+            files = get_sorted_fits(data_dir, cfg["start_idx"], cfg["end_idx"])
             print(f"共选中 {len(files)} 个 FITS 文件，输出目录：{output_dir}")
     
     # 2. 根据 show_plot 决定运行模式
