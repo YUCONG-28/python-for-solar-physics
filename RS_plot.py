@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-RS_plot.py: 处理太阳射电频谱图（FITS文件）并生成单波段或多波段的合成图像。
-支持两种运行模式：单波段模式（逐个处理FITS文件）和多波段模式（同一时间多个波段合成）。
-支持并行处理、自动内存安全检测、多种色彩范围模式，并生成带有太阳轮廓、坐标网格和方向标记的图像。
+RS_plot.py: Process solar radio spectrogram (FITS files) and generate single-band or multi-band composite images.
+Supports two operation modes: single-band mode (process FITS files one by one) and multi-band mode (synthesize multiple bands at the same time).
+Supports parallel processing, automatic memory safety detection, multiple color range modes, and generates images with solar limb, coordinate grid, and directional markers.
 
 Created on Sun Nov 23 00:19:30 2025
 @author: Severus
@@ -25,81 +25,81 @@ from matplotlib.lines import Line2D
 from tqdm import tqdm
 
 # ============================================================
-#   ★ 所有可配置参数集中于此，无需深入代码即可调整 ★
+#   ★ All configurable parameters are centralized here, no need to dive into code to adjust ★
 # ============================================================
 CONFIG = {
-    # ---------- 运行模式 ----------
-    # "single_band": 单波段模式 (类似原版)
-    # "multi_band": 多波段合成模式 (类似 AIA.py)
-    "mode": "multi_band",  # "single_band" 或 "multi_band"
+    # ---------- Operation mode ----------
+    # "single_band": single-band mode (similar to original)
+    # "multi_band": multi-band synthesis mode (similar to AIA.py)
+    "mode": "multi_band",  # "single_band" or "multi_band"
 
-    # ---------- 偏振方向配置 ----------
-    # "RR": 右旋圆偏振
-    # "LL": 左旋圆偏振
-    "polarization": "RR",  # "RR" 或 "LL"
+    # ---------- Polarization configuration ----------
+    # "RR": right circular polarization
+    # "LL": left circular polarization
+    "polarization": "RR",  # "RR" or "LL"
 
-    # ---------- 单波段模式配置 ----------
-    # 单文件模式：如果只想画单个文件，请在此填写文件的完整绝对路径
+    # ---------- Single-band mode configuration ----------
+    # Single-file mode: if you only want to plot a single file, fill in the full absolute path here
     "single_file_path": r'<PROJECT_ROOT>\2025\20250124\RS_0447-0450\149MHz\RR\149MHz_2025124_045710_093.fits',
 
-    # 单波段批量模式：FITS 文件所在目录
+    # Batch single-band mode: directory containing FITS files
     "data_dir": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450\149MHz\RR",
 
-    # 文件范围 (仅在批量模式下生效)
-    "start_idx": 1,          # 起始索引（含）
-    "end_idx":   None,          # 结束索引（不含）
+    # File range (only effective in batch mode)
+    "start_idx": 1,          # start index (inclusive)
+    "end_idx":   None,          # end index (exclusive)
 
-    # ---------- 多波段模式配置 ----------
+    # ---------- Multi-band mode configuration ----------
     "multi_band_root": r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600",
     "multi_band_freqs": [149, 164, 190, 238, 285, 324],
     "band_dir_pattern": "{freq}MHz/{polar}",
     "multi_band_output_subdir": "multi_band_{polar}",
     "multi_band_layout": "auto",
 
-    # ---------- 输出配置 ----------
+    # ---------- Output configuration ----------
     "output_dir": r'<PROJECT_ROOT>\2025\20250503\RS_multi_band',
     "multi_band_also_save_single": False,
 
-    # ---------- 色彩范围 ----------
-    # "auto": 每帧自动调整
-    # "global": 固定为全局最大最小值
-    # "fixed": 固定为 fixed_vmin / fixed_vmax
+    # ---------- Color range ----------
+    # "auto": adjust per frame automatically
+    # "global": fixed to global min/max values
+    # "fixed": fixed to fixed_vmin / fixed_vmax
     "color_range_mode": "global",
     "fixed_vmin": None,
     "fixed_vmax": None,
 
-    # ---------- 图像呈现范围 ----------
+    # ---------- Image display limits ----------
     "use_custom_lim": True,
     "custom_xlim":    (-1150, 1150),
     "custom_ylim":    (-1150, 1150),
 
-    # ---------- 图像外观 ----------
+    # ---------- Image appearance ----------
     "fig_size":            (18, 16),
     "multi_band_fig_size": (24, 20),
     "dpi":                 300,
     "cmap":                "gist_heat",
     "scale_factor":        3.5,
 
-    # ---------- 注记样式 ----------
+    # ---------- Annotation styles ----------
     "title_fontsize":      24,
     "label_fontsize":      28,
     "tick_fontsize":       22,
     "legend_fontsize":     18,
     "annotation_fontsize": 20,
 
-    # ---------- 并行 ----------
-    # max_workers: 并行工作进程数
-    #   None  → 程序自动根据【可用内存 / 单帧估算内存】计算安全上限
-    #   整数  → 强制指定（如设为 4 则最多使用 4 个核心）
-    #   注意：设置过大可能导致内存不足崩溃，建议先用 None 自动推算
+    # ---------- Parallel processing ----------
+    # max_workers: number of parallel worker processes
+    #   None  → program automatically calculates safe upper limit based on 【available memory / estimated per-frame memory】
+    #   integer  → force specified (e.g., setting to 4 will use at most 4 cores)
+    #   Note: setting too high may cause out-of-memory crashes, it is recommended to start with None for auto estimation
     "max_workers": 8,
 
-    # memory_per_worker_mb: 每个 worker 预估占用内存（MB）
-    #   用于自动推算安全 max_workers，可根据实际 FITS 文件大小调整
-    #   None → 自动从文件大小估算（×20 倍余量）
+    # memory_per_worker_mb: estimated memory per worker (MB)
+    #   used for automatic safe max_workers calculation, can be adjusted according to actual FITS file size
+    #   None → automatically estimated from file size (×20 safety margin)
     "memory_per_worker_mb": None,
 
-    # ---------- 输出 ----------
+    # ---------- Output ----------
     "show_plot": False,
     "save_plot": True,
 }
@@ -148,7 +148,7 @@ def _estimate_safe_workers(file_list: list, requested,
         else:
             memory_per_worker_mb = 500.0
 
-    # 保留 20% 可用内存作为系统缓冲
+    # Keep 20% available memory as system buffer
     usable_mb = available_mb * 0.80
     mem_safe  = max(1, int(usable_mb / memory_per_worker_mb))
     cpu_count = os.cpu_count() or 1
@@ -178,7 +178,7 @@ def _estimate_safe_workers(file_list: list, requested,
 # ──────────────────────────────────────────────────────────────
 
 def get_sorted_fits(data_dir: str, start: int, end: int) -> list:
-    """返回排序后、截取范围内的 FITS 文件路径列表。"""
+    """Return sorted list of FITS file paths within the specified range."""
     all_files = sorted(
         os.path.join(data_dir, f)
         for f in os.listdir(data_dir)
@@ -194,9 +194,9 @@ def get_sorted_fits(data_dir: str, start: int, end: int) -> list:
 
 def read_fits(file_path: str):
     """
-    读取 FITS 文件，返回 (img_data 2D ndarray, header)。
-    优先使用 ImageHDU（hdul[1]），否则使用主 HDU（hdul[0]）。
-    memmap=True 加速大文件顺序读取，.copy() 确保关闭 hdul 后数据仍有效。
+    Read FITS file, return (img_data 2D ndarray, header).
+    Prefer ImageHDU (hdul[1]), otherwise use primary HDU (hdul[0]).
+    memmap=True speeds up sequential reading of large files, .copy() ensures data remains valid after hdul is closed.
     """
     with fits.open(file_path, memmap=True) as hdul:
         if len(hdul) > 1 and isinstance(hdul[1], fits.ImageHDU):
@@ -212,9 +212,9 @@ def read_fits(file_path: str):
 
 def calc_extent(header, img_shape):
     """
-    从 FITS 头文件计算像素坐标 extent（角秒），格式为 imshow 要求的
-    [x_min, x_max, y_max, y_min]。
-    若头文件缺少 WCS 关键字则返回默认值 [-1500, 1500, 1500, -1500]。
+    Calculate pixel coordinate extent (arcsec) from FITS header, in the format required by imshow:
+    [x_min, x_max, y_max, y_min].
+    If the header lacks WCS keywords, return default value [-1500, 1500, 1500, -1500].
     """
     try:
         crval1, crpix1, cdelt1 = header["CRVAL1"], header["CRPIX1"], header["CDELT1"]
@@ -231,8 +231,8 @@ def calc_extent(header, img_shape):
 
 def _global_range_one(fp: str):
     """
-    读取单个文件，返回 (nanmin, nanmax)。
-    供并行调用，独立捕获异常。
+    Read a single file, return (nanmin, nanmax).
+    For parallel calls, exceptions are caught independently.
     """
     try:
         data, _ = read_fits(fp)
@@ -245,13 +245,13 @@ def _global_range_one(fp: str):
 def compute_global_range(file_list: list, fixed_vmin=None, fixed_vmax=None,
                           max_workers: int = 4):
     """
-    并行遍历所有文件统计全局 [vmin, vmax]。
-    fixed_vmin / fixed_vmax 不为 None 时直接返回，跳过统计。
+    Traverse all files in parallel to compute global [vmin, vmax].
+    When fixed_vmin / fixed_vmax are not None, return directly and skip statistics.
 
-    【优化】改用 ThreadPoolExecutor：
-      - 读 FITS + nanmin/nanmax 属于 I/O + NumPy 计算混合，
-        线程池可并行 I/O，NumPy 释放 GIL 后计算也可并行，
-        且不产生进程 fork 开销，内存占用更低。
+    【Optimization】Use ThreadPoolExecutor:
+      - Reading FITS + nanmin/nanmax is a mix of I/O and NumPy computation,
+        ThreadPool can parallelize I/O, NumPy releases GIL so computation can also be parallel,
+        and it avoids process fork overhead, memory usage is lower.
     """
     if fixed_vmin is not None and fixed_vmax is not None:
         return fixed_vmin, fixed_vmax
@@ -292,7 +292,7 @@ def get_polar_from_header(header):
 
 
 def _sorted_fits_for_band(band_dir: str, start_idx: int, end_idx) -> list:
-    """获取指定波段目录中排序后的 FITS 文件列表"""
+    """Get sorted list of FITS files in the specified band directory"""
     if not os.path.isdir(band_dir):
         raise ValueError(f"波段目录不存在：{band_dir}")
 
@@ -314,10 +314,10 @@ def _sorted_fits_for_band(band_dir: str, start_idx: int, end_idx) -> list:
 
 def _build_multi_band_slots(cfg: dict) -> list:
     """
-    构建多波段合成的时间槽（每个槽包含同一时间各波段的文件）。
+    Build multi-band synthesis time slots (each slot contains files of each band at the same time).
 
-    【优化】内层时间槽构建改用 zip(*per_band)，
-    省去嵌套 for 循环，速度略快且代码更简洁。
+    【Optimization】Inner time slot construction changed to zip(*per_band),
+    eliminating nested for loops, slightly faster and more concise code.
     """
     root         = cfg["multi_band_root"]
     freqs        = cfg["multi_band_freqs"]
@@ -347,7 +347,7 @@ def _build_multi_band_slots(cfg: dict) -> list:
 
 
 def _layout_grid(n: int):
-    """自动计算子图布局"""
+    """Automatically calculate subplot layout"""
     if n <= 0:
         return 1, 1
     ncol = max(1, math.ceil(math.sqrt(n)))
@@ -361,8 +361,8 @@ def _layout_grid(n: int):
 
 def _precreate_single_band_dirs(files: list, output_dir: str):
     """
-    在主进程中预先创建所有单波段输出子目录，
-    避免多个子进程并发调用 os.makedirs 竞争文件系统。
+    Pre-create all single-band output subdirectories in the main process,
+    to avoid multiple subprocesses concurrently calling os.makedirs and competing for the file system.
     """
     for fp in files:
         try:
@@ -379,7 +379,7 @@ def _precreate_single_band_dirs(files: list, output_dir: str):
 
 
 def _precreate_multi_band_dir(output_dir: str, cfg: dict) -> str:
-    """预先创建多波段输出子目录，返回目录路径。"""
+    """Pre-create multi-band output subdirectory, return directory path."""
     polarization        = cfg.get("polarization", "RR")
     subdir_template     = cfg.get("multi_band_output_subdir", "multi_band_{polar}")
     multi_output_subdir = subdir_template.format(polar=polarization)
@@ -395,9 +395,9 @@ def _precreate_multi_band_dir(output_dir: str, cfg: dict) -> str:
 def plot_single_band(file_path: str, output_dir: str, cfg: dict,
                      vmin=None, vmax=None) -> str:
     """
-    处理并绘制单个波段 FITS 文件，保存为 PNG 图像。
+    Process and plot a single-band FITS file, save as PNG image.
 
-    注意：输出目录已由主进程预创建，此处直接拼接路径，不再调用 os.makedirs。
+    Note: Output directories have been pre-created by the main process, just concatenate paths here, no need to call os.makedirs.
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -491,9 +491,9 @@ def plot_single_band(file_path: str, output_dir: str, cfg: dict,
 def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
                          cfg: dict, vmin=None, vmax=None) -> str:
     """
-    处理并绘制多波段合成图像（一个时间槽的所有波段）。
+    Process and plot multi-band composite image (all bands in one time slot).
 
-    注意：输出目录已由主进程预创建，此处直接拼接路径。
+    Note: Output directories have been pre-created by the main process, just concatenate paths here.
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -597,7 +597,7 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
 # ──────────────────────────────────────────────────────────────
 
 def _migrate_config(cfg):
-    """向后兼容：将旧的 use_fixed_cbar 配置迁移到新的 color_range_mode"""
+    """Backward compatibility: migrate old use_fixed_cbar configuration to new color_range_mode"""
     if "use_fixed_cbar" in cfg:
         use_fixed_cbar = cfg.pop("use_fixed_cbar")
         if use_fixed_cbar:
@@ -614,7 +614,7 @@ def _migrate_config(cfg):
 
 def main():
     """
-    主函数：根据配置模式处理单波段或多波段射电数据，并行绘图并保存结果。
+    Main function: process single-band or multi-band radio data according to configuration mode, parallel plotting and saving results.
     """
     cfg  = CONFIG
     cfg  = _migrate_config(cfg)
@@ -780,5 +780,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # Windows 系统下多进程必须在此保护块内启动 main()
+    # On Windows, multiprocessing must start main() inside this guard block
     main()
