@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
+Created on Sun Nov 23 00:19:30 2025
+@author: Severus
+
 RS_plot.py: Process solar radio spectrogram (FITS files) and generate single-band or multi-band composite images.
 Supports two operation modes: single-band mode (process FITS files one by one) and multi-band mode (synthesize multiple bands at the same time).
 Supports parallel processing, automatic memory safety detection, multiple color range modes, and generates images with solar limb, coordinate grid, and directional markers.
 
-Created on Sun Nov 23 00:19:30 2025
-@author: Severus
 
 """
 
@@ -36,7 +37,7 @@ CONFIG = {
     # ---------- Polarization configuration ----------
     # "RR": right circular polarization
     # "LL": left circular polarization
-    "polarization": "RR",  # "RR" or "LL"
+    "polarization": "LL",  # "RR" or "LL"
 
     # ---------- Single-band mode configuration ----------
     # Single-file mode: if you only want to plot a single file, fill in the full absolute path here
@@ -46,8 +47,8 @@ CONFIG = {
     "data_dir": r"D:\spike_topping_type_III\2025\20250124\RS_0447-0450\149MHz\RR",
 
     # File range (only effective in batch mode)
-    "start_idx": 1,          # start index (inclusive)
-    "end_idx":   None,          # end index (exclusive)
+    "start_idx": 500,          # start index (inclusive)
+    "end_idx":   1100,          # end index (exclusive)
 
     # ---------- Multi-band mode configuration ----------
     "multi_band_root": r"D:\spike_topping_type_III\2025\20250503\20250503UT071600-072600",
@@ -64,9 +65,9 @@ CONFIG = {
     # "auto": adjust per frame automatically
     # "global": fixed to global min/max values
     # "fixed": fixed to fixed_vmin / fixed_vmax
-    "color_range_mode": "global",
-    "fixed_vmin": None,
-    "fixed_vmax": None,
+    "color_range_mode": "fixed",
+    "fixed_vmin": 0,
+    "fixed_vmax": 4*1e9,
 
     # ---------- Image display limits ----------
     "use_custom_lim": True,
