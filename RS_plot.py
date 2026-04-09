@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 """
+RS_plot.py: 处理太阳射电频谱图（FITS文件）并生成单波段或多波段的合成图像。
+支持两种运行模式：单波段模式（逐个处理FITS文件）和多波段模式（同一时间多个波段合成）。
+支持并行处理、自动内存安全检测、多种色彩范围模式，并生成带有太阳轮廓、坐标网格和方向标记的图像。
 
 Created on Sun Nov 23 00:19:30 2025
 @author: Severus
@@ -22,7 +25,7 @@ from matplotlib.lines import Line2D
 from tqdm import tqdm
 
 # ============================================================
-#   ★ 全部可调参数集中于此，无需深入代码即可修改 ★
+#   ★ 所有可配置参数集中于此，无需深入代码即可调整 ★
 # ============================================================
 CONFIG = {
     # ---------- 运行模式 ----------
@@ -110,18 +113,17 @@ CONFIG = {
 def _estimate_safe_workers(file_list: list, requested,
                             memory_per_worker_mb) -> int:
     """
-    根据可用物理内存和每个 worker 的预估内存开销，
-    计算安全的并行进程数。
+    根据可用物理内存和每个工作进程的预估内存开销，计算安全的并行进程数。
 
-    Parameters
+    参数
     ----------
     file_list            : 待处理文件列表（用于估算单帧内存）
-    requested            : 用户在 CONFIG 中指定的 max_workers（None=自动）
-    memory_per_worker_mb : 每个 worker 预估内存（MB）；None=自动估算
+    requested            : 用户在 CONFIG 中指定的 max_workers（None表示自动）
+    memory_per_worker_mb : 每个工作进程预估内存（MB）；None表示自动估算
 
-    Returns
+    返回
     -------
-    安全的 worker 数（至少为 1）
+    安全的 worker 数量（至少为 1）
     """
     try:
         import psutil
@@ -393,10 +395,9 @@ def _precreate_multi_band_dir(output_dir: str, cfg: dict) -> str:
 def plot_single_band(file_path: str, output_dir: str, cfg: dict,
                      vmin=None, vmax=None) -> str:
     """
-    处理并绘制单个波段 FITS 文件，保存为 PNG。
+    处理并绘制单个波段 FITS 文件，保存为 PNG 图像。
 
-    【优化】输出目录已由主进程预创建，此处直接拼接路径，
-    不再调用 os.makedirs。
+    注意：输出目录已由主进程预创建，此处直接拼接路径，不再调用 os.makedirs。
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -492,7 +493,7 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
     """
     处理并绘制多波段合成图像（一个时间槽的所有波段）。
 
-    【优化】输出目录已由主进程预创建，此处直接拼接路径。
+    注意：输出目录已由主进程预创建，此处直接拼接路径。
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -612,6 +613,9 @@ def _migrate_config(cfg):
 
 
 def main():
+    """
+    主函数：根据配置模式处理单波段或多波段射电数据，并行绘图并保存结果。
+    """
     cfg  = CONFIG
     cfg  = _migrate_config(cfg)
     mode = cfg.get("mode", "single_band")
@@ -776,5 +780,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # Windows 多进程必须在此保护块内启动 main()
+    # Windows 系统下多进程必须在此保护块内启动 main()
     main()
