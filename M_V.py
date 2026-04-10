@@ -40,15 +40,15 @@ import sys
 # ║                    USER CONFIGURATION                       ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-fps           = 22          # Video frame rate
-input_dir     = r'D:\spike_topping_type_III\2025\20250124\RS_multi_band\multi_band_RR'
-output_dir    = r'D:\spike_topping_type_III\2025\20250124\RS_multi_band\video'
-video_name    = "RR.mp4"
+fps           = 12          # Video frame rate
+input_dir     = r'D:\spike_topping_type_III\2025\20250124\AIA\multi_band'
+output_dir    = r'D:\spike_topping_type_III\2025\20250124\AIA\video'
+video_name    = "2.mp4"
 target_suffix = ".png"      # Target file extension (case-insensitive)
 
 # Frame range (based on sorted index, starting from 1)
-start_frame = 1            # Start frame (inclusive)
-end_frame   = None         # End frame (inclusive), None = process until last frame
+start_frame = 351            # Start frame (inclusive)
+end_frame   = 451         # End frame (inclusive), None = process until last frame
 
 # ── Sorting method ──────────────────────────────────────────────────
 #   'filename'  Parse timestamp from filename for sorting (recommended)
