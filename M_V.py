@@ -40,15 +40,15 @@ import sys
 # ║                    USER CONFIGURATION                       ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-fps           = 12          # Video frame rate
-input_dir     = r'D:\spike_topping_type_III\2025\20250428\AIA\multi_band'
-output_dir    = r'D:\spike_topping_type_III\2025\20250428\AIA\video'
-video_name    = "AIA_multi_band.mp4"
+fps           = 22          # Video frame rate
+input_dir     = r'D:\spike_topping_type_III\2025\20250124\RS_multi_band\multi_band_RR'
+output_dir    = r'D:\spike_topping_type_III\2025\20250124\RS_multi_band\video'
+video_name    = "RR.mp4"
 target_suffix = ".png"      # Target file extension (case-insensitive)
 
 # Frame range (based on sorted index, starting from 1)
-start_frame = 66             # Start frame (inclusive)
-end_frame   = None          # End frame (inclusive), None = process until last frame
+start_frame = 1            # Start frame (inclusive)
+end_frame   = None         # End frame (inclusive), None = process until last frame
 
 # ── Sorting method ──────────────────────────────────────────────────
 #   'filename'  Parse timestamp from filename for sorting (recommended)
@@ -72,7 +72,7 @@ target_size = None
 
 # ── Parallel processing ────────────────────────────────────────────────
 # Number of CPU cores to use (0 = auto-detect, 1 = single process, >1 = multiprocess)
-num_workers = 16             # 0 means use all available cores
+num_workers = 12            # 0 means use all available cores
 
 # ╚══════════════════════════════════════════════════════════════╝
 
