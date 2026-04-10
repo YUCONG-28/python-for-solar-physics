@@ -108,8 +108,8 @@ class Config:
     aia_vmin:        float       = 16
     aia_vmax:        float       = 6666
     aia_cmap:        str         = 'sdoaia171'
-    roi_bottom_left: List[float] = field(default_factory=lambda: [-900, -300])
-    roi_top_right:   List[float] = field(default_factory=lambda: [100,  600])
+    roi_bottom_left: List[float] = field(default_factory=lambda: [300, -800])
+    roi_top_right:   List[float] = field(default_factory=lambda: [1500, 300])
 
     band_colors_dict: dict = field(default_factory=lambda: {
         '149.0MHz': ('cyan',    'deepskyblue'),
