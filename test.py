@@ -742,14 +742,17 @@ def process_aia_group(aia_file:    str,
                                label=f"{band_label}{h_label}"))
 
             # --- 4. 绘制波束椭圆（左下角）---
-            if cfg.show_beam and collected_beams:
+            if cfg.overlay_radio and cfg.show_beam and collected_beams:
                 for b_idx, (b_label, beam) in enumerate(collected_beams.items()):
                     b_color, _ = get_band_color(b_label, b_idx, cfg, color_cache)
-                    draw_beam_ellipse_pixel(ax, beam, cutout_aia, color=b_color)
+                    # 根据背景色调整波束颜色
+                    beam_color = 'black' if cfg.canvas_background == 'white' else b_color
+                    draw_beam_ellipse_pixel(ax, beam, cutout_aia, color=beam_color)
 
             # --- 5. 绘制日面边缘（太阳轮廓）---
-            cutout_aia.draw_limb(axes=ax, color='gray', linewidth=1.0,
-                                 linestyle='--', alpha=0.6, label='Solar limb')
+            limb_color = cfg.solar_limb_color if cfg.canvas_background == 'white' else 'gray'
+            cutout_aia.draw_limb(axes=ax, color=limb_color, linewidth=1.5,
+                                 linestyle='--', alpha=cfg.limb_alpha, label='Solar limb')
 
             # --- 6. 图例与标题设置 ---
             # 根据是否叠加射电调整标题
