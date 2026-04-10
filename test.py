@@ -131,6 +131,13 @@ class Config:
     # ★ 优化3：射电数据精度；True = float32（内存减半），False = float64
     radio_use_float32:   bool  = True
 
+    # 投影模式：'simple_2d' 或 'solar_centric'
+    projection_mode:      str   = 'simple_2d'
+    # 是否裁剪到日面范围
+    clip_to_solar_disk:   bool  = False
+    # 射电数据归一化区域 [xmin, ymin, xmax, ymax] (arcsec)，None表示自动
+    radio_normalization_region: Optional[List[float]] = None
+
 # ============================================================
 #  颜色缓存
 # ============================================================
@@ -284,11 +291,17 @@ def compute_contour_levels(data: np.ndarray, cfg: Config) -> List[float]:
         return []
 
     if cfg.normalization_mode == 'rms':
-        rms = estimate_rms_noise(data, cfg.rms_box_fraction)
+        # 使用四分位距估算背景噪声，避免边缘效应
+        q25, q75 = np.percentile(finite_data, [25, 75])
+        iqr = q75 - q25
+        if iqr > 0:
+            rms = iqr / 1.349  # 四分位距到标准差的转换
+        else:
+            rms = np.std(finite_data)
         if rms <= 0:
-            return []
+            rms = estimate_rms_noise(data, cfg.rms_box_fraction)  # 退化为原方法
         peak   = float(np.nanmax(finite_data))
-        levels = [s * rms for s in cfg.rms_sigma_levels if 0 < s * rms < peak]
+        levels = [s * rms for s in cfg.rms_sigma_levels if 0 < s * rms < peak * 1.5]
     else:
         peak   = float(np.nanmax(finite_data))
         levels = [f * peak for f in cfg.contour_levels_peak]
@@ -388,6 +401,39 @@ def reproject_radio_to_aia(radio_data:   np.ndarray,
                                _make_gaussian_kernel(cfg.radio_smooth_sigma),
                                preserve_nan=True)
     return reprojected
+
+def reproject_radio_to_aia_simple(radio_data:   np.ndarray,
+                                  radio_header: fits.Header,
+                                  radio_wcs:    WCS,
+                                  target_shape: Tuple[int, int],
+                                  aia_wcs_2d:   WCS,
+                                  cfg:          Config) -> Optional[np.ndarray]:
+    """
+    简化的二维投影：将射电数据直接投影到AIA坐标系
+    不限制在太阳盘面内，保留完整的射电视场
+    """
+    try:
+        # 1. 直接重投影到AIA的WCS
+        reprojected, footprint = reproject_interp(
+            (radio_data, radio_wcs), aia_wcs_2d,
+            shape_out=target_shape, order=cfg.reproject_order
+        )
+        
+        # 2. 保留所有投影数据，不强制设为NaN
+        # 只在完全没有投影数据的位置设为NaN
+        reprojected[footprint == 0] = np.nan
+        
+        # 3. 可选：轻微平滑用于显示
+        if cfg.radio_smooth_sigma > 0:
+            reprojected = convolve(reprojected.astype(np.float64),
+                                   _make_gaussian_kernel(cfg.radio_smooth_sigma),
+                                   preserve_nan=True)
+        
+        return reprojected
+        
+    except Exception as e:
+        print(f"    [警告] 简化的WCS重投影失败: {e}")
+        return None
 
 # ============================================================
 #  展示级等值线平滑（归一化卷积，正确处理 NaN 边界）
@@ -615,10 +661,10 @@ def process_aia_group(aia_file:    str,
                         if beam and band_label not in collected_beams:
                             collected_beams[band_label] = beam
 
-                        reprojected = reproject_radio_to_aia(
+                        # 使用简化二维投影，忽略太阳自转修正
+                        reprojected = reproject_radio_to_aia_simple(
                             radio_data_2d, radio_header_2d, radio_wcs_2d,
-                            target_shape, aia_wcs_2d,
-                            radio_time, aia_time, height_rsun, cfg
+                            target_shape, aia_wcs_2d, cfg
                         )
                         if (reprojected is None
                                 or np.isnan(np.nanmax(reprojected))
