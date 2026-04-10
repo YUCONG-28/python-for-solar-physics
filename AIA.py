@@ -55,7 +55,6 @@ AIA_CONFIG: dict = {
     193: {'cmap': 'sdoaia193','vmin':42, 'vmax': 6666},
     211: {'cmap': 'sdoaia211','vmin':18, 'vmax': 6666},
     304: {'cmap': 'sdoaia304','vmin':0.9, 'vmax': 2222},
-    335: {'cmap': 'sdoaia335'},
 }
 
 
@@ -105,6 +104,8 @@ class AIAConfig:
     def __post_init__(self):
         if self.output_dir is None:
             self.output_dir = self.data_path
+        if self.multi_band_composite and self.multi_band_wavelengths is None:
+            self.multi_band_wavelengths = (94, 131, 171, 193, 211, 304)
 
 
 # ==============================================================================
