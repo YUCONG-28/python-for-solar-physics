@@ -4,54 +4,10 @@ Created on Wed Jan 21 22:57:26 2026
 
 @author: Severus
 
-================================================================================
-【图像叠加方法说明】
-================================================================================
-本程序实现太阳多波段观测数据的叠加绘图，将 AIA 171Å EUV 图像、射电成像观测（MUSER 等）
-以及 HMI 磁图叠加在同一张图中。叠加顺序和核心步骤如下：
-
-1. **底图绘制（AIA 171Å）**
-   - 读取 AIA FITS 文件，生成 sunpy.map.GenericMap 对象。
-   - 根据配置的 ROI（底部左下角、右上角坐标）裁剪出日面局部区域。
-   - 使用对数归一化（LogNorm）和 SDO AIA 171Å 专用颜色表显示，作为图像背景。
-
-2. **HMI 磁图叠加（可选）**
-   - 读取 HMI 磁图 FITS 文件，利用 sunpy.map 的 `reproject_to()` 方法将磁图重投影到
-     与 AIA 裁剪后相同的 WCS 投影和像素网格上。
-   - 对重投影后的数据进行高斯平滑（sigma 可配），并过滤低于阈值的弱信号。
-   - 绘制正、负磁图等值线（正极红色，负极蓝色），叠加在 AIA 底图之上。
-
-3. **射电成像数据叠加**
-   - 对每一个选定的射电频率波段（如 149MHz、164MHz 等），读取其 FITS 文件。
-   - 从 FITS 头中提取观测时间、WCS 信息、波束参数（BMAJ, BMIN, BPA）。
-   - 使用 `reproject_interp` 将射电图像重投影到 AIA 裁剪图的 WCS 和目标形状上。
-   - 若启用太阳自转修正，计算从射电观测时刻到 AIA 观测时刻的日面自转位移，
-     对重投影后的图像进行亚像素平移。
-   - 对重投影数据进行可选的高斯平滑（数据级）。
-   - 根据配置的归一化模式（peak 或 rms）计算等值线层级：
-        * peak 模式：层级 = 峰值 × 百分比（如 [0.95]）。
-        * rms 模式：先估计图像角部噪声 RMS，层级 = RMS × 倍数（如 [5,15,30]）。
-   - 绘制等值线，不同波段使用不同颜色（主色和暗色区分内外层），叠加在 HMI 等值线之上。
-   - 若配置显示波束椭圆，根据 FITS 头中的波束参数和 AIA 图像尺度，在左下角绘制
-     对应颜色的椭圆，标注“Beam”。
-
-4. **时间匹配与序列切片**
-   - 扫描射电数据目录，提取每个 FITS 文件的观测时间和所属频率波段。
-   - 对每张 AIA 图像，查找时间差在阈值内的所有射电数据，按波段分组。
-   - 在每个波段组内，将射电数据按时间排序并截取前 N 个（max_radio_per_band）。
-   - 取所有波段的最小切片长度，生成“横向切片”：每个切片包含每个波段的一个观测时刻，
-     且这些时刻在时间上对齐（按索引位置匹配）。
-   - 对于每个 AIA 图像 + 其对应的切片列表，依次绘制每一帧：AIA 底图 + HMI 等值线 +
-     所有波段的射电等值线 + 波束椭圆 + 日面边缘。
-
-5. **绘图与输出**
-   - 所有叠加元素绘制在同一 WCS 投影坐标系中，坐标轴单位为角秒（arcsec）。
-   - 图标题显示射电观测时间、偏振模式等。
-   - 图例展示各波段的频率及其对应的日冕高度（根据频率经验公式估算）。
-   - 最终输出 PNG 图片，保存至配置的输出目录。
-
-================================================================================
 """
+
+import matplotlib
+matplotlib.use('Agg')   # ★ 优化5：非交互后端，子进程安全，节省内存
 
 import os
 import gc
@@ -66,7 +22,7 @@ from matplotlib.patches import Ellipse
 from matplotlib.lines import Line2D
 from astropy.io import fits
 from astropy.wcs import WCS
-from astropy.time import Time as ATime          # 修复5：移至模块顶层
+from astropy.time import Time as ATime
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.convolution import convolve, Gaussian2DKernel
@@ -79,7 +35,8 @@ from scipy.ndimage import gaussian_filter
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Dict
 from datetime import datetime
-from functools import lru_cache
+from functools import lru_cache, partial
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -113,7 +70,7 @@ class Config:
     radio_base_dir: str = r'<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600'
     aia_base_dir:   str = r'<PROJECT_ROOT>\2025\20250503\AIA\171'
     hmi_base_dir:   str = r'<PROJECT_ROOT>\2025\20250503\AIA\hmi'
-    output_dir:     str = r'<PROJECT_ROOT>\2025\20250503\overlap\LL'
+    output_dir:     str = r'<PROJECT_ROOT>\2025\20250503\overlap\test'
 
     save_figure:        bool          = True
     dpi:                int           = 300
@@ -133,10 +90,10 @@ class Config:
 
     contour_linewidths:  List[float]  = field(default_factory=lambda: [2.0])
     contour_alpha:       float        = 0.90
-    contour_smooth_sigma: float       = 0   #3.0 is original 展示级平滑 sigma（像素），0 = 关闭
+    contour_smooth_sigma: float       = 0   # 展示级平滑 sigma（像素），0 = 关闭
 
     apply_solar_rotation_correction: bool = True
-    reproject_order:     int          = 2 # 1 is original
+    reproject_order:     int          = 2
     radio_smooth_sigma:  float        = 1.0   # 重投影后数据级平滑
 
     show_beam:           bool         = True
@@ -167,8 +124,15 @@ class Config:
         ('pink', 'hotpink'), ('skyblue', 'deepskyblue'), ('violet', 'darkviolet'),
     ])
 
+    # ★ 优化1：用户可配核心数；1 = 单进程（调试模式），>1 = 多进程
+    num_workers:         int   = 4
+    # ★ 优化2：内存占用上限（%），超过则暂停提交新任务或等待释放
+    memory_limit_pct:    float = 85.0
+    # ★ 优化3：射电数据精度；True = float32（内存减半），False = float64
+    radio_use_float32:   bool  = True
+
 # ============================================================
-#  颜色缓存（修复7）
+#  颜色缓存
 # ============================================================
 def _build_band_color_cache(cfg: Config) -> List[Tuple[float, Tuple]]:
     """将 band_colors_dict 解析为 [(mhz_float, (main, dark)), ...]，仅需调用一次。"""
@@ -180,7 +144,7 @@ def _build_band_color_cache(cfg: Config) -> List[Tuple[float, Tuple]]:
     return cache
 
 # ============================================================
-#  Gaussian 核缓存（修复6）
+#  Gaussian 核缓存
 # ============================================================
 @lru_cache(maxsize=16)
 def _make_gaussian_kernel(sigma: float) -> Gaussian2DKernel:
@@ -233,15 +197,20 @@ def parse_hmi_time_from_filename(filename: str) -> Optional[datetime]:
 # ============================================================
 #  射电数据工具
 # ============================================================
-def extract_radio_2d_data(hdu) -> Tuple[np.ndarray, fits.Header]:
-    """从 FITS HDU 中提取二维射电图像数据（自动压缩高维）。"""
+def extract_radio_2d_data(hdu, use_float32: bool = True) -> Tuple[np.ndarray, fits.Header]:
+    """
+    从 FITS HDU 中提取二维射电图像数据（自动压缩高维）。
+    ★ 优化3：use_float32=True 时使用 float32，内存减半；
+    仅在 contour/smooth 前转 float64，计算精度不受影响。
+    """
     data = hdu.data
     while data.ndim > 2:
         data = data[0]
-    return np.squeeze(data).astype(np.float64), hdu.header.copy()
+    dtype = np.float32 if use_float32 else np.float64
+    return np.squeeze(data).astype(dtype), hdu.header.copy()
 
 def _get_header_val(header: fits.Header, keys: List[str], default):
-    """修复13：模块级工具函数，替代 build_radio_wcs_2d 内的嵌套闭包。"""
+    """模块级工具函数，替代 build_radio_wcs_2d 内的嵌套闭包。"""
     for k in keys:
         if k in header and header[k] is not None:
             return header[k]
@@ -327,7 +296,7 @@ def compute_contour_levels(data: np.ndarray, cfg: Config) -> List[float]:
     return levels if levels else []
 
 # ============================================================
-#  太阳自转修正（修复5/12）
+#  太阳自转修正
 # ============================================================
 def apply_solar_rotation(coord_hpc: SkyCoord, t_from: datetime, t_to: datetime,
                           height_rsun: float = 1.0) -> SkyCoord:
@@ -335,7 +304,6 @@ def apply_solar_rotation(coord_hpc: SkyCoord, t_from: datetime, t_to: datetime,
     将给定日面坐标从 t_from 时刻通过太阳较差自转推算到 t_to 时刻。
     使用 Stonyhurst 经度纬度，考虑纬度相关的自转速率。
     """
-    # ATime 已在模块级导入，直接使用，无 import 开销
     t_from_ap = ATime(t_from.isoformat())
     t_to_ap   = ATime(t_to.isoformat())
 
@@ -361,13 +329,13 @@ def apply_solar_rotation(coord_hpc: SkyCoord, t_from: datetime, t_to: datetime,
     return new_hgs.transform_to(frames.Helioprojective(obstime=t_to_ap, observer='earth'))
 
 # ============================================================
-#  重投影（修复2/11：接收预提取的 target_shape + aia_wcs_2d）
+#  重投影（接收预提取的 target_shape + aia_wcs_2d）
 # ============================================================
 def reproject_radio_to_aia(radio_data:   np.ndarray,
                             radio_header: fits.Header,
                             radio_wcs:    WCS,
-                            target_shape: Tuple[int, int],   # 由调用方预提取
-                            aia_wcs_2d:   WCS,               # 由调用方预提取
+                            target_shape: Tuple[int, int],
+                            aia_wcs_2d:   WCS,
                             radio_time:   Optional[datetime],
                             aia_time:     Optional[datetime],
                             height_rsun:  float,
@@ -375,6 +343,8 @@ def reproject_radio_to_aia(radio_data:   np.ndarray,
     """
     将射电图像重投影到 AIA 裁剪图的 WCS 和形状上。
     可选：太阳自转修正、数据级平滑。
+    ★ 优化3：reproject 输入为 float32，输出也是 float32；
+    smooth 前转 float64 以保持精度。
     """
     try:
         reprojected, footprint = reproject_interp(
@@ -404,8 +374,6 @@ def reproject_radio_to_aia(radio_data:   np.ndarray,
             shift_y  = float(px_aia[1] - px_radio[1])
 
             if abs(shift_x) >= 0.05 or abs(shift_y) >= 0.05:
-                # mode='constant', cval=nan：位移边界正确填 nan，
-                # 不叠加原始 footprint（原 footprint 未随位移，会错误掩有效区）
                 reprojected = nd_shift(
                     np.nan_to_num(reprojected, nan=0.0),
                     shift=[shift_y, shift_x], order=1,
@@ -414,9 +382,9 @@ def reproject_radio_to_aia(radio_data:   np.ndarray,
         except Exception:
             pass
 
-    # 修复6：用缓存的 kernel，sigma 相同时不重建
+    # ★ 优化3：平滑前转 float64 保证精度
     if cfg.radio_smooth_sigma > 0:
-        reprojected = convolve(reprojected,
+        reprojected = convolve(reprojected.astype(np.float64),
                                _make_gaussian_kernel(cfg.radio_smooth_sigma),
                                preserve_nan=True)
     return reprojected
@@ -516,20 +484,20 @@ def process_aia_group(aia_file:    str,
                        task_index: int,
                        total_tasks: int,
                        cfg:         Config,
-                       color_cache: List):     # 修复7：从 main() 接收，不在此重建
+                       color_cache: List):
     """
     单个 AIA 图像 + 其所有射电时间切片。
     AIA 底图、HMI、aia_wcs_2d 只准备一次，全部子帧复用后彻底释放。
+    ★ 优化5：子进程通过 _worker_init 已设置 Agg 后端，无需额外处理。
     """
-    check_memory_usage(limit=90.0)
+    check_memory_usage(limit=cfg.memory_limit_pct)
     print(f"\n[{task_index}/{total_tasks}] 加载 AIA: {os.path.basename(aia_file)}")
 
-    # 修复8：O(1) 字典，替代 list.index() O(n)
+    # O(1) 字典，替代 list.index() O(n)
     selected_bands_idx: Dict[str, int] = {b: i for i, b in enumerate(cfg.selected_bands)}
 
     aia_cmap_name = cfg.aia_cmap if cfg.aia_cmap in plt.colormaps() else 'hot'
 
-    # 修复3：初始化为 None，保证 finally del 始终安全
     aia_map = cutout_aia = hmi_processed = None
 
     try:
@@ -554,24 +522,24 @@ def process_aia_group(aia_file:    str,
                       frame=aia_map.coordinate_frame)
         cutout_aia = aia_map.submap(bl, top_right=tr)
 
-        # 修复2：提前提取一次，全部子帧/波段/fits 复用
+        # 提前提取一次，全部子帧/波段/fits 复用
         target_shape = cutout_aia.data.shape
         aia_wcs_2d   = cutout_aia.wcs
         if aia_wcs_2d.world_n_dim > 2:
             aia_wcs_2d = aia_wcs_2d.celestial
-        target_wcs = cutout_aia.wcs   # 用于 ax 投影和 HMI
+        target_wcs = cutout_aia.wcs
 
         # 预处理 HMI 磁图（若启用）
         hmi_processed = (process_hmi_for_overlay(hmi_file, target_wcs, cfg)
                          if cfg.overlay_hmi and hmi_file else None)
 
-        # 修复9：makedirs 移出子帧循环，每组 AIA 最多执行一次
+        # makedirs 移出子帧循环，每组 AIA 最多执行一次
         if cfg.save_figure:
             os.makedirs(cfg.output_dir, exist_ok=True)
 
         # 遍历该 AIA 对应的每个射电时间切片
         for sub_index, single_slice_bands in sub_tasks:
-            check_memory_usage(limit=90.0)
+            check_memory_usage(limit=cfg.memory_limit_pct)
             print(f"  -> 绘制序列帧 {sub_index + 1}/{len(sub_tasks)}")
 
             fig = plt.figure(figsize=(12, 10))
@@ -587,7 +555,7 @@ def process_aia_group(aia_file:    str,
             ax.coords.grid(False)
 
             legend_handles   = []
-            first_radio_time = None          # 修复10：单变量替代列表
+            first_radio_time = None
             collected_beams: Dict[str, Dict] = {}
 
             # --- 2. 叠加 HMI 等值线（正极红，负极蓝）---
@@ -604,18 +572,15 @@ def process_aia_group(aia_file:    str,
                            label=f'-{cfg.hmi_levels_gauss[0]:.0f}G'),
                 ]
 
-            # 修复4：正则只搜索一次（命名函数，避免 lambda 中双搜索）
             def _band_freq_key(item: Tuple[str, list]) -> float:
                 mobj = _RE_BAND_SORTED.search(item[0])
                 return float(mobj.group(1)) if mobj else 0.0
 
-            # 修复14：band_groups 在 build_matched_pairs 已按时间排好序，
-            # 此处只需按频率对波段排序
             sorted_bands = sorted(single_slice_bands.items(), key=_band_freq_key)
 
             # --- 3. 叠加射电等值线（每个波段一种颜色）---
             for band_idx, (band_label, file_list) in enumerate(sorted_bands):
-                orig_band_idx = selected_bands_idx.get(band_label, band_idx)  # 修复8
+                orig_band_idx = selected_bands_idx.get(band_label, band_idx)
                 main_color, dark_color = get_band_color(
                     band_label, orig_band_idx, cfg, color_cache)
 
@@ -629,7 +594,6 @@ def process_aia_group(aia_file:    str,
                             and polarization != cfg.polarization_mode):
                         continue
                     try:
-                        # 修复1：beam params 在 with 块内读取，FITS 关闭前完成
                         with fits.open(fits_path) as hdul:
                             img_hdu = next(
                                 (h for h in hdul
@@ -637,8 +601,10 @@ def process_aia_group(aia_file:    str,
                                  and h.data is not None and h.data.ndim >= 2),
                                 hdul[0]
                             )
-                            radio_data_2d, radio_header_2d = extract_radio_2d_data(img_hdu)
-                            beam = get_beam_params_from_header(img_hdu.header)  # ← with 内
+                            # ★ 优化3：传入 use_float32 参数
+                            radio_data_2d, radio_header_2d = extract_radio_2d_data(
+                                img_hdu, use_float32=cfg.radio_use_float32)
+                            beam = get_beam_params_from_header(img_hdu.header)
 
                         if radio_data_2d is None or radio_data_2d.size == 0:
                             continue
@@ -649,7 +615,6 @@ def process_aia_group(aia_file:    str,
                         if beam and band_label not in collected_beams:
                             collected_beams[band_label] = beam
 
-                        # 修复2/11：传 target_shape + aia_wcs_2d，不传整个 cutout_aia
                         reprojected = reproject_radio_to_aia(
                             radio_data_2d, radio_header_2d, radio_wcs_2d,
                             target_shape, aia_wcs_2d,
@@ -678,7 +643,6 @@ def process_aia_group(aia_file:    str,
                                    colors=colors_list, linewidths=lws,
                                    alpha=cfg.contour_alpha)
 
-                        # 修复10：只记录第一个时间
                         if radio_time and first_radio_time is None:
                             first_radio_time = radio_time
                         drawn_any = True
@@ -742,16 +706,44 @@ def process_aia_group(aia_file:    str,
         traceback.print_exc()
 
     finally:
-        # 修复3：去除死代码，变量已初始化为 None，直接 del 始终安全
         del aia_map, cutout_aia, hmi_processed
         gc.collect()
+
+# ============================================================
+#  ★ 优化4：射电头文件并行读取（线程池，I/O 密集型）
+# ============================================================
+def _read_one_radio_header(rf: str,
+                            selected_bands: Tuple[str, ...],
+                            pol: str) -> Optional[Dict]:
+    """
+    读取单个射电 FITS 文件的头文件并解析时间。
+    设计为可被 ThreadPoolExecutor 并发调用的顶层函数（可 pickle）。
+    """
+    band_found = next((b for b in selected_bands if b in rf), None)
+    if not band_found:
+        return None
+    try:
+        hdr      = fits.getheader(rf)
+        date_obs = str(hdr.get('DATE-OBS', '')).strip()
+        r_time   = None
+        for fmt in _DATETIME_FMTS:
+            try:
+                r_time = datetime.strptime(date_obs, fmt)
+                break
+            except ValueError:
+                continue
+        if r_time:
+            return {'path': rf, 'band': band_found, 'pol': pol, 'time': r_time}
+    except Exception:
+        pass
+    return None
 
 # ============================================================
 def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
     """
     扫描并匹配 AIA 图像与射电数据、HMI 磁图。
-    返回任务列表，每个元素为 (aia_file, hmi_file, sub_tasks)，
-    其中 sub_tasks 是该 AIA 对应的所有时间切片，每个切片是一个波段->单个观测的字典。
+    返回任务列表，每个元素为 (aia_file, hmi_file, sub_tasks)。
+    ★ 优化4：fits.getheader 改为线程池并发读取，显著缩短扫描时间。
     """
     print("=" * 60)
     print("正在扫描并进行横向切片匹配，请稍候...")
@@ -775,34 +767,27 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
     files_with_pol_name = glob.glob(os.path.join(cfg.radio_base_dir, "**", f"*{pol}*.fits"),
                                     recursive=True)
     radio_files = list(set(files_in_pol_dir + files_with_pol_name))
-    print(f"成功锁定 {len(radio_files)} 个 {pol} 射电文件。正在提取观测时间...")
+    print(f"成功锁定 {len(radio_files)} 个 {pol} 射电文件。正在并发提取观测时间...")
+
+    # ★ 优化4：线程池并发读取头文件（I/O 密集，线程安全）
+    #   线程数取 min(32, cpu_count*2, 文件数)，避免创建过多线程
+    max_io_threads = min(32, (os.cpu_count() or 4) * 2, max(1, len(radio_files)))
+    selected_bands_tuple = tuple(cfg.selected_bands)   # tuple 可 hash，便于 partial
+    _read_fn = partial(_read_one_radio_header,
+                       selected_bands=selected_bands_tuple, pol=pol)
 
     radio_cache: List[Dict] = []
-    for rf in radio_files:
-        band_found = next((b for b in cfg.selected_bands if b in rf), None)
-        if not band_found:
-            continue
-        try:
-            hdr      = fits.getheader(rf)
-            date_obs = str(hdr.get('DATE-OBS', '')).strip()
-            r_time   = None
-            for fmt in _DATETIME_FMTS:
-                try:
-                    r_time = datetime.strptime(date_obs, fmt)
-                    break
-                except ValueError:
-                    continue
-            if r_time:
-                radio_cache.append({'path': rf, 'band': band_found,
-                                    'pol': pol, 'time': r_time})
-        except Exception:
-            pass
+    with ThreadPoolExecutor(max_workers=max_io_threads) as executor:
+        results = executor.map(_read_fn, radio_files)
+        radio_cache = [r for r in results if r is not None]
+
+    print(f"  读取完毕，有效射电观测记录: {len(radio_cache)} 条")
 
     start_idx        = cfg.aia_file_start_idx if cfg.aia_file_start_idx is not None else 0
     end_idx          = cfg.aia_file_end_idx   if cfg.aia_file_end_idx   is not None else len(aia_files)
     target_aia_files = aia_files[start_idx:end_idx]
 
-    hmi_threshold_sec = cfg.hmi_time_threshold * 3600   # 避免循环内重复乘法
+    hmi_threshold_sec = cfg.hmi_time_threshold * 3600
     grouped_tasks     = []
 
     for aia_file in target_aia_files:
@@ -829,7 +814,7 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
         if not band_groups:
             continue
 
-        # 修复14：在匹配阶段排序 + 截断，process 时无需每帧重复 sorted()
+        # 匹配阶段排序 + 截断，process 时无需每帧重复 sorted()
         for band in band_groups:
             band_groups[band].sort(key=lambda x: x[2])
             band_groups[band] = band_groups[band][:cfg.max_radio_per_band]
@@ -851,10 +836,23 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
     return grouped_tasks
 
 # ============================================================
+#  ★ 优化1：子进程初始化器
+# ============================================================
+def _worker_init():
+    """
+    ProcessPoolExecutor 子进程启动时调用，确保每个 worker 使用非交互式
+    Matplotlib 后端（Agg），避免 GUI 资源争用和内存泄漏。
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import warnings
+    warnings.filterwarnings('ignore')
+
+# ============================================================
 def main():
     cfg = Config()
 
-    # 修复7：颜色缓存整个运行只构建一次，传给每次 process_aia_group 调用
+    # 颜色缓存整个运行只构建一次
     color_cache = _build_band_color_cache(cfg)
 
     grouped_tasks = build_matched_pairs(cfg)
@@ -862,16 +860,54 @@ def main():
         print("[提示] 没有找到匹配的数据对。请检查时间阈值或路径设置。")
         return
 
-    for task_index, (aia_file, hmi_file, sub_tasks) in enumerate(grouped_tasks):
-        process_aia_group(
-            aia_file=aia_file,
-            hmi_file=hmi_file,
-            sub_tasks=sub_tasks,
-            task_index=task_index + 1,
-            total_tasks=len(grouped_tasks),
-            cfg=cfg,
-            color_cache=color_cache,
-        )
+    total = len(grouped_tasks)
+
+    # ★ 优化1：根据 num_workers 选择单进程或多进程模式
+    if cfg.num_workers <= 1:
+        # ── 单进程模式（调试友好，异常信息完整）──────────────────────
+        print(f"[模式] 单进程，共 {total} 组任务")
+        for task_index, (aia_file, hmi_file, sub_tasks) in enumerate(grouped_tasks):
+            process_aia_group(
+                aia_file=aia_file,
+                hmi_file=hmi_file,
+                sub_tasks=sub_tasks,
+                task_index=task_index + 1,
+                total_tasks=total,
+                cfg=cfg,
+                color_cache=color_cache,
+            )
+    else:
+        # ── 多进程模式（并行加速）──────────────────────────────────────
+        print(f"[模式] 多进程，核心数={cfg.num_workers}，共 {total} 组任务")
+        print(f"[内存] 内存占用上限={cfg.memory_limit_pct}%")
+
+        with ProcessPoolExecutor(max_workers=cfg.num_workers,
+                                  initializer=_worker_init) as executor:
+            # 逐一提交任务；每次提交前检查内存，防止大批任务同时驻留
+            futures: Dict = {}
+            for task_index, (aia_file, hmi_file, sub_tasks) in enumerate(grouped_tasks):
+
+                # ★ 优化2：提交前检查内存，避免排队任务撑爆内存
+                check_memory_usage(limit=cfg.memory_limit_pct)
+
+                fut = executor.submit(
+                    process_aia_group,
+                    aia_file, hmi_file, sub_tasks,
+                    task_index + 1, total,
+                    cfg, color_cache,
+                )
+                futures[fut] = task_index + 1
+
+            # 等待所有任务完成，捕获子进程异常
+            for fut in as_completed(futures):
+                idx = futures[fut]
+                try:
+                    fut.result()
+                    print(f"[完成] 任务 {idx}/{total}")
+                except Exception as exc:
+                    print(f"[错误] 任务 {idx}/{total} 失败: {exc}")
+
+    print("\n全部任务处理完毕。")
 
 if __name__ == "__main__":
     main()

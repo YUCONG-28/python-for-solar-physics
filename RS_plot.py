@@ -47,18 +47,18 @@ CONFIG = {
     "data_dir": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450\149MHz\RR",
 
     # File range (only effective in batch mode)
-    "start_idx": 500,          # start index (inclusive)
-    "end_idx":   1100,          # end index (exclusive)
+    "start_idx": 1400,          # start index (inclusive)
+    "end_idx":   1900,          # end index (exclusive)
 
     # ---------- Multi-band mode configuration ----------
-    "multi_band_root": r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600",
-    "multi_band_freqs": [149, 164, 190, 238, 285, 324],
+    "multi_band_root": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450",
+    "multi_band_freqs": [149, 164, 190, 223, 238, 285, 300, 309, 324],
     "band_dir_pattern": "{freq}MHz/{polar}",
     "multi_band_output_subdir": "multi_band_{polar}",
     "multi_band_layout": "auto",
 
     # ---------- Output configuration ----------
-    "output_dir": r'<PROJECT_ROOT>\2025\20250503\RS_multi_band',
+    "output_dir": r'<PROJECT_ROOT>\2025\20250124\RS_multi_band',
     "multi_band_also_save_single": False,
 
     # ---------- Color range ----------
@@ -71,8 +71,8 @@ CONFIG = {
 
     # ---------- Image display limits ----------
     "use_custom_lim": True,
-    "custom_xlim":    (-1150, 1150),
-    "custom_ylim":    (-1150, 1150),
+    "custom_xlim":    (-1500, 1500),
+    "custom_ylim":    (-1500, 1500),
 
     # ---------- Image appearance ----------
     "fig_size":            (18, 16),
@@ -93,7 +93,7 @@ CONFIG = {
     #   None  → program automatically calculates safe upper limit based on 【available memory / estimated per-frame memory】
     #   integer  → force specified (e.g., setting to 4 will use at most 4 cores)
     #   Note: setting too high may cause out-of-memory crashes, it is recommended to start with None for auto estimation
-    "max_workers": 8,
+    "max_workers": None,
 
     # memory_per_worker_mb: estimated memory per worker (MB)
     #   used for automatic safe max_workers calculation, can be adjusted according to actual FITS file size
