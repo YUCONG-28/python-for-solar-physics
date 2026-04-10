@@ -60,11 +60,11 @@ AIA_CONFIG: dict = {
 
 @dataclass
 class AIAConfig:
-    data_path:  str           = r'<PROJECT_ROOT>\2025\20250124\AIA'
+    data_path:  str           = r'<PROJECT_ROOT>\2025\20250503\AIA'
     output_dir: Optional[str] = None
     start_idx: int            = 0
     end_idx:   Optional[int]  = None
-    roi_bounds: Tuple[float, float, float, float] = (600, 1200, -300, 100) # (xmin, xmax, ymin, ymax)
+    roi_bounds: Tuple[float, float, float, float] = (-700, -100, -100, 400) # (xmin, xmax, ymin, ymax)
     user_vmin: Optional[float] = None
     user_vmax: Optional[float] = None
     user_cmap: Optional[str]   = None
@@ -195,7 +195,7 @@ def _discover_wavelength_dirs(data_path: Path) -> Tuple[int, ...]:
 
 
 def _sorted_fits_for_band(data_path: Path, wave: int, use_band_subdirs: bool) -> List[Path]:
-    band_dir = (data_path / str(wave)/'1') if use_band_subdirs else data_path
+    band_dir = (data_path / str(wave)) if use_band_subdirs else data_path
     if not band_dir.is_dir():
         raise ValueError(f"Band directory does not exist: {band_dir}")
     files = sorted(band_dir.rglob("*.fits"), key=lambda p: _parse_timestr(p))
