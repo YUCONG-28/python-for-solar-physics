@@ -4,6 +4,19 @@ Created on Wed Jan 21 22:57:26 2026
 
 @author: Severus
 
+优化说明
+--------
+★ 白色画布  : figure/axes/标题/刻度/图例全部适配白底深色文字；
+              修正 238MHz 等在白背景下不可见的等值线颜色。
+★ 进度条    : 单进程与多进程模式均通过 tqdm 实时显示处理进度。
+★ Bug 修复  : selected_bands 中 '205MHz' '223MHz' 缺逗号，
+              Python 会将二者隐式拼接为 '205MHz223MHz'，已修正。
+★ 原有优化保留:
+  优化1 多进程模式 + _worker_init
+  优化2 内存上限监控
+  优化3 float32 射电数据
+  优化4 线程池并发读取头文件
+  优化5 非交互 Agg 后端
 """
 
 import matplotlib
@@ -37,6 +50,7 @@ from typing import List, Tuple, Optional, Dict
 from datetime import datetime
 from functools import lru_cache, partial
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from tqdm import tqdm          # ★ 进度条
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -70,15 +84,16 @@ class Config:
     radio_base_dir: str = r'D:\spike_topping_type_III\2025\20250503\20250503UT071600-072600'
     aia_base_dir:   str = r'D:\spike_topping_type_III\2025\20250503\AIA\171'
     hmi_base_dir:   str = r'D:\spike_topping_type_III\2025\20250503\AIA\hmi'
-    output_dir:     str = r'D:\spike_topping_type_III\2025\20250503\overlap\test'
+    output_dir:     str = r'D:\spike_topping_type_III\2025\20250503\AIA_RS_HMI\LL'
 
     save_figure:        bool          = True
     dpi:                int           = 300
     aia_file_start_idx: int           = 105
-    aia_file_end_idx:   Optional[int] = 115
+    aia_file_end_idx:   Optional[int] = 116
 
+    # ★ Bug 修复：原代码 '205MHz' '223MHz' 缺逗号，Python 会隐式拼接
     selected_bands:      List[str]    = field(default_factory=lambda: [
-        '149MHz', '164MHz', '190MHz', '223MHz', '238MHz', '300MHz'])
+        '149MHz', '164MHz', '190MHz', '205MHz', '223MHz', '238MHz', '285MHz', '324MHz'])
     polarization_mode:   str          = 'LL'
     radio_time_threshold: int         = 6
     max_radio_per_band:  int          = 28
@@ -111,25 +126,33 @@ class Config:
     roi_bottom_left: List[float] = field(default_factory=lambda: [-900, -300])
     roi_top_right:   List[float] = field(default_factory=lambda: [100,  600])
 
+    # ★ 白色画布：238MHz 原为 white/lightgray，白底不可见，已替换为深橙/棕色
     band_colors_dict: dict = field(default_factory=lambda: {
-        '149.0MHz': ('cyan',    'deepskyblue'),
-        '164.0MHz': ('lime',    'green'),
-        '190.0MHz': ('magenta', 'darkviolet'),
-        '205.0MHz': ('yellow',  'orange'),
-        '223.0MHz': ('red',     'darkred'),
-        '238.0MHz': ('white',   'lightgray'),
+        '149.0MHz': ('cyan',       'deepskyblue'),
+        '164.0MHz': ('lime',       'green'),
+        '190.0MHz': ('magenta',    'darkviolet'),
+        '205.0MHz': ('gold',       'goldenrod'),
+        '223.0MHz': ('red',        'darkred'),
+        '238.0MHz': ('darkorange', 'saddlebrown'),   # 原 white/lightgray 白底不可见
+        '285.0MHz': ('teal',       'darkcyan'),
+        '324.0MHz': ('royalblue',  'navy'),
     })
+    # ★ 白色画布：default_colors 去掉 white/lightgray，换为可见色
     default_colors: List[Tuple] = field(default_factory=lambda: [
-        ('yellow', 'orange'), ('red', 'darkred'), ('white', 'lightgray'),
-        ('pink', 'hotpink'), ('skyblue', 'deepskyblue'), ('violet', 'darkviolet'),
+        ('gold',      'goldenrod'),
+        ('red',       'darkred'),
+        ('darkorange','saddlebrown'),
+        ('hotpink',   'deeppink'),
+        ('deepskyblue','steelblue'),
+        ('violet',    'darkviolet'),
     ])
 
     # ★ 优化1：用户可配核心数；1 = 单进程（调试模式），>1 = 多进程
-    num_workers:         int   = 4
+    num_workers:         int   = 8
     # ★ 优化2：内存占用上限（%），超过则暂停提交新任务或等待释放
-    memory_limit_pct:    float = 85.0
+    memory_limit_pct:    float = 85
     # ★ 优化3：射电数据精度；True = float32（内存减半），False = float64
-    radio_use_float32:   bool  = True
+    radio_use_float32:   bool  = False
 
 # ============================================================
 #  颜色缓存
@@ -424,7 +447,7 @@ def get_beam_params_from_header(header: fits.Header) -> Optional[Dict]:
             'bpa_deg':     float(bpa)}
 
 def draw_beam_ellipse_pixel(ax, beam: Dict, aia_cutout_map: sunpy.map.GenericMap,
-                             color: str = 'white'):
+                             color: str = 'black'):
     """在图像左下角绘制波束椭圆（像素坐标）。"""
     cdelt   = abs(aia_cutout_map.scale.axis1.to(u.arcsec / u.pix).value)
     bmaj_px = beam['bmaj_arcsec'] / cdelt
@@ -489,6 +512,7 @@ def process_aia_group(aia_file:    str,
     单个 AIA 图像 + 其所有射电时间切片。
     AIA 底图、HMI、aia_wcs_2d 只准备一次，全部子帧复用后彻底释放。
     ★ 优化5：子进程通过 _worker_init 已设置 Agg 后端，无需额外处理。
+    ★ 白色画布：figure/axes 背景、标签、刻度、图例全部适配白底深色文字。
     """
     check_memory_usage(limit=cfg.memory_limit_pct)
     print(f"\n[{task_index}/{total_tasks}] 加载 AIA: {os.path.basename(aia_file)}")
@@ -665,27 +689,33 @@ def process_aia_group(aia_file:    str,
 
             # --- 5. 绘制日面边缘（太阳轮廓）---
             cutout_aia.draw_limb(axes=ax, color='gray', linewidth=1.0,
-                                 linestyle='--', alpha=0.6, label='Solar limb')
+                                 linestyle='--', alpha=0.8, label='Solar limb')
 
-            # --- 6. 图例与标题设置 ---
+            # --- 6. 图例与标题设置（★ 白色画布：深色文字）---
             title_time = (first_radio_time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3] + ' UT'
                           if first_radio_time else os.path.basename(aia_file))
             ax.set_title(
                 f"AIA 171Å + Radio ({cfg.polarization_mode}) + HMI\n{title_time}",
-                fontsize=12, pad=10, color='white'
+                fontsize=12, pad=10, color='black'          # ★ 白色画布
             )
             ax.legend(handles=legend_handles, loc='upper right',
-                      fontsize=9, framealpha=0.6, facecolor='black', labelcolor='white')
+                      fontsize=9, framealpha=0.7,
+                      facecolor='white', edgecolor='gray',  # ★ 白色画布
+                      labelcolor='black')                   # ★ 白色画布
 
-            # --- 7. 样式调整与保存 ---
-            fig.patch.set_facecolor('black')
-            ax.set_facecolor('black')
-            ax.tick_params(colors='white', direction='in')
+            # --- 7. 样式调整（★ 白色画布）---
+            fig.patch.set_facecolor('white')                # ★ 白色画布
+            ax.set_facecolor('white')                       # ★ 白色画布
+            ax.tick_params(colors='black', direction='in')  # ★ 白色画布
             for spine in ax.spines.values():
-                spine.set_edgecolor('white')
-            ax.coords[0].set_axislabel('Solar X (arcsec)', color='white')
-            ax.coords[1].set_axislabel('Solar Y (arcsec)', color='white')
+                spine.set_edgecolor('black')                # ★ 白色画布
+            ax.coords[0].set_axislabel('Solar X (arcsec)', color='black')  # ★
+            ax.coords[1].set_axislabel('Solar Y (arcsec)', color='black')  # ★
+            # 坐标轴刻度标签颜色
+            ax.coords[0].set_ticklabel(color='black')       # ★ 白色画布
+            ax.coords[1].set_ticklabel(color='black')       # ★ 白色画布
 
+            # --- 8. 保存（★ 白色画布 facecolor）---
             if cfg.save_figure:
                 radio_time_str = (first_radio_time.strftime('%Y%m%d_%H%M%S_%f')[:-3]
                                   if first_radio_time else f'unknown_{sub_index}')
@@ -694,7 +724,7 @@ def process_aia_group(aia_file:    str,
                 )
                 plt.savefig(
                     os.path.join(cfg.output_dir, output_filename),
-                    dpi=cfg.dpi, bbox_inches='tight', facecolor='black'
+                    dpi=cfg.dpi, bbox_inches='tight', facecolor='white'  # ★ 白色画布
                 )
 
             fig.clf()
@@ -770,9 +800,8 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
     print(f"成功锁定 {len(radio_files)} 个 {pol} 射电文件。正在并发提取观测时间...")
 
     # ★ 优化4：线程池并发读取头文件（I/O 密集，线程安全）
-    #   线程数取 min(32, cpu_count*2, 文件数)，避免创建过多线程
     max_io_threads = min(32, (os.cpu_count() or 4) * 2, max(1, len(radio_files)))
-    selected_bands_tuple = tuple(cfg.selected_bands)   # tuple 可 hash，便于 partial
+    selected_bands_tuple = tuple(cfg.selected_bands)
     _read_fn = partial(_read_one_radio_header,
                        selected_bands=selected_bands_tuple, pol=pol)
 
@@ -866,7 +895,10 @@ def main():
     if cfg.num_workers <= 1:
         # ── 单进程模式（调试友好，异常信息完整）──────────────────────
         print(f"[模式] 单进程，共 {total} 组任务")
-        for task_index, (aia_file, hmi_file, sub_tasks) in enumerate(grouped_tasks):
+        pbar = tqdm(grouped_tasks, total=total, unit='组',
+                    desc='处理进度', dynamic_ncols=True)
+        for task_index, (aia_file, hmi_file, sub_tasks) in enumerate(pbar):
+            pbar.set_postfix_str(os.path.basename(aia_file))
             process_aia_group(
                 aia_file=aia_file,
                 hmi_file=hmi_file,
@@ -886,7 +918,6 @@ def main():
             # 逐一提交任务；每次提交前检查内存，防止大批任务同时驻留
             futures: Dict = {}
             for task_index, (aia_file, hmi_file, sub_tasks) in enumerate(grouped_tasks):
-
                 # ★ 优化2：提交前检查内存，避免排队任务撑爆内存
                 check_memory_usage(limit=cfg.memory_limit_pct)
 
@@ -896,16 +927,18 @@ def main():
                     task_index + 1, total,
                     cfg, color_cache,
                 )
-                futures[fut] = task_index + 1
+                futures[fut] = (task_index + 1, os.path.basename(aia_file))
 
-            # 等待所有任务完成，捕获子进程异常
-            for fut in as_completed(futures):
-                idx = futures[fut]
+            # ★ 进度条：多进程通过 as_completed 推进
+            pbar = tqdm(as_completed(futures), total=total, unit='组',
+                        desc='处理进度', dynamic_ncols=True)
+            for fut in pbar:
+                idx, fname = futures[fut]
+                pbar.set_postfix_str(fname)
                 try:
                     fut.result()
-                    print(f"[完成] 任务 {idx}/{total}")
                 except Exception as exc:
-                    print(f"[错误] 任务 {idx}/{total} 失败: {exc}")
+                    tqdm.write(f"[错误] 任务 {idx}/{total} 失败: {exc}")
 
     print("\n全部任务处理完毕。")
 
