@@ -100,6 +100,7 @@ class Config:
     beam_inset_fraction: float        = 0.12
 
     overlay_hmi:          bool        = True
+    overlay_radio:        bool        = True  # 新增：是否叠加射电源
     hmi_time_threshold:   int         = 24
     hmi_threshold_gauss:  float       = 0.0
     hmi_sigma:            int         = 2
@@ -110,6 +111,20 @@ class Config:
     aia_cmap:        str         = 'sdoaia171'
     roi_bottom_left: List[float] = field(default_factory=lambda: [300, -800])
     roi_top_right:   List[float] = field(default_factory=lambda: [1500, 300])
+    
+    # 新增：画布和颜色配置
+    canvas_background:    str         = 'white'  # 'white' 或 'black'
+    axis_color:           str         = 'black'  # 坐标轴颜色
+    label_color:          str         = 'black'  # 标签颜色
+    title_color:          str         = 'black'  # 标题颜色
+    legend_background:    str         = 'white'  # 图例背景色
+    legend_text_color:    str         = 'black'  # 图例文字颜色
+    solar_limb_color:     str         = 'red'    # 太阳边缘颜色
+    limb_alpha:           float       = 0.8      # 太阳边缘透明度
+    
+    # 优化配置
+    enable_cache:         bool        = True     # 启用缓存
+    preload_aia_data:     bool        = True     # 预加载AIA数据
 
     band_colors_dict: dict = field(default_factory=lambda: {
         '149.0MHz': ('cyan',    'deepskyblue'),
@@ -137,6 +152,28 @@ class Config:
     clip_to_solar_disk:   bool  = False
     # 射电数据归一化区域 [xmin, ymin, xmax, ymax] (arcsec)，None表示自动
     radio_normalization_region: Optional[List[float]] = None
+
+# ============================================================
+#  AIA地图缓存（优化预加载）
+# ============================================================
+_aia_map_cache: Dict[str, sunpy.map.GenericMap] = {}
+
+def _get_aia_map(aia_file: str, cfg: Config) -> sunpy.map.GenericMap:
+    """获取AIA地图，支持缓存以提高性能"""
+    if not cfg.enable_cache or aia_file not in _aia_map_cache:
+        aia_map = sunpy.map.Map(aia_file)
+        
+        # 曝光时间归一化（若存在）
+        if (hasattr(aia_map, 'exposure_time')
+                and aia_map.exposure_time is not None
+                and aia_map.exposure_time.to(u.s).value > 0):
+            aia_map = sunpy.map.Map(
+                aia_map.data / aia_map.exposure_time.to(u.s).value, aia_map.meta)
+        
+        if cfg.enable_cache:
+            _aia_map_cache[aia_file] = aia_map
+        return aia_map
+    return _aia_map_cache[aia_file]
 
 # ============================================================
 #  颜色缓存
@@ -547,17 +584,11 @@ def process_aia_group(aia_file:    str,
     aia_map = cutout_aia = hmi_processed = None
 
     try:
-        aia_map  = sunpy.map.Map(aia_file)
+        # 使用缓存获取AIA地图
+        aia_map = _get_aia_map(aia_file, cfg)
         aia_time = (aia_map.date.to_datetime()
                     if hasattr(aia_map, 'date')
                     else parse_aia_time_from_filename(os.path.basename(aia_file)))
-
-        # 曝光时间归一化（若存在）
-        if (hasattr(aia_map, 'exposure_time')
-                and aia_map.exposure_time is not None
-                and aia_map.exposure_time.to(u.s).value > 0):
-            aia_map = sunpy.map.Map(
-                aia_map.data / aia_map.exposure_time.to(u.s).value, aia_map.meta)
 
         # 裁剪 ROI
         bl = SkyCoord(Tx=cfg.roi_bottom_left[0] * u.arcsec,
@@ -606,39 +637,46 @@ def process_aia_group(aia_file:    str,
 
             # --- 2. 叠加 HMI 等值线（正极红，负极蓝）---
             if hmi_processed is not None:
+                hmi_positive_color = 'red' if cfg.canvas_background == 'white' else 'red'
+                hmi_negative_color = 'blue' if cfg.canvas_background == 'white' else 'blue'
                 ax.contour(hmi_processed.data, levels=cfg.hmi_levels_gauss,
-                           colors=['red'], linewidths=0.8, alpha=0.7)
+                           colors=[hmi_positive_color], linewidths=0.8, alpha=0.7)
                 ax.contour(hmi_processed.data,
                            levels=[-lv for lv in cfg.hmi_levels_gauss],
-                           colors=['blue'], linewidths=0.8, alpha=0.7)
+                           colors=[hmi_negative_color], linewidths=0.8, alpha=0.7)
                 legend_handles += [
-                    Line2D([0], [0], color='red',  lw=0.8,
+                    Line2D([0], [0], color=hmi_positive_color,  lw=0.8,
                            label=f'+{cfg.hmi_levels_gauss[0]:.0f}G'),
-                    Line2D([0], [0], color='blue', lw=0.8,
+                    Line2D([0], [0], color=hmi_negative_color, lw=0.8,
                            label=f'-{cfg.hmi_levels_gauss[0]:.0f}G'),
                 ]
 
-            def _band_freq_key(item: Tuple[str, list]) -> float:
-                mobj = _RE_BAND_SORTED.search(item[0])
-                return float(mobj.group(1)) if mobj else 0.0
-
-            sorted_bands = sorted(single_slice_bands.items(), key=_band_freq_key)
-
             # --- 3. 叠加射电等值线（每个波段一种颜色）---
-            for band_idx, (band_label, file_list) in enumerate(sorted_bands):
-                orig_band_idx = selected_bands_idx.get(band_label, band_idx)
-                main_color, dark_color = get_band_color(
-                    band_label, orig_band_idx, cfg, color_cache)
+            if cfg.overlay_radio:
+                def _band_freq_key(item: Tuple[str, list]) -> float:
+                    mobj = _RE_BAND_SORTED.search(item[0])
+                    return float(mobj.group(1)) if mobj else 0.0
 
-                freq_match  = _RE_MHZ.search(band_label)
-                freq_mhz    = float(freq_match.group(1)) if freq_match else None
-                height_rsun = corona_height_from_freq(freq_mhz) if freq_mhz else 1.0
+                sorted_bands = sorted(single_slice_bands.items(), key=_band_freq_key)
 
-                drawn_any = False
-                for fits_path, polarization, radio_time in file_list:
-                    if (cfg.polarization_mode != 'BOTH'
-                            and polarization != cfg.polarization_mode):
-                        continue
+                for band_idx, (band_label, file_list) in enumerate(sorted_bands):
+                    orig_band_idx = selected_bands_idx.get(band_label, band_idx)
+                    main_color, dark_color = get_band_color(
+                        band_label, orig_band_idx, cfg, color_cache)
+
+                    # 根据背景色调整颜色对比度
+                    if cfg.canvas_background == 'white':
+                        main_color = dark_color if dark_color != main_color else main_color
+
+                    freq_match  = _RE_MHZ.search(band_label)
+                    freq_mhz    = float(freq_match.group(1)) if freq_match else None
+                    height_rsun = corona_height_from_freq(freq_mhz) if freq_mhz else 1.0
+
+                    drawn_any = False
+                    for fits_path, polarization, radio_time in file_list:
+                        if (cfg.polarization_mode != 'BOTH'
+                                and polarization != cfg.polarization_mode):
+                            continue
                     try:
                         with fits.open(fits_path) as hdul:
                             img_hdu = next(
@@ -714,23 +752,50 @@ def process_aia_group(aia_file:    str,
                                  linestyle='--', alpha=0.6, label='Solar limb')
 
             # --- 6. 图例与标题设置 ---
+            # 根据是否叠加射电调整标题
+            if cfg.overlay_radio:
+                title_base = f"AIA 171Å + Radio ({cfg.polarization_mode})"
+            else:
+                title_base = "AIA 171Å"
+            
+            if cfg.overlay_hmi and hmi_processed is not None:
+                title_base += " + HMI"
+                
             title_time = (first_radio_time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3] + ' UT'
-                          if first_radio_time else os.path.basename(aia_file))
+                          if first_radio_time and cfg.overlay_radio else aia_time.strftime('%Y-%m-%d %H:%M:%S') + ' UT')
+            
             ax.set_title(
-                f"AIA 171Å + Radio ({cfg.polarization_mode}) + HMI\n{title_time}",
-                fontsize=12, pad=10, color='white'
+                f"{title_base}\n{title_time}",
+                fontsize=12, pad=10, color=cfg.title_color
             )
-            ax.legend(handles=legend_handles, loc='upper right',
-                      fontsize=9, framealpha=0.6, facecolor='black', labelcolor='white')
+            
+            # 设置图例样式
+            legend_facecolor = cfg.legend_background
+            legend_text_color = cfg.legend_text_color
+            legend_framealpha = 0.8 if cfg.canvas_background == 'white' else 0.6
+            
+            if legend_handles:  # 只有有图例项时才添加图例
+                ax.legend(handles=legend_handles, loc='upper right',
+                          fontsize=9, framealpha=legend_framealpha, 
+                          facecolor=legend_facecolor, labelcolor=legend_text_color)
 
             # --- 7. 样式调整与保存 ---
-            fig.patch.set_facecolor('black')
-            ax.set_facecolor('black')
-            ax.tick_params(colors='white', direction='in')
+            # 根据配置设置画布背景色
+            fig.patch.set_facecolor(cfg.canvas_background)
+            ax.set_facecolor(cfg.canvas_background)
+            
+            # 设置坐标轴颜色
+            ax.tick_params(colors=cfg.axis_color, direction='in')
             for spine in ax.spines.values():
-                spine.set_edgecolor('white')
-            ax.coords[0].set_axislabel('Solar X (arcsec)', color='white')
-            ax.coords[1].set_axislabel('Solar Y (arcsec)', color='white')
+                spine.set_edgecolor(cfg.axis_color)
+            
+            # 设置坐标轴标签颜色
+            ax.coords[0].set_axislabel('Solar X (arcsec)', color=cfg.label_color)
+            ax.coords[1].set_axislabel('Solar Y (arcsec)', color=cfg.label_color)
+            
+            # 设置坐标轴刻度标签颜色
+            ax.coords[0].set_ticklabel(color=cfg.axis_color)
+            ax.coords[1].set_ticklabel(color=cfg.axis_color)
 
             if cfg.save_figure:
                 radio_time_str = (first_radio_time.strftime('%Y%m%d_%H%M%S_%f')[:-3]
@@ -738,9 +803,12 @@ def process_aia_group(aia_file:    str,
                 output_filename = (
                     f"{radio_time_str}_{cfg.polarization_mode}_seq{sub_index + 1:02d}.png"
                 )
+                # 根据背景色设置保存时的背景
+                save_facecolor = cfg.canvas_background
+            
                 plt.savefig(
                     os.path.join(cfg.output_dir, output_filename),
-                    dpi=cfg.dpi, bbox_inches='tight', facecolor='black'
+                    dpi=cfg.dpi, bbox_inches='tight', facecolor=save_facecolor
                 )
 
             fig.clf()
@@ -801,33 +869,45 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
         print("[错误] 找不到 AIA 文件，请检查 cfg.aia_base_dir")
         return []
 
+    # 预加载AIA文件到缓存（如果启用）
+    if cfg.preload_aia_data and cfg.enable_cache:
+        print("预加载AIA数据到缓存...")
+        for aia_file in aia_files[:min(50, len(aia_files))]:  # 最多预加载50个文件
+            try:
+                _get_aia_map(aia_file, cfg)
+            except Exception as e:
+                print(f"预加载 {aia_file} 失败: {e}")
+
     hmi_times = []
     for hf in hmi_files:
         t = parse_hmi_time_from_filename(os.path.basename(hf))
         if t:
             hmi_times.append((hf, t))
 
-    pol = cfg.polarization_mode
-    files_in_pol_dir    = glob.glob(os.path.join(cfg.radio_base_dir, "**", pol, "*.fits"),
-                                    recursive=True)
-    files_with_pol_name = glob.glob(os.path.join(cfg.radio_base_dir, "**", f"*{pol}*.fits"),
-                                    recursive=True)
-    radio_files = list(set(files_in_pol_dir + files_with_pol_name))
-    print(f"成功锁定 {len(radio_files)} 个 {pol} 射电文件。正在并发提取观测时间...")
-
-    # ★ 优化4：线程池并发读取头文件（I/O 密集，线程安全）
-    #   线程数取 min(32, cpu_count*2, 文件数)，避免创建过多线程
-    max_io_threads = min(32, (os.cpu_count() or 4) * 2, max(1, len(radio_files)))
-    selected_bands_tuple = tuple(cfg.selected_bands)   # tuple 可 hash，便于 partial
-    _read_fn = partial(_read_one_radio_header,
-                       selected_bands=selected_bands_tuple, pol=pol)
-
+    # 优化：只有在需要叠加射电源时才扫描射电文件
     radio_cache: List[Dict] = []
-    with ThreadPoolExecutor(max_workers=max_io_threads) as executor:
-        results = executor.map(_read_fn, radio_files)
-        radio_cache = [r for r in results if r is not None]
+    if cfg.overlay_radio:
+        pol = cfg.polarization_mode
+        files_in_pol_dir    = glob.glob(os.path.join(cfg.radio_base_dir, "**", pol, "*.fits"),
+                                        recursive=True)
+        files_with_pol_name = glob.glob(os.path.join(cfg.radio_base_dir, "**", f"*{pol}*.fits"),
+                                        recursive=True)
+        radio_files = list(set(files_in_pol_dir + files_with_pol_name))
+        print(f"成功锁定 {len(radio_files)} 个 {pol} 射电文件。正在并发提取观测时间...")
 
-    print(f"  读取完毕，有效射电观测记录: {len(radio_cache)} 条")
+        # ★ 优化4：线程池并发读取头文件（I/O 密集，线程安全）
+        max_io_threads = min(32, (os.cpu_count() or 4) * 2, max(1, len(radio_files)))
+        selected_bands_tuple = tuple(cfg.selected_bands)   # tuple 可 hash，便于 partial
+        _read_fn = partial(_read_one_radio_header,
+                           selected_bands=selected_bands_tuple, pol=pol)
+
+        with ThreadPoolExecutor(max_workers=max_io_threads) as executor:
+            results = executor.map(_read_fn, radio_files)
+            radio_cache = [r for r in results if r is not None]
+
+        print(f"  读取完毕，有效射电观测记录: {len(radio_cache)} 条")
+    else:
+        print("跳过射电文件扫描（overlay_radio=False）")
 
     start_idx        = cfg.aia_file_start_idx if cfg.aia_file_start_idx is not None else 0
     end_idx          = cfg.aia_file_end_idx   if cfg.aia_file_end_idx   is not None else len(aia_files)
@@ -850,31 +930,36 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
                 best_hmi = min(valid_hmis,
                                key=lambda x: abs((x[1] - aia_time).total_seconds()))[0]
 
-        # 收集时间阈值内的射电数据，按波段分组
+        # 收集时间阈值内的射电数据，按波段分组（只在需要时执行）
         band_groups: Dict[str, list] = {}
-        for rc in radio_cache:
-            if abs((rc['time'] - aia_time).total_seconds()) <= cfg.radio_time_threshold:
-                band_groups.setdefault(rc['band'], []).append(
-                    (rc['path'], rc['pol'], rc['time']))
+        if cfg.overlay_radio:
+            for rc in radio_cache:
+                if abs((rc['time'] - aia_time).total_seconds()) <= cfg.radio_time_threshold:
+                    band_groups.setdefault(rc['band'], []).append(
+                        (rc['path'], rc['pol'], rc['time']))
 
-        if not band_groups:
-            continue
+            if not band_groups:
+                continue
 
-        # 匹配阶段排序 + 截断，process 时无需每帧重复 sorted()
-        for band in band_groups:
-            band_groups[band].sort(key=lambda x: x[2])
-            band_groups[band] = band_groups[band][:cfg.max_radio_per_band]
+            # 匹配阶段排序 + 截断，process 时无需每帧重复 sorted()
+            for band in band_groups:
+                band_groups[band].sort(key=lambda x: x[2])
+                band_groups[band] = band_groups[band][:cfg.max_radio_per_band]
 
-        min_count = min(len(v) for v in band_groups.values())
-        if min_count == 0:
-            continue
+            min_count = min(len(v) for v in band_groups.values())
+            if min_count == 0:
+                continue
 
-        # 构建横向切片：每个切片包含每个波段的第 i 个观测
-        tasks_for_this_aia = [
-            (sub_index,
-             {band: [band_groups[band][sub_index]] for band in band_groups})
-            for sub_index in range(min_count)
-        ]
+            # 构建横向切片：每个切片包含每个波段的第 i 个观测
+            tasks_for_this_aia = [
+                (sub_index,
+                 {band: [band_groups[band][sub_index]] for band in band_groups})
+                for sub_index in range(min_count)
+            ]
+        else:
+            # 如果不叠加射电，每个AIA文件只生成一个任务（不包含射电数据）
+            tasks_for_this_aia = [(0, {})]
+
         grouped_tasks.append((aia_file, best_hmi, tasks_for_this_aia))
 
     print(f"\n匹配切片完毕！共成功创建了 {len(grouped_tasks)} 组以 AIA 为核心的任务。")
