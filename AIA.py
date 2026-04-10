@@ -61,11 +61,11 @@ AIA_CONFIG: dict = {
 
 @dataclass
 class AIAConfig:
-    data_path:  str           = r'<PROJECT_ROOT>\2025\20250428\AIA'
+    data_path:  str           = r'<PROJECT_ROOT>\2025\20250124\AIA'
     output_dir: Optional[str] = None
     start_idx: int            = 0
     end_idx:   Optional[int]  = None
-    roi_bounds: Tuple[float, float, float, float] = (-1100, -900, 0, 200) # (xmin, xmax, ymin, ymax)
+    roi_bounds: Tuple[float, float, float, float] = (600, 1200, -300, 100) # (xmin, xmax, ymin, ymax)
     user_vmin: Optional[float] = None
     user_vmax: Optional[float] = None
     user_cmap: Optional[str]   = None
@@ -80,7 +80,7 @@ class AIAConfig:
     show_image:       bool = False
     use_band_subdirs: bool = True
     
-    max_workers: Optional[int] = 16
+    max_workers: Optional[int] = None
 
     # Multi-band composite: False for original behavior (single image per file); 
     # True aligns the k-th time-sorted file from each band directory onto the same canvas
@@ -91,7 +91,7 @@ class AIAConfig:
     multi_band_output_subdir: str = "multi_band"
     multi_band_merge_axes: bool = True  # Kept for backward compatibility; mosaic mode uses seamless stitching with only band/time labels
     # Only effective when multi_band_composite=True: whether to also export single-band PNGs for each FITS file after mosaic creation
-    multi_band_also_save_single: bool = True
+    multi_band_also_save_single: bool = False
     # Spacing between subplots in mosaic (matplotlib relative to subplot width/height, typically 0.03–0.1 for visible gaps)
     multi_band_wspace: float = 0.06
     multi_band_hspace: float = 0.06
@@ -194,7 +194,7 @@ def _discover_wavelength_dirs(data_path: Path) -> Tuple[int, ...]:
 
 
 def _sorted_fits_for_band(data_path: Path, wave: int, use_band_subdirs: bool) -> List[Path]:
-    band_dir = (data_path / str(wave)) if use_band_subdirs else data_path
+    band_dir = (data_path / str(wave)/'1') if use_band_subdirs else data_path
     if not band_dir.is_dir():
         raise ValueError(f"Band directory does not exist: {band_dir}")
     files = sorted(band_dir.rglob("*.fits"), key=lambda p: _parse_timestr(p))
