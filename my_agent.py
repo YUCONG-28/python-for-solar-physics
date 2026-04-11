@@ -114,43 +114,6 @@ def read_docx(file_path: str) -> str:
     except Exception as e:
         return f"读取 Word 文件失败，请确认文件是否为 .docx 格式以及路径是否正确。错误信息: {e}"
 
-# ==========================================
-# 3. 定义智能体 (Agents) 团队
-# ==========================================
-
-physics_researcher = Agent(
-    role='计算物理研究员',
-    goal='精确读取文献，遇到不懂的专业术语或背景信息时，主动进行网络搜索补充，最后提取核心的演化公式或数据处理逻辑',
-    backstory='你是一位严谨的学者。你擅长使用本地工具阅读文献，同时，当遇到前沿的物理概念（如某种新型的等离子体不稳定性）时，你会熟练使用 Google 搜索工具查阅最新的维基百科或 ArXiv 摘要。',
-    # [关键修改] 现在它有三把武器了：看PDF、看Word、搜Google
-    tools=[read_pdf, read_docx, search_tool], 
-    verbose=True,
-    allow_delegation=False
-)
-
-analysis_synthesizer = Agent(
-    role='科研综合分析专家',
-    goal='对比分析多篇论文的核心发现，识别共性和差异，形成综合研究报告',
-    backstory='你擅长从多篇相关文献中提取关键信息，进行交叉比对和综合分析，生成具有洞察力的总结报告。',
-    verbose=True,
-    allow_delegation=False
-)
-
-frontend_developer = Agent(
-    role='Streamlit 架构工程师',
-    goal='将物理模型转化为直观的 Web 交互界面',
-    backstory='你精通 Python 和 Streamlit，擅长将抽象的参数转化为滑动条（Slider），并将计算结果用图表展示出来。你只输出高质量、带注释的 Python 代码。',
-    verbose=True,
-    allow_delegation=False
-)
-
-web_launcher = Agent(
-    role='应用部署专家',
-    goal='自动化部署和启动 Streamlit 应用',
-    backstory='你擅长应用部署和自动化流程，能够确保生成的代码正确运行并启动网页服务。',
-    verbose=True,
-    allow_delegation=False
-)
 
 # ==========================================
 # 4. 封装工作流逻辑 (支持多个文件)
