@@ -309,6 +309,8 @@ if __name__ == "__main__":
 fitz>=0.0.1.dev2
 python-docx>=1.1.0
 crewai>=0.28.0
+crewai-tools>=0.1.0
+python-dotenv>=1.0.0
 reportlab>=4.0.0
 weasyprint>=58.0
 playwright>=1.40.0
@@ -448,6 +450,22 @@ SAMPLE_HTML = """
     with open("pdf_export.py", "w", encoding="utf-8") as f:
         f.write(pdf_module_content)
     print("✅ 已生成 pdf_export.py")
+    
+    # 7. 生成 .env.example 环境变量示例文件
+    env_example_content = '''# DeepSeek API 配置
+DEEPSEEK_API_KEY=在此处填入您的实际API密钥
+
+# 其他可选配置
+# OPENAI_API_BASE=https://api.deepseek.com
+# OPENAI_MODEL_NAME=deepseek-reasoner
+
+# 应用配置
+# APP_PORT=8501
+# DEBUG=False
+'''
+    with open(".env.example", "w", encoding="utf-8") as f:
+        f.write(env_example_content)
+    print("✅ 已生成 .env.example")
 
 # ==========================================
 # 5. 交互式启动入口
