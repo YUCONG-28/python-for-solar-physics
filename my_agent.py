@@ -9,9 +9,16 @@ import os
 import subprocess
 import sys
 import time
+import glob
+import zipfile
+import io
+import asyncio
+import pickle
+import json
+from datetime import datetime
+from typing import List, Dict, Any
 import fitz  # 处理 PDF
 import docx  # 处理 Word
-from typing import List, Dict
 from crewai import Agent, Task, Crew, Process
 from crewai.tools import tool
 
@@ -152,7 +159,7 @@ def analyze_and_build_multiple(file_paths: List[str]):
     code_generation_task = Task(
         description='''
         根据综合分析报告，开发一个 Streamlit Web 应用：
-        
+    
         要求：
         1. 创建一个完整的 app.py 文件
         2. 包含侧边栏，用于调节关键物理参数
@@ -160,10 +167,14 @@ def analyze_and_build_multiple(file_paths: List[str]):
         4. 包含数据可视化图表
         5. 添加交互式控件（滑块、选择器、按钮等）
         6. 提供模型对比功能
-        
+        7. 添加PDF导出功能：在侧边栏或主界面添加按钮，可以将当前分析结果导出为PDF报告
+        8. 集成一键截图保存为PDF的功能（可选使用playwright）
+        9. 添加会话状态保存/加载功能，便于下次恢复
+    
         确保代码结构清晰，注释完整，可以直接运行。
+        注意：生成的app.py应当包含必要的导入（如streamlit, reportlab, weasyprint, pickle等）以及对应的函数实现。
         ''',
-        expected_output='一个完整、可直接运行的 Streamlit 应用代码（app.py）。',
+        expected_output='一个完整、可直接运行的 Streamlit 应用代码（app.py），包含PDF导出和状态保存功能。',
         agent=frontend_developer,
         output_file="app.py"
     )
@@ -234,6 +245,207 @@ def launch_streamlit_app():
         return False
 
 # ==========================================
+# 6. 辅助文件生成函数
+# ==========================================
+def generate_helper_files(file_paths: List[str]) -> None:
+    """
+    生成一键启动、Docker、备份等辅助文件
+    """
+    # 1. 生成 start_app.py
+    start_app_content = '''
+# -*- coding: utf-8 -*-
+import subprocess
+import webbrowser
+import time
+import sys
+
+def start_streamlit():
+    """一键启动 Streamlit 应用"""
+    # 检查依赖
+    try:
+        import streamlit
+    except ImportError:
+        print("正在安装依赖...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
+    
+    # 启动 Streamlit
+    process = subprocess.Popen(
+        [sys.executable, "-m", "streamlit", "run", "app.py"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    
+    # 等待应用启动
+    time.sleep(3)
+    
+    # 自动打开浏览器
+    webbrowser.open("http://localhost:8501")
+    
+    print("🌐 应用已启动: http://localhost:8501")
+    print("📋 按 Ctrl+C 停止应用")
+    
+    try:
+        process.wait()
+    except KeyboardInterrupt:
+        print("\\n🛑 正在停止应用...")
+        process.terminate()
+        process.wait()
+        print("✅ 应用已停止")
+
+if __name__ == "__main__":
+    start_streamlit()
+'''
+    with open("start_app.py", "w", encoding="utf-8") as f:
+        f.write(start_app_content)
+    print("✅ 已生成 start_app.py")
+    
+    # 2. 生成 requirements.txt
+    req_content = '''streamlit>=1.28.0
+fitz>=0.0.1.dev2
+python-docx>=1.1.0
+crewai>=0.28.0
+reportlab>=4.0.0
+weasyprint>=58.0
+playwright>=1.40.0
+pandas>=2.0.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+sunpy>=5.0.0
+astropy>=5.3.0
+'''
+    with open("requirements.txt", "w", encoding="utf-8") as f:
+        f.write(req_content)
+    print("✅ 已生成 requirements.txt")
+    
+    # 3. 生成 Dockerfile
+    dockerfile_content = '''FROM python:3.9-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN playwright install chromium
+COPY . .
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+'''
+    with open("Dockerfile", "w", encoding="utf-8") as f:
+        f.write(dockerfile_content)
+    print("✅ 已生成 Dockerfile")
+    
+    # 4. 生成 docker-compose.yml
+    compose_content = '''version: '3.8'
+services:
+  literature-app:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./app.py:/app/app.py
+      - ./data:/app/data
+      - ./reports:/app/reports
+'''
+    with open("docker-compose.yml", "w", encoding="utf-8") as f:
+        f.write(compose_content)
+    print("✅ 已生成 docker-compose.yml")
+    
+    # 5. 生成 save_project.py
+    save_project_content = '''# -*- coding: utf-8 -*-
+import os
+import shutil
+import zipfile
+from datetime import datetime
+import glob
+
+def backup_project():
+    """备份整个项目"""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = f"backup_{timestamp}"
+    os.makedirs(backup_dir, exist_ok=True)
+    
+    # 要备份的文件模式
+    patterns = [
+        "app.py",
+        "my_agent.py",
+        "requirements.txt",
+        "start_app.py",
+        "Dockerfile",
+        "docker-compose.yml",
+        "save_project.py",
+        "*.txt",
+        "*.json",
+        "*.pdf"
+    ]
+    
+    for pattern in patterns:
+        for file in glob.glob(pattern):
+            if os.path.isfile(file):
+                shutil.copy2(file, backup_dir)
+    
+    # 创建ZIP压缩包
+    zip_filename = f"literature_app_backup_{timestamp}.zip"
+    with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk(backup_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, backup_dir)
+                zipf.write(file_path, arcname)
+    
+    # 清理临时备份目录
+    shutil.rmtree(backup_dir)
+    
+    print(f"✅ 项目已备份到: {zip_filename}")
+    return zip_filename
+
+if __name__ == "__main__":
+    backup_project()
+'''
+    with open("save_project.py", "w", encoding="utf-8") as f:
+        f.write(save_project_content)
+    print("✅ 已生成 save_project.py")
+    
+    # 6. 生成 PDF导出模块示例
+    pdf_module_content = '''# pdf_export.py - PDF导出功能模块
+import io
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from weasyprint import HTML
+import tempfile
+
+def generate_simple_pdf(content_list):
+    """生成简单PDF"""
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(100, 750, "文献分析报告")
+    c.setFont("Helvetica", 12)
+    y = 720
+    for line in content_list:
+        c.drawString(100, y, line)
+        y -= 20
+    c.save()
+    buffer.seek(0)
+    return buffer
+
+def html_to_pdf(html_string):
+    """HTML转PDF"""
+    pdf_bytes = HTML(string=html_string).write_pdf()
+    return io.BytesIO(pdf_bytes)
+
+# 示例HTML模板
+SAMPLE_HTML = """
+<html>
+<head><style>body{font-family:Arial; margin:40px;}</style></head>
+<body>
+    <h1>研究报告</h1>
+    <p>自动生成的PDF报告，包含所有分析结果。</p>
+</body>
+</html>
+"""
+'''
+    with open("pdf_export.py", "w", encoding="utf-8") as f:
+        f.write(pdf_module_content)
+    print("✅ 已生成 pdf_export.py")
+
+# ==========================================
 # 5. 交互式启动入口
 # ==========================================
 if __name__ == "__main__":
@@ -297,9 +509,15 @@ if __name__ == "__main__":
         print("🎉 分析任务完成！")
         print("=" * 60)
         
+        # 生成辅助文件
+        print("\n🛠️  生成辅助文件...")
+        generate_helper_files(valid_files)
+        
         # 显示生成的文件
         print("\n📁 生成的文件：")
-        generated_files = ["app.py"]
+        generated_files = ["app.py", "start_app.py", "requirements.txt", 
+                          "Dockerfile", "docker-compose.yml", "save_project.py",
+                          "pdf_export.py"]
         for i, path in enumerate(valid_files, 1):
             file_name = os.path.splitext(os.path.basename(path))[0]
             generated_files.append(f"analysis_report_{i}_{file_name}.txt")
@@ -320,10 +538,13 @@ if __name__ == "__main__":
             launch_streamlit_app()
         else:
             print("\n📋 手动启动应用：")
-            print("   1. 确保已安装依赖: pip install streamlit")
-            print("   2. 运行命令: streamlit run app.py")
-            print("   3. 浏览器访问: http://localhost:8888")
+            print("   1. 一键启动: python start_app.py")
+            print("   2. Docker启动: docker-compose up")
+            print("   3. 直接运行: streamlit run app.py")
+            print("   4. 备份项目: python save_project.py")
             
     except Exception as e:
         print(f"\n❌ 分析过程中出现错误: {e}")
+        import traceback
+        traceback.print_exc()
         print("💡 请检查 API 密钥和文件格式是否正确")
