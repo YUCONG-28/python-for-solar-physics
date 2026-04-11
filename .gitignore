@@ -1,1 +1,70 @@
-.automated-tool*
+# 环境变量和配置文件
+.env
+.env.*
+!.env.example
+config.json
+secrets.json
+
+# Python 缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# 备份文件和压缩包
+*.zip
+*.tar.gz
+*.rar
+backup_*/
+*.bak
+*~
+
+# IDE和编辑器文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+logs/
+
+# 数据分析临时文件
+*.pickle
+*.pkl
+*.h5
+*.hdf5
+*.feather
+*.parquet
+
+# Streamlit 缓存
+.static/
+.streamlit/
+
+# 生成的分析报告（可选，如果需要共享则不忽略）
+# analysis_report_*.txt
+# synthesis_report.txt
+
+# 临时文件
+temp/
+tmp/
