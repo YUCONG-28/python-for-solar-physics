@@ -27,8 +27,6 @@ from crewai_tools import SerperDevTool, ScrapeWebsiteTool
 # 1. 配置核心大脑：重定向至 DeepSeek API
 # ==========================================
 os.environ["OPENAI_API_BASE"] = "https://api.deepseek.com"
-os.environ["SERPER_API_KEY"] = "这里填入你申请到的_Serper_API_Key"
-search_tool = SerperDevTool()
 
 # 从环境变量或 .env 文件读取 API Key，避免硬编码泄露
 def get_api_key():
@@ -76,8 +74,6 @@ except Exception as e:
     print(f"❌ 错误: {e}")
     sys.exit(1)
 
-search_tool = SerperDevTool()
-scrape_tool = ScrapeWebsiteTool()
 
 # ==========================================
 # 2. 打造专属工具：文件提取器
@@ -159,10 +155,60 @@ web_launcher = Agent(
 # ==========================================
 # 4. 封装工作流逻辑 (支持多个文件)
 # ==========================================
-def analyze_and_build_multiple(file_paths: List[str]):
+def analyze_and_build_multiple(file_paths: List[str], enable_web_search: bool = False, serper_api_key: str = None):
     """
     分析多个文件并构建应用的完整流程
     """
+    
+    # 根据用户选择创建搜索工具
+    tools_for_researcher = [read_pdf, read_docx]
+    if enable_web_search:
+        if serper_api_key:
+            os.environ["SERPER_API_KEY"] = serper_api_key
+        # 检查环境变量是否已设置
+        if not os.getenv("SERPER_API_KEY"):
+            print("⚠️  您已启用网络搜索，但未提供 SERPER_API_KEY。网络搜索功能将不可用。")
+        else:
+            try:
+                search_tool = SerperDevTool()
+                tools_for_researcher.append(search_tool)
+                print("✅ 网络搜索工具已启用")
+            except Exception as e:
+                print(f"❌ 创建网络搜索工具失败: {e}")
+    
+    # 定义智能体 (Agents) 团队
+    physics_researcher = Agent(
+        role='计算物理研究员',
+        goal='精确读取文献，遇到不懂的专业术语或背景信息时，主动进行网络搜索补充，最后提取核心的演化公式或数据处理逻辑',
+        backstory='你是一位严谨的学者。你擅长使用本地工具阅读文献，同时，当遇到前沿的物理概念（如某种新型的等离子体不稳定性）时，你会熟练使用 Google 搜索工具查阅最新的维基百科或 ArXiv 摘要。',
+        tools=tools_for_researcher, 
+        verbose=True,
+        allow_delegation=False
+    )
+
+    analysis_synthesizer = Agent(
+        role='科研综合分析专家',
+        goal='对比分析多篇论文的核心发现，识别共性和差异，形成综合研究报告',
+        backstory='你擅长从多篇相关文献中提取关键信息，进行交叉比对和综合分析，生成具有洞察力的总结报告。',
+        verbose=True,
+        allow_delegation=False
+    )
+
+    frontend_developer = Agent(
+        role='Streamlit 架构工程师',
+        goal='将物理模型转化为直观的 Web 交互界面',
+        backstory='你精通 Python 和 Streamlit，擅长将抽象的参数转化为滑动条（Slider），并将计算结果用图表展示出来。你只输出高质量、带注释的 Python 代码。',
+        verbose=True,
+        allow_delegation=False
+    )
+
+    web_launcher = Agent(
+        role='应用部署专家',
+        goal='自动化部署和启动 Streamlit 应用',
+        backstory='你擅长应用部署和自动化流程，能够确保生成的代码正确运行并启动网页服务。',
+        verbose=True,
+        allow_delegation=False
+    )
     
     # 第一步：创建针对每个文件的单独分析任务
     individual_analysis_tasks = []
@@ -502,6 +548,9 @@ SAMPLE_HTML = """
     env_example_content = '''# DeepSeek API 配置
 DEEPSEEK_API_KEY=在此处填入您的实际API密钥
 
+# Serper API 配置（用于网络搜索，可选）
+SERPER_API_KEY=在此处填入您的Serper API密钥
+
 # 其他可选配置
 # OPENAI_API_BASE=https://api.deepseek.com
 # OPENAI_MODEL_NAME=deepseek-reasoner
@@ -521,6 +570,29 @@ if __name__ == "__main__":
     print("=" * 60)
     print("🤖 科研与工程 Agent 团队 - 多论文分析版")
     print("=" * 60)
+    
+    # 询问是否启用网络搜索功能
+    print("\n🔍 是否启用网络搜索功能？")
+    print("   启用后，Agent可以在分析文献时搜索相关背景知识。")
+    print("   注意：这需要您提供 Serper API 密钥（可在 serper.dev 申请）。")
+    enable_web = input("启用网络搜索？(y/n): ").strip().lower() == 'y'
+    
+    serper_key = None
+    if enable_web:
+        # 尝试从环境变量读取
+        serper_key = os.getenv("SERPER_API_KEY")
+        if not serper_key:
+            print("\n⚠️  未在环境变量中找到 SERPER_API_KEY。")
+            print("   您可以选择：")
+            print("   1. 输入您的 Serper API 密钥（本次有效）")
+            print("   2. 直接按Enter跳过，但网络搜索功能将不可用")
+            user_key = input("请输入 Serper API 密钥: ").strip()
+            if user_key:
+                serper_key = user_key
+                print("✅ Serper API 密钥已接收（仅本次运行）")
+            else:
+                print("⚠️  将不使用网络搜索功能。")
+                enable_web = False
     
     # 获取多个文件路径
     print("\n📁 请按以下格式输入多个文件路径：")
@@ -572,7 +644,7 @@ if __name__ == "__main__":
     
     # 启动核心分析流程
     try:
-        final_result = analyze_and_build_multiple(valid_files)
+        final_result = analyze_and_build_multiple(valid_files, enable_web_search=enable_web, serper_api_key=serper_key)
         
         print("\n" + "=" * 60)
         print("🎉 分析任务完成！")
