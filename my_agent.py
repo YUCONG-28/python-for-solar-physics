@@ -21,14 +21,18 @@ import fitz  # 处理 PDF
 import docx  # 处理 Word
 from crewai import Agent, Task, Crew, Process
 from crewai.tools import tool
+from crewai_tools import SerperDevTool, ScrapeWebsiteTool
 
-# ==========================================
+# ================================== ========
 # 1. 配置核心大脑：重定向至 DeepSeek API
 # ==========================================
 os.environ["OPENAI_API_BASE"] = "https://api.deepseek.com"
 # 请务必将下方替换为你自己的真实 API Key
 os.environ["OPENAI_API_KEY"] = "sk-39a1a06301a442feb6c9e578ce227992" 
 os.environ["OPENAI_MODEL_NAME"] = "deepseek-reasoner" 
+
+search_tool = SerperDevTool()
+scrape_tool = ScrapeWebsiteTool()
 
 # ==========================================
 # 2. 打造专属工具：文件提取器
@@ -74,9 +78,9 @@ def read_docx(file_path: str) -> str:
 # ==========================================
 physics_researcher = Agent(
     role='计算物理研究员',
-    goal='精确读取文献，提取核心的演化公式、边界条件或数据处理逻辑',
-    backstory='你是一位严谨的学者，擅长使用工具阅读不同格式的原始文献，并能从多篇论文中提取共性原理。',
-    tools=[read_pdf, read_docx], 
+    goal='精确读取文献并补充最新研究背景',
+    backstory='...',
+    tools=[read_pdf, read_docx, search_tool], # 物理学家现在可以上网了！
     verbose=True,
     allow_delegation=False
 )
