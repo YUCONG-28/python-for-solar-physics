@@ -27,6 +27,8 @@ from crewai_tools import SerperDevTool, ScrapeWebsiteTool
 # 1. 配置核心大脑：重定向至 DeepSeek API
 # ==========================================
 os.environ["OPENAI_API_BASE"] = "https://api.deepseek.com"
+os.environ["SERPER_API_KEY"] = "这里填入你申请到的_Serper_API_Key"
+search_tool = SerperDevTool()
 
 # 从环境变量或 .env 文件读取 API Key，避免硬编码泄露
 def get_api_key():
@@ -119,11 +121,13 @@ def read_docx(file_path: str) -> str:
 # ==========================================
 # 3. 定义智能体 (Agents) 团队
 # ==========================================
+
 physics_researcher = Agent(
     role='计算物理研究员',
-    goal='精确读取文献并补充最新研究背景',
-    backstory='...',
-    tools=[read_pdf, read_docx, search_tool], # 物理学家现在可以上网了！
+    goal='精确读取文献，遇到不懂的专业术语或背景信息时，主动进行网络搜索补充，最后提取核心的演化公式或数据处理逻辑',
+    backstory='你是一位严谨的学者。你擅长使用本地工具阅读文献，同时，当遇到前沿的物理概念（如某种新型的等离子体不稳定性）时，你会熟练使用 Google 搜索工具查阅最新的维基百科或 ArXiv 摘要。',
+    # [关键修改] 现在它有三把武器了：看PDF、看Word、搜Google
+    tools=[read_pdf, read_docx, search_tool], 
     verbose=True,
     allow_delegation=False
 )
