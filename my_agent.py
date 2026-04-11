@@ -322,7 +322,7 @@ if __name__ == "__main__":
             print("\n📋 手动启动应用：")
             print("   1. 确保已安装依赖: pip install streamlit")
             print("   2. 运行命令: streamlit run app.py")
-            print("   3. 浏览器访问: http://localhost:8501")
+            print("   3. 浏览器访问: http://localhost:8888")
             
     except Exception as e:
         print(f"\n❌ 分析过程中出现错误: {e}")
