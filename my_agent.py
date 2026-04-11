@@ -27,9 +27,52 @@ from crewai_tools import SerperDevTool, ScrapeWebsiteTool
 # 1. 配置核心大脑：重定向至 DeepSeek API
 # ==========================================
 os.environ["OPENAI_API_BASE"] = "https://api.deepseek.com"
-# 请务必将下方替换为你自己的真实 API Key
-os.environ["OPENAI_API_KEY"] = "sk-39a1a06301a442feb6c9e578ce227992" 
-os.environ["OPENAI_MODEL_NAME"] = "deepseek-reasoner" 
+
+# 从环境变量或 .env 文件读取 API Key，避免硬编码泄露
+def get_api_key():
+    """安全获取API密钥，优先从环境变量读取"""
+    # 先尝试从环境变量读取
+    api_key = os.getenv("DEEPSEEK_API_KEY")
+    if api_key:
+        return api_key
+    
+    # 尝试从 .env 文件读取
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        if api_key:
+            return api_key
+    except ImportError:
+        pass
+    
+    # 如果都没有设置，提示用户
+    print("\n" + "=" * 60)
+    print("⚠️  API密钥未设置")
+    print("=" * 60)
+    print("\n请按以下方式之一设置API密钥：")
+    print("\n1. 创建 .env 文件并添加：")
+    print("   DEEPSEEK_API_KEY=你的实际密钥")
+    print("\n2. 或者在命令行中设置环境变量：")
+    print("   Linux/Mac: export DEEPSEEK_API_KEY=你的实际密钥")
+    print("   Windows: set DEEPSEEK_API_KEY=你的实际密钥")
+    print("\n3. 或者直接输入密钥（仅限本次运行）：")
+    user_key = input("\n请输入DeepSeek API密钥 (或按Enter跳过): ").strip()
+    
+    if user_key:
+        return user_key
+    
+    raise ValueError("API密钥未提供，无法继续运行。")
+
+# 安全地获取API密钥
+try:
+    api_key = get_api_key()
+    os.environ["OPENAI_API_KEY"] = api_key
+    os.environ["OPENAI_MODEL_NAME"] = "deepseek-reasoner"
+    print("✅ API密钥已成功加载")
+except Exception as e:
+    print(f"❌ 错误: {e}")
+    sys.exit(1)
 
 search_tool = SerperDevTool()
 scrape_tool = ScrapeWebsiteTool()
