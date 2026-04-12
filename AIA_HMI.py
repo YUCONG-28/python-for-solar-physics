@@ -6,23 +6,19 @@ Created on Thu Oct 23 21:26:10 2025
 """
 
 import os
-import re
 import datetime
-import sunpy.map
 import numpy as np
-import astropy.units as u
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
-from astropy.coordinates import SkyCoord
-from scipy.ndimage import gaussian_filter
+from matplotlib.lines import Line2D
 import time
-import gc  # 引入垃圾回收模块
 from tqdm import tqdm
-from matplotlib.lines import Line2D  # 用于创建自定义图例
 
-# 修改字体设置部分
-plt.rcParams["font.family"] = ["SimHei", "Microsoft YaHei", "sans-serif"]
-plt.rcParams["axes.unicode_minus"] = False  # 解决负号显示问题
+# 导入共享工具模块
+import utils_solar as utils
+
+# 设置中文字体
+utils.setup_chinese_font()
 
 # 数据路径设置
 input_dir_AIA = 'D:/spike_topping_type_III/20250503/All/171'
@@ -38,60 +34,18 @@ vmax = 6666  # 最大值（对数尺度）
 norm = colors.LogNorm(vmin=vmin, vmax=vmax)
 
 
-def extract_time_from_filename(filename):
-    """从文件名提取时间信息"""
-    # 匹配HMI文件名格式
-    hmi_match = re.search(r'(\d{8}_\d{6})_TAI', filename)
-    if hmi_match:
-        time_str = hmi_match.group(1)
-        return datetime.datetime.strptime(time_str, '%Y%m%d_%H%M%S')
-    
-    # 匹配AIA文件名格式（支持有冒号和无冒号两种）
-    aia_match1 = re.search(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)', filename)
-    if aia_match1:
-        time_str = aia_match1.group(1)
-        return datetime.datetime.strptime(time_str, '%Y-%m-%dT%H:%M:%SZ')
-    
-    aia_match2 = re.search(r'(\d{4}-\d{2}-\d{2}T\d{6}Z)', filename)
-    if aia_match2:
-        time_str = aia_match2.group(1)
-        return datetime.datetime.strptime(time_str, '%Y-%m-%dT%H%M%SZ')
-    
-    aia_alt_match = re.search(r'(\d{8})T(\d{6})', filename)
-    if aia_alt_match:
-        time_str = f"{aia_alt_match.group(1)}_{aia_alt_match.group(2)}"
-        return datetime.datetime.strptime(time_str, '%Y%m%d_%H%M%S')
-    
-    raise ValueError(f"无法从文件名提取时间：{filename}")
-
-
-def get_sorted_files_with_time(input_dir):
-    """获取目录下所有FITS文件并按时间排序"""
-    files = []
-    for f in os.listdir(input_dir):
-        if f.lower().endswith('.fits'):
-            try:
-                file_path = os.path.join(input_dir, f)
-                if os.path.getsize(file_path) < 1024:  # 跳过空文件
-                    print(f"跳过空文件：{f}")
-                    continue
-                file_time = extract_time_from_filename(f)
-                files.append((file_path, file_time))
-            except ValueError as e:
-                print(f"跳过文件（时间提取失败）：{e}")
-            except Exception as e:
-                print(f"处理文件时出错：{f}，错误：{e}")
-    return sorted(files, key=lambda x: x[1])
-
-
 # 获取排序后的文件列表
-aia_files = get_sorted_files_with_time(input_dir_AIA)
-hmi_files = get_sorted_files_with_time(input_dir_HMI)
+print("加载AIA文件...")
+aia_files = utils.get_sorted_fits_files(input_dir_AIA)
+print("加载HMI文件...")
+hmi_files = utils.get_sorted_fits_files(input_dir_HMI)
 
 if not aia_files:
     raise ValueError("AIA目录中未找到有效的FITS文件")
 if not hmi_files:
     raise ValueError("HMI目录中未找到有效的FITS文件")
+
+print(f"找到 {len(aia_files)} 个AIA文件和 {len(hmi_files)} 个HMI文件")
 
 # 确定AIA的目标坐标系（与AIA_193.py保持一致）
 if len(aia_files) >= 2:
@@ -103,8 +57,7 @@ if len(aia_files) >= 2:
     target_wcs = cutout_map.wcs  # 保存目标坐标系用于重投影
     
     # 立即清理临时变量释放内存
-    del temp_map, cutout_map, roi_bottom_left, roi_top_right
-    gc.collect()
+    utils.safe_delete(['temp_map', 'cutout_map', 'roi_bottom_left', 'roi_top_right'], locals())
 else:
     raise ValueError("AIA文件数量不足，无法确定目标坐标系")
 
@@ -116,8 +69,7 @@ start_time = time.time()
 processed_files = 0
 
 # 预定义轮廓线参数以避免重复创建
-levels = [50] * u.Gauss
-levels = np.concatenate((-1 * levels[::-1], levels))  # 得到 [-500, -50, 50, 500]
+levels = utils.create_magnetic_contour_levels(50 * u.Gauss)
 linewidths = [1, 1]  # 绝对值大的磁场（500G）用更粗的线
 colors_list = ['b', 'r']  # 轮廓线颜色
 
@@ -126,6 +78,9 @@ legend_elements = [
     Line2D([0], [0], color='b', lw=1, alpha=0.8, label='-50 Gauss'),
     Line2D([0], [0], color='r', lw=1, alpha=0.8, label='50 Gauss')
 ]
+
+# 监控内存使用
+utils.monitor_memory_usage("处理开始前内存使用")
 
 for aia_path, aia_time in tqdm(aia_files, desc="处理进度", unit="文件"):
     if hmi_idx >= len(hmi_files):
@@ -159,12 +114,10 @@ for aia_path, aia_time in tqdm(aia_files, desc="处理进度", unit="文件"):
         try:
             # 加载AIA文件并归一化
             aia_map = sunpy.map.Map(aia_path)
-            normalized_data = aia_map.data / aia_map.exposure_time
-            normalized_aia_map = sunpy.map.Map(normalized_data, aia_map.meta)
+            normalized_aia_map = utils.normalize_aia_exposure(aia_map)
             
             # 重投影到目标坐标系
-            with sunpy.coordinates.propagate_with_solar_surface():
-                aligned_aia_map = normalized_aia_map.reproject_to(target_wcs)
+            aligned_aia_map = utils.align_maps_to_reference(normalized_aia_map, target_wcs)
         except Exception as e:
             print(f"AIA文件读取失败：{aia_path}，错误：{e}")
             processed_files += 1
@@ -175,20 +128,7 @@ for aia_path, aia_time in tqdm(aia_files, desc="处理进度", unit="文件"):
             hmi_map = sunpy.map.Map(hmi_path)
             
             # HMI数据重投影到目标坐标系
-            with sunpy.coordinates.propagate_with_solar_surface():
-                aligned_hmi_map = hmi_map.reproject_to(target_wcs)
-            
-            # 关键修复：确保单位存在（HMI数据单位通常为Gauss）
-            if aligned_hmi_map.unit is None:
-                # 手动设置单位为高斯（G）
-                aligned_hmi_map = sunpy.map.Map(aligned_hmi_map.data, aligned_hmi_map.meta)
-                aligned_hmi_map.meta['bunit'] = 'G'  # 元数据中补充单位信息
-                hmi_unit = u.Gauss
-            else:
-                hmi_unit = aligned_hmi_map.unit
-            
-            # 使用确认后的单位计算hmi_data
-            hmi_data = aligned_hmi_map.data * hmi_unit
+            aligned_hmi_map = utils.align_maps_to_reference(hmi_map, target_wcs)
         
         except Exception as e:
             print(f"HMI文件读取失败：{hmi_path}，错误：{e}")
@@ -196,13 +136,10 @@ for aia_path, aia_time in tqdm(aia_files, desc="处理进度", unit="文件"):
             continue
             
         # 应用阈值和高斯滤波
-        hmi_data = aligned_hmi_map.data * aligned_hmi_map.unit
-        hmi_data[np.abs(hmi_data) < threshold] = 0 * u.Gauss
-        smoothed_data = gaussian_filter(hmi_data.value, sigma=sigma) * hmi_data.unit
-        hmi_smoothed = sunpy.map.Map(smoothed_data, aligned_hmi_map.meta)
+        hmi_smoothed = utils.process_hmi_magnetic_field(aligned_hmi_map, threshold, sigma)
 
         # 绘制图像
-        fig = plt.figure(figsize=(10, 8))
+        fig, ax = utils.create_figure_with_white_background(figsize=(10, 8))
         ax = fig.add_subplot(projection=aligned_aia_map)
         aligned_aia_map.plot(axes=ax, norm=norm)
         aligned_aia_map.draw_grid(axes=ax)
@@ -221,28 +158,36 @@ for aia_path, aia_time in tqdm(aia_files, desc="处理进度", unit="文件"):
         ax.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1, 1), frameon=True)
 
         # 设置标题
-        title_time = aia_time.strftime('%Y-%m-%d %H:%M:%S')
+        title_time = utils.format_time_for_display(aia_time)
         ax.set_title(f"{title_time}", fontsize=16, pad=34)
         
         # 保存图像
-        file_time_str = aia_time.strftime('%Y%m%d_%H%M%S')
+        file_time_str = utils.format_time_for_filename(aia_time)
         output_path = os.path.join(output_dir, f"{file_time_str}.png")
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.show()
         
         # 关闭图像并清理内存
         plt.close(fig)
-        del aia_map, normalized_data, normalized_aia_map, aligned_aia_map
-        del hmi_map, aligned_hmi_map, hmi_data, smoothed_data, hmi_smoothed, ax, fig
-        gc.collect()
+        utils.safe_delete(['aia_map', 'normalized_aia_map', 'aligned_aia_map',
+                          'hmi_map', 'aligned_hmi_map', 'hmi_smoothed', 'ax', 'fig'], locals())
         
     except Exception as e:
         print(f"处理文件时出错: {e}")
         plt.close('all')
-        gc.collect()
+        utils.optimized_gc_collect()
     
     processed_files += 1
+    
+    # 每处理10个文件报告一次进度和内存使用
+    if processed_files % 10 == 0:
+        elapsed = time.time() - start_time
+        files_per_second = processed_files / elapsed if elapsed > 0 else 0
+        utils.monitor_memory_usage(f"已处理 {processed_files}/{total_files} 个文件")
+        print(f"处理速度: {files_per_second:.2f} 文件/秒")
 
 # 显示总耗时
 total_time = time.time() - start_time
+utils.monitor_memory_usage("处理完成后内存使用")
 print(f"处理完成！共处理 {processed_files} 个文件，耗时: {total_time:.2f} 秒")
+print(f"平均处理速度: {processed_files/total_time:.2f} 文件/秒")
