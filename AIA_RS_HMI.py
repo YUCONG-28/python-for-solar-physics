@@ -214,17 +214,90 @@ def parse_hmi_time_from_filename(filename: str) -> Optional[datetime]:
 # ============================================================
 #  射电数据工具
 # ============================================================
-def extract_radio_2d_data(hdu, use_float32: bool = True) -> Tuple[np.ndarray, fits.Header]:
+def extract_radio_2d_data(fits_path: str, use_float32: bool = True) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray], fits.Header]:
     """
-    从 FITS HDU 中提取二维射电图像数据（自动压缩高维）。
+    从 FITS HDU 中提取二维射电图像数据和坐标查找表。
+    现在支持两种模式：
+    1. 标准WCS：从单个FITS文件中提取数据和头文件
+    2. 坐标查找表：从三个文件中分别提取数据、赤经图、赤纬图
+    
     ★ 优化3：use_float32=True 时使用 float32，内存减半；
     仅在 contour/smooth 前转 float64，计算精度不受影响。
     """
-    data = hdu.data
-    while data.ndim > 2:
-        data = data[0]
-    dtype = np.float32 if use_float32 else np.float64
-    return np.squeeze(data).astype(dtype), hdu.header.copy()
+    try:
+        # 首先尝试读取数据文件
+        with fits.open(fits_path) as hdu_data:
+            data = hdu_data[0].data
+            while data.ndim > 2:
+                data = data[0]
+            data = np.squeeze(data)
+            
+            # 检查是否是坐标查找表格式
+            if 'RightAscension' in fits_path or 'Declination' in fits_path:
+                # 如果是坐标图文件，直接返回
+                dtype = np.float32 if use_float32 else np.float64
+                return data.astype(dtype), None, None, hdu_data[0].header.copy()
+            else:
+                # 标准FITS文件，尝试读取对应的坐标图
+                header = hdu_data[0].header.copy()
+                
+                # 尝试从同一目录读取坐标图
+                base_dir = os.path.dirname(fits_path)
+                base_name = os.path.basename(fits_path).split('.')[0]
+                
+                # 查找赤经文件
+                ra_patterns = [
+                    os.path.join(base_dir, f"{base_name}_RightAscension*.fits"),
+                    os.path.join(base_dir, f"*RightAscension*.fits"),
+                    os.path.join(base_dir, "..", f"*RightAscension*.fits")
+                ]
+                
+                ra_map = None
+                dec_map = None
+                
+                for pattern in ra_patterns:
+                    ra_files = glob.glob(pattern)
+                    if ra_files:
+                        try:
+                            with fits.open(ra_files[0]) as hdu_ra:
+                                ra_map = hdu_ra[0].data
+                                while ra_map.ndim > 2:
+                                    ra_map = ra_map[0]
+                                ra_map = np.squeeze(ra_map)
+                                if use_float32:
+                                    ra_map = ra_map.astype(np.float32)
+                                break
+                        except:
+                            continue
+                
+                # 查找赤纬文件
+                dec_patterns = [
+                    os.path.join(base_dir, f"{base_name}_Declination*.fits"),
+                    os.path.join(base_dir, f"*Declination*.fits"),
+                    os.path.join(base_dir, "..", f"*Declination*.fits")
+                ]
+                
+                for pattern in dec_patterns:
+                    dec_files = glob.glob(pattern)
+                    if dec_files:
+                        try:
+                            with fits.open(dec_files[0]) as hdu_dec:
+                                dec_map = hdu_dec[0].data
+                                while dec_map.ndim > 2:
+                                    dec_map = dec_map[0]
+                                dec_map = np.squeeze(dec_map)
+                                if use_float32:
+                                    dec_map = dec_map.astype(np.float32)
+                                break
+                        except:
+                            continue
+                
+                dtype = np.float32 if use_float32 else np.float64
+                return data.astype(dtype), ra_map, dec_map, header
+                
+    except Exception as e:
+        print(f"读取FITS文件失败 {fits_path}: {e}")
+        return None, None, None, None
 
 def _get_header_val(header: fits.Header, keys: List[str], default):
     """模块级工具函数，替代 build_radio_wcs_2d 内的嵌套闭包。"""
@@ -384,17 +457,216 @@ def apply_solar_rotation(coord_hpc: SkyCoord, t_from: datetime, t_to: datetime,
 # ============================================================
 #  重投影（接收预提取的 target_shape + aia_wcs_2d）
 # ============================================================
-def reproject_radio_to_aia(radio_data:   np.ndarray,
-                            radio_header: fits.Header,
-                            radio_wcs:    WCS,
-                            target_shape: Tuple[int, int],
-                            aia_wcs_2d:   WCS,
-                            radio_time:   Optional[datetime],
-                            aia_time:     Optional[datetime],
-                            height_rsun:  float,
-                            cfg:          Config) -> Optional[np.ndarray]:
+def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
+                                           ra_map: np.ndarray,
+                                           dec_map: np.ndarray,
+                                           target_shape: Tuple[int, int],
+                                           aia_wcs_2d: WCS,
+                                           radio_time: Optional[datetime],
+                                           aia_time: Optional[datetime],
+                                           height_rsun: float,
+                                           cfg: Config) -> Optional[np.ndarray]:
     """
-    将射电图像重投影到 AIA 裁剪图的 WCS 和形状上。
+    使用坐标查找表将射电图像重投影到 AIA 裁剪图的 WCS 和形状上。
+    参数：
+        radio_data: 射电数据数组
+        ra_map: 赤经坐标图（度）
+        dec_map: 赤纬坐标图（度）
+        target_shape: 目标形状
+        aia_wcs_2d: AIA图像的WCS
+        radio_time: 射电观测时间
+        aia_time: AIA观测时间
+        height_rsun: 日冕高度（以太阳半径为单位）
+        cfg: 配置对象
+    """
+    try:
+        if ra_map is None or dec_map is None:
+            print("    缺少坐标查找表，无法进行重投影")
+            return None
+            
+        # 确保坐标图与数据形状一致
+        if ra_map.shape != radio_data.shape or dec_map.shape != radio_data.shape:
+            print(f"    坐标图形状不匹配: 数据{radio_data.shape}, RA{ra_map.shape}, Dec{dec_map.shape}")
+            return None
+        
+        # 创建目标网格
+        ny, nx = target_shape
+        y_indices, x_indices = np.mgrid[0:ny, 0:nx]
+        
+        # 获取目标网格的世界坐标（AIA坐标系）
+        target_coords = aia_wcs_2d.pixel_to_world(x_indices, y_indices)
+        
+        # 转换为赤道坐标
+        from astropy.coordinates import SkyCoord
+        import astropy.units as u
+        
+        # 转换到赤道坐标系（ICRS）
+        target_eq_coords = target_coords.transform_to('icrs')
+        target_ra = target_eq_coords.ra.deg.reshape(ny, nx)
+        target_dec = target_eq_coords.dec.deg.reshape(ny, nx)
+        
+        # 对坐标图进行网格化，创建插值器
+        from scipy.interpolate import griddata
+        
+        # 获取有效数据点
+        valid_mask = ~np.isnan(ra_map) & ~np.isnan(dec_map) & ~np.isnan(radio_data)
+        
+        if not np.any(valid_mask):
+            print("    没有有效的坐标数据点")
+            return None
+        
+        # 提取有效点的坐标和数据
+        valid_ra = ra_map[valid_mask]
+        valid_dec = dec_map[valid_mask]
+        valid_data = radio_data[valid_mask]
+        
+        # 检查坐标范围
+        ra_range = np.nanmax(valid_ra) - np.nanmin(valid_ra)
+        dec_range = np.nanmax(valid_dec) - np.nanmin(valid_dec)
+        
+        if ra_range < 1e-6 or dec_range < 1e-6:
+            print(f"    坐标范围过小: RA范围{ra_range:.6f}度, Dec范围{dec_range:.6f}度")
+            return None
+        
+        # 将目标坐标插值到射电数据的坐标网格
+        # 由于坐标查找表不是规则的网格，使用线性插值
+        try:
+            reprojected = griddata(
+                (valid_ra, valid_dec),  # 已知点的坐标
+                valid_data,             # 已知点的值
+                (target_ra, target_dec), # 要插值的点
+                method='linear',
+                fill_value=np.nan
+            )
+        except Exception as e:
+            print(f"    网格插值失败: {e}")
+            # 尝试使用最近邻插值
+            reprojected = griddata(
+                (valid_ra, valid_dec),
+                valid_data,
+                (target_ra, target_dec),
+                method='nearest',
+                fill_value=np.nan
+            )
+        
+        # 应用太阳自转修正（如果启用）
+        if (cfg.apply_solar_rotation_correction
+                and radio_time and aia_time
+                and abs((aia_time - radio_time).total_seconds()) > 1.0):
+            
+            try:
+                # 获取射电图像有效区域的质心
+                valid_mask = ~np.isnan(radio_data)
+                if np.any(valid_mask):
+                    y_indices, x_indices = np.where(valid_mask)
+                    center_y = np.mean(y_indices)
+                    center_x = np.mean(x_indices)
+                    
+                    # 使用坐标查找表获取中心点的世界坐标
+                    center_ra = ra_map[int(center_y), int(center_x)]
+                    center_dec = dec_map[int(center_y), int(center_x)]
+                    
+                    # 创建SkyCoord对象
+                    center_world = SkyCoord(
+                        ra=center_ra * u.deg,
+                        dec=center_dec * u.deg,
+                        frame='icrs'
+                    )
+                    
+                    # 转换到日面经纬度坐标
+                    from sunpy.coordinates import frames
+                    center_hgs = center_world.transform_to(
+                        frames.HeliographicStonyhurst(obstime=ATime(radio_time.isoformat())))
+                    
+                    # 计算时间差
+                    time_diff = (aia_time - radio_time).total_seconds()
+                    
+                    # 计算自转修正（较差自转）
+                    lat_rad = center_hgs.lat.radian
+                    omega_deg_per_day = 14.713 - 2.396 * np.sin(lat_rad)**2 - 1.787 * np.sin(lat_rad)**4
+                    delta_lon = omega_deg_per_day * (time_diff / 86400.0)  # 经度变化
+                    
+                    # 应用修正
+                    new_hgs = SkyCoord(
+                        lon=center_hgs.lon + delta_lon * u.deg,
+                        lat=center_hgs.lat,
+                        radius=center_hgs.radius,
+                        frame=frames.HeliographicStonyhurst(obstime=ATime(aia_time.isoformat()))
+                    )
+                    
+                    # 转换回日面投影坐标
+                    new_hpc = new_hgs.transform_to(
+                        frames.Helioprojective(obstime=ATime(aia_time.isoformat()),
+                                               observer='earth'))
+                    
+                    # 转换到赤道坐标
+                    new_eq = new_hpc.transform_to('icrs')
+                    
+                    # 计算坐标偏移
+                    delta_ra = new_eq.ra.deg - center_ra
+                    delta_dec = new_eq.dec.deg - center_dec
+                    
+                    if abs(delta_ra) >= 0.001 or abs(delta_dec) >= 0.001:
+                        # 在目标坐标上应用偏移
+                        shifted_ra = target_ra - delta_ra
+                        shifted_dec = target_dec - delta_dec
+                        
+                        # 重新插值
+                        try:
+                            reprojected = griddata(
+                                (valid_ra, valid_dec),
+                                valid_data,
+                                (shifted_ra, shifted_dec),
+                                method='linear',
+                                fill_value=np.nan
+                            )
+                        except:
+                            # 如果线性插值失败，使用最近邻
+                            reprojected = griddata(
+                                (valid_ra, valid_dec),
+                                valid_data,
+                                (shifted_ra, shifted_dec),
+                                method='nearest',
+                                fill_value=np.nan
+                            )
+                            
+            except Exception as e:
+                print(f"    自转修正失败: {e}")
+        
+        # 应用数据级平滑
+        if cfg.radio_smooth_sigma > 0:
+            from scipy.ndimage import gaussian_filter
+            reprojected = gaussian_filter(
+                np.nan_to_num(reprojected, nan=0.0),
+                sigma=cfg.radio_smooth_sigma
+            )
+            
+        # 应用通量守恒归一化（如果启用）
+        if hasattr(cfg, 'flux_normalization') and cfg.flux_normalization == 'flux_conserved':
+            original_sum = np.nansum(radio_data)
+            new_sum = np.nansum(reprojected)
+            if new_sum > 0 and original_sum > 0:
+                reprojected = reprojected * (original_sum / new_sum)
+                
+        return reprojected
+        
+    except Exception as e:
+        print(f"    坐标查找表重投影失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def reproject_radio_to_aia_standard(radio_data:   np.ndarray,
+                                    radio_header: fits.Header,
+                                    radio_wcs:    WCS,
+                                    target_shape: Tuple[int, int],
+                                    aia_wcs_2d:   WCS,
+                                    radio_time:   Optional[datetime],
+                                    aia_time:     Optional[datetime],
+                                    height_rsun:  float,
+                                    cfg:          Config) -> Optional[np.ndarray]:
+    """
+    将射电图像重投影到 AIA 裁剪图的 WCS 和形状上（标准WCS方法）。
     可选：太阳自转修正、数据级平滑。
     ★ 优化3：reproject 输入为 float32，输出也是 float32；
     smooth 前转 float64 以保持精度。
@@ -539,6 +811,41 @@ def reproject_radio_to_aia(radio_data:   np.ndarray,
             reprojected = reprojected * (original_sum / new_sum)
     
     return reprojected
+
+def reproject_radio_to_aia(radio_data:   np.ndarray,
+                           radio_header: fits.Header,
+                           radio_wcs:    Optional[WCS],
+                           ra_map:       Optional[np.ndarray],
+                           dec_map:      Optional[np.ndarray],
+                           target_shape: Tuple[int, int],
+                           aia_wcs_2d:   WCS,
+                           radio_time:   Optional[datetime],
+                           aia_time:     Optional[datetime],
+                           height_rsun:  float,
+                           cfg:          Config) -> Optional[np.ndarray]:
+    """
+    将射电图像重投影到 AIA 裁剪图的 WCS 和形状上。
+    现在支持两种模式：
+    1. 标准WCS重投影（当radio_wcs有效时）
+    2. 坐标查找表重投影（当ra_map和dec_map有效时）
+    """
+    # 优先使用坐标查找表（如果可用）
+    if ra_map is not None and dec_map is not None:
+        return reproject_radio_with_coordinate_lookup(
+            radio_data, ra_map, dec_map,
+            target_shape, aia_wcs_2d,
+            radio_time, aia_time, height_rsun, cfg
+        )
+    # 否则使用标准WCS重投影
+    elif radio_wcs is not None:
+        return reproject_radio_to_aia_standard(
+            radio_data, radio_header, radio_wcs,
+            target_shape, aia_wcs_2d,
+            radio_time, aia_time, height_rsun, cfg
+        )
+    else:
+        print("    无法进行重投影：既没有WCS也没有坐标查找表")
+        return None
 
 # ============================================================
 #  展示级等值线平滑（归一化卷积，正确处理 NaN 边界）
@@ -745,29 +1052,29 @@ def process_aia_group(aia_file:    str,
                             and polarization != cfg.polarization_mode):
                         continue
                     try:
-                        with fits.open(fits_path) as hdul:
-                            img_hdu = next(
-                                (h for h in hdul
-                                 if isinstance(h, (fits.PrimaryHDU, fits.ImageHDU))
-                                 and h.data is not None and h.data.ndim >= 2),
-                                hdul[0]
-                            )
-                            # ★ 优化3：传入 use_float32 参数
-                            radio_data_2d, radio_header_2d = extract_radio_2d_data(
-                                img_hdu, use_float32=cfg.radio_use_float32)
-                            beam = get_beam_params_from_header(img_hdu.header)
-
+                        # 使用新的 extract_radio_2d_data 函数
+                        radio_data_2d, ra_map, dec_map, radio_header_2d = extract_radio_2d_data(
+                            fits_path, use_float32=cfg.radio_use_float32
+                        )
+                    
                         if radio_data_2d is None or radio_data_2d.size == 0:
                             continue
-
-                        radio_wcs_2d = build_radio_wcs_2d(
-                            radio_header_2d, radio_time, cutout_aia.meta)
-
+                    
+                        # 尝试构建标准WCS（如果坐标图不可用则使用）
+                        radio_wcs_2d = None
+                        if ra_map is None or dec_map is None:
+                            radio_wcs_2d = build_radio_wcs_2d(
+                                radio_header_2d, radio_time, cutout_aia.meta
+                            )
+                    
+                        beam = get_beam_params_from_header(radio_header_2d)
+                    
                         if beam and band_label not in collected_beams:
                             collected_beams[band_label] = beam
-
+                    
                         reprojected = reproject_radio_to_aia(
                             radio_data_2d, radio_header_2d, radio_wcs_2d,
+                            ra_map, dec_map,  # 新增参数
                             target_shape, aia_wcs_2d,
                             radio_time, aia_time, height_rsun, cfg
                         )
