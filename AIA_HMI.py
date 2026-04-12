@@ -17,6 +17,11 @@ from tqdm import tqdm
 # 导入共享工具模块
 import utils_solar as utils
 
+# 导入必要的天文数据处理模块
+import sunpy.map
+from astropy.coordinates import SkyCoord
+import astropy.units as u
+
 # 设置中文字体
 utils.setup_chinese_font()
 
