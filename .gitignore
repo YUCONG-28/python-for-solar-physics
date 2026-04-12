@@ -69,3 +69,45 @@ logs/
 temp/
 tmp/
 .automated-tool*
+.automated-tool.chat.history.md
+
+# 太阳物理项目特定忽略
+# FITS文件（通常很大）
+*.fits
+*.fits.gz
+*.fits.fz
+
+# 天文数据目录
+data/raw/
+data/processed/
+observations/
+
+# 大型输出文件
+output/plots/*.png
+output/plots/*.pdf
+!output/plots/README.md  # 保留README
+
+# Jupyter笔记本检查点
+.ipynb_checkpoints/
+
+# Python虚拟环境
+venv/
+env/
+.venv/
+ENV/
+
+# 缓存目录
+.cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# 操作系统特定文件
+*.DS_Store
+Desktop.ini
+
+# 编辑器备份文件
+*~
+\#*#
+.#*

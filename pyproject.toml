@@ -1,0 +1,80 @@
+[project]
+name = "solar-physics-toolkit"
+version = "0.1.0"
+description = "A research-oriented toolkit for multi-wavelength solar data analysis"
+authors = [
+    {name = "Solar Physics Researcher", email = "researcher@example.com"}
+]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "astropy>=5.3.0",
+    "sunpy>=5.0.0",
+    "matplotlib>=3.7.0",
+    "reproject>=0.10.0",
+    "scikit-image>=0.21.0",
+    "pyyaml>=6.0.0",
+    "pandas>=2.0.0",
+    "tqdm>=4.65.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "jupyter>=1.0.0",
+    "ipython>=8.14.0",
+]
+full = [
+    "seaborn>=0.12.0",
+    "plotly>=5.15.0",
+    "opencv-python>=4.8.0",
+    "dask>=2023.6.0",
+    "fitsio>=1.2.0",
+    "skyfield>=1.45",
+    "drms>=0.6.3",
+]
+gui = [
+    "PyQt5>=5.15.0",
+    "pyqtgraph>=0.13.0",
+]
+
+[project.scripts]
+solar-process = "solar_toolkit.cli:main"
+aia-process = "solar_toolkit.processors.aia:cli_main"
+radio-process = "solar_toolkit.processors.radio:cli_main"
+
+[project.urls]
+Homepage = "https://github.com/your-username/solar-physics-toolkit"
+Documentation = "https://github.com/your-username/solar-physics-toolkit/docs"
+Repository = "https://github.com/your-username/solar-physics-toolkit.git"
+Issues = "https://github.com/your-username/solar-physics-toolkit/issues"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["solar_toolkit*"]
+exclude = ["tests*", "examples*", "docs*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
