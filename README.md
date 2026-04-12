@@ -62,17 +62,109 @@ The toolkit bridges the gap between raw observational data and physical interpre
 
 ---
 
-## 🚀 Quick Start
+## 🚀 快速开始
+
+### 前提条件
+
+- Python 3.8 或更高版本
+- Git（用于克隆仓库）
+- 至少 4GB 可用内存（处理天文数据建议 8GB+）
+
+### 安装步骤
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/your-repo-name.git
+# 1. 克隆仓库
+git clone https://github.com/your-username/solar-physics-toolkit.git
+cd solar-physics-toolkit
 
-# Enter the directory
-cd your-repo-name
+# 2. 创建虚拟环境（推荐）
+python -m venv venv
 
-# Install dependencies
+# 激活虚拟环境
+# Windows:
+venv\Scripts\activate
+# Linux/Mac:
+source venv/bin/activate
+
+# 3. 安装依赖
+# 基础安装（核心功能）：
 pip install -r requirements.txt
+
+# 或者安装为可编辑包（推荐用于开发）：
+pip install -e .
+
+# 4. 安装完整功能（包含所有可选依赖）：
+pip install -e ".[full]"
+
+# 5. 安装开发工具（可选）：
+pip install -e ".[dev]"
+```
+
+### 验证安装
+
+```python
+# 创建一个简单的测试脚本 test_install.py
+import sys
+print(f"Python版本: {sys.version}")
+
+try:
+    import numpy as np
+    import astropy
+    import sunpy
+    import matplotlib.pyplot as plt
+    
+    print("✅ 核心依赖加载成功!")
+    print(f"NumPy版本: {np.__version__}")
+    print(f"AstroPy版本: {astropy.__version__}")
+    print(f"SunPy版本: {sunpy.__version__}")
+    
+    # 测试基本功能
+    from astropy import units as u
+    from sunpy.coordinates import frames
+    
+    print("✅ 天文单位系统测试通过!")
+    
+except ImportError as e:
+    print(f"❌ 导入失败: {e}")
+    sys.exit(1)
+```
+
+运行测试：
+```bash
+python test_install.py
+```
+
+### 快速示例
+
+```python
+# 示例：加载和显示AIA数据
+from solar_toolkit.processors import AIAProcessor
+import matplotlib.pyplot as plt
+
+# 初始化处理器
+processor = AIAProcessor(data_dir="path/to/aia/data")
+
+# 加载特定波段的图像
+aia_193 = processor.load_wavelength(193)
+
+# 创建简单的可视化
+fig, ax = plt.subplots(figsize=(8, 8))
+aia_193.plot(ax=ax, title="AIA 193Å")
+plt.savefig("aia_193_example.png", dpi=150, bbox_inches='tight')
+plt.show()
+```
+
+### 获取测试数据
+
+```bash
+# 下载示例数据（需要安装sunpy）
+python -c "import sunpy.data; sunpy.data.download_sample_data()"
+
+# 或者使用内置的示例数据
+from sunpy.data.sample import AIA_193_IMAGE
+import sunpy.map
+aia_map = sunpy.map.Map(AIA_193_IMAGE)
+print(f"示例数据加载成功: {aia_map.date}")
 ```
 
 ---
