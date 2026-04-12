@@ -131,6 +131,23 @@ class Config:
     # ★ 优化3：射电数据精度；True = float32（内存减半），False = float64
     radio_use_float32:   bool  = True
 
+    # 新增：通量归一化选项
+    flux_normalization: str = 'none'  # 'none', 'peak', 'rms', 'flux_conserved'
+    flux_reference_band: Optional[str] = None  # 参考波段，如'300MHz'
+    
+    # 新增：射电图像预处理选项
+    apply_background_subtraction: bool = True
+    background_estimation_method: str = 'corner'  # 'corner', 'median', 'minimum'
+    
+    # 新增：坐标转换精度控制
+    coordinate_tolerance: float = 1e-6  # 坐标转换容差
+    use_precise_solar_rotation: bool = True  # 使用精确太阳自转模型
+    
+    # 新增：叠加质量验证
+    overlay_validation: bool = True  # 是否验证叠加质量
+    min_overlay_correlation: float = 0.2  # 最小相关系数阈值
+    reprojection_method: str = 'scientific'  # 'simple', 'interp', 'scientific'
+
 # ============================================================
 #  颜色缓存
 # ============================================================
@@ -266,22 +283,58 @@ def estimate_rms_noise(data: np.ndarray, box_fraction: float = 0.15) -> float:
     ny, nx = data.shape
     bx = max(int(nx * box_fraction), 5)
     by = max(int(ny * box_fraction), 5)
-    corners = [data[:by, :bx], data[:by, -bx:], data[-by:, :bx], data[-by:, -bx:]]
-    edge_pixels = np.concatenate([c.ravel() for c in corners])
-    edge_pixels = edge_pixels[np.isfinite(edge_pixels)]
-    if len(edge_pixels) == 0:
+    
+    # 提取四个角区域
+    corners = [
+        data[:by, :bx], data[:by, -bx:],
+        data[-by:, :bx], data[-by:, -bx:]
+    ]
+    
+    # 合并角部像素
+    corner_pixels = np.concatenate([c.ravel() for c in corners])
+    corner_pixels = corner_pixels[~np.isnan(corner_pixels)]
+    
+    if len(corner_pixels) < 10:
+        # 如果角部像素不足，使用边缘像素
+        edges = np.concatenate([
+            data[:by, :].ravel(), data[-by:, :].ravel(),
+            data[:, :bx].ravel(), data[:, -bx:].ravel()
+        ])
+        edge_pixels = edges[~np.isnan(edges)]
+        if len(edge_pixels) > 0:
+            corner_pixels = edge_pixels
+    
+    if len(corner_pixels) == 0:
         return float(np.nanstd(data) * 0.1)
-    for _ in range(3):
-        med = np.median(edge_pixels)
-        std = np.std(edge_pixels)
-        edge_pixels = edge_pixels[np.abs(edge_pixels - med) < 3 * std]
-    return float(np.std(edge_pixels)) if len(edge_pixels) > 0 else float(np.nanstd(data) * 0.1)
+    
+    # 使用中值绝对偏差（MAD）进行鲁棒估计
+    median = np.median(corner_pixels)
+    mad = np.median(np.abs(corner_pixels - median))
+    std_est = mad * 1.4826  # 转换为标准差
+    
+    # 3-sigma裁剪去除异常值
+    filtered = corner_pixels[np.abs(corner_pixels - median) < 3 * std_est]
+    
+    if len(filtered) > 0:
+        return float(np.std(filtered))
+    else:
+        return float(std_est)
 
 def compute_contour_levels(data: np.ndarray, cfg: Config) -> List[float]:
     """支持 normalization_mode='peak'（默认）和 'rms' 两种模式。"""
     finite_data = data[np.isfinite(data)]
     if len(finite_data) == 0:
         return []
+
+    # 应用背景扣除（如果启用）
+    if cfg.apply_background_subtraction:
+        if cfg.background_estimation_method == 'median':
+            background = np.median(finite_data)
+        elif cfg.background_estimation_method == 'minimum':
+            background = np.percentile(finite_data, 5)
+        else:  # 'corner'
+            background = estimate_rms_noise(data, cfg.rms_box_fraction)
+        data = data - background
 
     if cfg.normalization_mode == 'rms':
         rms = estimate_rms_noise(data, cfg.rms_box_fraction)
@@ -347,13 +400,23 @@ def reproject_radio_to_aia(radio_data:   np.ndarray,
     smooth 前转 float64 以保持精度。
     """
     try:
-        reprojected, footprint = reproject_interp(
+        # 尝试使用更精确的重投影方法
+        from reproject import reproject_exact
+        reprojected, footprint = reproject_exact(
             (radio_data, radio_wcs), aia_wcs_2d,
-            shape_out=target_shape, order=cfg.reproject_order
+            shape_out=target_shape,
+            return_footprint=True
         )
-    except Exception as e:
-        print(f"    [警告] WCS 重投影失败: {e}")
-        return None
+    except Exception:
+        # 如果精确重投影失败，回退到插值方法，使用更高阶插值
+        try:
+            reprojected, footprint = reproject_interp(
+                (radio_data, radio_wcs), aia_wcs_2d,
+                shape_out=target_shape, order=3  # 使用3阶插值提高精度
+            )
+        except Exception as e:
+            print(f"    [警告] WCS 重投影失败: {e}")
+            return None
 
     reprojected[footprint == 0] = np.nan
 
@@ -361,32 +424,120 @@ def reproject_radio_to_aia(radio_data:   np.ndarray,
             and radio_time and aia_time
             and abs((aia_time - radio_time).total_seconds()) > 1.0):
         try:
-            sky_center = radio_wcs.pixel_to_world(radio_wcs.wcs.crpix[0] - 1,
-                                                   radio_wcs.wcs.crpix[1] - 1)
-            hpc_radio    = sky_center.transform_to(
-                frames.Helioprojective(obstime=ATime(radio_time.isoformat()),
-                                       observer='earth'))
-            hpc_aia_time = apply_solar_rotation(hpc_radio, radio_time, aia_time,
-                                                 height_rsun)
-            px_radio = aia_wcs_2d.world_to_pixel(hpc_radio)
-            px_aia   = aia_wcs_2d.world_to_pixel(hpc_aia_time)
-            shift_x  = float(px_aia[0] - px_radio[0])
-            shift_y  = float(px_aia[1] - px_radio[1])
-
-            if abs(shift_x) >= 0.05 or abs(shift_y) >= 0.05:
-                reprojected = nd_shift(
-                    np.nan_to_num(reprojected, nan=0.0),
-                    shift=[shift_y, shift_x], order=1,
-                    mode='constant', cval=np.nan
+            # 获取射电图像有效区域的质心
+            valid_mask = ~np.isnan(radio_data)
+            if np.any(valid_mask):
+                y_indices, x_indices = np.where(valid_mask)
+                center_y = np.mean(y_indices)
+                center_x = np.mean(x_indices)
+                
+                # 获取中心点的世界坐标
+                center_world = radio_wcs.pixel_to_world(center_x, center_y)
+                
+                # 应用更精确的自转修正
+                from sunpy.coordinates import frames
+                import astropy.units as u
+                
+                # 转换到日面经纬度坐标
+                center_hgs = center_world.transform_to(
+                    frames.HeliographicStonyhurst(obstime=ATime(radio_time.isoformat())))
+                
+                # 计算时间差
+                time_diff = (aia_time - radio_time).total_seconds()
+                
+                # 计算自转修正（较差自转）
+                lat_rad = center_hgs.lat.radian
+                omega_deg_per_day = 14.713 - 2.396 * np.sin(lat_rad)**2 - 1.787 * np.sin(lat_rad)**4
+                delta_lon = omega_deg_per_day * (time_diff / 86400.0)  # 经度变化
+                
+                # 应用修正
+                new_hgs = SkyCoord(
+                    lon=center_hgs.lon + delta_lon * u.deg,
+                    lat=center_hgs.lat,
+                    radius=center_hgs.radius,
+                    frame=frames.HeliographicStonyhurst(obstime=ATime(aia_time.isoformat()))
                 )
-        except Exception:
-            pass
+                
+                # 转换回日面投影坐标
+                new_hpc = new_hgs.transform_to(
+                    frames.Helioprojective(obstime=ATime(aia_time.isoformat()),
+                                           observer='earth'))
+                
+                # 计算像素偏移
+                new_pixel = aia_wcs_2d.world_to_pixel(new_hpc)
+                old_pixel = aia_wcs_2d.world_to_pixel(center_world)
+                
+                shift_x = float(new_pixel[0] - old_pixel[0])
+                shift_y = float(new_pixel[1] - old_pixel[1])
+                
+                if abs(shift_x) >= 0.1 or abs(shift_y) >= 0.1:
+                    # 应用偏移，使用3阶插值
+                    reprojected = nd_shift(
+                        np.nan_to_num(reprojected, nan=0.0),
+                        shift=[shift_y, shift_x],
+                        order=3,
+                        mode='constant',
+                        cval=np.nan
+                    )
+        except Exception as e:
+            print(f"    自转修正失败: {e}")
+            # 回退到原来的简单方法
+            try:
+                sky_center = radio_wcs.pixel_to_world(radio_wcs.wcs.crpix[0] - 1,
+                                                       radio_wcs.wcs.crpix[1] - 1)
+                hpc_radio    = sky_center.transform_to(
+                    frames.Helioprojective(obstime=ATime(radio_time.isoformat()),
+                                           observer='earth'))
+                hpc_aia_time = apply_solar_rotation(hpc_radio, radio_time, aia_time,
+                                                     height_rsun)
+                px_radio = aia_wcs_2d.world_to_pixel(hpc_radio)
+                px_aia   = aia_wcs_2d.world_to_pixel(hpc_aia_time)
+                shift_x  = float(px_aia[0] - px_radio[0])
+                shift_y  = float(px_aia[1] - px_radio[1])
+
+                if abs(shift_x) >= 0.05 or abs(shift_y) >= 0.05:
+                    reprojected = nd_shift(
+                        np.nan_to_num(reprojected, nan=0.0),
+                        shift=[shift_y, shift_x], order=1,
+                        mode='constant', cval=np.nan
+                    )
+            except Exception:
+                pass
 
     # ★ 优化3：平滑前转 float64 保证精度
     if cfg.radio_smooth_sigma > 0:
-        reprojected = convolve(reprojected.astype(np.float64),
-                               _make_gaussian_kernel(cfg.radio_smooth_sigma),
-                               preserve_nan=True)
+        # 如果有波束信息，使用各向异性平滑
+        beam_info = get_beam_params_from_header(radio_header)
+        if beam_info:
+            # 创建各向异性高斯核
+            from astropy.convolution import Gaussian2DKernel
+            
+            # 将波束大小转换为像素
+            cdelt = abs(aia_wcs_2d.wcs.cdelt[0] * 3600)  # 度转角秒
+            bmaj_pix = beam_info['bmaj_arcsec'] / cdelt
+            bmin_pix = beam_info['bmin_arcsec'] / cdelt
+            
+            # 创建椭圆高斯核
+            kernel = Gaussian2DKernel(
+                x_stddev=bmin_pix/2.355,  # FWHM转sigma
+                y_stddev=bmaj_pix/2.355,
+                theta=np.deg2rad(beam_info['bpa_deg'])
+            )
+            reprojected = convolve(reprojected.astype(np.float64), kernel,
+                                   preserve_nan=True)
+        else:
+            # 使用各向同性高斯平滑
+            reprojected = convolve(reprojected.astype(np.float64),
+                                   _make_gaussian_kernel(cfg.radio_smooth_sigma),
+                                   preserve_nan=True)
+    
+    # 应用通量守恒归一化（如果启用）
+    if hasattr(cfg, 'flux_normalization') and cfg.flux_normalization == 'flux_conserved':
+        original_sum = np.nansum(radio_data)
+        new_sum = np.nansum(reprojected)
+        if new_sum > 0 and original_sum > 0:
+            reprojected = reprojected * (original_sum / new_sum)
+    
     return reprojected
 
 # ============================================================
@@ -624,6 +775,38 @@ def process_aia_group(aia_file:    str,
                                 or np.isnan(np.nanmax(reprojected))
                                 or np.nanmax(reprojected) <= 0):
                             continue
+
+                        # 叠加质量验证（如果启用）
+                        if cfg.overlay_validation:
+                            from scipy.signal import correlate2d
+                            # 提取小区域进行验证
+                            sub_size = min(100, reprojected.shape[0]//4, reprojected.shape[1]//4)
+                            center_y, center_x = reprojected.shape[0]//2, reprojected.shape[1]//2
+                            
+                            aia_sub = cutout_aia.data[
+                                center_y-sub_size:center_y+sub_size,
+                                center_x-sub_size:center_x+sub_size
+                            ]
+                            radio_sub = reprojected[
+                                center_y-sub_size:center_y+sub_size,
+                                center_x-sub_size:center_x+sub_size
+                            ]
+                            
+                            aia_sub = np.nan_to_num(aia_sub, nan=0.0)
+                            radio_sub = np.nan_to_num(radio_sub, nan=0.0)
+                            
+                            if np.sum(aia_sub) > 0 and np.sum(radio_sub) > 0:
+                                corr = correlate2d(aia_sub, radio_sub, mode='same')
+                                max_corr = np.max(corr)
+                                if max_corr > 0:
+                                    # 计算归一化相关系数
+                                    aia_norm = (aia_sub - np.mean(aia_sub)) / np.std(aia_sub)
+                                    radio_norm = (radio_sub - np.mean(radio_sub)) / np.std(radio_sub)
+                                    correlation = np.corrcoef(aia_norm.ravel(), radio_norm.ravel())[0, 1]
+                                    
+                                    if abs(correlation) < cfg.min_overlay_correlation:
+                                        print(f"    波段 {band_label} 叠加质量较差，相关系数: {correlation:.3f}")
+                                        continue
 
                         # 展示级平滑（不修改 reprojected 本体）
                         display_data = smooth_for_contour(reprojected,
