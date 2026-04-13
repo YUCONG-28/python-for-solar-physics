@@ -1167,7 +1167,40 @@ def process_aia_group(aia_file:    str,
         # ── 关键修复：为射电重投影使用纯 astropy FITS WCS，避免 SunPy 高阶WCS
         # 导致 reproject_interp 报 "different number of world coordinates" ──
         from astropy.wcs import WCS as FitsWCS
-        aia_wcs_2d = FitsWCS(cutout_aia.meta)
+        
+        # 清理FITS头中的非ASCII字符
+        cleaned_meta = {}
+        for key, value in cutout_aia.meta.items():
+            if isinstance(value, str):
+                # 移除换行符和非ASCII字符，只保留可打印ASCII字符
+                # 替换换行符为空格
+                cleaned = value.replace('\n', ' ').replace('\r', ' ')
+                # 移除控制字符和非ASCII字符，只保留ASCII 32-126
+                cleaned = ''.join(char for char in cleaned if 32 <= ord(char) <= 126)
+                cleaned_meta[key] = cleaned
+            else:
+                cleaned_meta[key] = value
+        
+        # 从清理后的元数据创建WCS
+        try:
+            aia_wcs_2d = FitsWCS(cleaned_meta)
+        except Exception as e:
+            if cfg.debug_mode:
+                print(f"    从清理后元数据创建WCS失败: {e}")
+            # 回退：尝试直接从cutout_aia的wcs转换
+            try:
+                aia_wcs_2d = FitsWCS(cutout_aia.wcs.to_header())
+            except Exception:
+                # 最后尝试：手动构建基本WCS
+                from astropy.wcs import WCS
+                wcs = WCS(naxis=2)
+                wcs.wcs.crpix = [cutout_aia.meta.get('CRPIX1', 0), cutout_aia.meta.get('CRPIX2', 0)]
+                wcs.wcs.cdelt = [cutout_aia.meta.get('CDELT1', 1), cutout_aia.meta.get('CDELT2', 1)]
+                wcs.wcs.crval = [cutout_aia.meta.get('CRVAL1', 0), cutout_aia.meta.get('CRVAL2', 0)]
+                wcs.wcs.ctype = [cutout_aia.meta.get('CTYPE1', 'HPLN-TAN'), 
+                                 cutout_aia.meta.get('CTYPE2', 'HPLT-TAN')]
+                aia_wcs_2d = wcs
+        
         # 如果是高于2维的WCS（如旧版SunPy 4维头文件），取2D子集
         if aia_wcs_2d.naxis > 2:
             aia_wcs_2d = aia_wcs_2d.celestial
