@@ -513,7 +513,7 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
                                            height_rsun: float,
                                            cfg: Config) -> Optional[np.ndarray]:
     """
-    优化版：修复重投影方法，提高效率和成功率
+    修复版：确保KDTree查询输入为有限值
     """
     try:
         if ra_map is None or dec_map is None:
@@ -619,6 +619,17 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
             valid_dec_sampled = valid_dec
             valid_data_sampled = valid_data
         
+        # 确保KD树的数据点都是有限的
+        kdtree_valid = np.isfinite(valid_ra_sampled) & np.isfinite(valid_dec_sampled)
+        valid_ra_sampled = valid_ra_sampled[kdtree_valid]
+        valid_dec_sampled = valid_dec_sampled[kdtree_valid]
+        valid_data_sampled = valid_data_sampled[kdtree_valid]
+        
+        if len(valid_ra_sampled) == 0:
+            if cfg.debug_mode:
+                print("    KD树数据点全部无效")
+            return None
+        
         tree = cKDTree(np.column_stack([valid_ra_sampled, valid_dec_sampled]))
         
         # 分块处理目标网格
@@ -633,19 +644,37 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
                 chunk_target_ra = target_ra[j:j_end, i:i_end]
                 chunk_target_dec = target_dec[j:j_end, i:i_end]
                 
+                # 展平目标坐标
+                ra_flat = chunk_target_ra.ravel()
+                dec_flat = chunk_target_dec.ravel()
+                
+                # 只处理有限值的点
+                valid_target_mask = np.isfinite(ra_flat) & np.isfinite(dec_flat)
+                valid_indices = np.where(valid_target_mask)[0]
+                
+                if len(valid_indices) == 0:
+                    continue
+                
+                # 只对有效目标点进行查询
+                query_points = np.column_stack([ra_flat[valid_indices], 
+                                                dec_flat[valid_indices]])
+                
                 # 查询最近邻
                 distances, indices = tree.query(
-                    np.column_stack([chunk_target_ra.ravel(), 
-                                     chunk_target_dec.ravel()]),
+                    query_points,
                     k=1, distance_upper_bound=0.5  # 增大搜索半径到0.5度
                 )
                 
-                # 填充结果
-                valid_query = distances < np.inf
-                chunk_flat = np.full(chunk_target_ra.size, np.nan, dtype=np.float32)
-                chunk_flat[valid_query] = valid_data_sampled[indices[valid_query]]
+                # 创建结果数组
+                chunk_result = np.full(ra_flat.shape, np.nan, dtype=np.float32)
                 
-                reprojected[j:j_end, i:i_end] = chunk_flat.reshape(
+                # 填充有效查询结果
+                valid_query = distances < np.inf
+                if np.any(valid_query):
+                    chunk_result[valid_indices[valid_query]] = valid_data_sampled[indices[valid_query]]
+                
+                # 重塑并赋值
+                reprojected[j:j_end, i:i_end] = chunk_result.reshape(
                     j_end - j, i_end - i)
         
         # 如果最近邻插值效果不好，尝试线性插值
@@ -653,19 +682,39 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         total_pixels = reprojected.size
         valid_ratio = valid_count / total_pixels
         
-        if valid_ratio < 0.1:  # 少于10%有效像素
+        if valid_ratio < 0.1 and valid_ratio > 0:  # 少于10%有效像素且至少有一些有效像素
             if cfg.debug_mode:
                 print(f"    最近邻插值效果不佳 ({valid_ratio*100:.1f}% 有效像素)，尝试线性插值...")
             
-            # 使用线性插值（更慢但更准确）
-            linear_interp = interp.LinearNDInterpolator(
-                np.column_stack([valid_ra, valid_dec]),
-                valid_data,
-                fill_value=np.nan
-            )
-            
-            # 重新插值整个图像
-            reprojected = linear_interp(target_ra, target_dec)
+            try:
+                # 使用线性插值（更慢但更准确）
+                # 首先确保源数据点都是有限的
+                source_valid = np.isfinite(valid_ra) & np.isfinite(valid_dec) & np.isfinite(valid_data)
+                if np.sum(source_valid) > 100:  # 至少需要100个有效源点
+                    linear_interp = interp.LinearNDInterpolator(
+                        np.column_stack([valid_ra[source_valid], valid_dec[source_valid]]),
+                        valid_data[source_valid],
+                        fill_value=np.nan
+                    )
+                    
+                    # 只对目标有限值点进行插值
+                    target_valid = np.isfinite(target_ra) & np.isfinite(target_dec)
+                    if np.sum(target_valid) > 0:
+                        # 创建新数组
+                        reprojected_new = np.full((ny, nx), np.nan, dtype=np.float32)
+                        # 只插值有效目标点
+                        y_idx, x_idx = np.where(target_valid)
+                        query_points = np.column_stack([target_ra[target_valid], 
+                                                        target_dec[target_valid]])
+                        reprojected_new[target_valid] = linear_interp(query_points)
+                        # 如果新插值效果更好，替换原结果
+                        new_valid = np.sum(~np.isnan(reprojected_new))
+                        if new_valid > valid_count:
+                            reprojected = reprojected_new
+                            valid_count = new_valid
+            except Exception as e:
+                if cfg.debug_mode:
+                    print(f"    线性插值失败: {e}")
         
         # 验证结果
         valid_final = np.sum(~np.isnan(reprojected))
@@ -884,6 +933,14 @@ def reproject_radio_to_aia(radio_data:   np.ndarray,
     if ra_map is not None and dec_map is not None:
         if cfg.debug_mode:
             print("    尝试使用坐标查找表重投影...")
+            # 检查坐标图是否有有效数据
+            ra_valid = np.isfinite(ra_map)
+            dec_valid = np.isfinite(dec_map)
+            data_valid = np.isfinite(radio_data)
+            print(f"    RA有效点: {np.sum(ra_valid)}/{ra_map.size}, "
+                  f"Dec有效点: {np.sum(dec_valid)}/{dec_map.size}, "
+                  f"数据有效点: {np.sum(data_valid)}/{radio_data.size}")
+        
         result = reproject_radio_with_coordinate_lookup(
             radio_data, ra_map, dec_map,
             target_shape, aia_wcs_2d,
@@ -912,9 +969,13 @@ def reproject_radio_to_aia(radio_data:   np.ndarray,
                 print(f"    标准WCS重投影成功! 有效像素: {valid_pixels}/{total_pixels} "
                       f"({valid_pixels/total_pixels*100:.1f}%)")
     
-    if result is None:
-        if cfg.debug_mode:
-            print("    所有重投影方法均失败!")
+    if result is None and cfg.debug_mode:
+        print("    所有重投影方法均失败!")
+        # 提供更多诊断信息
+        if ra_map is None or dec_map is None:
+            print("    -> 坐标图缺失或未找到")
+        if radio_wcs is None:
+            print("    -> 无法构建WCS")
     
     return result
 
@@ -1428,6 +1489,55 @@ def _worker_init():
     warnings.filterwarnings('ignore')
 
 # ============================================================
+def validate_target_coordinates(aia_wcs_2d: WCS, target_shape: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    验证目标坐标转换，确保没有NaN/inf值
+    """
+    ny, nx = target_shape
+    y_target, x_target = np.mgrid[0:ny, 0:nx]
+    
+    # 将目标像素转换为世界坐标
+    target_coords = aia_wcs_2d.pixel_to_world(x_target, y_target)
+    target_eq_coords = target_coords.transform_to('icrs')
+    target_ra = target_eq_coords.ra.deg.reshape(ny, nx)
+    target_dec = target_eq_coords.dec.deg.reshape(ny, nx)
+    
+    # 检查转换结果
+    ra_nan_count = np.sum(~np.isfinite(target_ra))
+    dec_nan_count = np.sum(~np.isfinite(target_dec))
+    
+    if ra_nan_count > 0 or dec_nan_count > 0:
+        print(f"    警告: 目标坐标包含非有限值 - RA: {ra_nan_count}, Dec: {dec_nan_count}")
+        
+        # 尝试修复：将NaN替换为有效值
+        if ra_nan_count > 0:
+            # 用最近的有效值填充
+            from scipy import ndimage
+            mask = np.isfinite(target_ra)
+            if np.any(mask):
+                # 获取最近有效值的索引
+                indices = ndimage.distance_transform_edt(~mask, return_distances=False, return_indices=True)
+                # 使用索引获取有效值
+                target_ra = target_ra[tuple(indices)]
+            else:
+                # 如果全部为NaN，使用默认值
+                target_ra.fill(0.0)
+        
+        if dec_nan_count > 0:
+            # 用最近的有效值填充
+            from scipy import ndimage
+            mask = np.isfinite(target_dec)
+            if np.any(mask):
+                # 获取最近有效值的索引
+                indices = ndimage.distance_transform_edt(~mask, return_distances=False, return_indices=True)
+                # 使用索引获取有效值
+                target_dec = target_dec[tuple(indices)]
+            else:
+                # 如果全部为NaN，使用默认值
+                target_dec.fill(0.0)
+    
+    return target_ra, target_dec
+
 def diagnose_coordinate_maps(cfg: Config):
     """
     诊断坐标图查找问题，帮助调试
