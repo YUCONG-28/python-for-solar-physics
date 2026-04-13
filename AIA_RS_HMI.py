@@ -189,7 +189,22 @@ def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
     # 清理字符串
     date_str = date_str.strip()
     
-    # 特殊情况：处理下划线分隔的格式，如"2025124_044317_038"
+    # 特殊处理：17位数字格式（YYYYMMDDHHMMSSmmm）- 这是最常见的问题
+    if len(date_str) == 17 and date_str.isdigit():
+        try:
+            year = int(date_str[0:4])
+            month = int(date_str[4:6])
+            day = int(date_str[6:8])
+            hour = int(date_str[8:10])
+            minute = int(date_str[10:12])
+            second = int(date_str[12:14])
+            millisecond = int(date_str[14:17])
+            microsecond = millisecond * 1000
+            return datetime(year, month, day, hour, minute, second, microsecond)
+        except Exception:
+            pass
+    
+    # 特殊处理：处理下划线分隔的格式，如"2025124_044317_038"
     if '_' in date_str:
         parts = date_str.split('_')
         if len(parts) >= 2:
@@ -222,21 +237,6 @@ def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
                                        hour, minute, second, microsecond)
                 except Exception:
                     pass
-    
-    # 特殊处理：17位数字格式（YYYYMMDDHHMMSSmmm）
-    if len(date_str) == 17 and date_str.isdigit():
-        try:
-            year = int(date_str[0:4])
-            month = int(date_str[4:6])
-            day = int(date_str[6:8])
-            hour = int(date_str[8:10])
-            minute = int(date_str[10:12])
-            second = int(date_str[12:14])
-            millisecond = int(date_str[14:17])
-            microsecond = millisecond * 1000
-            return datetime(year, month, day, hour, minute, second, microsecond)
-        except Exception:
-            pass
     
     # 处理小数点格式
     if '.' in date_str:
@@ -504,10 +504,14 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
     """
     try:
         if ra_map is None or dec_map is None:
+            if cfg.debug_mode:
+                print("    重投影失败: 坐标图为None")
             return None
         
         # 验证坐标图形状
         if ra_map.shape != radio_data.shape or dec_map.shape != radio_data.shape:
+            if cfg.debug_mode:
+                print(f"    重投影失败: 坐标图形状不匹配, 数据{radio_data.shape}, RA{ra_map.shape}, Dec{dec_map.shape}")
             return None
 
         # 使用副本
@@ -518,18 +522,35 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
         dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
         
+        if cfg.debug_mode:
+            print(f"    原始坐标范围: RA [{ra_min:.6f}, {ra_max:.6f}], Dec [{dec_min:.6f}, {dec_max:.6f}]")
+        
         # 检测坐标单位并转换
         if abs(ra_max) < 4.0 and abs(ra_min) < 4.0 and abs(dec_max) < 4.0 and abs(dec_min) < 4.0:
             # 弧度单位转换为度
+            if cfg.debug_mode:
+                print(f"    检测到坐标图为弧度单位，转换为度...")
             ra_map = np.rad2deg(ra_map)
             dec_map = np.rad2deg(dec_map)
+            ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
+            dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
+            if cfg.debug_mode:
+                print(f"    转换后坐标范围: RA [{ra_min:.6f}, {ra_max:.6f}], Dec [{dec_min:.6f}, {dec_max:.6f}]")
         
         # 加上相位中心得到绝对坐标
         if radio_header is not None:
             crval1 = float(radio_header.get('CRVAL1', 0.0))
             crval2 = float(radio_header.get('CRVAL2', 0.0))
+            if cfg.debug_mode:
+                print(f"    相位中心: CRVAL1={crval1:.6f}°, CRVAL2={crval2:.6f}°")
             ra_map = ra_map + crval1
             dec_map = dec_map + crval2
+            
+            ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
+            dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
+            
+            if cfg.debug_mode:
+                print(f"    绝对坐标范围: RA [{ra_min:.6f}, {ra_max:.6f}], Dec [{dec_min:.6f}, {dec_max:.6f}]")
         
         # 标准化赤经到0-360度
         ra_map = np.mod(ra_map, 360)
@@ -542,7 +563,12 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         
         valid_count = np.sum(valid_mask)
         if valid_count < 100:
+            if cfg.debug_mode:
+                print(f"    重投影失败: 有效数据点不足: {valid_count}")
             return None
+        
+        if cfg.debug_mode:
+            print(f"    坐标查找表: 找到 {valid_count} 个有效点")
         
         # 提取有效点的坐标和数据
         valid_ra = ra_map[valid_mask]
@@ -560,6 +586,8 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
             target_ra = target_eq_coords.ra.deg.reshape(ny, nx)
             target_dec = target_eq_coords.dec.deg.reshape(ny, nx)
         except Exception:
+            if cfg.debug_mode:
+                print("    重投影失败: 无法转换目标像素到世界坐标")
             return None
         
         # 使用KD树进行最近邻插值
@@ -584,6 +612,8 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         valid_data_sampled = valid_data_sampled[kdtree_valid]
         
         if len(valid_ra_sampled) == 0:
+            if cfg.debug_mode:
+                print("    重投影失败: KD树数据点不足")
             return None
         
         tree = cKDTree(np.column_stack([valid_ra_sampled, valid_dec_sampled]))
@@ -637,11 +667,20 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         # 验证结果
         valid_final = np.sum(~np.isnan(reprojected))
         if valid_final == 0:
+            if cfg.debug_mode:
+                print("    重投影失败: 最终结果中没有有效数据")
             return None
+        
+        if cfg.debug_mode:
+            print(f"    重投影成功: 有效像素 {valid_final} / {ny*nx}")
         
         return reprojected
         
-    except Exception:
+    except Exception as e:
+        if cfg.debug_mode:
+            print(f"    坐标查找表重投影失败: {e}")
+            import traceback
+            traceback.print_exc()
         return None
 
 def reproject_radio_to_aia(radio_data:   np.ndarray,
@@ -989,7 +1028,10 @@ def parse_radio_time_from_header(header: fits.Header) -> Optional[datetime]:
                 return parsed_time
             
             # 调试：打印无法解析的原始字符串
-            print(f"    调试: 无法解析时间字符串: '{date_str}' (长度: {len(date_str)})")
+            # 注意：这里需要访问cfg，但函数签名中没有cfg参数
+            # 我们将在调用处通过全局cfg或修改函数签名来处理
+            # 暂时注释掉这行，避免NameError
+            # print(f"    调试: 无法解析时间字符串: '{date_str}' (长度: {len(date_str)})")
     
     # 如果所有方法都失败，返回None
     return None
@@ -1015,9 +1057,10 @@ def _read_one_radio_header(rf: str,
         else:
             # 调试信息：显示无法解析的时间
             date_obs = str(hdr.get('DATE-OBS', '')).strip()
-            print(f"    警告: 无法解析射电文件时间: '{date_obs}' (长度: {len(date_obs)}), 文件: {os.path.basename(rf)}")
+            if cfg.debug_mode:
+                print(f"    警告: 无法解析射电文件时间: '{date_obs}' (长度: {len(date_obs)}), 文件: {os.path.basename(rf)}")
             
-            # 尝试从文件名中提取时间
+            # 尝试从文件名中提取时间 - 这是关键修复
             basename = os.path.basename(rf)
             
             # 查找文件名中的时间模式
@@ -1032,16 +1075,18 @@ def _read_one_radio_header(rf: str,
                 time_str = f"{date_part}_{time_part}_{ms_part}"
                 r_time = _parse_flexible_datetime(time_str)
                 if r_time:
-                    print(f"    从文件名解析时间成功: {time_str} -> {r_time}")
+                    if cfg.debug_mode:
+                        print(f"    从文件名解析时间成功: {time_str} -> {r_time}")
                     return {'path': rf, 'band': band_found, 'pol': pol, 'time': r_time}
             
-            # 模式2: 年月日时分秒 (如 20250124044317)
-            time_match2 = re.search(r'(\d{14})', basename)
+            # 模式2: 17位数字格式 (YYYYMMDDHHMMSSmmm) - 从文件名直接提取
+            time_match2 = re.search(r'(\d{17})', basename)
             if time_match2:
                 time_str = time_match2.group(1)
                 r_time = _parse_flexible_datetime(time_str)
                 if r_time:
-                    print(f"    从文件名解析时间成功: {time_str} -> {r_time}")
+                    if cfg.debug_mode:
+                        print(f"    从文件名解析时间成功(17位): {time_str} -> {r_time}")
                     return {'path': rf, 'band': band_found, 'pol': pol, 'time': r_time}
             
             # 模式3: 年月日_时分秒 (如 20250124_044317)
@@ -1052,11 +1097,13 @@ def _read_one_radio_header(rf: str,
                 time_str = f"{date_part}_{time_part}"
                 r_time = _parse_flexible_datetime(time_str)
                 if r_time:
-                    print(f"    从文件名解析时间成功: {time_str} -> {r_time}")
+                    if cfg.debug_mode:
+                        print(f"    从文件名解析时间成功: {time_str} -> {r_time}")
                     return {'path': rf, 'band': band_found, 'pol': pol, 'time': r_time}
             
     except Exception as e:
-        print(f"    读取射电文件头出错: {os.path.basename(rf)}, 错误: {str(e)[:100]}")
+        if cfg.debug_mode:
+            print(f"    读取射电文件头出错: {os.path.basename(rf)}, 错误: {str(e)[:100]}")
     
     return None
 
@@ -1231,8 +1278,29 @@ def _worker_init():
 # ============================================================
 #  简化主函数
 # ============================================================
+def test_time_parsing():
+    """测试时间解析函数是否正常工作"""
+    test_cases = [
+        "20250124045940760",  # 17位数字格式
+        "20250124044317 38",  # 空格分隔
+        "2025124_044317_038", # 儒略日格式
+        "2025-01-24T04:43:17.038Z", # ISO格式
+    ]
+    
+    print("测试时间解析:")
+    for test_str in test_cases:
+        result = _parse_flexible_datetime(test_str)
+        if result:
+            print(f"  '{test_str}' -> {result}")
+        else:
+            print(f"  '{test_str}' -> 解析失败")
+
 def main():
     cfg = Config()
+    
+    # 测试时间解析
+    if cfg.debug_mode:
+        test_time_parsing()
     
     # 颜色缓存整个运行只构建一次
     color_cache = _build_band_color_cache(cfg)
