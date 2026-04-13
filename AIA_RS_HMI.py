@@ -946,7 +946,8 @@ def parse_radio_time_from_header(header: fits.Header) -> Optional[datetime]:
 
 def _read_one_radio_header(rf: str,
                            selected_bands: Tuple[str, ...],
-                           pol: str) -> Optional[Dict]:
+                           pol: str,
+                           cfg: Config) -> Optional[Dict]:
     """
     优化版：改进时间解析和错误处理
     """
@@ -1034,7 +1035,7 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
     max_io_threads = min(32, (os.cpu_count() or 4) * 2, max(1, len(radio_files)))
     selected_bands_tuple = tuple(cfg.selected_bands)
     _read_fn = partial(_read_one_radio_header,
-                       selected_bands=selected_bands_tuple, pol=pol)
+                       selected_bands=selected_bands_tuple, pol=pol, cfg=cfg)
 
     radio_cache: List[Dict] = []
     with ThreadPoolExecutor(max_workers=max_io_threads) as executor:
