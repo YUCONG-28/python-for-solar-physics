@@ -149,7 +149,7 @@ class Config:
     reprojection_method: str = 'scientific'  # 'simple', 'interp', 'scientific'
     
     # 新增调试选项
-    debug_mode: bool = True  # 启用详细调试信息
+    debug_mode: bool = False  # 启用详细调试信息
     quick_test: bool = False  # 快速测试模式，只处理少量文件
     test_file_limit: int = 3  # 快速测试时的文件限制
     
@@ -1503,7 +1503,7 @@ def main():
     
     # 启用调试模式
     cfg.debug_mode = True
-    cfg.quick_test = True
+    cfg.quick_test = False
     
     # 诊断坐标图查找问题
     diagnose_coordinate_maps(cfg)
