@@ -494,6 +494,43 @@ def compute_contour_levels(data: np.ndarray, cfg: Config) -> List[float]:
     return levels if levels else []
 
 # ============================================================
+#  太阳位置计算辅助函数
+# ============================================================
+def get_solar_position(obs_time: datetime) -> Tuple[float, float]:
+    """
+    计算观测时刻太阳中心在ICRS坐标系中的位置
+    
+    参数:
+        obs_time: 观测时间
+    
+    返回:
+        (sun_ra, sun_dec): 太阳中心的赤经赤纬（度）
+    """
+    try:
+        from astropy.coordinates import get_sun
+        from astropy.time import Time
+        
+        # 将datetime转换为astropy Time对象
+        astropy_time = Time(obs_time)
+        
+        # 计算太阳位置
+        sun_coord = get_sun(astropy_time)
+        
+        return sun_coord.ra.deg, sun_coord.dec.deg
+    except ImportError:
+        # 如果astropy的get_sun不可用，尝试从sunpy导入
+        try:
+            from sunpy.coordinates import get_sun
+            from astropy.coordinates import SkyCoord
+            
+            # 计算太阳位置
+            sun_coord = get_sun(obs_time)
+            return sun_coord.ra.deg, sun_coord.dec.deg
+        except Exception:
+            # 如果都失败，返回近似值（太阳大致在春分点附近）
+            return 0.0, 0.0
+
+# ============================================================
 #  坐标预处理：弧度判断 + 绝对/相对坐标判断 + CRVAL叠加
 # ============================================================
 def _preprocess_radec_maps(ra_map: np.ndarray,
@@ -557,12 +594,38 @@ def _preprocess_radec_maps(ra_map: np.ndarray,
         print(f"    坐标中值: RA={ra_median:.4f}°  Dec={dec_median:.4f}°")
         print(f"    坐标范围: RA范围={ra_range:.4f}°, Dec范围={dec_range:.4f}°")
         print(f"    坐标类型: {'【相对坐标】' if is_relative else '【绝对坐标】'}")
+        
+        # 检查坐标类型并给出更具体的诊断信息
+        # 检查是否是绝对坐标（RA在0-360度范围内）
+        is_ra_absolute = (ra_fin.min() >= 0) and (ra_fin.max() <= 360.0)
+        is_dec_absolute = (dec_fin.min() >= -90) and (dec_fin.max() <= 90)
+        
+        print(f"    坐标类型诊断:")
+        print(f"      RA绝对坐标判断: {is_ra_absolute} (范围: {ra_fin.min():.2f} to {ra_fin.max():.2f})")
+        print(f"      Dec绝对坐标判断: {is_dec_absolute} (范围: {dec_fin.min():.2f} to {dec_fin.max():.2f})")
+        print(f"      坐标中值: RA={ra_median:.6f}°, Dec={dec_median:.6f}°")
+        
+        # 检查相位中心CRVAL值
+        if radio_header is not None:
+            crval1 = radio_header.get('CRVAL1', 0.0)
+            crval2 = radio_header.get('CRVAL2', 0.0)
+            print(f"      相位中心: CRVAL1={crval1:.6f}°, CRVAL2={crval2:.6f}°")
+            
+            # 如果CRVAL不为0但坐标看起来是相对坐标，建议叠加
+            if abs(crval1) > 1e-6 or abs(crval2) > 1e-6:
+                print(f"      提示: CRVAL非零，坐标可能需要叠加相位中心")
 
-    # 如果坐标是绝对的（RA在0-360范围内），确保RA在[0,360)
+    # 注意：我们不再自动叠加CRVAL，因为相位中心为0
+    # 相对坐标将在后续步骤中加上太阳中心位置
     if not is_relative:
+        # 对于绝对坐标，确保RA在[0,360)范围内
         ra = np.mod(ra, 360.0)
         if cfg.debug_mode:
             print(f"    标准化RA到[0,360)范围")
+    else:
+        # 对于相对坐标，直接返回（将在后续步骤中加上太阳位置）
+        if cfg.debug_mode:
+            print(f"    返回相对坐标（将在后续步骤中加上太阳中心位置）")
 
     return ra, dec
 
@@ -1350,6 +1413,16 @@ def main():
     # 测试时间解析
     if cfg.debug_mode:
         test_time_parsing()
+        
+        # 测试太阳位置计算
+        print("\n测试太阳位置计算:")
+        test_time = datetime(2025, 1, 24, 4, 43, 17)
+        try:
+            sun_ra, sun_dec = get_solar_position(test_time)
+            print(f"  测试时间: {test_time}")
+            print(f"  太阳位置: RA={sun_ra:.6f}°, Dec={sun_dec:.6f}°")
+        except Exception as e:
+            print(f"  太阳位置计算失败: {e}")
     
     # 颜色缓存整个运行只构建一次
     color_cache = _build_band_color_cache(cfg)
