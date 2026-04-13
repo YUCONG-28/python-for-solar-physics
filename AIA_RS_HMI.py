@@ -53,10 +53,20 @@ _RE_AIA_PATS    = [
 ]
 _RE_HMI_PAT     = re.compile(r'(\d{8})_(\d{6})')
 _RE_BAND_SORTED = re.compile(r'(\d+\.?\d*)MHz')
+# 扩展时间格式常量
 _DATETIME_FMTS  = [
-    "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S",
-    "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S",
-    "%Y%m%d%H%M%S%f",
+    # 标准ISO格式
+    "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H%M%S.%f", "%Y-%m-%dT%H%M%S",
+    # 带时区信息
+    "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H%M%S.%fZ", "%Y-%m-%dT%H%M%SZ",
+    # 空格分隔
+    "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H%M%S.%f", "%Y-%m-%d %H%M%S",
+    # 简写格式
+    "%Y%m%dT%H%M%S.%f", "%Y%m%dT%H%M%S", "%Y%m%d%H%M%S.%f", "%Y%m%d%H%M%S",
+    # HMI格式
+    "%Y%m%d_%H%M%S",
+    # 其他常见格式
+    "%d/%m/%YT%H:%M:%S.%f", "%d/%m/%YT%H:%M:%S", "%d-%b-%YT%H:%M:%S.%f", "%d-%b-%YT%H:%M:%S"
 ]
 
 # ============================================================
@@ -124,11 +134,12 @@ class Config:
     
     # 简化：移除通量归一化和复杂验证
     apply_background_subtraction: bool = False  # 简化：默认不应用背景扣除
-    debug_mode: bool = False  # 简化调试选项
+    debug_mode: bool = True  # 改为True以显示详细匹配信息
     
     # 简化重投影选项
     coordinate_search_radius: float = 1.0  # 坐标查找搜索半径（度）
     quick_test: bool = False
+    test_file_limit: int = 5  # 快速测试时的文件数量限制
 
 # ============================================================
 #  颜色缓存
@@ -168,19 +179,40 @@ def check_memory_usage(limit: float = 90.0):
 # ============================================================
 def parse_aia_time_from_filename(filename: str) -> Optional[datetime]:
     """从 AIA 文件名中提取观测时间（支持多种命名模式）。"""
+    basename = os.path.basename(filename)
+    
+    # 尝试从FITS头直接读取（如果文件可访问）
+    try:
+        if os.path.exists(filename):
+            header = fits.getheader(filename, 0)
+            date_obs = str(header.get('DATE-OBS', '')).strip()
+            if date_obs:
+                for fmt in _DATETIME_FMTS:
+                    try:
+                        # 清理时间字符串
+                        date_obs_clean = date_obs.replace('Z', '').replace('T', ' ').strip()
+                        return datetime.strptime(date_obs_clean, fmt)
+                    except ValueError:
+                        continue
+    except Exception:
+        pass
+    
+    # 从文件名解析（备用方法）
     for pat in _RE_AIA_PATS:
-        m = pat.search(filename)
+        m = pat.search(basename)
         if m:
-            ts = m.group(1).replace('Z', '')
-            if 'T' in ts:
-                d, t = ts.split('T')
-                if len(t) == 6 and ':' not in t:
-                    t = f"{t[:2]}:{t[2:4]}:{t[4:]}"
-                ts = f"{d}T{t}"
-            try:
-                return datetime.strptime(ts, "%Y-%m-dT%H:%M:%S")
-            except ValueError:
-                continue
+            ts = m.group(1).replace('Z', '').replace('T', ' ')
+            # 标准化时间格式
+            if ':' not in ts and len(ts) >= 14:
+                # 格式如 20240124T120000
+                ts = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]} {ts[9:11]}:{ts[11:13]}:{ts[13:]}"
+            
+            for fmt in _DATETIME_FMTS:
+                try:
+                    return datetime.strptime(ts, fmt)
+                except ValueError:
+                    continue
+    
     return None
 
 def parse_hmi_time_from_filename(filename: str) -> Optional[datetime]:
@@ -798,36 +830,57 @@ def process_aia_group(aia_file:    str,
 # ============================================================
 #  ★ 优化4：射电头文件并行读取（线程池，I/O 密集型）
 # ============================================================
+def parse_radio_time_from_header(header: fits.Header) -> Optional[datetime]:
+    """从FITS头中解析射电观测时间（支持多种关键字）。"""
+    # 尝试多个可能的时间关键字
+    time_keys = ['DATE-OBS', 'DATE_OBS', 'DATEOBS', 'DATE-BEG', 'DATE_BEG', 'DATEBEG']
+    
+    for key in time_keys:
+        if key in header:
+            date_str = str(header[key]).strip()
+            if date_str:
+                for fmt in _DATETIME_FMTS:
+                    try:
+                        # 清理时间字符串
+                        date_clean = date_str.replace('Z', '').replace('T', ' ').strip()
+                        return datetime.strptime(date_clean, fmt)
+                    except ValueError:
+                        continue
+    
+    # 如果所有方法都失败，返回None
+    return None
+
 def _read_one_radio_header(rf: str,
                             selected_bands: Tuple[str, ...],
                             pol: str) -> Optional[Dict]:
     """
-    读取单个射电 FITS 文件的头文件并解析时间。
-    设计为可被 ThreadPoolExecutor 并发调用的顶层函数（可 pickle）。
+    优化版：改进时间解析和错误处理
     """
     band_found = next((b for b in selected_bands if b in rf), None)
     if not band_found:
         return None
     try:
-        hdr      = fits.getheader(rf)
-        date_obs = str(hdr.get('DATE-OBS', '')).strip()
-        r_time   = None
-        for fmt in _DATETIME_FMTS:
-            try:
-                r_time = datetime.strptime(date_obs, fmt)
-                break
-            except ValueError:
-                continue
+        hdr = fits.getheader(rf)
+        
+        # 使用新的时间解析函数
+        r_time = parse_radio_time_from_header(hdr)
+        
         if r_time:
             return {'path': rf, 'band': band_found, 'pol': pol, 'time': r_time}
-    except Exception:
-        pass
+        else:
+            # 调试信息：显示无法解析的时间
+            date_obs = str(hdr.get('DATE-OBS', '')).strip()
+            print(f"    警告: 无法解析射电文件时间: {date_obs}, 文件: {os.path.basename(rf)}")
+            
+    except Exception as e:
+        print(f"    读取射电文件头出错: {os.path.basename(rf)}, 错误: {str(e)[:100]}")
+    
     return None
 
 # ============================================================
 def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
     """
-    优化版：添加快速测试模式
+    优化版：改进时间匹配逻辑，添加详细调试信息
     """
     print("=" * 60)
     print("正在扫描并进行横向切片匹配，请稍候...")
@@ -842,8 +895,7 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
     # 快速测试模式
     if cfg.quick_test:
         print("[快速测试模式] 只处理前几个文件")
-        aia_files = aia_files[:min(cfg.test_file_limit, len(aia_files))]
-        hmi_files = hmi_files[:min(3, len(hmi_files))]
+        aia_files = aia_files[:min(5, len(aia_files))]
 
     hmi_times = []
     for hf in hmi_files:
@@ -862,18 +914,13 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
     for f in list(set(files_in_pol_dir + files_with_pol_name)):
         if '_RightAscensionDegree.fits' in f or '_DeclinationDegree.fits' in f:
             continue  # 跳过坐标图文件
-        # 只保留数据文件
-        try:
-            if os.path.getsize(f) > 1000:  # 最小文件大小阈值
-                radio_files.append(f)
-        except:
-            radio_files.append(f)
+        radio_files.append(f)
     
     # 快速测试模式
     if cfg.quick_test:
-        radio_files = radio_files[:min(cfg.test_file_limit, len(radio_files))]
+        radio_files = radio_files[:min(10, len(radio_files))]
     
-    print(f"成功锁定 {len(radio_files)} 个 {pol} 射电数据文件（已排除坐标图文件）。正在并发提取观测时间...")
+    print(f"成功锁定 {len(radio_files)} 个 {pol} 射电数据文件。正在并发提取观测时间...")
 
     # ★ 优化4：线程池并发读取头文件
     max_io_threads = min(32, (os.cpu_count() or 4) * 2, max(1, len(radio_files)))
@@ -887,6 +934,13 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
         radio_cache = [r for r in results if r is not None]
 
     print(f"  读取完毕，有效射电观测记录: {len(radio_cache)} 条")
+    
+    # 打印时间范围信息
+    if radio_cache:
+        radio_times = [rc['time'] for rc in radio_cache]
+        min_time = min(radio_times)
+        max_time = max(radio_times)
+        print(f"  射电时间范围: {min_time} 到 {max_time}")
 
     start_idx        = cfg.aia_file_start_idx if cfg.aia_file_start_idx is not None else 0
     end_idx          = cfg.aia_file_end_idx   if cfg.aia_file_end_idx   is not None else len(aia_files)
@@ -894,10 +948,15 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
 
     hmi_threshold_sec = cfg.hmi_time_threshold * 3600
     grouped_tasks     = []
+    
+    # 统计信息
+    match_stats = {'aia_processed': 0, 'aia_matched': 0, 'total_slices': 0}
 
     for aia_file in target_aia_files:
+        match_stats['aia_processed'] += 1
         aia_time = parse_aia_time_from_filename(os.path.basename(aia_file))
         if not aia_time:
+            print(f"  警告: 无法解析AIA文件时间: {os.path.basename(aia_file)}")
             continue
 
         # 寻找时间上最接近的 HMI 文件
@@ -912,31 +971,64 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
         # 收集时间阈值内的射电数据，按波段分组
         band_groups: Dict[str, list] = {}
         for rc in radio_cache:
-            if abs((rc['time'] - aia_time).total_seconds()) <= cfg.radio_time_threshold:
+            time_diff = abs((rc['time'] - aia_time).total_seconds())
+            if time_diff <= cfg.radio_time_threshold:
                 band_groups.setdefault(rc['band'], []).append(
-                    (rc['path'], rc['pol'], rc['time']))
+                    (rc['path'], rc['pol'], rc['time'], time_diff))
 
         if not band_groups:
+            if cfg.debug_mode:
+                print(f"  AIA时间 {aia_time}: 无射电数据匹配 (阈值: {cfg.radio_time_threshold}秒)")
             continue
+
+        match_stats['aia_matched'] += 1
+        
+        # 调试信息：显示每个波段的匹配情况
+        if cfg.debug_mode:
+            print(f"  AIA时间 {aia_time}:")
+            for band, files in band_groups.items():
+                print(f"    波段 {band}: {len(files)} 个文件")
+                for f in files[:2]:  # 只显示前2个
+                    print(f"      时间差: {f[3]:.1f}秒, 文件: {os.path.basename(f[0])}")
 
         # 匹配阶段排序 + 截断
         for band in band_groups:
-            band_groups[band].sort(key=lambda x: x[2])
+            # 按时间差排序，选择最接近的
+            band_groups[band].sort(key=lambda x: x[3])  # 按时间差排序
             band_groups[band] = band_groups[band][:cfg.max_radio_per_band]
 
+        # 确定横向切片数量：取所有波段的最小文件数
         min_count = min(len(v) for v in band_groups.values())
         if min_count == 0:
+            if cfg.debug_mode:
+                print(f"    警告: 某些波段没有匹配文件")
             continue
 
         # 构建横向切片
-        tasks_for_this_aia = [
-            (sub_index,
-             {band: [band_groups[band][sub_index]] for band in band_groups})
-            for sub_index in range(min_count)
-        ]
-        grouped_tasks.append((aia_file, best_hmi, tasks_for_this_aia))
+        tasks_for_this_aia = []
+        for sub_index in range(min_count):
+            slice_bands = {}
+            for band in band_groups:
+                if sub_index < len(band_groups[band]):
+                    slice_bands[band] = [band_groups[band][sub_index][:3]]  # 去掉时间差
+            
+            if slice_bands:  # 确保切片不为空
+                tasks_for_this_aia.append((sub_index, slice_bands))
+                match_stats['total_slices'] += 1
+        
+        if tasks_for_this_aia:
+            grouped_tasks.append((aia_file, best_hmi, tasks_for_this_aia))
+            
+            # 打印匹配成功信息
+            if cfg.debug_mode:
+                print(f"    成功创建 {len(tasks_for_this_aia)} 个切片")
 
-    print(f"\n匹配切片完毕！共成功创建了 {len(grouped_tasks)} 组以 AIA 为核心的任务。")
+    # 打印统计信息
+    print(f"\n匹配结果统计:")
+    print(f"  处理的AIA文件: {match_stats['aia_processed']}")
+    print(f"  成功匹配的AIA文件: {match_stats['aia_matched']}")
+    print(f"  创建的切片总数: {match_stats['total_slices']}")
+    print(f"  成功创建了 {len(grouped_tasks)} 组以 AIA 为核心的任务。")
     print("=" * 60)
     return grouped_tasks
 
