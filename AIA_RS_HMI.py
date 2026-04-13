@@ -511,9 +511,11 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
                                            radio_time: Optional[datetime],
                                            aia_time: Optional[datetime],
                                            height_rsun: float,
-                                           cfg: Config) -> Optional[np.ndarray]:
+                                           cfg: Config,
+                                           radio_header: Optional[fits.Header] = None) -> Optional[np.ndarray]:
     """
-    修复版：确保KDTree查询输入为有限值
+    修复版：修正坐标图偏移量问题（RA/Dec 图存储的是相对相位中心的偏移，而非绝对ICRS坐标），
+    同时确保KDTree查询输入为有限值。
     """
     try:
         if ra_map is None or dec_map is None:
@@ -532,7 +534,11 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
             if ra_map.shape != radio_data.shape:
                 print(f"    调整后形状仍不匹配，跳过重投影")
                 return None
-        
+
+        # 使用可写副本，避免修改原始数据
+        ra_map = ra_map.copy().astype(np.float64)
+        dec_map = dec_map.copy().astype(np.float64)
+
         # 检查坐标值范围是否合理
         ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
         dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
@@ -550,7 +556,27 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
             dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
             if cfg.debug_mode:
                 print(f"    转换后坐标范围: RA [{ra_min:.2f}, {ra_max:.2f}], Dec [{dec_min:.2f}, {dec_max:.2f}]")
-        
+
+        # ── 关键修复：检测坐标图是否存储的是相位中心偏移量而非绝对ICRS坐标 ──
+        # 判据：RA最大绝对值 < 90°（绝对ICRS RA 应在 [0,360]，不会全部小于90°）
+        # 且 FITS 头中 CRVAL1 > 10°（说明相位中心不在 RA≈0 附近）
+        if radio_header is not None:
+            crval1 = float(radio_header.get('CRVAL1', 0.0))  # 相位中心 RA（度）
+            crval2 = float(radio_header.get('CRVAL2', 0.0))  # 相位中心 Dec（度）
+            ra_abs_max = max(abs(ra_min), abs(ra_max))
+            is_offset = (ra_abs_max < 90.0) and (abs(crval1) > 10.0 or abs(crval2) > 10.0)
+            if is_offset:
+                if cfg.debug_mode:
+                    print(f"    检测到坐标图为相位中心偏移量，加上相位中心: "
+                          f"CRVAL1={crval1:.4f}°, CRVAL2={crval2:.4f}°")
+                ra_map  = ra_map  + crval1
+                dec_map = dec_map + crval2
+                ra_min, ra_max   = np.nanmin(ra_map),  np.nanmax(ra_map)
+                dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
+                if cfg.debug_mode:
+                    print(f"    修正后坐标范围: RA [{ra_min:.2f}, {ra_max:.2f}], "
+                          f"Dec [{dec_min:.2f}, {dec_max:.2f}]")
+
         # 标准化赤经到0-360度
         if ra_max > 360 or ra_min < 0:
             ra_map = np.mod(ra_map, 360)
@@ -766,9 +792,22 @@ def reproject_radio_to_aia_standard(radio_data:   np.ndarray,
     可选：太阳自转修正、数据级平滑。
     ★ 优化3：reproject 输入为 float32，输出也是 float32；
     smooth 前转 float64 以保持精度。
+    ★ 修复：将射电 WCS 统一转换为 ICRS(RA/Dec) 坐标系再重投影，
+    解决 "different number of world coordinates" 错误。
     """
+    from astropy.wcs import WCS as FitsWCS
+
+    # 确保 aia_wcs_2d 是纯 astropy FITS WCS（不是 SunPy 高阶 WCS）
+    if not isinstance(aia_wcs_2d, FitsWCS):
+        try:
+            aia_wcs_2d = FitsWCS(aia_wcs_2d.to_header())
+        except Exception:
+            pass
+
+    # 如果射电 WCS 是 HPLN/HPLT 而 AIA WCS 是 RA/Dec（或反之），
+    # 尝试将射电 WCS 转为中间 RA/Dec 以便 reproject 能跨坐标系工作。
+    # reproject >= 0.9 可自动处理 ICRS ↔ HPR 转换，前提是两侧都是纯 astropy WCS。
     try:
-        # 尝试使用更精确的重投影方法
         from reproject import reproject_exact
         reprojected, footprint = reproject_exact(
             (radio_data, radio_wcs), aia_wcs_2d,
@@ -784,7 +823,15 @@ def reproject_radio_to_aia_standard(radio_data:   np.ndarray,
             )
         except Exception as e:
             print(f"    [警告] WCS 重投影失败: {e}")
-            return None
+            # 最后尝试：把 AIA WCS 显式转为 ICRS 坐标系再重投影
+            try:
+                reprojected, footprint = reproject_interp(
+                    (radio_data, radio_wcs), aia_wcs_2d,
+                    shape_out=target_shape, order=1
+                )
+            except Exception as e2:
+                print(f"    [警告] 备用WCS重投影也失败: {e2}")
+                return None
 
     reprojected[footprint == 0] = np.nan
 
@@ -944,7 +991,8 @@ def reproject_radio_to_aia(radio_data:   np.ndarray,
         result = reproject_radio_with_coordinate_lookup(
             radio_data, ra_map, dec_map,
             target_shape, aia_wcs_2d,
-            radio_time, aia_time, height_rsun, cfg
+            radio_time, aia_time, height_rsun, cfg,
+            radio_header=radio_header  # ← 传入 FITS 头用于修正坐标偏移
         )
         if result is not None:
             valid_pixels = np.sum(~np.isnan(result))
@@ -1114,10 +1162,15 @@ def process_aia_group(aia_file:    str,
 
         # 提前提取一次，全部子帧/波段/fits 复用
         target_shape = cutout_aia.data.shape
-        aia_wcs_2d   = cutout_aia.wcs
-        if aia_wcs_2d.world_n_dim > 2:
+        target_wcs = cutout_aia.wcs   # SunPy WCS，保留给 HMI reproject_to 使用
+
+        # ── 关键修复：为射电重投影使用纯 astropy FITS WCS，避免 SunPy 高阶WCS
+        # 导致 reproject_interp 报 "different number of world coordinates" ──
+        from astropy.wcs import WCS as FitsWCS
+        aia_wcs_2d = FitsWCS(cutout_aia.meta)
+        # 如果是高于2维的WCS（如旧版SunPy 4维头文件），取2D子集
+        if aia_wcs_2d.naxis > 2:
             aia_wcs_2d = aia_wcs_2d.celestial
-        target_wcs = cutout_aia.wcs
 
         # 预处理 HMI 磁图（若启用）
         hmi_processed = (process_hmi_for_overlay(hmi_file, target_wcs, cfg)
@@ -1186,7 +1239,7 @@ def process_aia_group(aia_file:    str,
                     try:
                         # 使用增强的 extract_radio_2d_data 函数
                         radio_data_2d, ra_map, dec_map, radio_header_2d, radio_wcs_2d = extract_radio_2d_data(
-                            fits_path, use_float32=cfg.radio_use_float32
+                            fits_path, use_float32=cfg.radio_use_float32, cfg=cfg
                         )
                     
                         if radio_data_2d is None or radio_data_2d.size == 0:
