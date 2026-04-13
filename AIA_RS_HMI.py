@@ -156,6 +156,9 @@ class Config:
     auto_adjust_scale_factor: bool = True  # 自动调整缩放因子
     min_pixels_in_view: int = 100  # AISA视野内最小像素数
     max_scale_factor_adjustments: int = 3  # 最大调整次数
+    
+    # 修改默认缩放因子为0.05，以更好地匹配AIA视野
+    radio_to_solar_scale_factor: float = 0.05  # 射电坐标到太阳坐标的缩放因子，默认改为0.05
 
 # ============================================================
 #  颜色缓存
@@ -365,7 +368,7 @@ def extract_radio_2d_data(fits_path: str, use_float32: bool = True, cfg: Optiona
     """
     简化版：提取射电数据和坐标图
     修改：根据cfg.use_radec_maps决定是否加载坐标图文件
-    增强：在太阳坐标模式下，尝试创建sunpy.map.Map来处理射电数据
+    增强：在太阳坐标模式下，放弃使用sunpy.map，直接生成太阳坐标并自动调整缩放
     """
     try:
         with fits.open(fits_path) as hdu_data:
@@ -426,44 +429,41 @@ def extract_radio_2d_data(fits_path: str, use_float32: bool = True, cfg: Optiona
                                 except Exception:
                                     pass
             else:
-                # 不使用坐标图文件，生成太阳坐标
+                # 不使用坐标图文件，直接生成太阳坐标
                 if cfg is not None and cfg.debug_mode:
-                    print(f"    [坐标图] 不使用赤经赤纬文件，尝试使用sunpy.map处理射电数据")
+                    print(f"    [坐标图] 不使用赤经赤纬文件，直接生成太阳坐标")
                 
-                try:
-                    # 尝试使用sunpy.map.Map来读取射电数据
-                    radio_map = sunpy.map.Map(fits_path)
-                    
-                    # 检查射电数据是否具有太阳坐标系信息
-                    if hasattr(radio_map, 'coordinate_frame') and radio_map.coordinate_frame is not None:
-                        # 创建像素网格
-                        ny, nx = radio_map.data.shape
-                        y_indices, x_indices = np.indices((ny, nx))
-                        
-                        # 将像素坐标转换为世界坐标
-                        coords = radio_map.pixel_to_world(x_indices * u.pix, y_indices * u.pix)
-                        
-                        # 提取Tx, Ty坐标（太阳坐标，角秒）
-                        if hasattr(coords, 'Tx'):
-                            ra_map = coords.Tx.arcsec
-                            dec_map = coords.Ty.arcsec
-                            
-                            if cfg.debug_mode:
-                                print(f"    [sunpy.map] 成功提取太阳坐标")
-                                print(f"    [sunpy.map] Tx范围: [{ra_map.min():.1f}, {ra_map.max():.1f}]角秒")
-                                print(f"    [sunpy.map] Ty范围: [{dec_map.min():.1f}, {dec_map.max():.1f}]角秒")
-                        else:
-                            # 如果不是太阳坐标系，回退到生成模拟坐标
-                            ra_map, dec_map = generate_solar_coordinates(data.shape, header, cfg)
-                    else:
-                        # 如果没有坐标系信息，回退到生成模拟坐标
-                        ra_map, dec_map = generate_solar_coordinates(data.shape, header, cfg)
-                        
-                except Exception as e:
-                    # 如果sunpy.map失败，回退到生成模拟坐标
-                    if cfg.debug_mode:
-                        print(f"    [sunpy.map] 失败: {e}")
-                    ra_map, dec_map = generate_solar_coordinates(data.shape, header, cfg)
+                # 放弃使用sunpy.map，直接调用generate_solar_coordinates
+                # 根据射电数据形状和AIA视野自动调整缩放因子
+                ny, nx = data.shape
+                
+                # 根据射电数据大小估计初始缩放因子
+                # 256x256图像对应约±18000角秒，需要缩小到±1200角秒
+                # 缩放因子约为1200/18000=0.067
+                base_scale_factor = 0.067
+                
+                # 如果图像尺寸不同，进一步调整
+                if ny > 256 or nx > 256:
+                    # 更大的图像通常有更大的视场，需要进一步缩小
+                    base_scale_factor = base_scale_factor * 256 / max(ny, nx)
+                
+                # 应用配置中的缩放因子
+                effective_scale_factor = base_scale_factor * cfg.radio_to_solar_scale_factor
+                
+                if cfg.debug_mode:
+                    print(f"    [坐标生成] 图像尺寸: {ny}x{nx}")
+                    print(f"    [坐标生成] 基础缩放因子: {base_scale_factor:.4f}")
+                    print(f"    [坐标生成] 配置缩放因子: {cfg.radio_to_solar_scale_factor:.4f}")
+                    print(f"    [坐标生成] 有效缩放因子: {effective_scale_factor:.4f}")
+                
+                # 临时修改配置的缩放因子用于生成坐标
+                # 注意：我们创建一个配置副本以避免修改原始配置
+                from copy import copy
+                cfg_copy = copy(cfg)
+                cfg_copy.radio_to_solar_scale_factor = effective_scale_factor
+                
+                # 生成太阳坐标
+                ra_map, dec_map = generate_solar_coordinates(data.shape, header, cfg_copy)
             
             dtype = np.float32 if use_float32 else np.float64
             return data.astype(dtype), ra_map, dec_map, header, None
@@ -579,6 +579,7 @@ def get_solar_position(obs_time: datetime) -> Tuple[float, float]:
 def generate_solar_coordinates(shape: Tuple[int, int], header: fits.Header, cfg: Config) -> Tuple[np.ndarray, np.ndarray]:
     """
     生成射电数据对应的太阳坐标（Tx, Ty）
+    增强：更智能地处理像素尺度和缩放因子
     
     参数:
         shape: 数据形状 (ny, nx)
@@ -605,9 +606,13 @@ def generate_solar_coordinates(shape: Tuple[int, int], header: fits.Header, cfg:
     
     # 如果头文件中没有，使用默认值
     if cdelt1 == 0.0:
-        # 默认值：大约对应于太阳射电观测的典型分辨率
-        # 例如，对于低频射电，分辨率可能为几角分
-        cdelt1 = 0.01  # 度/像素，约36角秒/像素
+        # 根据图像尺寸估计像素尺度
+        # 256x256图像通常对应约±1度的视场
+        if nx == 256 and ny == 256:
+            cdelt1 = 0.0078  # 度/像素，约28角秒/像素
+        else:
+            # 更大的图像通常有更高的分辨率
+            cdelt1 = 0.0039  # 度/像素，约14角秒/像素
     
     if cdelt2 == 0.0:
         cdelt2 = cdelt1
@@ -625,6 +630,7 @@ def generate_solar_coordinates(shape: Tuple[int, int], header: fits.Header, cfg:
     if cfg.debug_mode:
         print(f"    [太阳坐标] 生成坐标图: 形状={shape}")
         print(f"    [太阳坐标] 像素尺度: CDELT1={cdelt1}度 -> {cdelt1_arcsec}角秒/像素")
+        print(f"    [太阳坐标] 有效缩放因子: {cfg.radio_to_solar_scale_factor}")
         print(f"    [太阳坐标] Tx范围: [{tx_map.min():.1f}, {tx_map.max():.1f}]角秒")
         print(f"    [太阳坐标] Ty范围: [{ty_map.min():.1f}, {ty_map.max():.1f}]角秒")
     
@@ -916,52 +922,6 @@ def reproject_radio_forward_paste(
         radio_header:  Optional[fits.Header] = None) -> Optional[np.ndarray]:
     
     try:
-        # 首先尝试使用sunpy.map方法（如果可能）
-        if not cfg.use_radec_maps and radio_header is not None:
-            try:
-                # 尝试创建sunpy.map - 修复：确保data是2D数组
-                if radio_data.ndim != 2:
-                    print(f"    [前向投影] 警告：射电数据维度为{radio_data.ndim}，需要2D")
-                else:
-                    # 创建临时FITS文件
-                    import tempfile
-                    temp_fits = tempfile.NamedTemporaryFile(suffix='.fits', delete=False)
-                    temp_fits.close()
-                    
-                    try:
-                        # 创建HDU并写入临时文件
-                        hdu = fits.PrimaryHDU(radio_data, header=radio_header)
-                        hdu.writeto(temp_fits.name, overwrite=True)
-                        
-                        # 尝试使用sunpy.map加载
-                        radio_map = sunpy.map.Map(temp_fits.name)
-                        
-                        # 检查是否是太阳坐标系
-                        if (hasattr(radio_map, 'coordinate_frame') and 
-                            radio_map.coordinate_frame is not None):
-                            
-                            if cfg.debug_mode:
-                                print("    [前向投影] 使用sunpy.map方法进行重投影")
-                            
-                            result = reproject_radio_sunpy_map(radio_map, aia_cutout_map, cfg)
-                            if result is not None:
-                                # 清理临时文件
-                                os.unlink(temp_fits.name)
-                                return result
-                    except Exception as e:
-                        if cfg.debug_mode:
-                            print(f"    [前向投影] sunpy.map方法失败: {e}")
-                    finally:
-                        # 确保清理临时文件
-                        try:
-                            os.unlink(temp_fits.name)
-                        except:
-                            pass
-                    
-            except Exception as e:
-                if cfg.debug_mode:
-                    print(f"    [前向投影] sunpy.map方法失败，回退到前向投影贴图法: {e}")
-        
         # 如果sunpy.map方法不可用或失败，使用原来的前向投影贴图法
         ny_aia, nx_aia = aia_cutout_map.data.shape
 
@@ -1005,9 +965,24 @@ def reproject_radio_forward_paste(
                         n_in_view = int(np.sum(in_aia_view))
                         print(f"    [坐标检查] 射电像素在AIA视野内: {n_in_view}/{int(np.sum(fin_h))} ({(n_in_view/int(np.sum(fin_h))*100 if int(np.sum(fin_h))>0 else 0):.1f}%)")
                         
-                        # 如果几乎没有像素在AIA视野内，调整缩放因子
-                        if n_in_view < 100 and cfg.radio_to_solar_scale_factor == 1.0:
-                            print(f"    [坐标调整] 射电坐标范围过大，建议减小radio_to_solar_scale_factor配置值")
+                        # 如果几乎没有像素在AIA视野内，尝试自动调整缩放
+                        if n_in_view < 100:
+                            print(f"    [坐标调整] 射电坐标范围过大，尝试动态调整缩放因子")
+                            # 计算AIA视野大小
+                            aia_width_arcsec = tr.Tx.arcsec - bl.Tx.arcsec
+                            aia_height_arcsec = tr.Ty.arcsec - bl.Ty.arcsec
+                            
+                            # 计算射电坐标范围
+                            radio_width_arcsec = tx[fin_h].max() - tx[fin_h].min()
+                            radio_height_arcsec = ty[fin_h].max() - ty[fin_h].min()
+                            
+                            # 计算需要的缩放因子（将射电坐标缩小到AIA视野的80%）
+                            scale_x = (aia_width_arcsec * 0.8) / radio_width_arcsec if radio_width_arcsec > 0 else 0.1
+                            scale_y = (aia_height_arcsec * 0.8) / radio_height_arcsec if radio_height_arcsec > 0 else 0.1
+                            new_scale = min(scale_x, scale_y, 1.0)
+                            
+                            if new_scale < cfg.radio_to_solar_scale_factor:
+                                print(f"    [坐标调整] 建议调整缩放因子: {cfg.radio_to_solar_scale_factor} -> {new_scale:.4f}")
             except Exception as e:
                 if cfg.debug_mode:
                     print(f"    [太阳坐标模式] 构建太阳坐标失败: {e}")
