@@ -31,7 +31,7 @@ from sunpy.coordinates import frames
 from scipy.ndimage import gaussian_filter
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Dict
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import lru_cache, partial
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import warnings
@@ -46,10 +46,12 @@ plt.rcParams["axes.unicode_minus"] = False
 # ============================================================
 _RE_MHZ         = re.compile(r'(\d+\.?\d*)\s*MHz', re.IGNORECASE)
 _RE_AIA_PATS    = [
-    re.compile(r'aia\.lev1_euv_12s\.(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)'),
+    re.compile(r'aia\.lev1_euv_12s\.(\d{4}-\d{2}-\d{2}T\d{6}Z)\.\d+\.image_lev1\.fits'),
     re.compile(r'aia\.lev1_euv_12s\.(\d{4}-\d{2}-\d{2}T\d{6}Z)'),
+    re.compile(r'(\d{4}-\d{2}-\d{2}T\d{6}Z)'),
+    re.compile(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)'),
     re.compile(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})'),
-    re.compile(r'(\d{4}-\d{2}-\d{2}T\d{6})'),
+    re.compile(r'(\d{4}\d{2}\d{2}T\d{2}\d{2}\d{2})'),
 ]
 _RE_HMI_PAT     = re.compile(r'(\d{8})_(\d{6})')
 _RE_BAND_SORTED = re.compile(r'(\d+\.?\d*)MHz')
@@ -58,7 +60,7 @@ _DATETIME_FMTS  = [
     # 标准ISO格式
     "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H%M%S.%f", "%Y-%m-%dT%H%M%S",
     # 带时区信息
-    "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H%M%S.%fZ", "%Y-%m-%dT%H%M%SZ",
+    "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H%M%S.%fZ", "%Y%m%dT%H%M%SZ",
     # 空格分隔
     "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H%M%S.%f", "%Y-%m-%d %H%M%S",
     # 简写格式
@@ -66,7 +68,12 @@ _DATETIME_FMTS  = [
     # HMI格式
     "%Y%m%d_%H%M%S",
     # 其他常见格式
-    "%d/%m/%YT%H:%M:%S.%f", "%d/%m/%YT%H:%M:%S", "%d-%b-%YT%H:%M:%S.%f", "%d-%b-%YT%H:%M:%S"
+    "%d/%m/%YT%H:%M:%S.%f", "%d/%m/%YT%H:%M:%S", "%d-%b-%YT%H:%M:%S.%f", "%d-%b-%YT%H:%M:%S",
+    # 射电文件特殊格式
+    "%Y%m%d%H%M%S",  # 20250124044317
+    "%Y%m%d%H%M%S.%f",  # 20250124044317.38
+    "%Y%j%H%M%S.%f",  # 年+儒略日格式: 2025124_044317_038
+    "%Y%j%H%M%S",  # 年+儒略日格式无毫秒
 ]
 
 # ============================================================
@@ -177,6 +184,85 @@ def check_memory_usage(limit: float = 90.0):
 # ============================================================
 #  时间解析
 # ============================================================
+def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
+    """灵活解析各种时间格式"""
+    # 清理字符串
+    date_str = date_str.strip()
+    
+    # 特殊情况：处理下划线分隔的格式，如"2025124_044317_038"
+    if '_' in date_str:
+        parts = date_str.split('_')
+        if len(parts) >= 2:
+            # 格式: 年儒略日_时分秒_毫秒
+            date_part = parts[0]  # 如"2025124"
+            time_part = parts[1]  # 如"044317"
+            
+            # 将年儒略日转换为标准日期
+            if len(date_part) == 7:  # YYYYDDD
+                year = date_part[:4]
+                doy = date_part[4:]
+                try:
+                    base_date = datetime(int(year), 1, 1)
+                    parsed_date = base_date + timedelta(days=int(doy)-1)
+                    
+                    # 解析时间部分
+                    if len(time_part) == 6:  # HHMMSS
+                        hour = int(time_part[0:2])
+                        minute = int(time_part[2:4])
+                        second = int(time_part[4:6])
+                        
+                        # 处理毫秒部分
+                        microsecond = 0
+                        if len(parts) > 2 and parts[2]:
+                            # 毫秒部分，可能为"038"或"38"
+                            ms_str = parts[2].ljust(3, '0')[:3]
+                            microsecond = int(ms_str) * 1000
+                        
+                        return datetime(parsed_date.year, parsed_date.month, parsed_date.day,
+                                       hour, minute, second, microsecond)
+                except Exception:
+                    pass
+    
+    # 尝试标准格式
+    for fmt in _DATETIME_FMTS:
+        try:
+            # 根据格式处理小数点
+            if '.%f' in fmt:
+                # 确保有足够的小数位
+                if '.' not in date_str:
+                    date_str = date_str + '.0'
+                # 补全小数位到6位
+                if '.' in date_str:
+                    integer_part, decimal_part = date_str.split('.')
+                    decimal_part = decimal_part.ljust(6, '0')[:6]
+                    date_str = f"{integer_part}.{decimal_part}"
+            
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+    
+    # 特殊处理：尝试14位数字格式（YYYYMMDDHHMMSS）
+    if len(date_str) >= 14 and date_str[:14].isdigit():
+        try:
+            year = int(date_str[0:4])
+            month = int(date_str[4:6])
+            day = int(date_str[6:8])
+            hour = int(date_str[8:10])
+            minute = int(date_str[10:12])
+            second = int(date_str[12:14])
+            
+            microsecond = 0
+            if len(date_str) > 14 and date_str[14] == '.':
+                # 处理小数秒
+                ms_str = date_str[15:].ljust(6, '0')[:6]
+                microsecond = int(ms_str)
+            
+            return datetime(year, month, day, hour, minute, second, microsecond)
+        except Exception:
+            pass
+    
+    return None
+
 def parse_aia_time_from_filename(filename: str) -> Optional[datetime]:
     """从 AIA 文件名中提取观测时间（支持多种命名模式）。"""
     basename = os.path.basename(filename)
@@ -187,13 +273,9 @@ def parse_aia_time_from_filename(filename: str) -> Optional[datetime]:
             header = fits.getheader(filename, 0)
             date_obs = str(header.get('DATE-OBS', '')).strip()
             if date_obs:
-                for fmt in _DATETIME_FMTS:
-                    try:
-                        # 清理时间字符串
-                        date_obs_clean = date_obs.replace('Z', '').replace('T', ' ').strip()
-                        return datetime.strptime(date_obs_clean, fmt)
-                    except ValueError:
-                        continue
+                parsed_time = _parse_flexible_datetime(date_obs)
+                if parsed_time:
+                    return parsed_time
     except Exception:
         pass
     
@@ -201,17 +283,23 @@ def parse_aia_time_from_filename(filename: str) -> Optional[datetime]:
     for pat in _RE_AIA_PATS:
         m = pat.search(basename)
         if m:
-            ts = m.group(1).replace('Z', '').replace('T', ' ')
-            # 标准化时间格式
-            if ':' not in ts and len(ts) >= 14:
-                # 格式如 20240124T120000
-                ts = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]} {ts[9:11]}:{ts[11:13]}:{ts[13:]}"
+            ts = m.group(1)
+            # 移除常见的后缀
+            ts = ts.rstrip('Z')
             
-            for fmt in _DATETIME_FMTS:
-                try:
-                    return datetime.strptime(ts, fmt)
-                except ValueError:
-                    continue
+            parsed_time = _parse_flexible_datetime(ts)
+            if parsed_time:
+                return parsed_time
+    
+    # 如果都没成功，尝试直接提取数字部分
+    # 查找所有数字序列，尝试解析为时间
+    import re
+    all_digits = re.findall(r'\d{4,}', basename)
+    for digits in all_digits:
+        if len(digits) >= 8:  # 至少要有年月日
+            parsed_time = _parse_flexible_datetime(digits)
+            if parsed_time:
+                return parsed_time
     
     return None
 
@@ -831,28 +919,34 @@ def process_aia_group(aia_file:    str,
 #  ★ 优化4：射电头文件并行读取（线程池，I/O 密集型）
 # ============================================================
 def parse_radio_time_from_header(header: fits.Header) -> Optional[datetime]:
-    """从FITS头中解析射电观测时间（支持多种关键字）。"""
+    """从FITS头中解析射电观测时间（支持多种关键字和格式）。"""
     # 尝试多个可能的时间关键字
-    time_keys = ['DATE-OBS', 'DATE_OBS', 'DATEOBS', 'DATE-BEG', 'DATE_BEG', 'DATEBEG']
+    time_keys = ['DATE-OBS', 'DATE_OBS', 'DATEOBS', 'DATE-BEG', 'DATE_BEG', 'DATEBEG', 'TIME-OBS']
     
     for key in time_keys:
         if key in header:
             date_str = str(header[key]).strip()
-            if date_str:
-                for fmt in _DATETIME_FMTS:
-                    try:
-                        # 清理时间字符串
-                        date_clean = date_str.replace('Z', '').replace('T', ' ').strip()
-                        return datetime.strptime(date_clean, fmt)
-                    except ValueError:
-                        continue
+            if not date_str:
+                continue
+                
+            # 特殊处理：射电文件的时间格式可能有空格，如"20250124044317 38"
+            # 将空格转换为小数点，使"20250124044317 38"变成"20250124044317.38"
+            date_str = date_str.replace(' ', '.')
+            
+            # 移除可能的尾部'Z'字符
+            date_str = date_str.rstrip('Z')
+            
+            # 尝试解析不同格式
+            parsed_time = _parse_flexible_datetime(date_str)
+            if parsed_time:
+                return parsed_time
     
     # 如果所有方法都失败，返回None
     return None
 
 def _read_one_radio_header(rf: str,
-                            selected_bands: Tuple[str, ...],
-                            pol: str) -> Optional[Dict]:
+                           selected_bands: Tuple[str, ...],
+                           pol: str) -> Optional[Dict]:
     """
     优化版：改进时间解析和错误处理
     """
@@ -870,10 +964,24 @@ def _read_one_radio_header(rf: str,
         else:
             # 调试信息：显示无法解析的时间
             date_obs = str(hdr.get('DATE-OBS', '')).strip()
-            print(f"    警告: 无法解析射电文件时间: {date_obs}, 文件: {os.path.basename(rf)}")
+            # 尝试从文件名中提取时间
+            basename = os.path.basename(rf)
+            # 查找文件名中的数字部分
+            import re
+            time_match = re.search(r'(\d{8}_\d{6}_\d{3}|\d{8}_\d{6}|\d{14})', basename)
+            if time_match:
+                time_str = time_match.group(1)
+                # 尝试解析文件名中的时间
+                r_time = _parse_flexible_datetime(time_str)
+                if r_time:
+                    return {'path': rf, 'band': band_found, 'pol': pol, 'time': r_time}
+            
+            if cfg.debug_mode:
+                print(f"    警告: 无法解析射电文件时间: {date_obs}, 文件: {os.path.basename(rf)}")
             
     except Exception as e:
-        print(f"    读取射电文件头出错: {os.path.basename(rf)}, 错误: {str(e)[:100]}")
+        if cfg.debug_mode:
+            print(f"    读取射电文件头出错: {os.path.basename(rf)}, 错误: {str(e)[:100]}")
     
     return None
 
