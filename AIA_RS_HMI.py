@@ -150,7 +150,12 @@ class Config:
     
     # 新增配置：是否使用赤经赤纬坐标图
     use_radec_maps: bool = False  # True: 使用赤经赤纬文件; False: 直接转换为太阳坐标
-    radio_to_solar_scale_factor: float = 1.0  # 射电坐标到太阳坐标的缩放因子
+    radio_to_solar_scale_factor: float = 0.1  # 射电坐标到太阳坐标的缩放因子，默认改为0.1
+    
+    # 新增：自动调整坐标缩放的选项
+    auto_adjust_scale_factor: bool = True  # 自动调整缩放因子
+    min_pixels_in_view: int = 100  # AISA视野内最小像素数
+    max_scale_factor_adjustments: int = 3  # 最大调整次数
 
 # ============================================================
 #  颜色缓存
@@ -626,6 +631,61 @@ def generate_solar_coordinates(shape: Tuple[int, int], header: fits.Header, cfg:
     return tx_map, ty_map
 
 # ============================================================
+#  添加新的辅助函数：自动调整坐标缩放因子
+# ============================================================
+def auto_adjust_coordinate_scale(radio_data: np.ndarray,
+                                 ra_map: np.ndarray,
+                                 dec_map: np.ndarray,
+                                 aia_cutout_map,
+                                 cfg: Config) -> Tuple[np.ndarray, np.ndarray, float]:
+    """
+    自动调整射电坐标到太阳坐标的缩放因子
+    使更多射电像素位于AIA视野内
+    """
+    if not cfg.auto_adjust_scale_factor or cfg.radio_to_solar_scale_factor == 1.0:
+        return ra_map, dec_map, cfg.radio_to_solar_scale_factor
+    
+    ny, nx = radio_data.shape
+    
+    # 获取AIA视野范围
+    bl = aia_cutout_map.bottom_left_coord
+    tr = aia_cutout_map.top_right_coord
+    
+    # 初始缩放因子
+    scale_factor = cfg.radio_to_solar_scale_factor
+    
+    # 尝试不同的缩放因子
+    for attempt in range(cfg.max_scale_factor_adjustments):
+        # 使用当前缩放因子生成坐标
+        if attempt > 0:
+            scale_factor = scale_factor * 0.5  # 每次减半
+            
+        # 生成调整后的坐标
+        adjusted_ra_map, adjusted_dec_map = generate_solar_coordinates((ny, nx), 
+                                                                      fits.Header(),  # 空header
+                                                                      cfg)
+        
+        # 计算有多少像素在AIA视野内
+        in_view_mask = ((adjusted_ra_map >= bl.Tx.arcsec) & (adjusted_ra_map <= tr.Tx.arcsec) &
+                        (adjusted_dec_map >= bl.Ty.arcsec) & (adjusted_dec_map <= tr.Ty.arcsec))
+        n_in_view = int(np.sum(in_view_mask))
+        
+        if cfg.debug_mode:
+            print(f"    [自动调整] 尝试#{attempt+1}: 缩放因子={scale_factor}, "
+                  f"视野内像素={n_in_view}/{ny*nx} ({(n_in_view/(ny*nx)*100):.1f}%)")
+        
+        # 如果达到最小像素数要求，返回调整后的坐标
+        if n_in_view >= cfg.min_pixels_in_view:
+            if cfg.debug_mode:
+                print(f"    [自动调整] 使用缩放因子={scale_factor}")
+            return adjusted_ra_map, adjusted_dec_map, scale_factor
+    
+    # 如果所有尝试都失败，返回原始坐标
+    if cfg.debug_mode:
+        print(f"    [自动调整] 未能找到合适缩放因子，使用默认值")
+    return ra_map, dec_map, cfg.radio_to_solar_scale_factor
+
+# ============================================================
 #  坐标预处理：弧度判断 + 绝对/相对坐标判断 + CRVAL叠加
 # ============================================================
 def _preprocess_radec_maps(ra_map: np.ndarray,
@@ -859,20 +919,44 @@ def reproject_radio_forward_paste(
         # 首先尝试使用sunpy.map方法（如果可能）
         if not cfg.use_radec_maps and radio_header is not None:
             try:
-                # 尝试创建sunpy.map
-                radio_map = sunpy.map.Map(radio_data, radio_header)
-                
-                # 检查是否是太阳坐标系
-                if (hasattr(radio_map, 'coordinate_frame') and 
-                    radio_map.coordinate_frame is not None and
-                    hasattr(radio_map.coordinate_frame, 'Tx')):
+                # 尝试创建sunpy.map - 修复：确保data是2D数组
+                if radio_data.ndim != 2:
+                    print(f"    [前向投影] 警告：射电数据维度为{radio_data.ndim}，需要2D")
+                else:
+                    # 创建临时FITS文件
+                    import tempfile
+                    temp_fits = tempfile.NamedTemporaryFile(suffix='.fits', delete=False)
+                    temp_fits.close()
                     
-                    if cfg.debug_mode:
-                        print("    [前向投影] 使用sunpy.map方法进行重投影")
-                    
-                    result = reproject_radio_sunpy_map(radio_map, aia_cutout_map, cfg)
-                    if result is not None:
-                        return result
+                    try:
+                        # 创建HDU并写入临时文件
+                        hdu = fits.PrimaryHDU(radio_data, header=radio_header)
+                        hdu.writeto(temp_fits.name, overwrite=True)
+                        
+                        # 尝试使用sunpy.map加载
+                        radio_map = sunpy.map.Map(temp_fits.name)
+                        
+                        # 检查是否是太阳坐标系
+                        if (hasattr(radio_map, 'coordinate_frame') and 
+                            radio_map.coordinate_frame is not None):
+                            
+                            if cfg.debug_mode:
+                                print("    [前向投影] 使用sunpy.map方法进行重投影")
+                            
+                            result = reproject_radio_sunpy_map(radio_map, aia_cutout_map, cfg)
+                            if result is not None:
+                                # 清理临时文件
+                                os.unlink(temp_fits.name)
+                                return result
+                    except Exception as e:
+                        if cfg.debug_mode:
+                            print(f"    [前向投影] sunpy.map方法失败: {e}")
+                    finally:
+                        # 确保清理临时文件
+                        try:
+                            os.unlink(temp_fits.name)
+                        except:
+                            pass
                     
             except Exception as e:
                 if cfg.debug_mode:
@@ -912,6 +996,18 @@ def reproject_radio_forward_paste(
                     if fin_h.any():
                         print(f"    [太阳坐标模式] Tx范围: [{tx[fin_h].min():.1f}, {tx[fin_h].max():.1f}]角秒")
                         print(f"    [太阳坐标模式] Ty范围: [{ty[fin_h].min():.1f}, {ty[fin_h].max():.1f}]角秒")
+                        
+                        # 计算有多少像素在AIA视野内
+                        bl = aia_cutout_map.bottom_left_coord
+                        tr = aia_cutout_map.top_right_coord
+                        in_aia_view = ((tx[fin_h] >= bl.Tx.arcsec) & (tx[fin_h] <= tr.Tx.arcsec) &
+                                       (ty[fin_h] >= bl.Ty.arcsec) & (ty[fin_h] <= tr.Ty.arcsec))
+                        n_in_view = int(np.sum(in_aia_view))
+                        print(f"    [坐标检查] 射电像素在AIA视野内: {n_in_view}/{int(np.sum(fin_h))} ({(n_in_view/int(np.sum(fin_h))*100 if int(np.sum(fin_h))>0 else 0):.1f}%)")
+                        
+                        # 如果几乎没有像素在AIA视野内，调整缩放因子
+                        if n_in_view < 100 and cfg.radio_to_solar_scale_factor == 1.0:
+                            print(f"    [坐标调整] 射电坐标范围过大，建议减小radio_to_solar_scale_factor配置值")
             except Exception as e:
                 if cfg.debug_mode:
                     print(f"    [太阳坐标模式] 构建太阳坐标失败: {e}")
@@ -1041,10 +1137,14 @@ def reproject_radio_forward_paste(
         # 获取像素坐标
         if not cfg.use_radec_maps:
             # 对于太阳坐标，我们已经有radio_hpc
-            px_f, py_f = aia_cutout_map.wcs.world_to_pixel(radio_hpc)
+            # 修复：只对有效点计算像素坐标
+            radio_hpc_valid = radio_hpc[valid_mask] if hasattr(radio_hpc, '__len__') else radio_hpc
+            px_f, py_f = aia_cutout_map.wcs.world_to_pixel(radio_hpc_valid)
         else:
             # 对于赤经赤纬坐标，使用现有的radio_hpc
-            px_f, py_f = aia_cutout_map.wcs.world_to_pixel(radio_hpc)
+            # 修复：只对有效点计算像素坐标
+            radio_hpc_valid = radio_hpc[valid_mask] if hasattr(radio_hpc, '__len__') else radio_hpc
+            px_f, py_f = aia_cutout_map.wcs.world_to_pixel(radio_hpc_valid)
         
         px_f = np.asarray(px_f, dtype=np.float64)
 
@@ -1055,8 +1155,13 @@ def reproject_radio_forward_paste(
                 tx = v_ra  # 对于太阳坐标，v_ra就是Tx
                 ty = v_dec  # 对于太阳坐标，v_dec就是Ty
             else:
-                tx = radio_hpc.Tx.arcsec
-                ty = radio_hpc.Ty.arcsec
+                # 修复：对于赤经赤纬坐标，从radio_hpc中提取Tx, Ty
+                if hasattr(radio_hpc, 'Tx'):
+                    tx = radio_hpc.Tx.arcsec
+                    ty = radio_hpc.Ty.arcsec
+                else:
+                    tx = v_ra
+                    ty = v_dec
             
             fin_h = np.isfinite(tx) & np.isfinite(ty)
             if fin_h.any():
@@ -1080,10 +1185,31 @@ def reproject_radio_forward_paste(
                 in_aia_view = ((tx[fin_h] >= bl.Tx.arcsec) & (tx[fin_h] <= tr.Tx.arcsec) &
                                (ty[fin_h] >= bl.Ty.arcsec) & (ty[fin_h] <= tr.Ty.arcsec))
                 n_in_view = int(np.sum(in_aia_view))
-                print(f"    [坐标转换] 射电像素在AIA视野内: {n_in_view}/{int(np.sum(fin_h))}")
+                print(f"    [坐标转换] 射电像素在AIA视野内: {n_in_view}/{int(np.sum(fin_h))} ({(n_in_view/int(np.sum(fin_h))*100 if int(np.sum(fin_h))>0 else 0):.1f}%)")
 
         # ── 像素坐标有效性 & 边界过滤 ────────────────────────────────────
         fin_pix = np.isfinite(px_f) & np.isfinite(py_f)
+        
+        # 修复维度不匹配问题：确保fin_pix是一维的布尔数组
+        # 如果px_f和py_f是标量，将它们转换为1维数组
+        if np.isscalar(px_f):
+            px_f = np.array([px_f])
+            py_f = np.array([py_f])
+            fin_pix = np.array([fin_pix])
+        
+        # 修复：如果v_data是一维数组，fin_pix也必须是相同长度的一维布尔数组
+        if v_data.ndim == 1:
+            # 确保fin_pix与v_data长度相同
+            if fin_pix.size != v_data.size:
+                if cfg.debug_mode:
+                    print(f"    [维度修复] 调整fin_pix维度: {fin_pix.shape} -> 与v_data匹配: {v_data.shape}")
+                # 如果fin_pix长度大于v_data，截取
+                if fin_pix.size > v_data.size:
+                    fin_pix = fin_pix[:v_data.size]
+                # 如果fin_pix长度小于v_data，扩展
+                elif fin_pix.size < v_data.size:
+                    fin_pix = np.concatenate([fin_pix, np.zeros(v_data.size - fin_pix.size, dtype=bool)])
+        
         px_i    = np.round(px_f[fin_pix]).astype(int)
         py_i    = np.round(py_f[fin_pix]).astype(int)
         v_vals  = v_data[fin_pix]
@@ -1093,7 +1219,7 @@ def reproject_radio_forward_paste(
 
         n_in = int(np.sum(in_bounds))
         if cfg.debug_mode:
-            print(f"    [前向投影] 射电像素落入AIA视野: {n_in} / {int(np.sum(fin_pix))}")
+            print(f"    [前向投影] 射电像素落入AIA视野: {n_in} / {int(np.sum(fin_pix))} ({(n_in/int(np.sum(fin_pix))*100 if int(np.sum(fin_pix))>0 else 0):.1f}%)")
 
         if n_in == 0:
             # 诊断信息
@@ -1102,8 +1228,12 @@ def reproject_radio_forward_paste(
                     tx = v_ra
                     ty = v_dec
                 else:
-                    tx = radio_hpc.Tx.arcsec
-                    ty = radio_hpc.Ty.arcsec
+                    if hasattr(radio_hpc, 'Tx'):
+                        tx = radio_hpc.Tx.arcsec
+                        ty = radio_hpc.Ty.arcsec
+                    else:
+                        tx = v_ra
+                        ty = v_dec
                 fin_h = np.isfinite(tx) & np.isfinite(ty)
                 if fin_h.any():
                     print(f"    [诊断] 射电 Tx [{tx[fin_h].min():.1f}, "
