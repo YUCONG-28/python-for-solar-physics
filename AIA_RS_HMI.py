@@ -1167,40 +1167,60 @@ def process_aia_group(aia_file:    str,
         # ── 关键修复：为射电重投影使用纯 astropy FITS WCS，避免 SunPy 高阶WCS
         # 导致 reproject_interp 报 "different number of world coordinates" ──
         from astropy.wcs import WCS as FitsWCS
-        
-        # 清理FITS头中的非ASCII字符
-        cleaned_meta = {}
-        for key, value in cutout_aia.meta.items():
-            if isinstance(value, str):
-                # 移除换行符和非ASCII字符，只保留可打印ASCII字符
-                # 替换换行符为空格
-                cleaned = value.replace('\n', ' ').replace('\r', ' ')
-                # 移除控制字符和非ASCII字符，只保留ASCII 32-126
-                cleaned = ''.join(char for char in cleaned if 32 <= ord(char) <= 126)
-                cleaned_meta[key] = cleaned
-            else:
-                cleaned_meta[key] = value
-        
-        # 从清理后的元数据创建WCS
+
         try:
-            aia_wcs_2d = FitsWCS(cleaned_meta)
+            # 方法1: 使用astropy的Header对象，它有内置的clean方法
+            from astropy.io import fits
+            aia_header = fits.Header(cutout_aia.meta)
+            
+            # 清理头：移除COMMENT和HISTORY卡片，以及无效卡片
+            aia_header.clean()
+            
+            # 进一步清理：移除所有包含换行符的值
+            for key in aia_header.keys():
+                if key in ['COMMENT', 'HISTORY']:
+                    continue  # 跳过这些特殊关键字
+                value = aia_header[key]
+                if isinstance(value, str) and ('\n' in value or '\r' in value):
+                    # 用空格替换换行符
+                    cleaned = value.replace('\n', ' ').replace('\r', ' ').strip()
+                    if cleaned:
+                        aia_header[key] = cleaned
+            
+            aia_wcs_2d = FitsWCS(aia_header)
+            
         except Exception as e:
             if cfg.debug_mode:
-                print(f"    从清理后元数据创建WCS失败: {e}")
-            # 回退：尝试直接从cutout_aia的wcs转换
+                print(f"    从清理后Header创建WCS失败: {e}")
+                print(f"    回退到使用cutout_aia.wcs.to_header()")
+            
             try:
+                # 方法2: 直接从wcs创建
                 aia_wcs_2d = FitsWCS(cutout_aia.wcs.to_header())
-            except Exception:
-                # 最后尝试：手动构建基本WCS
+            except Exception as e2:
+                if cfg.debug_mode:
+                    print(f"    从wcs.to_header()创建WCS也失败: {e2}")
+                    print(f"    使用手动构建的简单WCS")
+                
+                # 方法3: 手动构建
                 from astropy.wcs import WCS
                 wcs = WCS(naxis=2)
-                wcs.wcs.crpix = [cutout_aia.meta.get('CRPIX1', 0), cutout_aia.meta.get('CRPIX2', 0)]
-                wcs.wcs.cdelt = [cutout_aia.meta.get('CDELT1', 1), cutout_aia.meta.get('CDELT2', 1)]
-                wcs.wcs.crval = [cutout_aia.meta.get('CRVAL1', 0), cutout_aia.meta.get('CRVAL2', 0)]
-                wcs.wcs.ctype = [cutout_aia.meta.get('CTYPE1', 'HPLN-TAN'), 
-                                 cutout_aia.meta.get('CTYPE2', 'HPLT-TAN')]
+                
+                # 使用合理的默认值
+                wcs.wcs.crpix = [cutout_aia.data.shape[1]/2, cutout_aia.data.shape[0]/2]
+                wcs.wcs.cdelt = [cutout_aia.meta.get('CDELT1', 0.6),  # AIA典型像素尺度
+                                 cutout_aia.meta.get('CDELT2', 0.6)]
+                wcs.wcs.crval = [cutout_aia.meta.get('CRVAL1', 0), 
+                                 cutout_aia.meta.get('CRVAL2', 0)]
+                wcs.wcs.ctype = ['HPLN-TAN', 'HPLT-TAN']
+                
+                # 复制太阳参数
+                for key in ['RSUN_REF', 'RSUN_OBS', 'DSUN_OBS', 'HGLN_OBS', 'HGLT_OBS']:
+                    if key in cutout_aia.meta:
+                        setattr(wcs.wcs, key.lower(), cutout_aia.meta[key])
+                
                 aia_wcs_2d = wcs
-        
+
         # 如果是高于2维的WCS（如旧版SunPy 4维头文件），取2D子集
         if aia_wcs_2d.naxis > 2:
             aia_wcs_2d = aia_wcs_2d.celestial
