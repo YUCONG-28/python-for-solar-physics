@@ -144,7 +144,7 @@ class Config:
     debug_mode: bool = True  # 改为True以显示详细匹配信息
     
     # 简化重投影选项
-    coordinate_search_radius: float = 1.0  # 坐标查找搜索半径（度）
+    coordinate_search_radius: float = 3.0  # 坐标查找搜索半径（度），用于KD树最近邻匹配
     quick_test: bool = False
     test_file_limit: int = 5  # 快速测试时的文件数量限制
 
@@ -400,6 +400,8 @@ def extract_radio_2d_data(fits_path: str, use_float32: bool = True, cfg: Optiona
                                             ra_map = np.squeeze(ra_map)
                                             if use_float32:
                                                 ra_map = ra_map.astype(np.float32)
+                                        if cfg is not None and cfg.debug_mode:
+                                            print(f"    [坐标图] 已加载RA文件: {file}")
                                     elif 'Declination' in file or 'Dec' in file:
                                         with fits.open(file_path) as hdu_dec:
                                             dec_map = hdu_dec[0].data
@@ -408,6 +410,8 @@ def extract_radio_2d_data(fits_path: str, use_float32: bool = True, cfg: Optiona
                                             dec_map = np.squeeze(dec_map)
                                             if use_float32:
                                                 dec_map = dec_map.astype(np.float32)
+                                        if cfg is not None and cfg.debug_mode:
+                                            print(f"    [坐标图] 已加载Dec文件: {file}")
                                 except Exception:
                                     pass
             
@@ -490,218 +494,270 @@ def compute_contour_levels(data: np.ndarray, cfg: Config) -> List[float]:
     return levels if levels else []
 
 # ============================================================
-#  简化重投影函数
+#  坐标预处理：弧度判断 + 绝对/相对坐标判断 + CRVAL叠加
 # ============================================================
-def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
-                                           ra_map: np.ndarray,
-                                           dec_map: np.ndarray,
-                                           target_shape: Tuple[int, int],
-                                           aia_wcs_2d: WCS,
-                                           cfg: Config,
-                                           radio_header: Optional[fits.Header] = None) -> Optional[np.ndarray]:
+def _preprocess_radec_maps(ra_map: np.ndarray,
+                           dec_map: np.ndarray,
+                           radio_header: Optional[fits.Header],
+                           cfg: Config) -> Tuple[np.ndarray, np.ndarray]:
     """
-    简化版：只使用坐标图进行重投影，移除太阳自转修正和高度计算
+    统一坐标预处理，返回绝对赤经赤纬（度，RA∈[0,360)，Dec∈[-90,90]）。
+
+    处理逻辑
+    --------
+    1. 弧度检测与转换
+       - 全部值 |x| < 0.5  → 相位中心偏移弧度，转为度
+       - RA 在 (π/2, 2π]、Dec 在 [-π/2, π/2] → 绝对弧度，转为度
+       - 其余情况直接视为度
+
+    2. 绝对坐标 vs 相对偏移判断
+       - |RA中值| > 20° 或 |Dec中值| > 25° → 文件已是绝对坐标（如 _Degree 文件）
+         → 不叠加 CRVAL（否则出现二次偏移）
+       - 否则视为相位中心偏移 → 叠加 CRVAL1/CRVAL2 得到绝对坐标
+
+    3. 标准化 RA 到 [0, 360)
+    """
+    ra  = ra_map.copy().astype(np.float64)
+    dec = dec_map.copy().astype(np.float64)
+
+    ra_fin  = ra[np.isfinite(ra)]
+    dec_fin = dec[np.isfinite(dec)]
+    if len(ra_fin) == 0 or len(dec_fin) == 0:
+        return ra, dec
+
+    ra_min, ra_max   = float(ra_fin.min()),  float(ra_fin.max())
+    dec_min, dec_max = float(dec_fin.min()), float(dec_fin.max())
+
+    if cfg.debug_mode:
+        print(f"    原始坐标范围: RA [{ra_min:.6f}, {ra_max:.6f}], "
+              f"Dec [{dec_min:.6f}, {dec_max:.6f}]")
+
+    # ── 弧度检测 ────────────────────────────────────────────────────────────
+    all_small = (abs(ra_max) < 0.5 and abs(ra_min) < 0.5
+                 and abs(dec_max) < 0.5 and abs(dec_min) < 0.5)
+    looks_abs_rad = (ra_min >= 0 and ra_max > np.pi / 2
+                     and ra_max <= np.pi * 2.05
+                     and abs(dec_max) <= np.pi / 2 * 1.05)
+
+    if all_small:
+        if cfg.debug_mode:
+            print("    检测到坐标为小角度弧度偏移，转换为度...")
+        ra  = np.rad2deg(ra)
+        dec = np.rad2deg(dec)
+    elif looks_abs_rad:
+        if cfg.debug_mode:
+            print("    检测到坐标为绝对弧度（0~2π / ±π/2），转换为度...")
+        ra  = np.rad2deg(ra)
+        dec = np.rad2deg(dec)
+
+    # 更新范围
+    ra_fin  = ra[np.isfinite(ra)]
+    dec_fin = dec[np.isfinite(dec)]
+    ra_median  = float(np.median(ra_fin))
+    dec_median = float(np.median(dec_fin))
+
+    # ── 绝对坐标 vs 相对偏移 ─────────────────────────────────────────────────
+    # 太阳 RA 全年 0~360°，以相位中心为原点的偏移通常 |中值| < 5°
+    is_absolute = (abs(ra_median) > 20.0) or (abs(dec_median) > 25.0)
+
+    if cfg.debug_mode:
+        print(f"    坐标中值: RA={ra_median:.4f}°  Dec={dec_median:.4f}°")
+        print(f"    坐标类型: {'【绝对坐标】跳过CRVAL叠加' if is_absolute else '【相对偏移】将叠加CRVAL'}")
+
+    if (not is_absolute) and (radio_header is not None):
+        crval1 = float(radio_header.get('CRVAL1', 0.0))
+        crval2 = float(radio_header.get('CRVAL2', 0.0))
+        if cfg.debug_mode:
+            print(f"    相位中心: CRVAL1={crval1:.6f}°  CRVAL2={crval2:.6f}°")
+        ra  = ra  + crval1
+        dec = dec + crval2
+        if cfg.debug_mode:
+            r = ra[np.isfinite(ra)]
+            d = dec[np.isfinite(dec)]
+            print(f"    叠加后: RA [{r.min():.4f}, {r.max():.4f}], "
+                  f"Dec [{d.min():.4f}, {d.max():.4f}]")
+
+    # 标准化赤经到 [0, 360)
+    ra = np.mod(ra, 360.0)
+    return ra, dec
+
+
+# ============================================================
+#  前向投影贴图
+# ============================================================
+def reproject_radio_forward_paste(
+        radio_data:    np.ndarray,
+        ra_map:        np.ndarray,
+        dec_map:       np.ndarray,
+        aia_cutout_map,                          # sunpy.map.GenericMap
+        cfg:           Config,
+        radio_header:  Optional[fits.Header] = None) -> Optional[np.ndarray]:
+    """
+    前向投影贴图法（Forward Projection / Paste）。
+
+    原理
+    ----
+    对每个射电像素 (i, j)：
+        (RA, Dec) [来自坐标图]
+            → ICRS SkyCoord
+            → Helioprojective (Tx, Ty)  [AIA观测者坐标系]
+            → AIA 子图像素坐标 (px, py) [cutout_aia.wcs.world_to_pixel]
+            → 写入输出数组 output[py, px] = radio_data[i, j]
+
+    优势（相比逆向KD树法）
+    ---------------------
+    - **不依赖坐标数值重叠**：无论坐标图格式如何，只要 (RA,Dec) → AIA像素
+      的变换链是正确的，射电源就一定落到 AIA 图像的正确位置上。
+    - 彻底避免赤经 0°/360° 卷绕问题。
+    - 避免随机降采样导致峰值丢失。
+
+    间隙填充
+    --------
+    射电图像分辨率低，每个射电像素映射到 AIA 上通常为稀疏散点。
+    函数内部做一次归一化高斯扩散（sigma ≈ 1.5 像素），使散点连成连续区域，
+    确保等值线可以正常绘制。这一步不影响峰值位置与相对强度。
     """
     try:
+        ny_aia, nx_aia = aia_cutout_map.data.shape
+
+        # ── 坐标预处理 ─────────────────────────────────────────────────────
         if ra_map is None or dec_map is None:
             if cfg.debug_mode:
-                print("    重投影失败: 坐标图为None")
+                print("    [前向投影] 失败：坐标图为 None")
             return None
-        
-        # 验证坐标图形状
+
         if ra_map.shape != radio_data.shape or dec_map.shape != radio_data.shape:
             if cfg.debug_mode:
-                print(f"    重投影失败: 坐标图形状不匹配, 数据{radio_data.shape}, RA{ra_map.shape}, Dec{dec_map.shape}")
+                print(f"    [前向投影] 失败：坐标图形状不匹配 "
+                      f"data={radio_data.shape} RA={ra_map.shape} Dec={dec_map.shape}")
             return None
 
-        # 使用副本
-        ra_map = ra_map.copy().astype(np.float64)
-        dec_map = dec_map.copy().astype(np.float64)
+        ra_abs, dec_abs = _preprocess_radec_maps(ra_map, dec_map, radio_header, cfg)
 
-        # 检查坐标值范围
-        ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
-        dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
-        
+        # ── 有效点筛选 ────────────────────────────────────────────────────
+        valid_mask = (np.isfinite(ra_abs) & np.isfinite(dec_abs)
+                      & np.isfinite(radio_data))
+        n_valid = int(np.sum(valid_mask))
+        if n_valid < 9:
+            if cfg.debug_mode:
+                print(f"    [前向投影] 失败：有效点不足 ({n_valid})")
+            return None
+
+        v_ra   = ra_abs[valid_mask]
+        v_dec  = dec_abs[valid_mask]
+        v_data = radio_data[valid_mask].astype(np.float64)
+
         if cfg.debug_mode:
-            print(f"    原始坐标范围: RA [{ra_min:.6f}, {ra_max:.6f}], Dec [{dec_min:.6f}, {dec_max:.6f}]")
-        
-        # 检测坐标单位并转换
-        if abs(ra_max) < 4.0 and abs(ra_min) < 4.0 and abs(dec_max) < 4.0 and abs(dec_min) < 4.0:
-            # 弧度单位转换为度
-            if cfg.debug_mode:
-                print(f"    检测到坐标图为弧度单位，转换为度...")
-            ra_map = np.rad2deg(ra_map)
-            dec_map = np.rad2deg(dec_map)
-            ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
-            dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
-            if cfg.debug_mode:
-                print(f"    转换后坐标范围: RA [{ra_min:.6f}, {ra_max:.6f}], Dec [{dec_min:.6f}, {dec_max:.6f}]")
-        
-        # 加上相位中心得到绝对坐标
-        if radio_header is not None:
-            crval1 = float(radio_header.get('CRVAL1', 0.0))
-            crval2 = float(radio_header.get('CRVAL2', 0.0))
-            if cfg.debug_mode:
-                print(f"    相位中心: CRVAL1={crval1:.6f}°, CRVAL2={crval2:.6f}°")
-            ra_map = ra_map + crval1
-            dec_map = dec_map + crval2
-            
-            ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
-            dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
-            
-            if cfg.debug_mode:
-                print(f"    绝对坐标范围: RA [{ra_min:.6f}, {ra_max:.6f}], Dec [{dec_min:.6f}, {dec_max:.6f}]")
-        
-        # 标准化赤经到0-360度
-        ra_map = np.mod(ra_map, 360)
-        
-        # 检查有效数据点
-        ra_valid = np.isfinite(ra_map)
-        dec_valid = np.isfinite(dec_map)
-        data_valid = np.isfinite(radio_data)
-        valid_mask = ra_valid & dec_valid & data_valid
-        
-        valid_count = np.sum(valid_mask)
-        if valid_count < 100:
-            if cfg.debug_mode:
-                print(f"    重投影失败: 有效数据点不足: {valid_count}")
-            return None
-        
+            print(f"    [前向投影] 有效射电像素: {n_valid}")
+            print(f"    [前向投影] 射电坐标范围: "
+                  f"RA [{v_ra.min():.4f}, {v_ra.max():.4f}]  "
+                  f"Dec [{v_dec.min():.4f}, {v_dec.max():.4f}]")
+
+        # ── ICRS → AIA Helioprojective → AIA 像素坐标 ────────────────────
+        radio_icrs = SkyCoord(ra=v_ra * u.deg, dec=v_dec * u.deg, frame='icrs')
+
+        # transform_to 使用 AIA Map 的观测者信息（日期、DSUN、B0 等）
+        aia_frame = aia_cutout_map.coordinate_frame
+        radio_hpc = radio_icrs.transform_to(aia_frame)
+
+        # SunPy Map.wcs.world_to_pixel 接受原生坐标帧（Helioprojective）
+        px_f, py_f = aia_cutout_map.wcs.world_to_pixel(radio_hpc)
+        px_f = np.asarray(px_f, dtype=np.float64)
+        py_f = np.asarray(py_f, dtype=np.float64)
+
+        # ── 像素坐标有效性 & 边界过滤 ────────────────────────────────────
+        fin_pix = np.isfinite(px_f) & np.isfinite(py_f)
+        px_i    = np.round(px_f[fin_pix]).astype(int)
+        py_i    = np.round(py_f[fin_pix]).astype(int)
+        v_vals  = v_data[fin_pix]
+
+        in_bounds = ((px_i >= 0) & (px_i < nx_aia)
+                     & (py_i >= 0) & (py_i < ny_aia))
+
+        n_in = int(np.sum(in_bounds))
         if cfg.debug_mode:
-            print(f"    坐标查找表: 找到 {valid_count} 个有效点")
-        
-        # 提取有效点的坐标和数据
-        valid_ra = ra_map[valid_mask]
-        valid_dec = dec_map[valid_mask]
-        valid_data = radio_data[valid_mask]
-        
-        # 创建目标网格
-        ny, nx = target_shape
-        y_target, x_target = np.mgrid[0:ny, 0:nx]
-        
-        # 将目标像素转换为世界坐标
-        try:
-            target_coords = aia_wcs_2d.pixel_to_world(x_target, y_target)
-            target_eq_coords = target_coords.transform_to('icrs')
-            target_ra = target_eq_coords.ra.deg.reshape(ny, nx)
-            target_dec = target_eq_coords.dec.deg.reshape(ny, nx)
-        except Exception:
+            print(f"    [前向投影] 射电像素落入AIA视野: {n_in} / {int(np.sum(fin_pix))}")
+
+        if n_in == 0:
+            # ── 诊断：打印AIA坐标范围与射电Tx/Ty范围 ──────────────────────
             if cfg.debug_mode:
-                print("    重投影失败: 无法转换目标像素到世界坐标")
+                tx = radio_hpc.Tx.arcsec
+                ty = radio_hpc.Ty.arcsec
+                fin_h = np.isfinite(tx) & np.isfinite(ty)
+                if fin_h.any():
+                    print(f"    [诊断] 射电 Tx [{tx[fin_h].min():.1f}, "
+                          f"{tx[fin_h].max():.1f}] arcsec  "
+                          f"Ty [{ty[fin_h].min():.1f}, {ty[fin_h].max():.1f}] arcsec")
+                    bl = aia_cutout_map.bottom_left_coord
+                    tr = aia_cutout_map.top_right_coord
+                    print(f"    [诊断] AIA视野 Tx [{bl.Tx.arcsec:.1f}, "
+                          f"{tr.Tx.arcsec:.1f}]  Ty [{bl.Ty.arcsec:.1f}, "
+                          f"{tr.Ty.arcsec:.1f}] arcsec")
             return None
-        
-        # 使用KD树进行最近邻插值
-        from scipy.spatial import cKDTree
-        
-        # 为有效点构建KD树
-        max_points = min(10000, len(valid_ra))
-        if len(valid_ra) > max_points:
-            indices = np.random.choice(len(valid_ra), max_points, replace=False)
-            valid_ra_sampled = valid_ra[indices]
-            valid_dec_sampled = valid_dec[indices]
-            valid_data_sampled = valid_data[indices]
-        else:
-            valid_ra_sampled = valid_ra
-            valid_dec_sampled = valid_dec
-            valid_data_sampled = valid_data
-        
-        # 确保KD树的数据点都是有限的
-        kdtree_valid = np.isfinite(valid_ra_sampled) & np.isfinite(valid_dec_sampled)
-        valid_ra_sampled = valid_ra_sampled[kdtree_valid]
-        valid_dec_sampled = valid_dec_sampled[kdtree_valid]
-        valid_data_sampled = valid_data_sampled[kdtree_valid]
-        
-        if len(valid_ra_sampled) == 0:
-            if cfg.debug_mode:
-                print("    重投影失败: KD树数据点不足")
-            return None
-        
-        tree = cKDTree(np.column_stack([valid_ra_sampled, valid_dec_sampled]))
-        
-        # 分块处理目标网格
-        chunk_size = 64
-        reprojected = np.full((ny, nx), np.nan, dtype=np.float32)
-        
-        for i in range(0, nx, chunk_size):
-            for j in range(0, ny, chunk_size):
-                i_end = min(i + chunk_size, nx)
-                j_end = min(j + chunk_size, ny)
-                
-                chunk_target_ra = target_ra[j:j_end, i:i_end]
-                chunk_target_dec = target_dec[j:j_end, i:i_end]
-                
-                # 展平目标坐标
-                ra_flat = chunk_target_ra.ravel()
-                dec_flat = chunk_target_dec.ravel()
-                
-                # 只处理有限值的点
-                valid_target_mask = np.isfinite(ra_flat) & np.isfinite(dec_flat)
-                valid_indices = np.where(valid_target_mask)[0]
-                
-                if len(valid_indices) == 0:
-                    continue
-                
-                # 只对有效目标点进行查询
-                query_points = np.column_stack([ra_flat[valid_indices], 
-                                                dec_flat[valid_indices]])
-                
-                # 查询最近邻
-                distances, indices = tree.query(
-                    query_points,
-                    k=1, 
-                    distance_upper_bound=cfg.coordinate_search_radius
-                )
-                
-                # 创建结果数组
-                chunk_result = np.full(ra_flat.shape, np.nan, dtype=np.float32)
-                
-                # 填充有效查询结果
-                valid_query = distances < np.inf
-                if np.any(valid_query):
-                    chunk_result[valid_indices[valid_query]] = valid_data_sampled[indices[valid_query]]
-                
-                # 重塑并赋值
-                reprojected[j:j_end, i:i_end] = chunk_result.reshape(
-                    j_end - j, i_end - i)
-        
-        # 验证结果
-        valid_final = np.sum(~np.isnan(reprojected))
+
+        b_px   = px_i[in_bounds]
+        b_py   = py_i[in_bounds]
+        b_vals = v_vals[in_bounds]
+
+        # ── 散射：取最大值（保留峰值，不被低值覆盖）─────────────────────
+        acc = np.full((ny_aia, nx_aia), -np.inf, dtype=np.float64)
+        np.maximum.at(acc, (b_py, b_px), b_vals)
+
+        output = np.where(acc > -np.inf, acc, np.nan).astype(np.float32)
+
+        # ── 间隙填充（归一化高斯扩散，sigma=1.5像素）──────────────────────
+        # 射电分辨率远低于AIA，散点之间存在空洞，填充后等值线才连续。
+        # 使用归一化卷积保持峰值幅度不衰减。
+        nan_mask = np.isnan(output)
+        if nan_mask.any():
+            fill_sigma = 1.5
+            filled  = np.where(nan_mask, 0.0, output)
+            weights = (~nan_mask).astype(np.float64)
+            sm_d = gaussian_filter(filled.astype(np.float64),  sigma=fill_sigma)
+            sm_w = gaussian_filter(weights, sigma=fill_sigma)
+            with np.errstate(invalid='ignore', divide='ignore'):
+                diffused = np.where(sm_w > 1e-6, sm_d / sm_w, np.nan)
+            # 仅在原本为 NaN 的区域填充，不修改已有散射值
+            output = np.where(nan_mask, diffused.astype(np.float32), output)
+
+        valid_final = int(np.sum(~np.isnan(output)))
         if valid_final == 0:
-            if cfg.debug_mode:
-                print("    重投影失败: 最终结果中没有有效数据")
             return None
-        
+
         if cfg.debug_mode:
-            print(f"    重投影成功: 有效像素 {valid_final} / {ny*nx}")
-        
-        return reprojected
-        
+            peak_val = float(np.nanmax(output))
+            print(f"    [前向投影] 成功: 有效像素 {valid_final}/{ny_aia*nx_aia}  "
+                  f"峰值 {peak_val:.4g}")
+
+        return output
+
     except Exception as e:
         if cfg.debug_mode:
-            print(f"    坐标查找表重投影失败: {e}")
+            print(f"    [前向投影] 异常: {e}")
             import traceback
             traceback.print_exc()
         return None
 
-def reproject_radio_to_aia(radio_data:   np.ndarray,
-                           radio_header: fits.Header,
-                           ra_map:       Optional[np.ndarray],
-                           dec_map:      Optional[np.ndarray],
-                           target_shape: Tuple[int, int],
-                           aia_wcs_2d:   WCS,
-                           cfg:          Config) -> Optional[np.ndarray]:
+
+def reproject_radio_to_aia(radio_data:      np.ndarray,
+                            radio_header:   fits.Header,
+                            ra_map:         Optional[np.ndarray],
+                            dec_map:        Optional[np.ndarray],
+                            aia_cutout_map,                        # sunpy.map.GenericMap
+                            cfg:            Config) -> Optional[np.ndarray]:
     """
-    简化版：只使用坐标查找表进行重投影
+    入口函数：调用前向投影贴图法将射电数据映射到AIA坐标系。
     """
-    # 只使用坐标查找表方法
-    if ra_map is not None and dec_map is not None:
-        return reproject_radio_with_coordinate_lookup(
-            radio_data, ra_map, dec_map,
-            target_shape, aia_wcs_2d, cfg,
-            radio_header=radio_header
-        )
-    
-    return None
+    if ra_map is None or dec_map is None:
+        if cfg.debug_mode:
+            print("    reproject_radio_to_aia: 无坐标图，跳过")
+        return None
+
+    return reproject_radio_forward_paste(
+        radio_data, ra_map, dec_map,
+        aia_cutout_map, cfg,
+        radio_header=radio_header
+    )
 
 # ============================================================
 #  展示级等值线平滑（归一化卷积，正确处理 NaN 边界）
@@ -816,12 +872,6 @@ def process_aia_group(aia_file:    str,
                       frame=aia_map.coordinate_frame)
         cutout_aia = aia_map.submap(bl, top_right=tr)
 
-        # 提取目标形状和WCS
-        target_shape = cutout_aia.data.shape
-        
-        # 简化：直接使用cutout_aia的WCS
-        aia_wcs_2d = cutout_aia.wcs
-
         # 预处理 HMI 磁图（若启用）
         hmi_processed = (process_hmi_for_overlay(hmi_file, cutout_aia.wcs, cfg)
                          if cfg.overlay_hmi and hmi_file else None)
@@ -896,11 +946,11 @@ def process_aia_group(aia_file:    str,
                         if beam and band_label not in collected_beams:
                             collected_beams[band_label] = beam
                     
-                        # 重投影射电数据到AIA坐标
+                        # 重投影射电数据到AIA坐标（前向投影贴图法）
                         reprojected = reproject_radio_to_aia(
                             radio_data_2d, radio_header_2d,
                             ra_map, dec_map,
-                            target_shape, aia_wcs_2d,
+                            cutout_aia,
                             cfg
                         )
                         
