@@ -128,6 +128,7 @@ class Config:
     
     # 简化重投影选项
     coordinate_search_radius: float = 1.0  # 坐标查找搜索半径（度）
+    quick_test: bool = False
 
 # ============================================================
 #  颜色缓存
