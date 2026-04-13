@@ -360,6 +360,7 @@ def extract_radio_2d_data(fits_path: str, use_float32: bool = True, cfg: Optiona
     """
     简化版：提取射电数据和坐标图
     修改：根据cfg.use_radec_maps决定是否加载坐标图文件
+    增强：在太阳坐标模式下，尝试创建sunpy.map.Map来处理射电数据
     """
     try:
         with fits.open(fits_path) as hdu_data:
@@ -422,10 +423,42 @@ def extract_radio_2d_data(fits_path: str, use_float32: bool = True, cfg: Optiona
             else:
                 # 不使用坐标图文件，生成太阳坐标
                 if cfg is not None and cfg.debug_mode:
-                    print(f"    [坐标图] 不使用赤经赤纬文件，生成太阳坐标")
+                    print(f"    [坐标图] 不使用赤经赤纬文件，尝试使用sunpy.map处理射电数据")
                 
-                # 生成模拟的太阳坐标（Tx, Ty）
-                ra_map, dec_map = generate_solar_coordinates(data.shape, header, cfg)
+                try:
+                    # 尝试使用sunpy.map.Map来读取射电数据
+                    radio_map = sunpy.map.Map(fits_path)
+                    
+                    # 检查射电数据是否具有太阳坐标系信息
+                    if hasattr(radio_map, 'coordinate_frame') and radio_map.coordinate_frame is not None:
+                        # 创建像素网格
+                        ny, nx = radio_map.data.shape
+                        y_indices, x_indices = np.indices((ny, nx))
+                        
+                        # 将像素坐标转换为世界坐标
+                        coords = radio_map.pixel_to_world(x_indices * u.pix, y_indices * u.pix)
+                        
+                        # 提取Tx, Ty坐标（太阳坐标，角秒）
+                        if hasattr(coords, 'Tx'):
+                            ra_map = coords.Tx.arcsec
+                            dec_map = coords.Ty.arcsec
+                            
+                            if cfg.debug_mode:
+                                print(f"    [sunpy.map] 成功提取太阳坐标")
+                                print(f"    [sunpy.map] Tx范围: [{ra_map.min():.1f}, {ra_map.max():.1f}]角秒")
+                                print(f"    [sunpy.map] Ty范围: [{dec_map.min():.1f}, {dec_map.max():.1f}]角秒")
+                        else:
+                            # 如果不是太阳坐标系，回退到生成模拟坐标
+                            ra_map, dec_map = generate_solar_coordinates(data.shape, header, cfg)
+                    else:
+                        # 如果没有坐标系信息，回退到生成模拟坐标
+                        ra_map, dec_map = generate_solar_coordinates(data.shape, header, cfg)
+                        
+                except Exception as e:
+                    # 如果sunpy.map失败，回退到生成模拟坐标
+                    if cfg.debug_mode:
+                        print(f"    [sunpy.map] 失败: {e}")
+                    ra_map, dec_map = generate_solar_coordinates(data.shape, header, cfg)
             
             dtype = np.float32 if use_float32 else np.float64
             return data.astype(dtype), ra_map, dec_map, header, None
@@ -699,6 +732,119 @@ def _preprocess_radec_maps(ra_map: np.ndarray,
 
 
 # ============================================================
+#  简化重投影函数 - 添加使用sunpy.map的直接绘制方法
+# ============================================================
+def reproject_radio_sunpy_map(
+        radio_map: sunpy.map.GenericMap,
+        aia_cutout_map: sunpy.map.GenericMap,
+        cfg: Config) -> Optional[np.ndarray]:
+    """
+    使用sunpy.map的直接方法将射电数据重投影到AIA坐标系
+    参考示例代码，直接使用sunpy的坐标转换功能
+    """
+    try:
+        # 检查射电地图是否有有效的坐标系
+        if not hasattr(radio_map, 'coordinate_frame') or radio_map.coordinate_frame is None:
+            if cfg.debug_mode:
+                print("    [sunpy重投影] 射电数据没有有效的坐标系信息")
+            return None
+        
+        # 检查射电数据是否在太阳坐标系中
+        if not hasattr(radio_map.coordinate_frame, 'Tx'):
+            if cfg.debug_mode:
+                print("    [sunpy重投影] 射电数据不在太阳坐标系中")
+            return None
+        
+        # 获取射电数据的形状
+        ny_radio, nx_radio = radio_map.data.shape
+        
+        # 创建射电数据的像素网格
+        y_radio, x_radio = np.meshgrid(np.arange(ny_radio), np.arange(nx_radio), indexing='ij')
+        
+        # 将射电像素坐标转换为世界坐标
+        radio_coords = radio_map.pixel_to_world(x_radio * u.pix, y_radio * u.pix)
+        
+        # 将射电世界坐标转换为AIA像素坐标
+        aia_pixel_coords = aia_cutout_map.wcs.world_to_pixel(radio_coords)
+        
+        # 提取像素坐标
+        aia_x_pixels = aia_pixel_coords[0].value
+        aia_y_pixels = aia_pixel_coords[1].value
+        
+        # 获取AIA图像的形状
+        ny_aia, nx_aia = aia_cutout_map.data.shape
+        
+        # 创建输出数组
+        output = np.full((ny_aia, nx_aia), np.nan, dtype=np.float32)
+        
+        # 过滤有效点
+        valid_mask = (
+            np.isfinite(aia_x_pixels) & np.isfinite(aia_y_pixels) &
+            np.isfinite(radio_map.data)
+        )
+        
+        if np.sum(valid_mask) == 0:
+            if cfg.debug_mode:
+                print("    [sunpy重投影] 没有有效的坐标点")
+            return None
+        
+        # 提取有效点的坐标和数据
+        valid_x = aia_x_pixels[valid_mask]
+        valid_y = aia_y_pixels[valid_mask]
+        valid_data = radio_map.data[valid_mask]
+        
+        # 转换为整数像素坐标
+        x_int = np.round(valid_x).astype(int)
+        y_int = np.round(valid_y).astype(int)
+        
+        # 过滤在AIA图像边界内的点
+        in_bounds = (
+            (x_int >= 0) & (x_int < nx_aia) &
+            (y_int >= 0) & (y_int < ny_aia)
+        )
+        
+        if np.sum(in_bounds) == 0:
+            if cfg.debug_mode:
+                print("    [sunpy重投影] 没有点在AIA图像边界内")
+            return None
+        
+        # 提取边界内的数据
+        x_in = x_int[in_bounds]
+        y_in = y_int[in_bounds]
+        data_in = valid_data[in_bounds]
+        
+        # 使用最大值散射到输出数组
+        acc = np.full((ny_aia, nx_aia), -np.inf, dtype=np.float64)
+        np.maximum.at(acc, (y_in, x_in), data_in)
+        
+        output = np.where(acc > -np.inf, acc.astype(np.float32), np.nan)
+        
+        # 间隙填充
+        nan_mask = np.isnan(output)
+        if nan_mask.any():
+            fill_sigma = 15.0
+            filled = np.where(nan_mask, 0.0, output)
+            weights = (~nan_mask).astype(np.float64)
+            sm_d = gaussian_filter(filled.astype(np.float64), sigma=fill_sigma)
+            sm_w = gaussian_filter(weights, sigma=fill_sigma)
+            with np.errstate(invalid='ignore', divide='ignore'):
+                diffused = np.where(sm_w > 1e-6, sm_d / sm_w, np.nan)
+            output = np.where(nan_mask, diffused.astype(np.float32), output)
+        
+        if cfg.debug_mode:
+            valid_count = np.sum(~np.isnan(output))
+            print(f"    [sunpy重投影] 成功: 有效像素 {valid_count}/{ny_aia*nx_aia}")
+        
+        return output
+        
+    except Exception as e:
+        if cfg.debug_mode:
+            print(f"    [sunpy重投影] 异常: {e}")
+            import traceback
+            traceback.print_exc()
+        return None
+
+# ============================================================
 #  前向投影贴图
 # ============================================================
 def reproject_radio_forward_paste(
@@ -710,6 +856,29 @@ def reproject_radio_forward_paste(
         radio_header:  Optional[fits.Header] = None) -> Optional[np.ndarray]:
     
     try:
+        # 首先尝试使用sunpy.map方法（如果可能）
+        if not cfg.use_radec_maps and radio_header is not None:
+            try:
+                # 尝试创建sunpy.map
+                radio_map = sunpy.map.Map(radio_data, radio_header)
+                
+                # 检查是否是太阳坐标系
+                if (hasattr(radio_map, 'coordinate_frame') and 
+                    radio_map.coordinate_frame is not None and
+                    hasattr(radio_map.coordinate_frame, 'Tx')):
+                    
+                    if cfg.debug_mode:
+                        print("    [前向投影] 使用sunpy.map方法进行重投影")
+                    
+                    result = reproject_radio_sunpy_map(radio_map, aia_cutout_map, cfg)
+                    if result is not None:
+                        return result
+                    
+            except Exception as e:
+                if cfg.debug_mode:
+                    print(f"    [前向投影] sunpy.map方法失败，回退到前向投影贴图法: {e}")
+        
+        # 如果sunpy.map方法不可用或失败，使用原来的前向投影贴图法
         ny_aia, nx_aia = aia_cutout_map.data.shape
 
         # ── 坐标预处理 ─────────────────────────────────────────────────────
