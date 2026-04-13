@@ -118,8 +118,8 @@ class Config:
     aia_vmin:        float       = 16
     aia_vmax:        float       = 6666
     aia_cmap:        str         = 'sdoaia171'
-    roi_bottom_left: List[float] = field(default_factory=lambda: [300, -800])
-    roi_top_right:   List[float] = field(default_factory=lambda: [1500, 300])
+    roi_bottom_left: List[float] = field(default_factory=lambda: [-1500, -1500])
+    roi_top_right:   List[float] = field(default_factory=lambda: [1500, 1500])
 
     band_colors_dict: dict = field(default_factory=lambda: {
         '149.0MHz': ('cyan',    'deepskyblue'),
@@ -617,7 +617,7 @@ def _preprocess_radec_maps(ra_map: np.ndarray,
         if cfg.debug_mode:
             print(f"    返回相对坐标（将在后续步骤中加上太阳中心位置）")
 
-    return ra, dec
+    return ra, dec, is_relative
 
 
 # ============================================================
@@ -647,7 +647,7 @@ def reproject_radio_forward_paste(
             return None
 
         # 预处理坐标图
-        ra_abs, dec_abs = _preprocess_radec_maps(ra_map, dec_map, radio_header, cfg)
+        ra_abs, dec_abs,is_relative = _preprocess_radec_maps(ra_map, dec_map, radio_header, cfg)
         
         # ── 关键修正：直接使用相对坐标进行转换 ─────────────────────────────
         # 对于太阳射电观测，相对坐标就是相对于太阳中心的偏移
@@ -708,54 +708,65 @@ def reproject_radio_forward_paste(
             from astropy.coordinates import get_sun
             from astropy.time import Time
             
-            # 将datetime转换为astropy Time对象
             astropy_time = Time(radio_time, format='datetime', scale='utc')
-            
-            # 计算太阳位置
             sun_coord = get_sun(astropy_time)
             sun_ra = sun_coord.ra.deg
             sun_dec = sun_coord.dec.deg
             
+            # ========= 彻底重构坐标转换逻辑 =========
+            # 放弃 ICRS -> HPC 的球面复杂转换。
+            # 直接将原始 FITS 坐标解析为日面角秒 (Tx, Ty)，绕过地球自转倾角带来的旋转畸变！
+
+            # 1. 重新从原始映射中提取坐标 (防止 _preprocess 中的 rad2deg 造成误伤)
+            raw_ra = ra_map[valid_mask].astype(np.float64)
+            raw_dec = dec_map[valid_mask].astype(np.float64)
+
+            ra_med = float(np.median(raw_ra))
+            dec_med = float(np.median(raw_dec))
+
+            # 2. 智能判断坐标单位并强制转为角秒 (arcsec)
+            if abs(ra_med) > 100:
+                if abs(dec_med) > 90:
+                    # 绝对值 > 90，不可能为赤纬，必定是角秒 (Arcsec)
+                    tx_arcsec = raw_ra
+                    ty_arcsec = raw_dec
+                else:
+                    # 在 306 左右，绝对 RA/Dec。射电管线通常假定 RA = Sun_RA + Tx_deg
+                    tx_arcsec = (raw_ra - sun_ra) * 3600.0
+                    ty_arcsec = (raw_dec - sun_dec) * 3600.0
+            else:
+                # 相对坐标 (在 0 附近)
+                if np.max(np.abs(raw_ra)) < 0.1:
+                    # 最大值极小，推断为弧度 (Radians)
+                    tx_arcsec = np.rad2deg(raw_ra) * 3600.0
+                    ty_arcsec = np.rad2deg(raw_dec) * 3600.0
+                else:
+                    # 推断为度数 (Degrees)
+                    tx_arcsec = raw_ra * 3600.0
+                    ty_arcsec = raw_dec * 3600.0
+
+            # 3. 直接在日心坐标系下进行 180 度翻转 (完美对称，修复干涉成像倒置)
+            tx_arcsec = -tx_arcsec
+            ty_arcsec = -ty_arcsec
+
             if cfg.debug_mode:
-                print(f"    [太阳位置] 射电观测时间: {radio_time}")
-                print(f"    [太阳位置] 太阳中心: RA={sun_ra:.6f}°, Dec={sun_dec:.6f}°")
-                print(f"    [坐标转换] 相对坐标范围: RA [{v_ra.min():.4f}, {v_ra.max():.4f}], "
-                      f"Dec [{v_dec.min():.4f}, {v_dec.max():.4f}]")
-            
-            # 将相对坐标转换为绝对坐标
-            abs_ra = v_ra + sun_ra
-            abs_dec = v_dec + sun_dec
-            
-            if cfg.debug_mode:
-                print(f"    [坐标转换] 绝对坐标范围: RA [{abs_ra.min():.4f}, {abs_ra.max():.4f}], "
-                      f"Dec [{abs_dec.min():.4f}, {abs_dec.max():.4f}]")
-            
+                print(f"    [终极坐标] 物理空间 Tx/Ty (角秒): "
+                      f"X [{tx_arcsec.min():.1f}, {tx_arcsec.max():.1f}], "
+                      f"Y [{ty_arcsec.min():.1f}, {ty_arcsec.max():.1f}]")
+
+            # 4. 直接构建 AIA HPC 坐标，彻底绕过 ICRS
+            radio_hpc = SkyCoord(Tx=tx_arcsec * u.arcsec, Ty=ty_arcsec * u.arcsec,
+                                 frame=aia_cutout_map.coordinate_frame)
+            # ========================================
+
         except Exception as e:
             if cfg.debug_mode:
-                print(f"    [警告] 计算太阳位置失败: {e}")
-            # 如果计算失败，使用相对坐标直接转换（近似）
-            abs_ra = v_ra
-            abs_dec = v_dec
-        
-        # 创建ICRS坐标（绝对坐标，需要距离信息）
-        # 对于太阳观测，距离约为1AU
-        distance = 1.0 * u.AU
-        radio_icrs = SkyCoord(ra=abs_ra * u.deg, dec=abs_dec * u.deg, 
-                              distance=distance, obstime=radio_time, frame='icrs')
-        
-        # 获取AIA坐标系
-        aia_frame = aia_cutout_map.coordinate_frame
-        
-        # 应用太阳自转修正
-        from sunpy.coordinates import propagate_with_solar_surface
-        with propagate_with_solar_surface():
-            # 转换到AIA坐标系
-            radio_hpc = radio_icrs.transform_to(aia_frame)
+                print(f"    [警告] 计算坐标系失败: {e}")
+            return None
 
-        # 获取像素坐标
+        # 获取像素坐标 (承接原本的代码)
         px_f, py_f = aia_cutout_map.wcs.world_to_pixel(radio_hpc)
         px_f = np.asarray(px_f, dtype=np.float64)
-        py_f = np.asarray(py_f, dtype=np.float64)
 
         # 添加详细的调试信息
         if cfg.debug_mode:
@@ -824,7 +835,8 @@ def reproject_radio_forward_paste(
         # ── 间隙填充 ───────────────────────────────────────────────────
         nan_mask = np.isnan(output)
         if nan_mask.any():
-            fill_sigma = 1.5
+            # ★ 关键修复：大幅提高 sigma，将点阵连接成平滑的面
+            fill_sigma = 15.0  
             filled  = np.where(nan_mask, 0.0, output)
             weights = (~nan_mask).astype(np.float64)
             sm_d = gaussian_filter(filled.astype(np.float64),  sigma=fill_sigma)
