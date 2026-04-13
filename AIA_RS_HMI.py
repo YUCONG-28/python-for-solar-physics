@@ -22,15 +22,12 @@ from matplotlib.patches import Ellipse
 from matplotlib.lines import Line2D
 from astropy.io import fits
 from astropy.wcs import WCS
-from astropy.time import Time as ATime
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.convolution import convolve, Gaussian2DKernel
 import sunpy.map
 import sunpy.coordinates
 from sunpy.coordinates import frames
-from reproject import reproject_interp
-from scipy.ndimage import shift as nd_shift
 from scipy.ndimage import gaussian_filter
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Dict
@@ -63,7 +60,7 @@ _DATETIME_FMTS  = [
 ]
 
 # ============================================================
-#  配置类
+#  配置类简化
 # ============================================================
 @dataclass
 class Config:
@@ -91,10 +88,6 @@ class Config:
     contour_linewidths:  List[float]  = field(default_factory=lambda: [2.0])
     contour_alpha:       float        = 0.90
     contour_smooth_sigma: float       = 0   # 展示级平滑 sigma（像素），0 = 关闭
-
-    apply_solar_rotation_correction: bool = True
-    reproject_order:     int          = 2
-    radio_smooth_sigma:  float        = 1.0   # 重投影后数据级平滑
 
     show_beam:           bool         = True
     beam_inset_fraction: float        = 0.12
@@ -124,38 +117,17 @@ class Config:
         ('pink', 'hotpink'), ('skyblue', 'deepskyblue'), ('violet', 'darkviolet'),
     ])
 
-    # ★ 优化1：用户可配核心数；1 = 单进程（调试模式），>1 = 多进程
+    # 简化选项
     num_workers:         int   = 8
-    # ★ 优化2：内存占用上限（%），超过则暂停提交新任务或等待释放
     memory_limit_pct:    float = 85.0
-    # ★ 优化3：射电数据精度；True = float32（内存减半），False = float64
     radio_use_float32:   bool  = True
-
-    # 新增：通量归一化选项
-    flux_normalization: str = 'none'  # 'none', 'peak', 'rms', 'flux_conserved'
-    flux_reference_band: Optional[str] = None  # 参考波段，如'300MHz'
     
-    # 新增：射电图像预处理选项
-    apply_background_subtraction: bool = True
-    background_estimation_method: str = 'corner'  # 'corner', 'median', 'minimum'
+    # 简化：移除通量归一化和复杂验证
+    apply_background_subtraction: bool = False  # 简化：默认不应用背景扣除
+    debug_mode: bool = False  # 简化调试选项
     
-    # 新增：坐标转换精度控制
-    coordinate_tolerance: float = 1e-6  # 坐标转换容差
-    use_precise_solar_rotation: bool = True  # 使用精确太阳自转模型
-    
-    # 新增：叠加质量验证
-    overlay_validation: bool = True  # 是否验证叠加质量
-    min_overlay_correlation: float = 0.2  # 最小相关系数阈值
-    reprojection_method: str = 'scientific'  # 'simple', 'interp', 'scientific'
-    
-    # 新增调试选项
-    debug_mode: bool = False  # 启用详细调试信息
-    quick_test: bool = False  # 快速测试模式，只处理少量文件
-    test_file_limit: int = 3  # 快速测试时的文件限制
-    
-    # 新增重投影选项
-    force_wcs_projection: bool = False  # 强制使用WCS投影，跳过坐标查找表
-    skip_validation: bool = False  # 跳过叠加验证
+    # 简化重投影选项
+    coordinate_search_radius: float = 1.0  # 坐标查找搜索半径（度）
 
 # ============================================================
 #  颜色缓存
@@ -205,7 +177,7 @@ def parse_aia_time_from_filename(filename: str) -> Optional[datetime]:
                     t = f"{t[:2]}:{t[2:4]}:{t[4:]}"
                 ts = f"{d}T{t}"
             try:
-                return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S")
+                return datetime.strptime(ts, "%Y-%m-dT%H:%M:%S")
             except ValueError:
                 continue
     return None
@@ -221,11 +193,11 @@ def parse_hmi_time_from_filename(filename: str) -> Optional[datetime]:
     return None
 
 # ============================================================
-#  射电数据工具
+#  简化射电数据工具
 # ============================================================
 def extract_radio_2d_data(fits_path: str, use_float32: bool = True, cfg: Optional[Config] = None) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray], fits.Header, Optional[WCS]]:
     """
-    优化版：修复坐标图查找逻辑，正确在父目录查找
+    简化版：只提取射电数据和坐标图
     """
     try:
         with fits.open(fits_path) as hdu_data:
@@ -240,162 +212,55 @@ def extract_radio_2d_data(fits_path: str, use_float32: bool = True, cfg: Optiona
             base_dir = os.path.dirname(fits_path)
             base_name = os.path.basename(fits_path)
             
-            # 简化的频率提取逻辑
+            # 提取频率
             freq_match = re.search(r'(\d+)MHz', base_name, re.IGNORECASE)
             if freq_match:
                 freq_prefix = freq_match.group(0)  # 如 "149MHz"
             else:
-                # 使用目录名作为频率（父目录名，因为数据文件在LL子目录中）
+                # 使用目录名作为频率
                 parent_dir = os.path.dirname(base_dir)
                 freq_prefix = os.path.basename(parent_dir)
-                if not re.search(r'\d+MHz', freq_prefix, re.IGNORECASE):
-                    freq_prefix = None
             
             ra_map = None
             dec_map = None
             
-            # 如果强制使用WCS投影，跳过坐标图查找
-            if cfg and hasattr(cfg, 'force_wcs_projection') and cfg.force_wcs_projection:
-                if cfg.debug_mode:
-                    print(f"    强制使用WCS投影，跳过坐标图查找")
-            elif freq_prefix:
-                # 在父目录查找坐标图文件（数据文件在LL目录，坐标图在频率目录）
-                parent_dir = os.path.dirname(base_dir)  # 上一级目录，即频率目录
+            # 简化：只查找坐标图文件
+            if freq_prefix:
+                # 在当前目录和父目录查找坐标图文件
+                search_dirs = [base_dir, os.path.dirname(base_dir)]
                 
-                if cfg and cfg.debug_mode:
-                    print(f"    查找频率前缀: {freq_prefix}，在目录: {parent_dir}")
-                
-                # 尝试在父目录查找
-                if os.path.isdir(parent_dir):
-                    for file in os.listdir(parent_dir):
-                        if freq_prefix in file:
-                            file_path = os.path.join(parent_dir, file)
-                            try:
-                                if 'RightAscension' in file or 'RA' in file:
-                                    with fits.open(file_path) as hdu_ra:
-                                        ra_map = hdu_ra[0].data
-                                        while ra_map.ndim > 2:
-                                            ra_map = ra_map[0]
-                                        ra_map = np.squeeze(ra_map)
-                                        if use_float32:
-                                            ra_map = ra_map.astype(np.float32)
-                                        if cfg and cfg.debug_mode:
-                                            print(f"    成功加载赤经坐标图: {file}")
-                                elif 'Declination' in file or 'Dec' in file:
-                                    with fits.open(file_path) as hdu_dec:
-                                        dec_map = hdu_dec[0].data
-                                        while dec_map.ndim > 2:
-                                            dec_map = dec_map[0]
-                                        dec_map = np.squeeze(dec_map)
-                                        if use_float32:
-                                            dec_map = dec_map.astype(np.float32)
-                                        if cfg and cfg.debug_mode:
-                                            print(f"    成功加载赤纬坐标图: {file}")
-                            except Exception as e:
-                                if cfg and cfg.debug_mode:
-                                    print(f"    警告: 读取坐标图失败 {file}: {e}")
+                for search_dir in search_dirs:
+                    if os.path.isdir(search_dir):
+                        for file in os.listdir(search_dir):
+                            if freq_prefix in file:
+                                file_path = os.path.join(search_dir, file)
+                                try:
+                                    if 'RightAscension' in file or 'RA' in file:
+                                        with fits.open(file_path) as hdu_ra:
+                                            ra_map = hdu_ra[0].data
+                                            while ra_map.ndim > 2:
+                                                ra_map = ra_map[0]
+                                            ra_map = np.squeeze(ra_map)
+                                            if use_float32:
+                                                ra_map = ra_map.astype(np.float32)
+                                    elif 'Declination' in file or 'Dec' in file:
+                                        with fits.open(file_path) as hdu_dec:
+                                            dec_map = hdu_dec[0].data
+                                            while dec_map.ndim > 2:
+                                                dec_map = dec_map[0]
+                                            dec_map = np.squeeze(dec_map)
+                                            if use_float32:
+                                                dec_map = dec_map.astype(np.float32)
+                                except Exception:
+                                    pass
             
-            # 如果还未找到，尝试在当前目录查找（兼容旧结构）
-            if (ra_map is None or dec_map is None) and freq_prefix:
-                if cfg and cfg.debug_mode:
-                    print(f"    在父目录未找到坐标图，尝试在当前目录查找: {base_dir}")
-                
-                for file in os.listdir(base_dir):
-                    if freq_prefix in file:
-                        file_path = os.path.join(base_dir, file)
-                        try:
-                            if 'RightAscension' in file or 'RA' in file:
-                                with fits.open(file_path) as hdu_ra:
-                                    ra_map = hdu_ra[0].data
-                                    while ra_map.ndim > 2:
-                                        ra_map = ra_map[0]
-                                    ra_map = np.squeeze(ra_map)
-                                    if use_float32:
-                                        ra_map = ra_map.astype(np.float32)
-                                    if cfg and cfg.debug_mode:
-                                        print(f"    成功加载赤经坐标图: {file}")
-                            elif 'Declination' in file or 'Dec' in file:
-                                with fits.open(file_path) as hdu_dec:
-                                    dec_map = hdu_dec[0].data
-                                    while dec_map.ndim > 2:
-                                        dec_map = dec_map[0]
-                                    dec_map = np.squeeze(dec_map)
-                                    if use_float32:
-                                        dec_map = dec_map.astype(np.float32)
-                                    if cfg and cfg.debug_mode:
-                                        print(f"    成功加载赤纬坐标图: {file}")
-                        except Exception as e:
-                            if cfg and cfg.debug_mode:
-                                print(f"    警告: 读取坐标图失败 {file}: {e}")
-            
-            # 构建WCS（总是尝试构建，即使有坐标图）
-            try:
-                radio_wcs_2d = build_radio_wcs_2d(header, None, {})
-            except Exception as e:
-                if cfg and cfg.debug_mode:
-                    print(f"    构建WCS失败: {e}")
-                radio_wcs_2d = None
-            
+            # 简化：不构建WCS，只使用坐标图
             dtype = np.float32 if use_float32 else np.float64
-            return data.astype(dtype), ra_map, dec_map, header, radio_wcs_2d
+            return data.astype(dtype), ra_map, dec_map, header, None
             
     except Exception as e:
         print(f"读取FITS文件失败 {fits_path}: {e}")
-        import traceback
-        traceback.print_exc()
         return None, None, None, None, None
-
-def _get_header_val(header: fits.Header, keys: List[str], default):
-    """模块级工具函数，替代 build_radio_wcs_2d 内的嵌套闭包。"""
-    for k in keys:
-        if k in header and header[k] is not None:
-            return header[k]
-    return default
-
-def build_radio_wcs_2d(header: fits.Header, obs_time: Optional[datetime],
-                        ref_meta: dict) -> WCS:
-    """
-    根据射电 FITS 头构建二维 WCS，用于后续重投影。
-    若缺少必要关键字，则使用合理默认值。
-    """
-    h = fits.Header()
-    h['NAXIS']  = 2
-    h['NAXIS1'] = _get_header_val(header, ['NAXIS1'], 1)
-    h['NAXIS2'] = _get_header_val(header, ['NAXIS2'], 1)
-    h['CRPIX1'] = _get_header_val(header, ['CRPIX1'], h['NAXIS1'] / 2.0)
-    h['CRPIX2'] = _get_header_val(header, ['CRPIX2'], h['NAXIS2'] / 2.0)
-    h['CRVAL1'] = _get_header_val(header, ['CRVAL1'], 0.0)
-    h['CRVAL2'] = _get_header_val(header, ['CRVAL2'], 0.0)
-    h['CDELT1'] = _get_header_val(header, ['CDELT1', 'CD1_1'], 1.0)
-    h['CDELT2'] = _get_header_val(header, ['CDELT2', 'CD2_2'], 1.0)
-
-    ctype1 = str(_get_header_val(header, ['CTYPE1'], '')).strip().upper()
-    if 'RA' in ctype1:
-        h['CTYPE1'], h['CTYPE2'] = 'RA---SIN', 'DEC--SIN'
-    else:
-        h['CTYPE1'], h['CTYPE2'] = 'HPLN-TAN', 'HPLT-TAN'
-
-    cunit = str(_get_header_val(header, ['CUNIT1'], '')).strip().lower()
-    if not cunit or cunit == 'none':
-        cunit = 'arcsec' if 'HPL' in h['CTYPE1'] else 'deg'
-    h['CUNIT1'], h['CUNIT2'] = cunit, cunit
-
-    for k in ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2']:
-        if k in header:
-            h[k] = header[k]
-
-    if obs_time:
-        h['DATE-OBS'] = obs_time.isoformat()
-    elif 'DATE-OBS' in header:
-        h['DATE-OBS'] = header['DATE-OBS']
-
-    if ref_meta:
-        for k in ['DSUN_OBS', 'HGLN_OBS', 'HGLT_OBS', 'CRLN_OBS', 'CRLT_OBS',
-                  'RSUN_REF', 'RSUN_OBS']:
-            if k in ref_meta:
-                h[k] = ref_meta[k]
-
-    return WCS(h)
 
 def estimate_rms_noise(data: np.ndarray, box_fraction: float = 0.15) -> float:
     """通过图像四个角部区域估算背景噪声 RMS（用于 rms 模式等值线）。"""
@@ -468,73 +333,27 @@ def compute_contour_levels(data: np.ndarray, cfg: Config) -> List[float]:
     return levels if levels else []
 
 # ============================================================
-#  太阳自转修正
-# ============================================================
-def apply_solar_rotation(coord_hpc: SkyCoord, t_from: datetime, t_to: datetime,
-                          height_rsun: float = 1.0) -> SkyCoord:
-    """
-    将给定日面坐标从 t_from 时刻通过太阳较差自转推算到 t_to 时刻。
-    使用 Stonyhurst 经度纬度，考虑纬度相关的自转速率。
-    """
-    t_from_ap = ATime(t_from.isoformat())
-    t_to_ap   = ATime(t_to.isoformat())
-
-    hpc_3d = SkyCoord(
-        coord_hpc.Tx, coord_hpc.Ty,
-        frame=frames.Helioprojective(obstime=t_from_ap, observer=coord_hpc.observer,
-                                     rsun=height_rsun * u.R_sun)
-    )
-    hgs = hpc_3d.transform_to(frames.HeliographicStonyhurst(obstime=t_from_ap))
-    if np.isnan(hgs.lat.value):
-        return coord_hpc
-
-    dt_days = (t_to_ap - t_from_ap).to(u.day).value
-    sin_lat  = np.sin(hgs.lat.rad)
-    omega    = 14.713 - 2.396 * sin_lat**2 - 1.787 * sin_lat**4
-
-    new_hgs = SkyCoord(
-        lon=hgs.lon + omega * dt_days * u.deg,
-        lat=hgs.lat,
-        radius=hgs.radius,
-        frame=frames.HeliographicStonyhurst(obstime=t_to_ap)
-    )
-    return new_hgs.transform_to(frames.Helioprojective(obstime=t_to_ap, observer='earth'))
-
-# ============================================================
-#  重投影（接收预提取的 target_shape + aia_wcs_2d）
+#  简化重投影函数
 # ============================================================
 def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
                                            ra_map: np.ndarray,
                                            dec_map: np.ndarray,
                                            target_shape: Tuple[int, int],
                                            aia_wcs_2d: WCS,
-                                           radio_time: Optional[datetime],
-                                           aia_time: Optional[datetime],
-                                           height_rsun: float,
                                            cfg: Config,
                                            radio_header: Optional[fits.Header] = None) -> Optional[np.ndarray]:
     """
-    修复版：正确解析坐标图单位，确保偏移量正确转换为绝对坐标
+    简化版：只使用坐标图进行重投影，移除太阳自转修正和高度计算
     """
     try:
         if ra_map is None or dec_map is None:
-            if cfg.debug_mode:
-                print("    缺少坐标查找表，无法进行重投影")
             return None
         
         # 验证坐标图形状
         if ra_map.shape != radio_data.shape or dec_map.shape != radio_data.shape:
-            if cfg.debug_mode:
-                print(f"    坐标图形状不匹配: 数据{radio_data.shape}, RA{ra_map.shape}, Dec{dec_map.shape}")
-            # 尝试调整维度
-            if ra_map.ndim == 3 and ra_map.shape[0] == 1:
-                ra_map = ra_map[0, :, :]
-                dec_map = dec_map[0, :, :]
-            if ra_map.shape != radio_data.shape:
-                print(f"    调整后形状仍不匹配，跳过重投影")
-                return None
+            return None
 
-        # 使用可写副本
+        # 使用副本
         ra_map = ra_map.copy().astype(np.float64)
         dec_map = dec_map.copy().astype(np.float64)
 
@@ -542,53 +361,21 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
         dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
         
-        if cfg.debug_mode:
-            print(f"    原始坐标范围: RA [{ra_min:.6f}, {ra_max:.6f}], Dec [{dec_min:.6f}, {dec_max:.6f}]")
-        
-        # ── 关键修复：正确解析坐标图单位 ──
-        # 根据经验，坐标图通常存储的是相位中心的偏移量，单位可能是度或弧度
-        # 判断标准：如果值范围在 -π 到 π 之间，可能是弧度
+        # 检测坐标单位并转换
         if abs(ra_max) < 4.0 and abs(ra_min) < 4.0 and abs(dec_max) < 4.0 and abs(dec_min) < 4.0:
-            # 很可能是弧度单位，转换为度
-            if cfg.debug_mode:
-                print(f"    检测到坐标图为弧度单位，转换为度...")
+            # 弧度单位转换为度
             ra_map = np.rad2deg(ra_map)
             dec_map = np.rad2deg(dec_map)
-            ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
-            dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
-            if cfg.debug_mode:
-                print(f"    转换后坐标范围: RA [{ra_min:.6f}, {ra_max:.6f}], Dec [{dec_min:.6f}, {dec_max:.6f}]")
         
-        # 现在坐标图应该是度单位，且为相位中心偏移量
-        # 需要加上相位中心（来自FITS头）
+        # 加上相位中心得到绝对坐标
         if radio_header is not None:
-            crval1 = float(radio_header.get('CRVAL1', 0.0))  # 相位中心 RA（度）
-            crval2 = float(radio_header.get('CRVAL2', 0.0))  # 相位中心 Dec（度）
-            
-            if cfg.debug_mode:
-                print(f"    相位中心: CRVAL1={crval1:.6f}°, CRVAL2={crval2:.6f}°")
-            
-            # 加上相位中心得到绝对坐标
+            crval1 = float(radio_header.get('CRVAL1', 0.0))
+            crval2 = float(radio_header.get('CRVAL2', 0.0))
             ra_map = ra_map + crval1
             dec_map = dec_map + crval2
-            
-            ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
-            dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
-            
-            if cfg.debug_mode:
-                print(f"    绝对坐标范围: RA [{ra_min:.6f}, {ra_max:.6f}], Dec [{dec_min:.6f}, {dec_max:.6f}]")
         
         # 标准化赤经到0-360度
-        if ra_max > 360 or ra_min < 0:
-            ra_map = np.mod(ra_map, 360)
-            ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
-            if cfg.debug_mode:
-                print(f"    标准化赤经后: RA [{ra_min:.6f}, {ra_max:.6f}]")
-        
-        # 检查坐标范围是否合理（RA应该在0-360，Dec在-90到90）
-        if ra_min < 0 or ra_max > 360 or dec_min < -90 or dec_max > 90:
-            if cfg.debug_mode:
-                print(f"    警告: 坐标范围超出合理范围!")
+        ra_map = np.mod(ra_map, 360)
         
         # 检查有效数据点
         ra_valid = np.isfinite(ra_map)
@@ -598,15 +385,9 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         
         valid_count = np.sum(valid_mask)
         if valid_count < 100:
-            if cfg.debug_mode:
-                print(f"    有效数据点不足: {valid_count}")
             return None
         
-        if cfg.debug_mode:
-            print(f"    坐标查找表: 找到 {valid_count} 个有效点")
-        
         # 提取有效点的坐标和数据
-        y_indices, x_indices = np.where(valid_mask)
         valid_ra = ra_map[valid_mask]
         valid_dec = dec_map[valid_mask]
         valid_data = radio_data[valid_mask]
@@ -621,27 +402,7 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
             target_eq_coords = target_coords.transform_to('icrs')
             target_ra = target_eq_coords.ra.deg.reshape(ny, nx)
             target_dec = target_eq_coords.dec.deg.reshape(ny, nx)
-        except Exception as e:
-            if cfg.debug_mode:
-                print(f"    目标坐标转换失败: {e}")
-            return None
-        
-        # 检查目标坐标范围
-        target_ra_min, target_ra_max = np.nanmin(target_ra), np.nanmax(target_ra)
-        target_dec_min, target_dec_max = np.nanmin(target_dec), np.nanmax(target_dec)
-        
-        if cfg.debug_mode:
-            print(f"    目标坐标范围: RA [{target_ra_min:.6f}, {target_ra_max:.6f}], Dec [{target_dec_min:.6f}, {target_dec_max:.6f}]")
-        
-        # 检查是否有重叠
-        ra_overlap = not (target_ra_max < np.nanmin(valid_ra) or target_ra_min > np.nanmax(valid_ra))
-        dec_overlap = not (target_dec_max < np.nanmin(valid_dec) or target_dec_min > np.nanmax(valid_dec))
-        
-        if not (ra_overlap and dec_overlap):
-            if cfg.debug_mode:
-                print(f"    警告: 源坐标与目标坐标无重叠区域!")
-                print(f"    源RA范围: [{np.nanmin(valid_ra):.6f}, {np.nanmax(valid_ra):.6f}]")
-                print(f"    源Dec范围: [{np.nanmin(valid_dec):.6f}, {np.nanmax(valid_dec):.6f}]")
+        except Exception:
             return None
         
         # 使用KD树进行最近邻插值
@@ -650,7 +411,6 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         # 为有效点构建KD树
         max_points = min(10000, len(valid_ra))
         if len(valid_ra) > max_points:
-            # 随机降采样
             indices = np.random.choice(len(valid_ra), max_points, replace=False)
             valid_ra_sampled = valid_ra[indices]
             valid_dec_sampled = valid_dec[indices]
@@ -667,14 +427,12 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         valid_data_sampled = valid_data_sampled[kdtree_valid]
         
         if len(valid_ra_sampled) == 0:
-            if cfg.debug_mode:
-                print("    KD树数据点全部无效")
             return None
         
         tree = cKDTree(np.column_stack([valid_ra_sampled, valid_dec_sampled]))
         
         # 分块处理目标网格
-        chunk_size = 64  # 更小的分块，减少内存使用
+        chunk_size = 64
         reprojected = np.full((ny, nx), np.nan, dtype=np.float32)
         
         for i in range(0, nx, chunk_size):
@@ -700,11 +458,11 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
                 query_points = np.column_stack([ra_flat[valid_indices], 
                                                 dec_flat[valid_indices]])
                 
-                # 查询最近邻，增加搜索半径
+                # 查询最近邻
                 distances, indices = tree.query(
                     query_points,
                     k=1, 
-                    distance_upper_bound=1.0  # 1度搜索半径
+                    distance_upper_bound=cfg.coordinate_search_radius
                 )
                 
                 # 创建结果数组
@@ -721,305 +479,33 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         
         # 验证结果
         valid_final = np.sum(~np.isnan(reprojected))
-        total_pixels = reprojected.size
-        
         if valid_final == 0:
-            if cfg.debug_mode:
-                print("    重投影结果全为NaN!")
             return None
-        
-        if cfg.debug_mode:
-            print(f"    重投影完成! 有效像素: {valid_final}/{total_pixels} "
-                  f"({valid_final/total_pixels*100:.1f}%)")
-        
-        # 应用数据级平滑
-        if cfg.radio_smooth_sigma > 0:
-            from scipy.ndimage import gaussian_filter
-            reprojected = gaussian_filter(
-                np.nan_to_num(reprojected, nan=0.0),
-                sigma=cfg.radio_smooth_sigma
-            )
-            
-        # 应用通量守恒归一化
-        if hasattr(cfg, 'flux_normalization') and cfg.flux_normalization == 'flux_conserved':
-            original_sum = np.nansum(radio_data)
-            new_sum = np.nansum(reprojected)
-            if new_sum > 0 and original_sum > 0:
-                reprojected = reprojected * (original_sum / new_sum)
         
         return reprojected
         
-    except Exception as e:
-        if cfg.debug_mode:
-            print(f"    坐标查找表重投影失败: {e}")
-            import traceback
-            traceback.print_exc()
+    except Exception:
         return None
-
-def reproject_radio_to_aia_standard(radio_data:   np.ndarray,
-                                    radio_header: fits.Header,
-                                    radio_wcs:    WCS,
-                                    target_shape: Tuple[int, int],
-                                    aia_wcs_2d:   WCS,
-                                    radio_time:   Optional[datetime],
-                                    aia_time:     Optional[datetime],
-                                    height_rsun:  float,
-                                    cfg:          Config) -> Optional[np.ndarray]:
-    """
-    修复WCS维度不匹配问题：确保两个WCS都是2维的
-    """
-    from astropy.wcs import WCS as FitsWCS
-
-    # 确保两个WCS都是2维的
-    if radio_wcs.naxis > 2:
-        if cfg.debug_mode:
-            print(f"    射电WCS维度: {radio_wcs.naxis} -> 转换为2D")
-        try:
-            radio_wcs = radio_wcs.celestial
-        except Exception:
-            # 如果转换失败，创建新的2D WCS
-            wcs = FitsWCS(naxis=2)
-            wcs.wcs.crpix = [radio_wcs.wcs.crpix[0], radio_wcs.wcs.crpix[1]]
-            wcs.wcs.cdelt = [radio_wcs.wcs.cdelt[0], radio_wcs.wcs.cdelt[1]]
-            wcs.wcs.crval = [radio_wcs.wcs.crval[0], radio_wcs.wcs.crval[1]]
-            wcs.wcs.ctype = [radio_wcs.wcs.ctype[0], radio_wcs.wcs.ctype[1]]
-            radio_wcs = wcs
-
-    if aia_wcs_2d.naxis > 2:
-        if cfg.debug_mode:
-            print(f"    AIA WCS维度: {aia_wcs_2d.naxis} -> 转换为2D")
-        try:
-            aia_wcs_2d = aia_wcs_2d.celestial
-        except Exception:
-            # 如果转换失败，创建新的2D WCS
-            wcs = FitsWCS(naxis=2)
-            if hasattr(aia_wcs_2d, 'wcs'):
-                wcs.wcs.crpix = [aia_wcs_2d.wcs.crpix[0], aia_wcs_2d.wcs.crpix[1]]
-                wcs.wcs.cdelt = [aia_wcs_2d.wcs.cdelt[0], aia_wcs_2d.wcs.cdelt[1]]
-                wcs.wcs.crval = [aia_wcs_2d.wcs.crval[0], aia_wcs_2d.wcs.crval[1]]
-                wcs.wcs.ctype = [aia_wcs_2d.wcs.ctype[0], aia_wcs_2d.wcs.ctype[1]]
-            aia_wcs_2d = wcs
-
-    if cfg.debug_mode:
-        print(f"    射电WCS: naxis={radio_wcs.naxis}, ctype={radio_wcs.wcs.ctype}")
-        print(f"    AIA WCS: naxis={aia_wcs_2d.naxis}, ctype={aia_wcs_2d.wcs.ctype}")
-
-    try:
-        # 尝试精确重投影
-        from reproject import reproject_exact
-        reprojected, footprint = reproject_exact(
-            (radio_data, radio_wcs), aia_wcs_2d,
-            shape_out=target_shape,
-            return_footprint=True
-        )
-    except Exception as e1:
-        if cfg.debug_mode:
-            print(f"    精确重投影失败: {e1}")
-        
-        # 尝试插值方法
-        try:
-            from reproject import reproject_interp
-            reprojected, footprint = reproject_interp(
-                (radio_data, radio_wcs), aia_wcs_2d,
-                shape_out=target_shape, order=1
-            )
-        except Exception as e2:
-            print(f"    [警告] 所有WCS重投影方法均失败: {e2}")
-            return None
-
-    reprojected[footprint == 0] = np.nan
-
-    if (cfg.apply_solar_rotation_correction
-            and radio_time and aia_time
-            and abs((aia_time - radio_time).total_seconds()) > 1.0):
-        try:
-            # 获取射电图像有效区域的质心
-            valid_mask = ~np.isnan(radio_data)
-            if np.any(valid_mask):
-                y_indices, x_indices = np.where(valid_mask)
-                center_y = np.mean(y_indices)
-                center_x = np.mean(x_indices)
-                
-                # 获取中心点的世界坐标
-                center_world = radio_wcs.pixel_to_world(center_x, center_y)
-                
-                # 应用更精确的自转修正
-                from sunpy.coordinates import frames
-                import astropy.units as u
-                
-                # 转换到日面经纬度坐标
-                center_hgs = center_world.transform_to(
-                    frames.HeliographicStonyhurst(obstime=ATime(radio_time.isoformat())))
-                
-                # 计算时间差
-                time_diff = (aia_time - radio_time).total_seconds()
-                
-                # 计算自转修正（较差自转）
-                lat_rad = center_hgs.lat.radian
-                omega_deg_per_day = 14.713 - 2.396 * np.sin(lat_rad)**2 - 1.787 * np.sin(lat_rad)**4
-                delta_lon = omega_deg_per_day * (time_diff / 86400.0)  # 经度变化
-                
-                # 应用修正
-                new_hgs = SkyCoord(
-                    lon=center_hgs.lon + delta_lon * u.deg,
-                    lat=center_hgs.lat,
-                    radius=center_hgs.radius,
-                    frame=frames.HeliographicStonyhurst(obstime=ATime(aia_time.isoformat()))
-                )
-                
-                # 转换回日面投影坐标
-                new_hpc = new_hgs.transform_to(
-                    frames.Helioprojective(obstime=ATime(aia_time.isoformat()),
-                                           observer='earth'))
-                
-                # 计算像素偏移
-                new_pixel = aia_wcs_2d.world_to_pixel(new_hpc)
-                old_pixel = aia_wcs_2d.world_to_pixel(center_world)
-                
-                shift_x = float(new_pixel[0] - old_pixel[0])
-                shift_y = float(new_pixel[1] - old_pixel[1])
-                
-                if abs(shift_x) >= 0.1 or abs(shift_y) >= 0.1:
-                    # 应用偏移，使用3阶插值
-                    reprojected = nd_shift(
-                        np.nan_to_num(reprojected, nan=0.0),
-                        shift=[shift_y, shift_x],
-                        order=3,
-                        mode='constant',
-                        cval=np.nan
-                    )
-        except Exception as e:
-            print(f"    自转修正失败: {e}")
-            # 回退到原来的简单方法
-            try:
-                sky_center = radio_wcs.pixel_to_world(radio_wcs.wcs.crpix[0] - 1,
-                                                       radio_wcs.wcs.crpix[1] - 1)
-                hpc_radio    = sky_center.transform_to(
-                    frames.Helioprojective(obstime=ATime(radio_time.isoformat()),
-                                           observer='earth'))
-                hpc_aia_time = apply_solar_rotation(hpc_radio, radio_time, aia_time,
-                                                     height_rsun)
-                px_radio = aia_wcs_2d.world_to_pixel(hpc_radio)
-                px_aia   = aia_wcs_2d.world_to_pixel(hpc_aia_time)
-                shift_x  = float(px_aia[0] - px_radio[0])
-                shift_y  = float(px_aia[1] - px_radio[1])
-
-                if abs(shift_x) >= 0.05 or abs(shift_y) >= 0.05:
-                    reprojected = nd_shift(
-                        np.nan_to_num(reprojected, nan=0.0),
-                        shift=[shift_y, shift_x], order=1,
-                        mode='constant', cval=np.nan
-                    )
-            except Exception:
-                pass
-
-    # ★ 优化3：平滑前转 float64 保证精度
-    if cfg.radio_smooth_sigma > 0:
-        # 如果有波束信息，使用各向异性平滑
-        beam_info = get_beam_params_from_header(radio_header)
-        if beam_info:
-            # 创建各向异性高斯核
-            from astropy.convolution import Gaussian2DKernel
-            
-            # 将波束大小转换为像素
-            cdelt = abs(aia_wcs_2d.wcs.cdelt[0] * 3600)  # 度转角秒
-            bmaj_pix = beam_info['bmaj_arcsec'] / cdelt
-            bmin_pix = beam_info['bmin_arcsec'] / cdelt
-            
-            # 创建椭圆高斯核
-            kernel = Gaussian2DKernel(
-                x_stddev=bmin_pix/2.355,  # FWHM转sigma
-                y_stddev=bmaj_pix/2.355,
-                theta=np.deg2rad(beam_info['bpa_deg'])
-            )
-            reprojected = convolve(reprojected.astype(np.float64), kernel,
-                                   preserve_nan=True)
-        else:
-            # 使用各向同性高斯平滑
-            reprojected = convolve(reprojected.astype(np.float64),
-                                   _make_gaussian_kernel(cfg.radio_smooth_sigma),
-                                   preserve_nan=True)
-    
-    # 应用通量守恒归一化（如果启用）
-    if hasattr(cfg, 'flux_normalization') and cfg.flux_normalization == 'flux_conserved':
-        original_sum = np.nansum(radio_data)
-        new_sum = np.nansum(reprojected)
-        if new_sum > 0 and original_sum > 0:
-            reprojected = reprojected * (original_sum / new_sum)
-    
-    return reprojected
 
 def reproject_radio_to_aia(radio_data:   np.ndarray,
                            radio_header: fits.Header,
-                           radio_wcs:    Optional[WCS],
                            ra_map:       Optional[np.ndarray],
                            dec_map:      Optional[np.ndarray],
                            target_shape: Tuple[int, int],
                            aia_wcs_2d:   WCS,
-                           radio_time:   Optional[datetime],
-                           aia_time:     Optional[datetime],
-                           height_rsun:  float,
                            cfg:          Config) -> Optional[np.ndarray]:
     """
-    增强版：添加详细的调试信息和验证步骤
+    简化版：只使用坐标查找表进行重投影
     """
-    if cfg.debug_mode:
-        print(f"    开始重投影: radio_data shape={radio_data.shape}, "
-              f"ra_map={ra_map is not None}, dec_map={dec_map is not None}, "
-              f"radio_wcs={radio_wcs is not None}")
-    
-    result = None
-    
-    # 优先使用坐标查找表
+    # 只使用坐标查找表方法
     if ra_map is not None and dec_map is not None:
-        if cfg.debug_mode:
-            print("    尝试使用坐标查找表重投影...")
-            # 检查坐标图是否有有效数据
-            ra_valid = np.isfinite(ra_map)
-            dec_valid = np.isfinite(dec_map)
-            data_valid = np.isfinite(radio_data)
-            print(f"    RA有效点: {np.sum(ra_valid)}/{ra_map.size}, "
-                  f"Dec有效点: {np.sum(dec_valid)}/{dec_map.size}, "
-                  f"数据有效点: {np.sum(data_valid)}/{radio_data.size}")
-        
-        result = reproject_radio_with_coordinate_lookup(
+        return reproject_radio_with_coordinate_lookup(
             radio_data, ra_map, dec_map,
-            target_shape, aia_wcs_2d,
-            radio_time, aia_time, height_rsun, cfg,
-            radio_header=radio_header  # ← 传入 FITS 头用于修正坐标偏移
+            target_shape, aia_wcs_2d, cfg,
+            radio_header=radio_header
         )
-        if result is not None:
-            valid_pixels = np.sum(~np.isnan(result))
-            total_pixels = result.size
-            if cfg.debug_mode:
-                print(f"    坐标查找表重投影成功! 有效像素: {valid_pixels}/{total_pixels} "
-                      f"({valid_pixels/total_pixels*100:.1f}%)")
     
-    # 如果坐标查找表失败或不可用，尝试标准WCS
-    if result is None and radio_wcs is not None:
-        if cfg.debug_mode:
-            print("    坐标查找表重投影失败，尝试标准WCS重投影...")
-        result = reproject_radio_to_aia_standard(
-            radio_data, radio_header, radio_wcs,
-            target_shape, aia_wcs_2d,
-            radio_time, aia_time, height_rsun, cfg
-        )
-        if result is not None:
-            valid_pixels = np.sum(~np.isnan(result))
-            total_pixels = result.size
-            if cfg.debug_mode:
-                print(f"    标准WCS重投影成功! 有效像素: {valid_pixels}/{total_pixels} "
-                      f"({valid_pixels/total_pixels*100:.1f}%)")
-    
-    if result is None and cfg.debug_mode:
-        print("    所有重投影方法均失败!")
-        # 提供更多诊断信息
-        if ra_map is None or dec_map is None:
-            print("    -> 坐标图缺失或未找到")
-        if radio_wcs is None:
-            print("    -> 无法构建WCS")
-    
-    return result
+    return None
 
 # ============================================================
 #  展示级等值线平滑（归一化卷积，正确处理 NaN 边界）
@@ -1083,15 +569,6 @@ def get_band_color(band_label: str, band_idx: int, cfg: Config,
                 return val
     return cfg.default_colors[band_idx % len(cfg.default_colors)]
 
-@lru_cache(maxsize=256)
-def corona_height_from_freq(freq_mhz: float) -> float:
-    """根据频率估算日冕发射高度（经验公式）。"""
-    try:
-        val = 4.32 / np.log10((freq_mhz * 1e6 / 8980.0) ** 2 / 4.2e4)
-        return max(val, 1.0) if np.isfinite(val) else float('nan')
-    except Exception:
-        return float('nan')
-
 def process_hmi_for_overlay(hmi_file: str, target_wcs,
                               cfg: Config) -> Optional[sunpy.map.GenericMap]:
     """
@@ -1108,7 +585,7 @@ def process_hmi_for_overlay(hmi_file: str, target_wcs,
         return None
 
 # ============================================================
-#  核心分组处理逻辑
+#  简化核心分组处理逻辑
 # ============================================================
 def process_aia_group(aia_file:    str,
                        hmi_file:   Optional[str],
@@ -1118,16 +595,12 @@ def process_aia_group(aia_file:    str,
                        cfg:         Config,
                        color_cache: List):
     """
-    单个 AIA 图像 + 其所有射电时间切片。
-    AIA 底图、HMI、aia_wcs_2d 只准备一次，全部子帧复用后彻底释放。
-    ★ 优化5：子进程通过 _worker_init 已设置 Agg 后端，无需额外处理。
+    简化版：移除太阳自转修正和高度计算
     """
     check_memory_usage(limit=cfg.memory_limit_pct)
     print(f"\n[{task_index}/{total_tasks}] 加载 AIA: {os.path.basename(aia_file)}")
 
-    # O(1) 字典，替代 list.index() O(n)
     selected_bands_idx: Dict[str, int] = {b: i for i, b in enumerate(cfg.selected_bands)}
-
     aia_cmap_name = cfg.aia_cmap if cfg.aia_cmap in plt.colormaps() else 'hot'
 
     aia_map = cutout_aia = hmi_processed = None
@@ -1138,13 +611,6 @@ def process_aia_group(aia_file:    str,
                     if hasattr(aia_map, 'date')
                     else parse_aia_time_from_filename(os.path.basename(aia_file)))
 
-        # 曝光时间归一化（若存在）
-        if (hasattr(aia_map, 'exposure_time')
-                and aia_map.exposure_time is not None
-                and aia_map.exposure_time.to(u.s).value > 0):
-            aia_map = sunpy.map.Map(
-                aia_map.data / aia_map.exposure_time.to(u.s).value, aia_map.meta)
-
         # 裁剪 ROI
         bl = SkyCoord(Tx=cfg.roi_bottom_left[0] * u.arcsec,
                       Ty=cfg.roi_bottom_left[1] * u.arcsec,
@@ -1154,76 +620,17 @@ def process_aia_group(aia_file:    str,
                       frame=aia_map.coordinate_frame)
         cutout_aia = aia_map.submap(bl, top_right=tr)
 
-        # 提前提取一次，全部子帧/波段/fits 复用
+        # 提取目标形状和WCS
         target_shape = cutout_aia.data.shape
-        target_wcs = cutout_aia.wcs   # SunPy WCS，保留给 HMI reproject_to 使用
-
-        # ── 关键修复：为射电重投影使用纯 astropy FITS WCS，避免 SunPy 高阶WCS
-        # 导致 reproject_interp 报 "different number of world coordinates" ──
-        from astropy.wcs import WCS as FitsWCS
-
-        try:
-            # 方法1: 使用astropy的Header对象，它有内置的clean方法
-            from astropy.io import fits
-            aia_header = fits.Header(cutout_aia.meta)
-            
-            # 清理头：移除COMMENT和HISTORY卡片，以及无效卡片
-            aia_header.clean()
-            
-            # 进一步清理：移除所有包含换行符的值
-            for key in aia_header.keys():
-                if key in ['COMMENT', 'HISTORY']:
-                    continue  # 跳过这些特殊关键字
-                value = aia_header[key]
-                if isinstance(value, str) and ('\n' in value or '\r' in value):
-                    # 用空格替换换行符
-                    cleaned = value.replace('\n', ' ').replace('\r', ' ').strip()
-                    if cleaned:
-                        aia_header[key] = cleaned
-            
-            aia_wcs_2d = FitsWCS(aia_header)
-            
-        except Exception as e:
-            if cfg.debug_mode:
-                print(f"    从清理后Header创建WCS失败: {e}")
-                print(f"    回退到使用cutout_aia.wcs.to_header()")
-            
-            try:
-                # 方法2: 直接从wcs创建
-                aia_wcs_2d = FitsWCS(cutout_aia.wcs.to_header())
-            except Exception as e2:
-                if cfg.debug_mode:
-                    print(f"    从wcs.to_header()创建WCS也失败: {e2}")
-                    print(f"    使用手动构建的简单WCS")
-                
-                # 方法3: 手动构建
-                from astropy.wcs import WCS
-                wcs = WCS(naxis=2)
-                
-                # 使用合理的默认值
-                wcs.wcs.crpix = [cutout_aia.data.shape[1]/2, cutout_aia.data.shape[0]/2]
-                wcs.wcs.cdelt = [cutout_aia.meta.get('CDELT1', 0.6),  # AIA典型像素尺度
-                                 cutout_aia.meta.get('CDELT2', 0.6)]
-                wcs.wcs.crval = [cutout_aia.meta.get('CRVAL1', 0), 
-                                 cutout_aia.meta.get('CRVAL2', 0)]
-                wcs.wcs.ctype = ['HPLN-TAN', 'HPLT-TAN']
-                
-                # 复制太阳参数
-                for key in ['RSUN_REF', 'RSUN_OBS', 'DSUN_OBS', 'HGLN_OBS', 'HGLT_OBS']:
-                    if key in cutout_aia.meta:
-                        setattr(wcs.wcs, key.lower(), cutout_aia.meta[key])
-                
-                aia_wcs_2d = wcs
-
-        # 如果是高于2维的WCS（如旧版SunPy 4维头文件），取2D子集
-        if aia_wcs_2d.naxis > 2:
-            aia_wcs_2d = aia_wcs_2d.celestial
+        
+        # 简化：直接使用cutout_aia的WCS
+        aia_wcs_2d = cutout_aia.wcs
 
         # 预处理 HMI 磁图（若启用）
-        hmi_processed = (process_hmi_for_overlay(hmi_file, target_wcs, cfg)
+        hmi_processed = (process_hmi_for_overlay(hmi_file, cutout_aia.wcs, cfg)
                          if cfg.overlay_hmi and hmi_file else None)
 
-        # makedirs 移出子帧循环，每组 AIA 最多执行一次
+        # 创建输出目录
         if cfg.save_figure:
             os.makedirs(cfg.output_dir, exist_ok=True)
 
@@ -1233,9 +640,9 @@ def process_aia_group(aia_file:    str,
             print(f"  -> 绘制序列帧 {sub_index + 1}/{len(sub_tasks)}")
 
             fig = plt.figure(figsize=(12, 10))
-            ax  = fig.add_subplot(111, projection=target_wcs)
+            ax  = fig.add_subplot(111, projection=cutout_aia.wcs)
 
-            # --- 1. 绘制 AIA 底图（对数亮度，作为背景）---
+            # --- 1. 绘制 AIA 底图 ---
             cutout_aia.plot(
                 axes=ax,
                 norm=mcolors.LogNorm(vmin=cfg.aia_vmin, vmax=cfg.aia_vmax),
@@ -1262,11 +669,10 @@ def process_aia_group(aia_file:    str,
                            label=f'-{cfg.hmi_levels_gauss[0]:.0f}G'),
                 ]
 
-            def _band_freq_key(item: Tuple[str, list]) -> float:
-                mobj = _RE_BAND_SORTED.search(item[0])
-                return float(mobj.group(1)) if mobj else 0.0
-
-            sorted_bands = sorted(single_slice_bands.items(), key=_band_freq_key)
+            # 按频率排序波段
+            sorted_bands = sorted(single_slice_bands.items(), 
+                                  key=lambda x: float(_RE_BAND_SORTED.search(x[0]).group(1)) 
+                                  if _RE_BAND_SORTED.search(x[0]) else 0.0)
 
             # --- 3. 叠加射电等值线（每个波段一种颜色）---
             for band_idx, (band_label, file_list) in enumerate(sorted_bands):
@@ -1274,89 +680,49 @@ def process_aia_group(aia_file:    str,
                 main_color, dark_color = get_band_color(
                     band_label, orig_band_idx, cfg, color_cache)
 
-                freq_match  = _RE_MHZ.search(band_label)
-                freq_mhz    = float(freq_match.group(1)) if freq_match else None
-                height_rsun = corona_height_from_freq(freq_mhz) if freq_mhz else 1.0
-
                 drawn_any = False
                 for fits_path, polarization, radio_time in file_list:
                     if (cfg.polarization_mode != 'BOTH'
                             and polarization != cfg.polarization_mode):
                         continue
+                    
                     try:
-                        # 使用增强的 extract_radio_2d_data 函数
-                        radio_data_2d, ra_map, dec_map, radio_header_2d, radio_wcs_2d = extract_radio_2d_data(
+                        # 提取射电数据和坐标图
+                        radio_data_2d, ra_map, dec_map, radio_header_2d, _ = extract_radio_2d_data(
                             fits_path, use_float32=cfg.radio_use_float32, cfg=cfg
                         )
                     
                         if radio_data_2d is None or radio_data_2d.size == 0:
                             continue
                     
-                        # 如果 extract_radio_2d_data 未能构建 WCS，尝试构建
-                        if radio_wcs_2d is None:
-                            radio_wcs_2d = build_radio_wcs_2d(
-                                radio_header_2d, radio_time, cutout_aia.meta
-                            )
-                    
+                        # 获取波束信息
                         beam = get_beam_params_from_header(radio_header_2d)
-                    
                         if beam and band_label not in collected_beams:
                             collected_beams[band_label] = beam
                     
+                        # 重投影射电数据到AIA坐标
                         reprojected = reproject_radio_to_aia(
-                            radio_data_2d, radio_header_2d, radio_wcs_2d,
-                            ra_map, dec_map,  # 新增参数
+                            radio_data_2d, radio_header_2d,
+                            ra_map, dec_map,
                             target_shape, aia_wcs_2d,
-                            radio_time, aia_time, height_rsun, cfg
+                            cfg
                         )
+                        
                         if (reprojected is None
                                 or np.isnan(np.nanmax(reprojected))
                                 or np.nanmax(reprojected) <= 0):
                             continue
 
-                        # 叠加质量验证（如果启用）
-                        if cfg.overlay_validation:
-                            from scipy.signal import correlate2d
-                            # 提取小区域进行验证
-                            sub_size = min(100, reprojected.shape[0]//4, reprojected.shape[1]//4)
-                            center_y, center_x = reprojected.shape[0]//2, reprojected.shape[1]//2
-                            
-                            aia_sub = cutout_aia.data[
-                                center_y-sub_size:center_y+sub_size,
-                                center_x-sub_size:center_x+sub_size
-                            ]
-                            radio_sub = reprojected[
-                                center_y-sub_size:center_y+sub_size,
-                                center_x-sub_size:center_x+sub_size
-                            ]
-                            
-                            aia_sub = np.nan_to_num(aia_sub, nan=0.0)
-                            radio_sub = np.nan_to_num(radio_sub, nan=0.0)
-                            
-                            if np.sum(aia_sub) > 0 and np.sum(radio_sub) > 0:
-                                corr = correlate2d(aia_sub, radio_sub, mode='same')
-                                max_corr = np.max(corr)
-                                if max_corr > 0:
-                                    # 计算归一化相关系数
-                                    aia_norm = (aia_sub - np.mean(aia_sub)) / np.std(aia_sub)
-                                    radio_norm = (radio_sub - np.mean(radio_sub)) / np.std(radio_sub)
-                                    correlation = np.corrcoef(aia_norm.ravel(), radio_norm.ravel())[0, 1]
-                                    
-                                    if abs(correlation) < cfg.min_overlay_correlation:
-                                        print(f"    波段 {band_label} 叠加质量较差，相关系数: {correlation:.3f}")
-                                        continue
-
-                        # 展示级平滑（不修改 reprojected 本体）
-                        display_data = smooth_for_contour(reprojected,
-                                                          cfg.contour_smooth_sigma)
+                        # 计算等值线级别
+                        display_data = smooth_for_contour(reprojected, cfg.contour_smooth_sigma)
                         levels = compute_contour_levels(display_data, cfg)
                         if not levels:
                             continue
 
-                        n_lev       = len(levels)
-                        lws         = [cfg.contour_linewidths[
-                                           min(i, len(cfg.contour_linewidths) - 1)]
-                                       for i in range(n_lev)]
+                        # 绘制等值线
+                        n_lev = len(levels)
+                        lws = [cfg.contour_linewidths[min(i, len(cfg.contour_linewidths) - 1)]
+                               for i in range(n_lev)]
                         colors_list = [dark_color if i < n_lev - 1 else main_color
                                        for i in range(n_lev)]
 
@@ -1372,11 +738,9 @@ def process_aia_group(aia_file:    str,
                         pass
 
                 if drawn_any:
-                    h_label = (f" (~{height_rsun:.2f}R☉)"
-                               if freq_mhz and np.isfinite(height_rsun) else "")
                     legend_handles.append(
                         Line2D([0], [0], color=main_color, linewidth=2.0,
-                               label=f"{band_label}{h_label}"))
+                               label=f"{band_label}"))
 
             # --- 4. 绘制波束椭圆（左下角）---
             if cfg.show_beam and collected_beams:
@@ -1389,7 +753,7 @@ def process_aia_group(aia_file:    str,
                                  linestyle='--', alpha=0.6, label='Solar limb')
 
             # --- 6. 图例与标题设置 ---
-            title_time = (first_radio_time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3] + ' UT'
+            title_time = (first_radio_time.strftime('%Y-%m-%d %H:%M:%S') + ' UT'
                           if first_radio_time else os.path.basename(aia_file))
             ax.set_title(
                 f"AIA 171Å + Radio ({cfg.polarization_mode}) + HMI\n{title_time}",
@@ -1408,7 +772,7 @@ def process_aia_group(aia_file:    str,
             ax.coords[1].set_axislabel('Solar Y (arcsec)', color='white')
 
             if cfg.save_figure:
-                radio_time_str = (first_radio_time.strftime('%Y%m%d_%H%M%S_%f')[:-3]
+                radio_time_str = (first_radio_time.strftime('%Y%m%d_%H%M%S')
                                   if first_radio_time else f'unknown_{sub_index}')
                 output_filename = (
                     f"{radio_time_str}_{cfg.polarization_mode}_seq{sub_index + 1:02d}.png"
@@ -1589,134 +953,10 @@ def _worker_init():
     warnings.filterwarnings('ignore')
 
 # ============================================================
-def validate_target_coordinates(aia_wcs_2d: WCS, target_shape: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    验证目标坐标转换，确保没有NaN/inf值
-    """
-    ny, nx = target_shape
-    y_target, x_target = np.mgrid[0:ny, 0:nx]
-    
-    # 将目标像素转换为世界坐标
-    target_coords = aia_wcs_2d.pixel_to_world(x_target, y_target)
-    target_eq_coords = target_coords.transform_to('icrs')
-    target_ra = target_eq_coords.ra.deg.reshape(ny, nx)
-    target_dec = target_eq_coords.dec.deg.reshape(ny, nx)
-    
-    # 检查转换结果
-    ra_nan_count = np.sum(~np.isfinite(target_ra))
-    dec_nan_count = np.sum(~np.isfinite(target_dec))
-    
-    if ra_nan_count > 0 or dec_nan_count > 0:
-        print(f"    警告: 目标坐标包含非有限值 - RA: {ra_nan_count}, Dec: {dec_nan_count}")
-        
-        # 尝试修复：将NaN替换为有效值
-        if ra_nan_count > 0:
-            # 用最近的有效值填充
-            from scipy import ndimage
-            mask = np.isfinite(target_ra)
-            if np.any(mask):
-                # 获取最近有效值的索引
-                indices = ndimage.distance_transform_edt(~mask, return_distances=False, return_indices=True)
-                # 使用索引获取有效值
-                target_ra = target_ra[tuple(indices)]
-            else:
-                # 如果全部为NaN，使用默认值
-                target_ra.fill(0.0)
-        
-        if dec_nan_count > 0:
-            # 用最近的有效值填充
-            from scipy import ndimage
-            mask = np.isfinite(target_dec)
-            if np.any(mask):
-                # 获取最近有效值的索引
-                indices = ndimage.distance_transform_edt(~mask, return_distances=False, return_indices=True)
-                # 使用索引获取有效值
-                target_dec = target_dec[tuple(indices)]
-            else:
-                # 如果全部为NaN，使用默认值
-                target_dec.fill(0.0)
-    
-    return target_ra, target_dec
-
-def diagnose_coordinate_maps(cfg: Config):
-    """
-    诊断坐标图查找问题，帮助调试
-    """
-    print("\n" + "="*60)
-    print("开始诊断坐标图查找问题...")
-    
-    # 扫描几个射电数据文件
-    pol = cfg.polarization_mode
-    files_in_pol_dir = glob.glob(os.path.join(cfg.radio_base_dir, "**", pol, "*.fits"),
-                                  recursive=True)
-    
-    test_files = files_in_pol_dir[:3]  # 只测试前3个文件
-    
-    for test_file in test_files:
-        print(f"\n诊断文件: {test_file}")
-        base_dir = os.path.dirname(test_file)
-        parent_dir = os.path.dirname(base_dir)
-        base_name = os.path.basename(test_file)
-        
-        print(f"  数据文件目录: {base_dir}")
-        print(f"  父目录: {parent_dir}")
-        print(f"  文件名: {base_name}")
-        
-        # 提取频率
-        freq_match = re.search(r'(\d+)MHz', base_name, re.IGNORECASE)
-        if freq_match:
-            freq_prefix = freq_match.group(0)
-        else:
-            freq_prefix = os.path.basename(parent_dir)
-        
-        print(f"  频率前缀: {freq_prefix}")
-        
-        # 查找坐标图文件
-        ra_found = False
-        dec_found = False
-        
-        # 在父目录查找
-        if os.path.isdir(parent_dir):
-            print(f"  在父目录查找坐标图: {parent_dir}")
-            for file in os.listdir(parent_dir):
-                if freq_prefix in file:
-                    print(f"    找到匹配文件: {file}")
-                    if 'RightAscension' in file or 'RA' in file:
-                        ra_found = True
-                        print(f"    -> 赤经坐标图: {file}")
-                    elif 'Declination' in file or 'Dec' in file:
-                        dec_found = True
-                        print(f"    -> 赤纬坐标图: {file}")
-        
-        # 在当前目录查找
-        if not (ra_found and dec_found):
-            print(f"  在当前目录查找坐标图: {base_dir}")
-            for file in os.listdir(base_dir):
-                if freq_prefix in file:
-                    print(f"    找到匹配文件: {file}")
-                    if 'RightAscension' in file or 'RA' in file:
-                        ra_found = True
-                        print(f"    -> 赤经坐标图: {file}")
-                    elif 'Declination' in file or 'Dec' in file:
-                        dec_found = True
-                        print(f"    -> 赤纬坐标图: {file}")
-        
-        if ra_found and dec_found:
-            print(f"  ✓ 找到坐标图文件")
-        else:
-            print(f"  ✗ 未找到坐标图文件")
-    
-    print("\n" + "="*60)
-
+#  简化主函数
+# ============================================================
 def main():
     cfg = Config()
-    
-    # 启用调试模式
-    cfg.debug_mode = True
-    cfg.quick_test = False
-    
-    # 诊断坐标图查找问题
-    diagnose_coordinate_maps(cfg)
     
     # 颜色缓存整个运行只构建一次
     color_cache = _build_band_color_cache(cfg)
@@ -1728,50 +968,18 @@ def main():
 
     total = len(grouped_tasks)
 
-    # ★ 优化1：根据 num_workers 选择单进程或多进程模式
-    if cfg.num_workers <= 1:
-        # ── 单进程模式（调试友好，异常信息完整）──────────────────────
-        print(f"[模式] 单进程，共 {total} 组任务")
-        for task_index, (aia_file, hmi_file, sub_tasks) in enumerate(grouped_tasks):
-            process_aia_group(
-                aia_file=aia_file,
-                hmi_file=hmi_file,
-                sub_tasks=sub_tasks,
-                task_index=task_index + 1,
-                total_tasks=total,
-                cfg=cfg,
-                color_cache=color_cache,
-            )
-    else:
-        # ── 多进程模式（并行加速）──────────────────────────────────────
-        print(f"[模式] 多进程，核心数={cfg.num_workers}，共 {total} 组任务")
-        print(f"[内存] 内存占用上限={cfg.memory_limit_pct}%")
-
-        with ProcessPoolExecutor(max_workers=cfg.num_workers,
-                                  initializer=_worker_init) as executor:
-            # 逐一提交任务；每次提交前检查内存，防止大批任务同时驻留
-            futures: Dict = {}
-            for task_index, (aia_file, hmi_file, sub_tasks) in enumerate(grouped_tasks):
-
-                # ★ 优化2：提交前检查内存，避免排队任务撑爆内存
-                check_memory_usage(limit=cfg.memory_limit_pct)
-
-                fut = executor.submit(
-                    process_aia_group,
-                    aia_file, hmi_file, sub_tasks,
-                    task_index + 1, total,
-                    cfg, color_cache,
-                )
-                futures[fut] = task_index + 1
-
-            # 等待所有任务完成，捕获子进程异常
-            for fut in as_completed(futures):
-                idx = futures[fut]
-                try:
-                    fut.result()
-                    print(f"[完成] 任务 {idx}/{total}")
-                except Exception as exc:
-                    print(f"[错误] 任务 {idx}/{total} 失败: {exc}")
+    # 单进程模式（简化）
+    print(f"[模式] 单进程，共 {total} 组任务")
+    for task_index, (aia_file, hmi_file, sub_tasks) in enumerate(grouped_tasks):
+        process_aia_group(
+            aia_file=aia_file,
+            hmi_file=hmi_file,
+            sub_tasks=sub_tasks,
+            task_index=task_index + 1,
+            total_tasks=total,
+            cfg=cfg,
+            color_cache=color_cache,
+        )
 
     print("\n全部任务处理完毕。")
 
