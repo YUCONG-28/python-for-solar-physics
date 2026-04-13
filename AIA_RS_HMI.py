@@ -514,8 +514,7 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
                                            cfg: Config,
                                            radio_header: Optional[fits.Header] = None) -> Optional[np.ndarray]:
     """
-    修复版：修正坐标图偏移量问题（RA/Dec 图存储的是相对相位中心的偏移，而非绝对ICRS坐标），
-    同时确保KDTree查询输入为有限值。
+    修复版：正确解析坐标图单位，确保偏移量正确转换为绝对坐标
     """
     try:
         if ra_map is None or dec_map is None:
@@ -535,51 +534,61 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
                 print(f"    调整后形状仍不匹配，跳过重投影")
                 return None
 
-        # 使用可写副本，避免修改原始数据
+        # 使用可写副本
         ra_map = ra_map.copy().astype(np.float64)
         dec_map = dec_map.copy().astype(np.float64)
 
-        # 检查坐标值范围是否合理
+        # 检查坐标值范围
         ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
         dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
         
         if cfg.debug_mode:
-            print(f"    坐标范围: RA [{ra_min:.2f}, {ra_max:.2f}], Dec [{dec_min:.2f}, {dec_max:.2f}]")
+            print(f"    原始坐标范围: RA [{ra_min:.6f}, {ra_max:.6f}], Dec [{dec_min:.6f}, {dec_max:.6f}]")
         
-        # 检查坐标单位：可能是度或弧度
-        if dec_max > 90 or dec_min < -90:
-            # 可能是弧度，转换为度
-            print(f"    赤纬坐标可能为弧度，转换为度...")
+        # ── 关键修复：正确解析坐标图单位 ──
+        # 根据经验，坐标图通常存储的是相位中心的偏移量，单位可能是度或弧度
+        # 判断标准：如果值范围在 -π 到 π 之间，可能是弧度
+        if abs(ra_max) < 4.0 and abs(ra_min) < 4.0 and abs(dec_max) < 4.0 and abs(dec_min) < 4.0:
+            # 很可能是弧度单位，转换为度
+            if cfg.debug_mode:
+                print(f"    检测到坐标图为弧度单位，转换为度...")
             ra_map = np.rad2deg(ra_map)
             dec_map = np.rad2deg(dec_map)
             ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
             dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
             if cfg.debug_mode:
-                print(f"    转换后坐标范围: RA [{ra_min:.2f}, {ra_max:.2f}], Dec [{dec_min:.2f}, {dec_max:.2f}]")
-
-        # ── 关键修复：检测坐标图是否存储的是相位中心偏移量而非绝对ICRS坐标 ──
-        # 判据：RA最大绝对值 < 90°（绝对ICRS RA 应在 [0,360]，不会全部小于90°）
-        # 且 FITS 头中 CRVAL1 > 10°（说明相位中心不在 RA≈0 附近）
+                print(f"    转换后坐标范围: RA [{ra_min:.6f}, {ra_max:.6f}], Dec [{dec_min:.6f}, {dec_max:.6f}]")
+        
+        # 现在坐标图应该是度单位，且为相位中心偏移量
+        # 需要加上相位中心（来自FITS头）
         if radio_header is not None:
             crval1 = float(radio_header.get('CRVAL1', 0.0))  # 相位中心 RA（度）
             crval2 = float(radio_header.get('CRVAL2', 0.0))  # 相位中心 Dec（度）
-            ra_abs_max = max(abs(ra_min), abs(ra_max))
-            is_offset = (ra_abs_max < 90.0) and (abs(crval1) > 10.0 or abs(crval2) > 10.0)
-            if is_offset:
-                if cfg.debug_mode:
-                    print(f"    检测到坐标图为相位中心偏移量，加上相位中心: "
-                          f"CRVAL1={crval1:.4f}°, CRVAL2={crval2:.4f}°")
-                ra_map  = ra_map  + crval1
-                dec_map = dec_map + crval2
-                ra_min, ra_max   = np.nanmin(ra_map),  np.nanmax(ra_map)
-                dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
-                if cfg.debug_mode:
-                    print(f"    修正后坐标范围: RA [{ra_min:.2f}, {ra_max:.2f}], "
-                          f"Dec [{dec_min:.2f}, {dec_max:.2f}]")
-
+            
+            if cfg.debug_mode:
+                print(f"    相位中心: CRVAL1={crval1:.6f}°, CRVAL2={crval2:.6f}°")
+            
+            # 加上相位中心得到绝对坐标
+            ra_map = ra_map + crval1
+            dec_map = dec_map + crval2
+            
+            ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
+            dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
+            
+            if cfg.debug_mode:
+                print(f"    绝对坐标范围: RA [{ra_min:.6f}, {ra_max:.6f}], Dec [{dec_min:.6f}, {dec_max:.6f}]")
+        
         # 标准化赤经到0-360度
         if ra_max > 360 or ra_min < 0:
             ra_map = np.mod(ra_map, 360)
+            ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
+            if cfg.debug_mode:
+                print(f"    标准化赤经后: RA [{ra_min:.6f}, {ra_max:.6f}]")
+        
+        # 检查坐标范围是否合理（RA应该在0-360，Dec在-90到90）
+        if ra_min < 0 or ra_max > 360 or dec_min < -90 or dec_max > 90:
+            if cfg.debug_mode:
+                print(f"    警告: 坐标范围超出合理范围!")
         
         # 检查有效数据点
         ra_valid = np.isfinite(ra_map)
@@ -588,7 +597,7 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         valid_mask = ra_valid & dec_valid & data_valid
         
         valid_count = np.sum(valid_mask)
-        if valid_count < 100:  # 最少需要100个有效点
+        if valid_count < 100:
             if cfg.debug_mode:
                 print(f"    有效数据点不足: {valid_count}")
             return None
@@ -607,17 +616,22 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         y_target, x_target = np.mgrid[0:ny, 0:nx]
         
         # 将目标像素转换为世界坐标
-        target_coords = aia_wcs_2d.pixel_to_world(x_target, y_target)
-        target_eq_coords = target_coords.transform_to('icrs')
-        target_ra = target_eq_coords.ra.deg.reshape(ny, nx)
-        target_dec = target_eq_coords.dec.deg.reshape(ny, nx)
+        try:
+            target_coords = aia_wcs_2d.pixel_to_world(x_target, y_target)
+            target_eq_coords = target_coords.transform_to('icrs')
+            target_ra = target_eq_coords.ra.deg.reshape(ny, nx)
+            target_dec = target_eq_coords.dec.deg.reshape(ny, nx)
+        except Exception as e:
+            if cfg.debug_mode:
+                print(f"    目标坐标转换失败: {e}")
+            return None
         
-        # 检查目标坐标范围是否与源坐标范围重叠
+        # 检查目标坐标范围
         target_ra_min, target_ra_max = np.nanmin(target_ra), np.nanmax(target_ra)
         target_dec_min, target_dec_max = np.nanmin(target_dec), np.nanmax(target_dec)
         
         if cfg.debug_mode:
-            print(f"    目标坐标范围: RA [{target_ra_min:.2f}, {target_ra_max:.2f}], Dec [{target_dec_min:.2f}, {target_dec_max:.2f}]")
+            print(f"    目标坐标范围: RA [{target_ra_min:.6f}, {target_ra_max:.6f}], Dec [{target_dec_min:.6f}, {target_dec_max:.6f}]")
         
         # 检查是否有重叠
         ra_overlap = not (target_ra_max < np.nanmin(valid_ra) or target_ra_min > np.nanmax(valid_ra))
@@ -626,14 +640,15 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         if not (ra_overlap and dec_overlap):
             if cfg.debug_mode:
                 print(f"    警告: 源坐标与目标坐标无重叠区域!")
+                print(f"    源RA范围: [{np.nanmin(valid_ra):.6f}, {np.nanmax(valid_ra):.6f}]")
+                print(f"    源Dec范围: [{np.nanmin(valid_dec):.6f}, {np.nanmax(valid_dec):.6f}]")
             return None
         
-        # 使用更高效的插值方法 - 使用KD树进行最近邻插值
+        # 使用KD树进行最近邻插值
         from scipy.spatial import cKDTree
-        import scipy.interpolate as interp
         
-        # 为有效点构建KD树（使用降采样以提高效率）
-        max_points = 10000
+        # 为有效点构建KD树
+        max_points = min(10000, len(valid_ra))
         if len(valid_ra) > max_points:
             # 随机降采样
             indices = np.random.choice(len(valid_ra), max_points, replace=False)
@@ -659,7 +674,7 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         tree = cKDTree(np.column_stack([valid_ra_sampled, valid_dec_sampled]))
         
         # 分块处理目标网格
-        chunk_size = 128  # 更小的分块大小，减少内存使用
+        chunk_size = 64  # 更小的分块，减少内存使用
         reprojected = np.full((ny, nx), np.nan, dtype=np.float32)
         
         for i in range(0, nx, chunk_size):
@@ -685,10 +700,11 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
                 query_points = np.column_stack([ra_flat[valid_indices], 
                                                 dec_flat[valid_indices]])
                 
-                # 查询最近邻
+                # 查询最近邻，增加搜索半径
                 distances, indices = tree.query(
                     query_points,
-                    k=1, distance_upper_bound=0.5  # 增大搜索半径到0.5度
+                    k=1, 
+                    distance_upper_bound=1.0  # 1度搜索半径
                 )
                 
                 # 创建结果数组
@@ -703,47 +719,9 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
                 reprojected[j:j_end, i:i_end] = chunk_result.reshape(
                     j_end - j, i_end - i)
         
-        # 如果最近邻插值效果不好，尝试线性插值
-        valid_count = np.sum(~np.isnan(reprojected))
-        total_pixels = reprojected.size
-        valid_ratio = valid_count / total_pixels
-        
-        if valid_ratio < 0.1 and valid_ratio > 0:  # 少于10%有效像素且至少有一些有效像素
-            if cfg.debug_mode:
-                print(f"    最近邻插值效果不佳 ({valid_ratio*100:.1f}% 有效像素)，尝试线性插值...")
-            
-            try:
-                # 使用线性插值（更慢但更准确）
-                # 首先确保源数据点都是有限的
-                source_valid = np.isfinite(valid_ra) & np.isfinite(valid_dec) & np.isfinite(valid_data)
-                if np.sum(source_valid) > 100:  # 至少需要100个有效源点
-                    linear_interp = interp.LinearNDInterpolator(
-                        np.column_stack([valid_ra[source_valid], valid_dec[source_valid]]),
-                        valid_data[source_valid],
-                        fill_value=np.nan
-                    )
-                    
-                    # 只对目标有限值点进行插值
-                    target_valid = np.isfinite(target_ra) & np.isfinite(target_dec)
-                    if np.sum(target_valid) > 0:
-                        # 创建新数组
-                        reprojected_new = np.full((ny, nx), np.nan, dtype=np.float32)
-                        # 只插值有效目标点
-                        y_idx, x_idx = np.where(target_valid)
-                        query_points = np.column_stack([target_ra[target_valid], 
-                                                        target_dec[target_valid]])
-                        reprojected_new[target_valid] = linear_interp(query_points)
-                        # 如果新插值效果更好，替换原结果
-                        new_valid = np.sum(~np.isnan(reprojected_new))
-                        if new_valid > valid_count:
-                            reprojected = reprojected_new
-                            valid_count = new_valid
-            except Exception as e:
-                if cfg.debug_mode:
-                    print(f"    线性插值失败: {e}")
-        
         # 验证结果
         valid_final = np.sum(~np.isnan(reprojected))
+        total_pixels = reprojected.size
         
         if valid_final == 0:
             if cfg.debug_mode:
@@ -762,7 +740,7 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
                 sigma=cfg.radio_smooth_sigma
             )
             
-        # 应用通量守恒归一化（如果启用）
+        # 应用通量守恒归一化
         if hasattr(cfg, 'flux_normalization') and cfg.flux_normalization == 'flux_conserved':
             original_sum = np.nansum(radio_data)
             new_sum = np.nansum(reprojected)
@@ -788,50 +766,66 @@ def reproject_radio_to_aia_standard(radio_data:   np.ndarray,
                                     height_rsun:  float,
                                     cfg:          Config) -> Optional[np.ndarray]:
     """
-    将射电图像重投影到 AIA 裁剪图的 WCS 和形状上（标准WCS方法）。
-    可选：太阳自转修正、数据级平滑。
-    ★ 优化3：reproject 输入为 float32，输出也是 float32；
-    smooth 前转 float64 以保持精度。
-    ★ 修复：将射电 WCS 统一转换为 ICRS(RA/Dec) 坐标系再重投影，
-    解决 "different number of world coordinates" 错误。
+    修复WCS维度不匹配问题：确保两个WCS都是2维的
     """
     from astropy.wcs import WCS as FitsWCS
 
-    # 确保 aia_wcs_2d 是纯 astropy FITS WCS（不是 SunPy 高阶 WCS）
-    if not isinstance(aia_wcs_2d, FitsWCS):
+    # 确保两个WCS都是2维的
+    if radio_wcs.naxis > 2:
+        if cfg.debug_mode:
+            print(f"    射电WCS维度: {radio_wcs.naxis} -> 转换为2D")
         try:
-            aia_wcs_2d = FitsWCS(aia_wcs_2d.to_header())
+            radio_wcs = radio_wcs.celestial
         except Exception:
-            pass
+            # 如果转换失败，创建新的2D WCS
+            wcs = FitsWCS(naxis=2)
+            wcs.wcs.crpix = [radio_wcs.wcs.crpix[0], radio_wcs.wcs.crpix[1]]
+            wcs.wcs.cdelt = [radio_wcs.wcs.cdelt[0], radio_wcs.wcs.cdelt[1]]
+            wcs.wcs.crval = [radio_wcs.wcs.crval[0], radio_wcs.wcs.crval[1]]
+            wcs.wcs.ctype = [radio_wcs.wcs.ctype[0], radio_wcs.wcs.ctype[1]]
+            radio_wcs = wcs
 
-    # 如果射电 WCS 是 HPLN/HPLT 而 AIA WCS 是 RA/Dec（或反之），
-    # 尝试将射电 WCS 转为中间 RA/Dec 以便 reproject 能跨坐标系工作。
-    # reproject >= 0.9 可自动处理 ICRS ↔ HPR 转换，前提是两侧都是纯 astropy WCS。
+    if aia_wcs_2d.naxis > 2:
+        if cfg.debug_mode:
+            print(f"    AIA WCS维度: {aia_wcs_2d.naxis} -> 转换为2D")
+        try:
+            aia_wcs_2d = aia_wcs_2d.celestial
+        except Exception:
+            # 如果转换失败，创建新的2D WCS
+            wcs = FitsWCS(naxis=2)
+            if hasattr(aia_wcs_2d, 'wcs'):
+                wcs.wcs.crpix = [aia_wcs_2d.wcs.crpix[0], aia_wcs_2d.wcs.crpix[1]]
+                wcs.wcs.cdelt = [aia_wcs_2d.wcs.cdelt[0], aia_wcs_2d.wcs.cdelt[1]]
+                wcs.wcs.crval = [aia_wcs_2d.wcs.crval[0], aia_wcs_2d.wcs.crval[1]]
+                wcs.wcs.ctype = [aia_wcs_2d.wcs.ctype[0], aia_wcs_2d.wcs.ctype[1]]
+            aia_wcs_2d = wcs
+
+    if cfg.debug_mode:
+        print(f"    射电WCS: naxis={radio_wcs.naxis}, ctype={radio_wcs.wcs.ctype}")
+        print(f"    AIA WCS: naxis={aia_wcs_2d.naxis}, ctype={aia_wcs_2d.wcs.ctype}")
+
     try:
+        # 尝试精确重投影
         from reproject import reproject_exact
         reprojected, footprint = reproject_exact(
             (radio_data, radio_wcs), aia_wcs_2d,
             shape_out=target_shape,
             return_footprint=True
         )
-    except Exception:
-        # 如果精确重投影失败，回退到插值方法，使用更高阶插值
+    except Exception as e1:
+        if cfg.debug_mode:
+            print(f"    精确重投影失败: {e1}")
+        
+        # 尝试插值方法
         try:
+            from reproject import reproject_interp
             reprojected, footprint = reproject_interp(
                 (radio_data, radio_wcs), aia_wcs_2d,
-                shape_out=target_shape, order=3  # 使用3阶插值提高精度
+                shape_out=target_shape, order=1
             )
-        except Exception as e:
-            print(f"    [警告] WCS 重投影失败: {e}")
-            # 最后尝试：把 AIA WCS 显式转为 ICRS 坐标系再重投影
-            try:
-                reprojected, footprint = reproject_interp(
-                    (radio_data, radio_wcs), aia_wcs_2d,
-                    shape_out=target_shape, order=1
-                )
-            except Exception as e2:
-                print(f"    [警告] 备用WCS重投影也失败: {e2}")
-                return None
+        except Exception as e2:
+            print(f"    [警告] 所有WCS重投影方法均失败: {e2}")
+            return None
 
     reprojected[footprint == 0] = np.nan
 
