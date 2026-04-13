@@ -147,6 +147,10 @@ class Config:
     coordinate_search_radius: float = 3.0  # 坐标查找搜索半径（度），用于KD树最近邻匹配
     quick_test: bool = False
     test_file_limit: int = 5  # 快速测试时的文件数量限制
+    
+    # 新增配置：是否使用赤经赤纬坐标图
+    use_radec_maps: bool = True  # True: 使用赤经赤纬文件; False: 直接转换为太阳坐标
+    radio_to_solar_scale_factor: float = 1.0  # 射电坐标到太阳坐标的缩放因子
 
 # ============================================================
 #  颜色缓存
@@ -354,7 +358,8 @@ def parse_hmi_time_from_filename(filename: str) -> Optional[datetime]:
 # ============================================================
 def extract_radio_2d_data(fits_path: str, use_float32: bool = True, cfg: Optional[Config] = None) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray], fits.Header, Optional[WCS]]:
     """
-    简化版：只提取射电数据和坐标图
+    简化版：提取射电数据和坐标图
+    修改：根据cfg.use_radec_maps决定是否加载坐标图文件
     """
     try:
         with fits.open(fits_path) as hdu_data:
@@ -365,25 +370,25 @@ def extract_radio_2d_data(fits_path: str, use_float32: bool = True, cfg: Optiona
             data = np.squeeze(data)
             header = hdu_data[0].header.copy()
             
-            # 获取基目录和文件名
-            base_dir = os.path.dirname(fits_path)
-            base_name = os.path.basename(fits_path)
-            
-            # 提取频率
-            freq_match = re.search(r'(\d+)MHz', base_name, re.IGNORECASE)
-            if freq_match:
-                freq_prefix = freq_match.group(0)  # 如 "149MHz"
-            else:
-                # 使用目录名作为频率
-                parent_dir = os.path.dirname(base_dir)
-                freq_prefix = os.path.basename(parent_dir)
-            
             ra_map = None
             dec_map = None
             
-            # 简化：只查找坐标图文件
-            if freq_prefix:
-                # 在当前目录和父目录查找坐标图文件
+            # 如果使用赤经赤纬坐标图
+            if cfg is not None and cfg.use_radec_maps:
+                # 获取基目录和文件名
+                base_dir = os.path.dirname(fits_path)
+                base_name = os.path.basename(fits_path)
+                
+                # 提取频率
+                freq_match = re.search(r'(\d+)MHz', base_name, re.IGNORECASE)
+                if freq_match:
+                    freq_prefix = freq_match.group(0)  # 如 "149MHz"
+                else:
+                    # 使用目录名作为频率
+                    parent_dir = os.path.dirname(base_dir)
+                    freq_prefix = os.path.basename(parent_dir)
+                
+                # 查找坐标图文件
                 search_dirs = [base_dir, os.path.dirname(base_dir)]
                 
                 for search_dir in search_dirs:
@@ -414,8 +419,14 @@ def extract_radio_2d_data(fits_path: str, use_float32: bool = True, cfg: Optiona
                                             print(f"    [坐标图] 已加载Dec文件: {file}")
                                 except Exception:
                                     pass
+            else:
+                # 不使用坐标图文件，生成太阳坐标
+                if cfg is not None and cfg.debug_mode:
+                    print(f"    [坐标图] 不使用赤经赤纬文件，生成太阳坐标")
+                
+                # 生成模拟的太阳坐标（Tx, Ty）
+                ra_map, dec_map = generate_solar_coordinates(data.shape, header, cfg)
             
-            # 简化：不构建WCS，只使用坐标图
             dtype = np.float32 if use_float32 else np.float64
             return data.astype(dtype), ra_map, dec_map, header, None
             
@@ -525,26 +536,93 @@ def get_solar_position(obs_time: datetime) -> Tuple[float, float]:
         return 306.413395, -19.231661  # 2025-01-24 04:43:17的太阳位置
 
 # ============================================================
+#  新增函数：生成太阳坐标
+# ============================================================
+def generate_solar_coordinates(shape: Tuple[int, int], header: fits.Header, cfg: Config) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    生成射电数据对应的太阳坐标（Tx, Ty）
+    
+    参数:
+        shape: 数据形状 (ny, nx)
+        header: FITS头信息
+        cfg: 配置对象
+    
+    返回:
+        tx_map: Tx坐标图（太阳X坐标，角秒）
+        ty_map: Ty坐标图（太阳Y坐标，角秒）
+    """
+    ny, nx = shape
+    
+    # 创建网格
+    y_indices, x_indices = np.indices((ny, nx))
+    
+    # 获取图像中心
+    center_x = nx // 2
+    center_y = ny // 2
+    
+    # 尝试从头文件中获取像素尺度
+    # 注意：射电数据通常以度为单位，需要转换为角秒
+    cdelt1 = header.get('CDELT1', 0.0)  # 度/像素
+    cdelt2 = header.get('CDELT2', 0.0)  # 度/像素
+    
+    # 如果头文件中没有，使用默认值
+    if cdelt1 == 0.0:
+        # 默认值：大约对应于太阳射电观测的典型分辨率
+        # 例如，对于低频射电，分辨率可能为几角分
+        cdelt1 = 0.01  # 度/像素，约36角秒/像素
+    
+    if cdelt2 == 0.0:
+        cdelt2 = cdelt1
+    
+    # 转换为角秒/像素
+    cdelt1_arcsec = cdelt1 * 3600.0 * cfg.radio_to_solar_scale_factor
+    cdelt2_arcsec = cdelt2 * 3600.0 * cfg.radio_to_solar_scale_factor
+    
+    # 生成Tx, Ty坐标（太阳坐标，角秒）
+    # 注意：太阳坐标系中，Tx向右为正，Ty向上为正
+    tx_map = (x_indices - center_x) * cdelt1_arcsec
+    ty_map = (y_indices - center_y) * cdelt2_arcsec
+    
+    # 调试信息
+    if cfg.debug_mode:
+        print(f"    [太阳坐标] 生成坐标图: 形状={shape}")
+        print(f"    [太阳坐标] 像素尺度: CDELT1={cdelt1}度 -> {cdelt1_arcsec}角秒/像素")
+        print(f"    [太阳坐标] Tx范围: [{tx_map.min():.1f}, {tx_map.max():.1f}]角秒")
+        print(f"    [太阳坐标] Ty范围: [{ty_map.min():.1f}, {ty_map.max():.1f}]角秒")
+    
+    return tx_map, ty_map
+
+# ============================================================
 #  坐标预处理：弧度判断 + 绝对/相对坐标判断 + CRVAL叠加
 # ============================================================
 def _preprocess_radec_maps(ra_map: np.ndarray,
                            dec_map: np.ndarray,
                            radio_header: Optional[fits.Header],
-                           cfg: Config) -> Tuple[np.ndarray, np.ndarray]:
+                           cfg: Config) -> Tuple[np.ndarray, np.ndarray, bool]:
     """
     统一坐标预处理，返回处理后的赤经赤纬（度）。
-    
-    对于太阳射电观测：
-    - 如果坐标是相对坐标（范围小），直接返回
-    - 如果坐标是绝对坐标，确保RA在[0,360)范围内
+    修改：当cfg.use_radec_maps为False时，直接返回太阳坐标
     """
+    # 如果使用太阳坐标模式
+    if not cfg.use_radec_maps:
+        # 直接返回太阳坐标（已经是Tx, Ty）
+        # 注意：这里ra_map和dec_map实际上是tx_map和ty_map
+        if cfg.debug_mode:
+            print(f"    [坐标预处理] 使用太阳坐标模式")
+            print(f"    [坐标预处理] Tx范围: [{ra_map.min():.1f}, {ra_map.max():.1f}]角秒")
+            print(f"    [坐标预处理] Ty范围: [{dec_map.min():.1f}, {dec_map.max():.1f}]角秒")
+        
+        # 对于太阳坐标，我们直接返回，并标记为相对坐标
+        return ra_map, dec_map, True
+    
+    # 以下是原有的赤经赤纬处理逻辑
     ra  = ra_map.copy().astype(np.float64)
     dec = dec_map.copy().astype(np.float64)
 
     ra_fin  = ra[np.isfinite(ra)]
     dec_fin = dec[np.isfinite(dec)]
     if len(ra_fin) == 0 or len(dec_fin) == 0:
-        return ra, dec
+        return ra, dec, False
 
     ra_min, ra_max   = float(ra_fin.min()),  float(ra_fin.max())
     dec_min, dec_max = float(dec_fin.min()), float(dec_fin.max())
@@ -647,12 +725,126 @@ def reproject_radio_forward_paste(
             return None
 
         # 预处理坐标图
-        ra_abs, dec_abs,is_relative = _preprocess_radec_maps(ra_map, dec_map, radio_header, cfg)
+        ra_abs, dec_abs, is_relative = _preprocess_radec_maps(ra_map, dec_map, radio_header, cfg)
         
-        # ── 关键修正：直接使用相对坐标进行转换 ─────────────────────────────
-        # 对于太阳射电观测，相对坐标就是相对于太阳中心的偏移
-        # 直接将这些坐标转换为日心坐标系
-        
+        # 如果使用太阳坐标模式，直接处理
+        if not cfg.use_radec_maps:
+            # 对于太阳坐标，ra_abs和dec_abs实际上是Tx和Ty（角秒）
+            # 直接构建太阳坐标
+            try:
+                # 直接使用Tx, Ty构建太阳坐标
+                radio_hpc = SkyCoord(Tx=ra_abs * u.arcsec, Ty=dec_abs * u.arcsec,
+                                     frame=aia_cutout_map.coordinate_frame)
+                
+                if cfg.debug_mode:
+                    tx = radio_hpc.Tx.arcsec
+                    ty = radio_hpc.Ty.arcsec
+                    fin_h = np.isfinite(tx) & np.isfinite(ty)
+                    if fin_h.any():
+                        print(f"    [太阳坐标模式] Tx范围: [{tx[fin_h].min():.1f}, {tx[fin_h].max():.1f}]角秒")
+                        print(f"    [太阳坐标模式] Ty范围: [{ty[fin_h].min():.1f}, {ty[fin_h].max():.1f}]角秒")
+            except Exception as e:
+                if cfg.debug_mode:
+                    print(f"    [太阳坐标模式] 构建太阳坐标失败: {e}")
+                return None
+        else:
+            # 以下是原有的赤经赤纬处理逻辑
+            # ── 关键修正：直接使用相对坐标进行转换 ─────────────────────────────
+            # 对于太阳射电观测，相对坐标就是相对于太阳中心的偏移
+            # 直接将这些坐标转换为日心坐标系
+            
+            # 获取射电观测时间
+            radio_time = None
+            if radio_header is not None:
+                try:
+                    time_keys = ['DATE-OBS', 'DATE_OBS', 'DATEOBS', 'DATE-BEG', 'DATE_BEG', 'DATEBEG']
+                    for key in time_keys:
+                        if key in radio_header:
+                            date_str = str(radio_header[key]).strip()
+                            if date_str:
+                                if '  ' in date_str:
+                                    date_str = ' '.join(date_str.split())
+                                radio_time = _parse_flexible_datetime(date_str)
+                                if radio_time:
+                                    break
+                except Exception:
+                    pass
+            
+            # 如果无法获取射电时间，使用AIA时间
+            if radio_time is None:
+                try:
+                    radio_time = aia_cutout_map.date.to_datetime()
+                except Exception:
+                    from datetime import datetime
+                    radio_time = datetime.now()  # 最后手段
+            
+            if cfg.debug_mode:
+                print(f"    [时间信息] 射电观测时间: {radio_time}")
+            
+            # 获取太阳中心位置
+            try:
+                from astropy.coordinates import get_sun
+                from astropy.time import Time
+                
+                astropy_time = Time(radio_time, format='datetime', scale='utc')
+                sun_coord = get_sun(astropy_time)
+                sun_ra = sun_coord.ra.deg
+                sun_dec = sun_coord.dec.deg
+                
+                # ========= 彻底重构坐标转换逻辑 =========
+                # 放弃 ICRS -> HPC 的球面复杂转换。
+                # 直接将原始 FITS 坐标解析为日面角秒 (Tx, Ty)，绕过地球自转倾角带来的旋转畸变！
+
+                # 1. 重新从原始映射中提取坐标 (防止 _preprocess 中的 rad2deg 造成误伤)
+                # 首先需要获取有效掩码
+                valid_mask = (np.isfinite(ra_abs) & np.isfinite(dec_abs)
+                              & np.isfinite(radio_data))
+                raw_ra = ra_map[valid_mask].astype(np.float64)
+                raw_dec = dec_map[valid_mask].astype(np.float64)
+
+                ra_med = float(np.median(raw_ra))
+                dec_med = float(np.median(raw_dec))
+
+                # 2. 智能判断坐标单位并强制转为角秒 (arcsec)
+                if abs(ra_med) > 100:
+                    if abs(dec_med) > 90:
+                        # 绝对值 > 90，不可能为赤纬，必定是角秒 (Arcsec)
+                        tx_arcsec = raw_ra
+                        ty_arcsec = raw_dec
+                    else:
+                        # 在 306 左右，绝对 RA/Dec。射电管线通常假定 RA = Sun_RA + Tx_deg
+                        tx_arcsec = (raw_ra - sun_ra) * 3600.0
+                        ty_arcsec = (raw_dec - sun_dec) * 3600.0
+                else:
+                    # 相对坐标 (在 0 附近)
+                    if np.max(np.abs(raw_ra)) < 0.1:
+                        # 最大值极小，推断为弧度 (Radians)
+                        tx_arcsec = np.rad2deg(raw_ra) * 3600.0
+                        ty_arcsec = np.rad2deg(raw_dec) * 3600.0
+                    else:
+                        # 推断为度数 (Degrees)
+                        tx_arcsec = raw_ra * 3600.0
+                        ty_arcsec = raw_dec * 3600.0
+
+                # 3. 直接在日心坐标系下进行 180 度翻转 (完美对称，修复干涉成像倒置)
+                tx_arcsec = -tx_arcsec
+                ty_arcsec = -ty_arcsec
+
+                if cfg.debug_mode:
+                    print(f"    [终极坐标] 物理空间 Tx/Ty (角秒): "
+                          f"X [{tx_arcsec.min():.1f}, {tx_arcsec.max():.1f}], "
+                          f"Y [{ty_arcsec.min():.1f}, {ty_arcsec.max():.1f}]")
+
+                # 4. 直接构建 AIA HPC 坐标，彻底绕过 ICRS
+                radio_hpc = SkyCoord(Tx=tx_arcsec * u.arcsec, Ty=ty_arcsec * u.arcsec,
+                                     frame=aia_cutout_map.coordinate_frame)
+                # ========================================
+
+            except Exception as e:
+                if cfg.debug_mode:
+                    print(f"    [警告] 计算坐标系失败: {e}")
+                return None
+
         # ── 有效点筛选 ────────────────────────────────────────────────────
         valid_mask = (np.isfinite(ra_abs) & np.isfinite(dec_abs)
                       & np.isfinite(radio_data))
@@ -668,123 +860,52 @@ def reproject_radio_forward_paste(
 
         if cfg.debug_mode:
             print(f"    [前向投影] 有效射电像素: {n_valid}")
-            print(f"    [前向投影] 射电坐标范围: "
-                  f"RA [{v_ra.min():.4f}, {v_ra.max():.4f}]  "
-                  f"Dec [{v_dec.min():.4f}, {v_dec.max():.4f}]")
-
-        # ── 关键修复：计算太阳中心位置并转换为绝对坐标 ──────────────────────────────
-        # 对于相对坐标，我们需要加上太阳中心的位置
-        
-        # 获取射电观测时间
-        radio_time = None
-        if radio_header is not None:
-            try:
-                time_keys = ['DATE-OBS', 'DATE_OBS', 'DATEOBS', 'DATE-BEG', 'DATE_BEG', 'DATEBEG']
-                for key in time_keys:
-                    if key in radio_header:
-                        date_str = str(radio_header[key]).strip()
-                        if date_str:
-                            if '  ' in date_str:
-                                date_str = ' '.join(date_str.split())
-                            radio_time = _parse_flexible_datetime(date_str)
-                            if radio_time:
-                                break
-            except Exception:
-                pass
-        
-        # 如果无法获取射电时间，使用AIA时间
-        if radio_time is None:
-            try:
-                radio_time = aia_cutout_map.date.to_datetime()
-            except Exception:
-                from datetime import datetime
-                radio_time = datetime.now()  # 最后手段
-        
-        if cfg.debug_mode:
-            print(f"    [时间信息] 射电观测时间: {radio_time}")
-        
-        # 获取太阳中心位置
-        try:
-            from astropy.coordinates import get_sun
-            from astropy.time import Time
-            
-            astropy_time = Time(radio_time, format='datetime', scale='utc')
-            sun_coord = get_sun(astropy_time)
-            sun_ra = sun_coord.ra.deg
-            sun_dec = sun_coord.dec.deg
-            
-            # ========= 彻底重构坐标转换逻辑 =========
-            # 放弃 ICRS -> HPC 的球面复杂转换。
-            # 直接将原始 FITS 坐标解析为日面角秒 (Tx, Ty)，绕过地球自转倾角带来的旋转畸变！
-
-            # 1. 重新从原始映射中提取坐标 (防止 _preprocess 中的 rad2deg 造成误伤)
-            raw_ra = ra_map[valid_mask].astype(np.float64)
-            raw_dec = dec_map[valid_mask].astype(np.float64)
-
-            ra_med = float(np.median(raw_ra))
-            dec_med = float(np.median(raw_dec))
-
-            # 2. 智能判断坐标单位并强制转为角秒 (arcsec)
-            if abs(ra_med) > 100:
-                if abs(dec_med) > 90:
-                    # 绝对值 > 90，不可能为赤纬，必定是角秒 (Arcsec)
-                    tx_arcsec = raw_ra
-                    ty_arcsec = raw_dec
-                else:
-                    # 在 306 左右，绝对 RA/Dec。射电管线通常假定 RA = Sun_RA + Tx_deg
-                    tx_arcsec = (raw_ra - sun_ra) * 3600.0
-                    ty_arcsec = (raw_dec - sun_dec) * 3600.0
+            if not cfg.use_radec_maps:
+                print(f"    [前向投影] 太阳坐标范围: "
+                      f"Tx [{v_ra.min():.1f}, {v_ra.max():.1f}]角秒  "
+                      f"Ty [{v_dec.min():.1f}, {v_dec.max():.1f}]角秒")
             else:
-                # 相对坐标 (在 0 附近)
-                if np.max(np.abs(raw_ra)) < 0.1:
-                    # 最大值极小，推断为弧度 (Radians)
-                    tx_arcsec = np.rad2deg(raw_ra) * 3600.0
-                    ty_arcsec = np.rad2deg(raw_dec) * 3600.0
-                else:
-                    # 推断为度数 (Degrees)
-                    tx_arcsec = raw_ra * 3600.0
-                    ty_arcsec = raw_dec * 3600.0
+                print(f"    [前向投影] 射电坐标范围: "
+                      f"RA [{v_ra.min():.4f}, {v_ra.max():.4f}]  "
+                      f"Dec [{v_dec.min():.4f}, {v_dec.max():.4f}]")
 
-            # 3. 直接在日心坐标系下进行 180 度翻转 (完美对称，修复干涉成像倒置)
-            tx_arcsec = -tx_arcsec
-            ty_arcsec = -ty_arcsec
-
-            if cfg.debug_mode:
-                print(f"    [终极坐标] 物理空间 Tx/Ty (角秒): "
-                      f"X [{tx_arcsec.min():.1f}, {tx_arcsec.max():.1f}], "
-                      f"Y [{ty_arcsec.min():.1f}, {ty_arcsec.max():.1f}]")
-
-            # 4. 直接构建 AIA HPC 坐标，彻底绕过 ICRS
-            radio_hpc = SkyCoord(Tx=tx_arcsec * u.arcsec, Ty=ty_arcsec * u.arcsec,
-                                 frame=aia_cutout_map.coordinate_frame)
-            # ========================================
-
-        except Exception as e:
-            if cfg.debug_mode:
-                print(f"    [警告] 计算坐标系失败: {e}")
-            return None
-
-        # 获取像素坐标 (承接原本的代码)
-        px_f, py_f = aia_cutout_map.wcs.world_to_pixel(radio_hpc)
+        # 获取像素坐标
+        if not cfg.use_radec_maps:
+            # 对于太阳坐标，我们已经有radio_hpc
+            px_f, py_f = aia_cutout_map.wcs.world_to_pixel(radio_hpc)
+        else:
+            # 对于赤经赤纬坐标，使用现有的radio_hpc
+            px_f, py_f = aia_cutout_map.wcs.world_to_pixel(radio_hpc)
+        
         px_f = np.asarray(px_f, dtype=np.float64)
 
         # 添加详细的调试信息
         if cfg.debug_mode:
             # 获取角秒坐标
-            tx = radio_hpc.Tx.arcsec
-            ty = radio_hpc.Ty.arcsec
+            if not cfg.use_radec_maps:
+                tx = v_ra  # 对于太阳坐标，v_ra就是Tx
+                ty = v_dec  # 对于太阳坐标，v_dec就是Ty
+            else:
+                tx = radio_hpc.Tx.arcsec
+                ty = radio_hpc.Ty.arcsec
+            
             fin_h = np.isfinite(tx) & np.isfinite(ty)
             if fin_h.any():
-                print(f"    [坐标转换] 射电HPC坐标: Tx [{tx[fin_h].min():.1f}, "
-                      f"{tx[fin_h].max():.1f}] arcsec, Ty [{ty[fin_h].min():.1f}, "
-                      f"{ty[fin_h].max():.1f}] arcsec")
+                if not cfg.use_radec_maps:
+                    print(f"    [坐标转换] 射电太阳坐标: Tx [{tx[fin_h].min():.1f}, "
+                          f"{tx[fin_h].max():.1f}]角秒, Ty [{ty[fin_h].min():.1f}, "
+                          f"{ty[fin_h].max():.1f}]角秒")
+                else:
+                    print(f"    [坐标转换] 射电HPC坐标: Tx [{tx[fin_h].min():.1f}, "
+                          f"{tx[fin_h].max():.1f}]角秒, Ty [{ty[fin_h].min():.1f}, "
+                          f"{ty[fin_h].max():.1f}]角秒")
                 
                 # 获取AIA视野范围
                 bl = aia_cutout_map.bottom_left_coord
                 tr = aia_cutout_map.top_right_coord
                 print(f"    [坐标转换] AIA视野范围: Tx [{bl.Tx.arcsec:.1f}, "
                       f"{tr.Tx.arcsec:.1f}], Ty [{bl.Ty.arcsec:.1f}, "
-                      f"{tr.Ty.arcsec:.1f}] arcsec")
+                      f"{tr.Ty.arcsec:.1f}]角秒")
                 
                 # 计算有多少像素在AIA视野内
                 in_aia_view = ((tx[fin_h] >= bl.Tx.arcsec) & (tx[fin_h] <= tr.Tx.arcsec) &
@@ -808,18 +929,22 @@ def reproject_radio_forward_paste(
         if n_in == 0:
             # 诊断信息
             if cfg.debug_mode:
-                tx = radio_hpc.Tx.arcsec
-                ty = radio_hpc.Ty.arcsec
+                if not cfg.use_radec_maps:
+                    tx = v_ra
+                    ty = v_dec
+                else:
+                    tx = radio_hpc.Tx.arcsec
+                    ty = radio_hpc.Ty.arcsec
                 fin_h = np.isfinite(tx) & np.isfinite(ty)
                 if fin_h.any():
                     print(f"    [诊断] 射电 Tx [{tx[fin_h].min():.1f}, "
-                          f"{tx[fin_h].max():.1f}] arcsec  "
-                          f"Ty [{ty[fin_h].min():.1f}, {ty[fin_h].max():.1f}] arcsec")
+                          f"{tx[fin_h].max():.1f}]角秒  "
+                          f"Ty [{ty[fin_h].min():.1f}, {ty[fin_h].max():.1f}]角秒")
                     bl = aia_cutout_map.bottom_left_coord
                     tr = aia_cutout_map.top_right_coord
                     print(f"    [诊断] AIA视野 Tx [{bl.Tx.arcsec:.1f}, "
                           f"{tr.Tx.arcsec:.1f}]  Ty [{bl.Ty.arcsec:.1f}, "
-                          f"{tr.Ty.arcsec:.1f}] arcsec")
+                          f"{tr.Ty.arcsec:.1f}]角秒")
             return None
 
         b_px   = px_i[in_bounds]
