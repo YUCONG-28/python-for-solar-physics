@@ -223,6 +223,21 @@ def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
                 except Exception:
                     pass
     
+    # 特殊处理：17位数字格式（YYYYMMDDHHMMSSmmm）
+    if len(date_str) == 17 and date_str.isdigit():
+        try:
+            year = int(date_str[0:4])
+            month = int(date_str[4:6])
+            day = int(date_str[6:8])
+            hour = int(date_str[8:10])
+            minute = int(date_str[10:12])
+            second = int(date_str[12:14])
+            millisecond = int(date_str[14:17])
+            microsecond = millisecond * 1000
+            return datetime(year, month, day, hour, minute, second, microsecond)
+        except Exception:
+            pass
+    
     # 处理小数点格式
     if '.' in date_str:
         integer_part, decimal_part = date_str.split('.')
@@ -265,8 +280,16 @@ def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
                 microsecond = int(ms_str)
             elif len(date_str) > 14:
                 # 处理没有小数点的小数部分
-                ms_str = date_str[14:].ljust(6, '0')[:6]
-                microsecond = int(ms_str)
+                remaining = date_str[14:]
+                if remaining.isdigit():
+                    # 如果是3位数字，认为是毫秒
+                    if len(remaining) == 3:
+                        millisecond = int(remaining)
+                        microsecond = millisecond * 1000
+                    else:
+                        # 否则直接填充到6位
+                        ms_str = remaining.ljust(6, '0')[:6]
+                        microsecond = int(ms_str)
             
             return datetime(year, month, day, hour, minute, second, microsecond)
         except Exception:
@@ -934,7 +957,7 @@ def process_aia_group(aia_file:    str,
 def parse_radio_time_from_header(header: fits.Header) -> Optional[datetime]:
     """从FITS头中解析射电观测时间（支持多种关键字和格式）。"""
     # 尝试多个可能的时间关键字
-    time_keys = ['DATE-OBS', 'DATE_OBS', 'DATEOBS', 'DATE-BEG', 'DATE_BEG', 'DATEBEG', 'TIME-OBS']
+    time_keys = ['DATE-OBS', 'DATE_OBS', 'DATEOBS', 'DATE-BEG', 'DATE_BEG', 'DATEBEG', 'TIME-OBS', 'DATE']
     
     for key in time_keys:
         if key in header:
@@ -964,6 +987,9 @@ def parse_radio_time_from_header(header: fits.Header) -> Optional[datetime]:
             parsed_time = _parse_flexible_datetime(date_str)
             if parsed_time:
                 return parsed_time
+            
+            # 调试：打印无法解析的原始字符串
+            print(f"    调试: 无法解析时间字符串: '{date_str}' (长度: {len(date_str)})")
     
     # 如果所有方法都失败，返回None
     return None
@@ -989,8 +1015,7 @@ def _read_one_radio_header(rf: str,
         else:
             # 调试信息：显示无法解析的时间
             date_obs = str(hdr.get('DATE-OBS', '')).strip()
-            if cfg.debug_mode:
-                print(f"    警告: 无法解析射电文件时间: {date_obs}, 文件: {os.path.basename(rf)}")
+            print(f"    警告: 无法解析射电文件时间: '{date_obs}' (长度: {len(date_obs)}), 文件: {os.path.basename(rf)}")
             
             # 尝试从文件名中提取时间
             basename = os.path.basename(rf)
@@ -1007,6 +1032,7 @@ def _read_one_radio_header(rf: str,
                 time_str = f"{date_part}_{time_part}_{ms_part}"
                 r_time = _parse_flexible_datetime(time_str)
                 if r_time:
+                    print(f"    从文件名解析时间成功: {time_str} -> {r_time}")
                     return {'path': rf, 'band': band_found, 'pol': pol, 'time': r_time}
             
             # 模式2: 年月日时分秒 (如 20250124044317)
@@ -1015,6 +1041,7 @@ def _read_one_radio_header(rf: str,
                 time_str = time_match2.group(1)
                 r_time = _parse_flexible_datetime(time_str)
                 if r_time:
+                    print(f"    从文件名解析时间成功: {time_str} -> {r_time}")
                     return {'path': rf, 'band': band_found, 'pol': pol, 'time': r_time}
             
             # 模式3: 年月日_时分秒 (如 20250124_044317)
@@ -1025,11 +1052,11 @@ def _read_one_radio_header(rf: str,
                 time_str = f"{date_part}_{time_part}"
                 r_time = _parse_flexible_datetime(time_str)
                 if r_time:
+                    print(f"    从文件名解析时间成功: {time_str} -> {r_time}")
                     return {'path': rf, 'band': band_found, 'pol': pol, 'time': r_time}
             
     except Exception as e:
-        if cfg.debug_mode:
-            print(f"    读取射电文件头出错: {os.path.basename(rf)}, 错误: {str(e)[:100]}")
+        print(f"    读取射电文件头出错: {os.path.basename(rf)}, 错误: {str(e)[:100]}")
     
     return None
 
