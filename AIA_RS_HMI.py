@@ -507,28 +507,22 @@ def get_solar_position(obs_time: datetime) -> Tuple[float, float]:
         (sun_ra, sun_dec): 太阳中心的赤经赤纬（度）
     """
     try:
+        # 移除原来的导入，直接使用astropy.coordinates.get_sun
         from astropy.coordinates import get_sun
         from astropy.time import Time
         
-        # 将datetime转换为astropy Time对象
-        astropy_time = Time(obs_time)
+        # 将datetime转换为astropy Time对象，指定时间尺度
+        astropy_time = Time(obs_time, format='datetime', scale='utc')
         
         # 计算太阳位置
         sun_coord = get_sun(astropy_time)
         
         return sun_coord.ra.deg, sun_coord.dec.deg
-    except ImportError:
-        # 如果astropy的get_sun不可用，尝试从sunpy导入
-        try:
-            from sunpy.coordinates import get_sun
-            from astropy.coordinates import SkyCoord
-            
-            # 计算太阳位置
-            sun_coord = get_sun(obs_time)
-            return sun_coord.ra.deg, sun_coord.dec.deg
-        except Exception:
-            # 如果都失败，返回近似值（太阳大致在春分点附近）
-            return 0.0, 0.0
+    except Exception as e:
+        # 如果失败，返回近似值（太阳大致在春分点附近）
+        # 注意：这里不能直接访问cfg，因为函数签名中没有cfg参数
+        # 我们将在调用处通过全局cfg或修改函数签名来处理
+        return 0.0, 0.0
 
 # ============================================================
 #  坐标预处理：弧度判断 + 绝对/相对坐标判断 + CRVAL叠加
@@ -587,33 +581,28 @@ def _preprocess_radec_maps(ra_map: np.ndarray,
     ra_range = ra_fin.max() - ra_fin.min()
     dec_range = dec_fin.max() - dec_fin.min()
     
-    # 对于太阳射电，相对坐标通常范围在±10度内
-    is_relative = ra_range < 10.0 and dec_range < 10.0
+    # 更宽松的判断条件：如果坐标范围在±20度内，且坐标中值接近0，则为相对坐标
+    ra_abs_max = max(abs(ra_fin.min()), abs(ra_fin.max()))
+    dec_abs_max = max(abs(dec_fin.min()), abs(dec_fin.max()))
+    
+    # 判断条件：
+    # 1. 坐标范围小于20度
+    # 2. 坐标绝对值最大值小于20度
+    # 3. 坐标中值接近0（绝对值小于1度）
+    is_relative = (ra_range < 20.0 and dec_range < 20.0 and 
+                   ra_abs_max < 20.0 and dec_abs_max < 20.0 and
+                   abs(ra_median) < 1.0 and abs(dec_median) < 1.0)
 
     if cfg.debug_mode:
         print(f"    坐标中值: RA={ra_median:.4f}°  Dec={dec_median:.4f}°")
         print(f"    坐标范围: RA范围={ra_range:.4f}°, Dec范围={dec_range:.4f}°")
         print(f"    坐标类型: {'【相对坐标】' if is_relative else '【绝对坐标】'}")
         
-        # 检查坐标类型并给出更具体的诊断信息
-        # 检查是否是绝对坐标（RA在0-360度范围内）
-        is_ra_absolute = (ra_fin.min() >= 0) and (ra_fin.max() <= 360.0)
-        is_dec_absolute = (dec_fin.min() >= -90) and (dec_fin.max() <= 90)
-        
-        print(f"    坐标类型诊断:")
-        print(f"      RA绝对坐标判断: {is_ra_absolute} (范围: {ra_fin.min():.2f} to {ra_fin.max():.2f})")
-        print(f"      Dec绝对坐标判断: {is_dec_absolute} (范围: {dec_fin.min():.2f} to {dec_fin.max():.2f})")
-        print(f"      坐标中值: RA={ra_median:.6f}°, Dec={dec_median:.6f}°")
-        
         # 检查相位中心CRVAL值
         if radio_header is not None:
             crval1 = radio_header.get('CRVAL1', 0.0)
             crval2 = radio_header.get('CRVAL2', 0.0)
-            print(f"      相位中心: CRVAL1={crval1:.6f}°, CRVAL2={crval2:.6f}°")
-            
-            # 如果CRVAL不为0但坐标看起来是相对坐标，建议叠加
-            if abs(crval1) > 1e-6 or abs(crval2) > 1e-6:
-                print(f"      提示: CRVAL非零，坐标可能需要叠加相位中心")
+            print(f"    相位中心: CRVAL1={crval1:.6f}°, CRVAL2={crval2:.6f}°")
 
     # 注意：我们不再自动叠加CRVAL，因为相位中心为0
     # 相对坐标将在后续步骤中加上太阳中心位置
@@ -682,7 +671,7 @@ def reproject_radio_forward_paste(
                   f"RA [{v_ra.min():.4f}, {v_ra.max():.4f}]  "
                   f"Dec [{v_dec.min():.4f}, {v_dec.max():.4f}]")
 
-        # ── 关键修复：使用正确的坐标转换方法 ──────────────────────────────
+        # ── 关键修复：简化坐标转换方法 ──────────────────────────────
         # 对于相对坐标，我们直接创建太阳日心坐标
         # 假设坐标图已经是太阳中心的相对坐标（单位：度）
         
@@ -711,56 +700,45 @@ def reproject_radio_forward_paste(
                 from datetime import datetime
                 radio_time = datetime.now()  # 最后手段
         
-        # ── 计算太阳中心位置（关键修复）────────────────────────────────────
-        # 我们需要知道射电观测时刻太阳中心在天球上的位置
-        try:
-            # 首先获取射电观测时刻的太阳位置（地心坐标）
-            from astropy.coordinates import get_sun
-            sun_coord = get_sun(radio_time)
-            
-            # 计算太阳中心的ICRS坐标
-            sun_ra = sun_coord.ra.deg
-            sun_dec = sun_coord.dec.deg
-            
-            # 相对坐标加上太阳中心位置得到绝对坐标
-            abs_ra = v_ra + sun_ra
-            abs_dec = v_dec + sun_dec
-            
-            if cfg.debug_mode:
-                print(f"    [太阳位置] 射电时间: {radio_time.strftime('%Y-%m-%d %H:%M:%S')}")
-                print(f"    [太阳位置] 太阳中心: RA={sun_ra:.6f}°, Dec={sun_dec:.6f}°")
-                print(f"    [坐标转换] 相对坐标范围: RA [{v_ra.min():.4f}, {v_ra.max():.4f}], "
-                      f"Dec [{v_dec.min():.4f}, {v_dec.max():.4f}]")
-                print(f"    [坐标转换] 绝对坐标范围: RA [{abs_ra.min():.4f}, {abs_ra.max():.4f}], "
-                      f"Dec [{abs_dec.min():.4f}, {abs_dec.max():.4f}]")
-                
-        except Exception as e:
-            if cfg.debug_mode:
-                print(f"    [警告] 计算太阳位置失败: {e}")
-            # 如果计算失败，使用近似值
-            # 对于太阳观测，太阳中心大致位于RA=0°, Dec=0°附近
-            abs_ra = v_ra
-            abs_dec = v_dec
+        if cfg.debug_mode:
+            print(f"    [时间信息] 射电观测时间: {radio_time}")
         
-        # 创建ICRS坐标（绝对坐标，需要距离信息）
-        # 对于太阳观测，距离约为1AU
-        distance = 1.0 * u.AU
-        radio_icrs = SkyCoord(ra=abs_ra * u.deg, dec=abs_dec * u.deg, 
-                              distance=distance, obstime=radio_time, frame='icrs')
-
-        # 转换到AIA的坐标系
-        # 关键：使用AIA地图的观测者位置和时间
+        # 创建相对坐标的ICRS坐标（相对坐标直接使用）
+        # 注意：相对坐标已经是相对于太阳中心的偏移，单位是度
+        radio_icrs = SkyCoord(ra=v_ra * u.deg, dec=v_dec * u.deg, 
+                              obstime=radio_time, frame='icrs')
+        
+        # 获取AIA坐标系
         aia_frame = aia_cutout_map.coordinate_frame
         
-        # 应用太阳自转修正（如果需要）
+        # 应用太阳自转修正
         from sunpy.coordinates import propagate_with_solar_surface
         with propagate_with_solar_surface():
+            # 转换到AIA坐标系
             radio_hpc = radio_icrs.transform_to(aia_frame)
 
         # 获取像素坐标
         px_f, py_f = aia_cutout_map.wcs.world_to_pixel(radio_hpc)
         px_f = np.asarray(px_f, dtype=np.float64)
         py_f = np.asarray(py_f, dtype=np.float64)
+
+        # 添加调试信息
+        if cfg.debug_mode:
+            # 获取角秒坐标
+            tx = radio_hpc.Tx.arcsec
+            ty = radio_hpc.Ty.arcsec
+            fin_h = np.isfinite(tx) & np.isfinite(ty)
+            if fin_h.any():
+                print(f"    [坐标转换] 射电HPC坐标: Tx [{tx[fin_h].min():.1f}, "
+                      f"{tx[fin_h].max():.1f}] arcsec, Ty [{ty[fin_h].min():.1f}, "
+                      f"{ty[fin_h].max():.1f}] arcsec")
+                
+                # 获取AIA视野范围
+                bl = aia_cutout_map.bottom_left_coord
+                tr = aia_cutout_map.top_right_coord
+                print(f"    [坐标转换] AIA视野范围: Tx [{bl.Tx.arcsec:.1f}, "
+                      f"{tr.Tx.arcsec:.1f}], Ty [{bl.Ty.arcsec:.1f}, "
+                      f"{tr.Ty.arcsec:.1f}] arcsec")
 
         # ── 像素坐标有效性 & 边界过滤 ────────────────────────────────────
         fin_pix = np.isfinite(px_f) & np.isfinite(py_f)
@@ -1450,11 +1428,26 @@ def main():
         print("\n测试太阳位置计算:")
         test_time = datetime(2025, 1, 24, 4, 43, 17)
         try:
-            sun_ra, sun_dec = get_solar_position(test_time)
+            from astropy.coordinates import get_sun
+            from astropy.time import Time
+            
+            # 正确的时间转换
+            astropy_time = Time(test_time, format='datetime', scale='utc')
+            sun_coord = get_sun(astropy_time)
+            sun_ra = sun_coord.ra.deg
+            sun_dec = sun_coord.dec.deg
+            
             print(f"  测试时间: {test_time}")
             print(f"  太阳位置: RA={sun_ra:.6f}°, Dec={sun_dec:.6f}°")
+            
+            # 同时测试get_solar_position函数
+            sun_ra2, sun_dec2 = get_solar_position(test_time)
+            print(f"  通过get_solar_position函数:")
+            print(f"    太阳位置: RA={sun_ra2:.6f}°, Dec={sun_dec2:.6f}°")
         except Exception as e:
             print(f"  太阳位置计算失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     # 颜色缓存整个运行只构建一次
     color_cache = _build_band_color_cache(cfg)
