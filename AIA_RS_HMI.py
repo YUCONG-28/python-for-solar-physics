@@ -225,7 +225,7 @@ def parse_hmi_time_from_filename(filename: str) -> Optional[datetime]:
 # ============================================================
 def extract_radio_2d_data(fits_path: str, use_float32: bool = True, cfg: Optional[Config] = None) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray], fits.Header, Optional[WCS]]:
     """
-    优化版：简化坐标查找逻辑，提高鲁棒性
+    优化版：修复坐标图查找逻辑，正确在父目录查找
     """
     try:
         with fits.open(fits_path) as hdu_data:
@@ -245,8 +245,9 @@ def extract_radio_2d_data(fits_path: str, use_float32: bool = True, cfg: Optiona
             if freq_match:
                 freq_prefix = freq_match.group(0)  # 如 "149MHz"
             else:
-                # 使用目录名作为频率
-                freq_prefix = os.path.basename(base_dir)
+                # 使用目录名作为频率（父目录名，因为数据文件在LL子目录中）
+                parent_dir = os.path.dirname(base_dir)
+                freq_prefix = os.path.basename(parent_dir)
                 if not re.search(r'\d+MHz', freq_prefix, re.IGNORECASE):
                     freq_prefix = None
             
@@ -258,11 +259,47 @@ def extract_radio_2d_data(fits_path: str, use_float32: bool = True, cfg: Optiona
                 if cfg.debug_mode:
                     print(f"    强制使用WCS投影，跳过坐标图查找")
             elif freq_prefix:
-                # 简化的坐标文件查找逻辑
-                if cfg and cfg.debug_mode:
-                    print(f"    查找频率前缀: {freq_prefix}")
+                # 在父目录查找坐标图文件（数据文件在LL目录，坐标图在频率目录）
+                parent_dir = os.path.dirname(base_dir)  # 上一级目录，即频率目录
                 
-                # 尝试在当前目录查找
+                if cfg and cfg.debug_mode:
+                    print(f"    查找频率前缀: {freq_prefix}，在目录: {parent_dir}")
+                
+                # 尝试在父目录查找
+                if os.path.isdir(parent_dir):
+                    for file in os.listdir(parent_dir):
+                        if freq_prefix in file:
+                            file_path = os.path.join(parent_dir, file)
+                            try:
+                                if 'RightAscension' in file or 'RA' in file:
+                                    with fits.open(file_path) as hdu_ra:
+                                        ra_map = hdu_ra[0].data
+                                        while ra_map.ndim > 2:
+                                            ra_map = ra_map[0]
+                                        ra_map = np.squeeze(ra_map)
+                                        if use_float32:
+                                            ra_map = ra_map.astype(np.float32)
+                                        if cfg and cfg.debug_mode:
+                                            print(f"    成功加载赤经坐标图: {file}")
+                                elif 'Declination' in file or 'Dec' in file:
+                                    with fits.open(file_path) as hdu_dec:
+                                        dec_map = hdu_dec[0].data
+                                        while dec_map.ndim > 2:
+                                            dec_map = dec_map[0]
+                                        dec_map = np.squeeze(dec_map)
+                                        if use_float32:
+                                            dec_map = dec_map.astype(np.float32)
+                                        if cfg and cfg.debug_mode:
+                                            print(f"    成功加载赤纬坐标图: {file}")
+                            except Exception as e:
+                                if cfg and cfg.debug_mode:
+                                    print(f"    警告: 读取坐标图失败 {file}: {e}")
+            
+            # 如果还未找到，尝试在当前目录查找（兼容旧结构）
+            if (ra_map is None or dec_map is None) and freq_prefix:
+                if cfg and cfg.debug_mode:
+                    print(f"    在父目录未找到坐标图，尝试在当前目录查找: {base_dir}")
+                
                 for file in os.listdir(base_dir):
                     if freq_prefix in file:
                         file_path = os.path.join(base_dir, file)
@@ -476,7 +513,7 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
                                            height_rsun: float,
                                            cfg: Config) -> Optional[np.ndarray]:
     """
-    优化版：使用更高效的重投影方法
+    优化版：修复重投影方法，提高效率和成功率
     """
     try:
         if ra_map is None or dec_map is None:
@@ -484,11 +521,17 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
                 print("    缺少坐标查找表，无法进行重投影")
             return None
         
-        # 快速验证坐标图
+        # 验证坐标图形状
         if ra_map.shape != radio_data.shape or dec_map.shape != radio_data.shape:
             if cfg.debug_mode:
-                print(f"    坐标图形状不匹配，跳过重投影")
-            return None
+                print(f"    坐标图形状不匹配: 数据{radio_data.shape}, RA{ra_map.shape}, Dec{dec_map.shape}")
+            # 尝试调整维度
+            if ra_map.ndim == 3 and ra_map.shape[0] == 1:
+                ra_map = ra_map[0, :, :]
+                dec_map = dec_map[0, :, :]
+            if ra_map.shape != radio_data.shape:
+                print(f"    调整后形状仍不匹配，跳过重投影")
+                return None
         
         # 检查坐标值范围是否合理
         ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
@@ -496,6 +539,17 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         
         if cfg.debug_mode:
             print(f"    坐标范围: RA [{ra_min:.2f}, {ra_max:.2f}], Dec [{dec_min:.2f}, {dec_max:.2f}]")
+        
+        # 检查坐标单位：可能是度或弧度
+        if dec_max > 90 or dec_min < -90:
+            # 可能是弧度，转换为度
+            print(f"    赤纬坐标可能为弧度，转换为度...")
+            ra_map = np.rad2deg(ra_map)
+            dec_map = np.rad2deg(dec_map)
+            ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
+            dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
+            if cfg.debug_mode:
+                print(f"    转换后坐标范围: RA [{ra_min:.2f}, {ra_max:.2f}], Dec [{dec_min:.2f}, {dec_max:.2f}]")
         
         # 标准化赤经到0-360度
         if ra_max > 360 or ra_min < 0:
@@ -532,17 +586,45 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         target_ra = target_eq_coords.ra.deg.reshape(ny, nx)
         target_dec = target_eq_coords.dec.deg.reshape(ny, nx)
         
-        # 使用更高效的插值方法 - 分块处理避免内存问题
-        chunk_size = 256  # 分块大小
+        # 检查目标坐标范围是否与源坐标范围重叠
+        target_ra_min, target_ra_max = np.nanmin(target_ra), np.nanmax(target_ra)
+        target_dec_min, target_dec_max = np.nanmin(target_dec), np.nanmax(target_dec)
+        
+        if cfg.debug_mode:
+            print(f"    目标坐标范围: RA [{target_ra_min:.2f}, {target_ra_max:.2f}], Dec [{target_dec_min:.2f}, {target_dec_max:.2f}]")
+        
+        # 检查是否有重叠
+        ra_overlap = not (target_ra_max < np.nanmin(valid_ra) or target_ra_min > np.nanmax(valid_ra))
+        dec_overlap = not (target_dec_max < np.nanmin(valid_dec) or target_dec_min > np.nanmax(valid_dec))
+        
+        if not (ra_overlap and dec_overlap):
+            if cfg.debug_mode:
+                print(f"    警告: 源坐标与目标坐标无重叠区域!")
+            return None
+        
+        # 使用更高效的插值方法 - 使用KD树进行最近邻插值
+        from scipy.spatial import cKDTree
+        import scipy.interpolate as interp
+        
+        # 为有效点构建KD树（使用降采样以提高效率）
+        max_points = 10000
+        if len(valid_ra) > max_points:
+            # 随机降采样
+            indices = np.random.choice(len(valid_ra), max_points, replace=False)
+            valid_ra_sampled = valid_ra[indices]
+            valid_dec_sampled = valid_dec[indices]
+            valid_data_sampled = valid_data[indices]
+        else:
+            valid_ra_sampled = valid_ra
+            valid_dec_sampled = valid_dec
+            valid_data_sampled = valid_data
+        
+        tree = cKDTree(np.column_stack([valid_ra_sampled, valid_dec_sampled]))
+        
+        # 分块处理目标网格
+        chunk_size = 128  # 更小的分块大小，减少内存使用
         reprojected = np.full((ny, nx), np.nan, dtype=np.float32)
         
-        # 使用KD树进行最近邻插值
-        from scipy.spatial import cKDTree
-        
-        # 为有效点构建KD树
-        tree = cKDTree(np.column_stack([valid_ra, valid_dec]))
-        
-        # 分块处理
         for i in range(0, nx, chunk_size):
             for j in range(0, ny, chunk_size):
                 i_end = min(i + chunk_size, nx)
@@ -555,51 +637,38 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
                 distances, indices = tree.query(
                     np.column_stack([chunk_target_ra.ravel(), 
                                      chunk_target_dec.ravel()]),
-                    k=1, distance_upper_bound=0.1  # 最大搜索半径0.1度
+                    k=1, distance_upper_bound=0.5  # 增大搜索半径到0.5度
                 )
                 
                 # 填充结果
                 valid_query = distances < np.inf
                 chunk_flat = np.full(chunk_target_ra.size, np.nan, dtype=np.float32)
-                chunk_flat[valid_query] = valid_data[indices[valid_query]]
+                chunk_flat[valid_query] = valid_data_sampled[indices[valid_query]]
                 
                 reprojected[j:j_end, i:i_end] = chunk_flat.reshape(
                     j_end - j, i_end - i)
         
-        # 如果最近邻插值效果不好，尝试线性插值（但更慢）
+        # 如果最近邻插值效果不好，尝试线性插值
         valid_count = np.sum(~np.isnan(reprojected))
-        if valid_count < target_shape[0] * target_shape[1] * 0.1:  # 少于10%有效像素
+        total_pixels = reprojected.size
+        valid_ratio = valid_count / total_pixels
+        
+        if valid_ratio < 0.1:  # 少于10%有效像素
             if cfg.debug_mode:
-                print(f"    最近邻插值效果不佳 ({valid_count} 有效像素)，尝试线性插值...")
+                print(f"    最近邻插值效果不佳 ({valid_ratio*100:.1f}% 有效像素)，尝试线性插值...")
             
-            # 使用线性插值，但先对坐标图进行降采样以提高速度
-            from scipy.interpolate import LinearNDInterpolator
-            
-            # 对有效点进行降采样（最多保留10000个点）
-            if len(valid_ra) > 10000:
-                step = len(valid_ra) // 10000
-                sample_idx = np.arange(0, len(valid_ra), step)
-                valid_ra_sampled = valid_ra[sample_idx]
-                valid_dec_sampled = valid_dec[sample_idx]
-                valid_data_sampled = valid_data[sample_idx]
-            else:
-                valid_ra_sampled = valid_ra
-                valid_dec_sampled = valid_dec
-                valid_data_sampled = valid_data
-            
-            # 创建插值器
-            interp = LinearNDInterpolator(
-                np.column_stack([valid_ra_sampled, valid_dec_sampled]),
-                valid_data_sampled,
+            # 使用线性插值（更慢但更准确）
+            linear_interp = interp.LinearNDInterpolator(
+                np.column_stack([valid_ra, valid_dec]),
+                valid_data,
                 fill_value=np.nan
             )
             
-            # 重新插值
-            reprojected = interp(target_ra, target_dec)
+            # 重新插值整个图像
+            reprojected = linear_interp(target_ra, target_dec)
         
         # 验证结果
         valid_final = np.sum(~np.isnan(reprojected))
-        total_pixels = reprojected.size
         
         if valid_final == 0:
             if cfg.debug_mode:
