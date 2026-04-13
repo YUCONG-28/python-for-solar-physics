@@ -1428,9 +1428,86 @@ def _worker_init():
     warnings.filterwarnings('ignore')
 
 # ============================================================
+def diagnose_coordinate_maps(cfg: Config):
+    """
+    诊断坐标图查找问题，帮助调试
+    """
+    print("\n" + "="*60)
+    print("开始诊断坐标图查找问题...")
+    
+    # 扫描几个射电数据文件
+    pol = cfg.polarization_mode
+    files_in_pol_dir = glob.glob(os.path.join(cfg.radio_base_dir, "**", pol, "*.fits"),
+                                  recursive=True)
+    
+    test_files = files_in_pol_dir[:3]  # 只测试前3个文件
+    
+    for test_file in test_files:
+        print(f"\n诊断文件: {test_file}")
+        base_dir = os.path.dirname(test_file)
+        parent_dir = os.path.dirname(base_dir)
+        base_name = os.path.basename(test_file)
+        
+        print(f"  数据文件目录: {base_dir}")
+        print(f"  父目录: {parent_dir}")
+        print(f"  文件名: {base_name}")
+        
+        # 提取频率
+        freq_match = re.search(r'(\d+)MHz', base_name, re.IGNORECASE)
+        if freq_match:
+            freq_prefix = freq_match.group(0)
+        else:
+            freq_prefix = os.path.basename(parent_dir)
+        
+        print(f"  频率前缀: {freq_prefix}")
+        
+        # 查找坐标图文件
+        ra_found = False
+        dec_found = False
+        
+        # 在父目录查找
+        if os.path.isdir(parent_dir):
+            print(f"  在父目录查找坐标图: {parent_dir}")
+            for file in os.listdir(parent_dir):
+                if freq_prefix in file:
+                    print(f"    找到匹配文件: {file}")
+                    if 'RightAscension' in file or 'RA' in file:
+                        ra_found = True
+                        print(f"    -> 赤经坐标图: {file}")
+                    elif 'Declination' in file or 'Dec' in file:
+                        dec_found = True
+                        print(f"    -> 赤纬坐标图: {file}")
+        
+        # 在当前目录查找
+        if not (ra_found and dec_found):
+            print(f"  在当前目录查找坐标图: {base_dir}")
+            for file in os.listdir(base_dir):
+                if freq_prefix in file:
+                    print(f"    找到匹配文件: {file}")
+                    if 'RightAscension' in file or 'RA' in file:
+                        ra_found = True
+                        print(f"    -> 赤经坐标图: {file}")
+                    elif 'Declination' in file or 'Dec' in file:
+                        dec_found = True
+                        print(f"    -> 赤纬坐标图: {file}")
+        
+        if ra_found and dec_found:
+            print(f"  ✓ 找到坐标图文件")
+        else:
+            print(f"  ✗ 未找到坐标图文件")
+    
+    print("\n" + "="*60)
+
 def main():
     cfg = Config()
-
+    
+    # 启用调试模式
+    cfg.debug_mode = True
+    cfg.quick_test = True
+    
+    # 诊断坐标图查找问题
+    diagnose_coordinate_maps(cfg)
+    
     # 颜色缓存整个运行只构建一次
     color_cache = _build_band_color_cache(cfg)
 
