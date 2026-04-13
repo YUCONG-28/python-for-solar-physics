@@ -654,7 +654,10 @@ def reproject_radio_forward_paste(
                   f"Dec [{v_dec.min():.4f}, {v_dec.max():.4f}]")
 
         # ── ICRS → AIA Helioprojective → AIA 像素坐标 ────────────────────
-        radio_icrs = SkyCoord(ra=v_ra * u.deg, dec=v_dec * u.deg, frame='icrs')
+        # 为太阳观测添加距离信息（1 AU）
+        distance = 1 * u.AU  # 天文单位
+        radio_icrs = SkyCoord(ra=v_ra * u.deg, dec=v_dec * u.deg, 
+                              distance=distance, frame='icrs')
 
         # transform_to 使用 AIA Map 的观测者信息（日期、DSUN、B0 等）
         aia_frame = aia_cutout_map.coordinate_frame
