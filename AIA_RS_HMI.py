@@ -214,90 +214,113 @@ def parse_hmi_time_from_filename(filename: str) -> Optional[datetime]:
 # ============================================================
 #  射电数据工具
 # ============================================================
-def extract_radio_2d_data(fits_path: str, use_float32: bool = True) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray], fits.Header]:
+def extract_radio_2d_data(fits_path: str, use_float32: bool = True) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray], fits.Header, Optional[WCS]]:
     """
-    从 FITS HDU 中提取二维射电图像数据和坐标查找表。
-    现在支持两种模式：
-    1. 标准WCS：从单个FITS文件中提取数据和头文件
-    2. 坐标查找表：从三个文件中分别提取数据、赤经图、赤纬图
-    
-    ★ 优化3：use_float32=True 时使用 float32，内存减半；
-    仅在 contour/smooth 前转 float64，计算精度不受影响。
+    增强版：从 FITS HDU 中提取二维射电图像数据和坐标查找表。
+    自动查找同目录下的坐标图文件。
     """
     try:
-        # 首先尝试读取数据文件
+        # 首先读取数据文件
         with fits.open(fits_path) as hdu_data:
             data = hdu_data[0].data
             while data.ndim > 2:
                 data = data[0]
             data = np.squeeze(data)
+            header = hdu_data[0].header.copy()
             
-            # 检查是否是坐标查找表格式
-            if 'RightAscension' in fits_path or 'Declination' in fits_path:
-                # 如果是坐标图文件，直接返回
-                dtype = np.float32 if use_float32 else np.float64
-                return data.astype(dtype), None, None, hdu_data[0].header.copy()
+            # 确定坐标图文件的基本名称
+            base_dir = os.path.dirname(fits_path)
+            base_name = os.path.basename(fits_path)
+            
+            # 移除可能的极化后缀和扩展名，获取频率前缀
+            # 例如: "149MHz_20250124_044700_LL.fits" -> "149MHz"
+            name_parts = base_name.split('_')
+            if len(name_parts) > 0:
+                freq_prefix = name_parts[0]  # 如 "149MHz"
             else:
-                # 标准FITS文件，尝试读取对应的坐标图
-                header = hdu_data[0].header.copy()
-                
-                # 尝试从同一目录读取坐标图
-                base_dir = os.path.dirname(fits_path)
-                base_name = os.path.basename(fits_path).split('.')[0]
-                
-                # 查找赤经文件
-                ra_patterns = [
-                    os.path.join(base_dir, f"{base_name}_RightAscension*.fits"),
-                    os.path.join(base_dir, f"*RightAscension*.fits"),
-                    os.path.join(base_dir, "..", f"*RightAscension*.fits")
-                ]
-                
-                ra_map = None
-                dec_map = None
-                
-                for pattern in ra_patterns:
-                    ra_files = glob.glob(pattern)
-                    if ra_files:
-                        try:
-                            with fits.open(ra_files[0]) as hdu_ra:
-                                ra_map = hdu_ra[0].data
-                                while ra_map.ndim > 2:
-                                    ra_map = ra_map[0]
-                                ra_map = np.squeeze(ra_map)
-                                if use_float32:
-                                    ra_map = ra_map.astype(np.float32)
-                                break
-                        except:
-                            continue
-                
-                # 查找赤纬文件
-                dec_patterns = [
-                    os.path.join(base_dir, f"{base_name}_Declination*.fits"),
-                    os.path.join(base_dir, f"*Declination*.fits"),
-                    os.path.join(base_dir, "..", f"*Declination*.fits")
-                ]
-                
-                for pattern in dec_patterns:
-                    dec_files = glob.glob(pattern)
-                    if dec_files:
-                        try:
-                            with fits.open(dec_files[0]) as hdu_dec:
-                                dec_map = hdu_dec[0].data
-                                while dec_map.ndim > 2:
-                                    dec_map = dec_map[0]
-                                dec_map = np.squeeze(dec_map)
-                                if use_float32:
-                                    dec_map = dec_map.astype(np.float32)
-                                break
-                        except:
-                            continue
-                
-                dtype = np.float32 if use_float32 else np.float64
-                return data.astype(dtype), ra_map, dec_map, header
-                
+                freq_prefix = os.path.basename(base_dir)  # 使用目录名作为频率前缀
+            
+            # 查找坐标图文件
+            ra_pattern = os.path.join(base_dir, f"{freq_prefix}*RightAscension*.fits")
+            dec_pattern = os.path.join(base_dir, f"{freq_prefix}*Declination*.fits")
+            
+            ra_files = glob.glob(ra_pattern)
+            dec_files = glob.glob(dec_pattern)
+            
+            ra_map = None
+            dec_map = None
+            
+            # 读取赤经坐标图
+            if ra_files:
+                try:
+                    with fits.open(ra_files[0]) as hdu_ra:
+                        ra_map = hdu_ra[0].data
+                        while ra_map.ndim > 2:
+                            ra_map = ra_map[0]
+                        ra_map = np.squeeze(ra_map)
+                        if use_float32:
+                            ra_map = ra_map.astype(np.float32)
+                except Exception as e:
+                    print(f"    警告: 读取赤经坐标图失败: {e}")
+            else:
+                # 尝试在上一级目录查找
+                parent_dir = os.path.dirname(base_dir)
+                parent_ra_pattern = os.path.join(parent_dir, f"{freq_prefix}*RightAscension*.fits")
+                parent_ra_files = glob.glob(parent_ra_pattern)
+                if parent_ra_files:
+                    try:
+                        with fits.open(parent_ra_files[0]) as hdu_ra:
+                            ra_map = hdu_ra[0].data
+                            while ra_map.ndim > 2:
+                                ra_map = ra_map[0]
+                            ra_map = np.squeeze(ra_map)
+                            if use_float32:
+                                ra_map = ra_map.astype(np.float32)
+                    except Exception as e:
+                        print(f"    警告: 读取上级目录赤经坐标图失败: {e}")
+            
+            # 读取赤纬坐标图
+            if dec_files:
+                try:
+                    with fits.open(dec_files[0]) as hdu_dec:
+                        dec_map = hdu_dec[0].data
+                        while dec_map.ndim > 2:
+                            dec_map = dec_map[0]
+                        dec_map = np.squeeze(dec_map)
+                        if use_float32:
+                            dec_map = dec_map.astype(np.float32)
+                except Exception as e:
+                    print(f"    警告: 读取赤纬坐标图失败: {e}")
+            else:
+                # 尝试在上一级目录查找
+                parent_dir = os.path.dirname(base_dir)
+                parent_dec_pattern = os.path.join(parent_dir, f"{freq_prefix}*Declination*.fits")
+                parent_dec_files = glob.glob(parent_dec_pattern)
+                if parent_dec_files:
+                    try:
+                        with fits.open(parent_dec_files[0]) as hdu_dec:
+                            dec_map = hdu_dec[0].data
+                            while dec_map.ndim > 2:
+                                dec_map = dec_map[0]
+                            dec_map = np.squeeze(dec_map)
+                            if use_float32:
+                                dec_map = dec_map.astype(np.float32)
+                    except Exception as e:
+                        print(f"    警告: 读取上级目录赤纬坐标图失败: {e}")
+            
+            # 如果找不到坐标图，尝试从数据文件头构建WCS
+            radio_wcs_2d = None
+            if ra_map is None or dec_map is None:
+                radio_wcs_2d = build_radio_wcs_2d(header, None, {})
+            
+            dtype = np.float32 if use_float32 else np.float64
+            return data.astype(dtype), ra_map, dec_map, header, radio_wcs_2d
+            
     except Exception as e:
         print(f"读取FITS文件失败 {fits_path}: {e}")
-        return None, None, None, None
+        import traceback
+        traceback.print_exc()
+        return None, None, None, None, None
 
 def _get_header_val(header: fits.Header, keys: List[str], default):
     """模块级工具函数，替代 build_radio_wcs_2d 内的嵌套闭包。"""
@@ -467,17 +490,8 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
                                            height_rsun: float,
                                            cfg: Config) -> Optional[np.ndarray]:
     """
-    使用坐标查找表将射电图像重投影到 AIA 裁剪图的 WCS 和形状上。
-    参数：
-        radio_data: 射电数据数组
-        ra_map: 赤经坐标图（度）
-        dec_map: 赤纬坐标图（度）
-        target_shape: 目标形状
-        aia_wcs_2d: AIA图像的WCS
-        radio_time: 射电观测时间
-        aia_time: AIA观测时间
-        height_rsun: 日冕高度（以太阳半径为单位）
-        cfg: 配置对象
+    增强版：使用坐标查找表将射电图像重投影到 AIA 裁剪图的 WCS 和形状上。
+    添加更多验证和错误处理。
     """
     try:
         if ra_map is None or dec_map is None:
@@ -487,7 +501,29 @@ def reproject_radio_with_coordinate_lookup(radio_data: np.ndarray,
         # 确保坐标图与数据形状一致
         if ra_map.shape != radio_data.shape or dec_map.shape != radio_data.shape:
             print(f"    坐标图形状不匹配: 数据{radio_data.shape}, RA{ra_map.shape}, Dec{dec_map.shape}")
-            return None
+            # 尝试调整坐标图形状
+            if ra_map.ndim == 3 and ra_map.shape[0] == 1:
+                ra_map = ra_map[0, :, :]
+                dec_map = dec_map[0, :, :]
+            if ra_map.shape != radio_data.shape:
+                print(f"    调整后形状仍不匹配，跳过重投影")
+                return None
+        
+        # 检查坐标值范围是否合理（赤经应在0-360度，赤纬应在-90到90度）
+        ra_min, ra_max = np.nanmin(ra_map), np.nanmax(ra_map)
+        dec_min, dec_max = np.nanmin(dec_map), np.nanmax(dec_map)
+        
+        if not (0 <= ra_min <= 360 and 0 <= ra_max <= 360):
+            print(f"    赤经坐标范围异常: {ra_min:.2f} 到 {ra_max:.2f} 度")
+            # 尝试标准化到0-360度
+            ra_map = np.mod(ra_map, 360)
+        
+        if not (-90 <= dec_min <= 90 and -90 <= dec_max <= 90):
+            print(f"    赤纬坐标范围异常: {dec_min:.2f} 到 {dec_max:.2f} 度")
+            # 如果坐标超出范围，可能需要转换单位
+            if dec_max > 90 or dec_min < -90:
+                print(f"    赤纬坐标超出正常范围，可能单位为弧度或其他")
+                return None
         
         # 创建目标网格
         ny, nx = target_shape
@@ -1052,17 +1088,16 @@ def process_aia_group(aia_file:    str,
                             and polarization != cfg.polarization_mode):
                         continue
                     try:
-                        # 使用新的 extract_radio_2d_data 函数
-                        radio_data_2d, ra_map, dec_map, radio_header_2d = extract_radio_2d_data(
+                        # 使用增强的 extract_radio_2d_data 函数
+                        radio_data_2d, ra_map, dec_map, radio_header_2d, radio_wcs_2d = extract_radio_2d_data(
                             fits_path, use_float32=cfg.radio_use_float32
                         )
                     
                         if radio_data_2d is None or radio_data_2d.size == 0:
                             continue
                     
-                        # 尝试构建标准WCS（如果坐标图不可用则使用）
-                        radio_wcs_2d = None
-                        if ra_map is None or dec_map is None:
+                        # 如果 extract_radio_2d_data 未能构建 WCS，尝试构建
+                        if radio_wcs_2d is None:
                             radio_wcs_2d = build_radio_wcs_2d(
                                 radio_header_2d, radio_time, cutout_aia.meta
                             )
@@ -1256,8 +1291,21 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
                                     recursive=True)
     files_with_pol_name = glob.glob(os.path.join(cfg.radio_base_dir, "**", f"*{pol}*.fits"),
                                     recursive=True)
-    radio_files = list(set(files_in_pol_dir + files_with_pol_name))
-    print(f"成功锁定 {len(radio_files)} 个 {pol} 射电文件。正在并发提取观测时间...")
+    
+    # 过滤掉坐标图文件
+    radio_files = []
+    for f in list(set(files_in_pol_dir + files_with_pol_name)):
+        if '_RightAscensionDegree.fits' in f or '_DeclinationDegree.fits' in f:
+            continue  # 跳过坐标图文件
+        # 只保留数据文件
+        # 检查文件大小，避免太小的文件（可能是坐标图）
+        try:
+            if os.path.getsize(f) > 1000:  # 最小文件大小阈值
+                radio_files.append(f)
+        except:
+            radio_files.append(f)
+    
+    print(f"成功锁定 {len(radio_files)} 个 {pol} 射电数据文件（已排除坐标图文件）。正在并发提取观测时间...")
 
     # ★ 优化4：线程池并发读取头文件（I/O 密集，线程安全）
     #   线程数取 min(32, cpu_count*2, 文件数)，避免创建过多线程
