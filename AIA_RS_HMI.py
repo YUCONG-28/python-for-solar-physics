@@ -501,10 +501,11 @@ def _preprocess_radec_maps(ra_map: np.ndarray,
                            radio_header: Optional[fits.Header],
                            cfg: Config) -> Tuple[np.ndarray, np.ndarray]:
     """
-    统一坐标预处理，返回绝对赤经赤纬（度，RA∈[0,360)，Dec∈[-90,90]）。
+    统一坐标预处理，返回处理后的赤经赤纬（度）。
     
-    注意：对于太阳射电观测，坐标图通常是相对于太阳中心的相对坐标。
-    需要外部调用者提供太阳中心位置进行修正。
+    对于太阳射电观测：
+    - 如果坐标是相对坐标（范围小），直接返回
+    - 如果坐标是绝对坐标，确保RA在[0,360)范围内
     """
     ra  = ra_map.copy().astype(np.float64)
     dec = dec_map.copy().astype(np.float64)
@@ -545,41 +546,24 @@ def _preprocess_radec_maps(ra_map: np.ndarray,
     ra_median  = float(np.median(ra_fin))
     dec_median = float(np.median(dec_fin))
 
-    # ── 绝对坐标 vs 相对偏移 ─────────────────────────────────────────────────
-    # 对于太阳射电观测，相对坐标范围通常较小（±几度）
-    # 绝对坐标的RA通常在0-360度范围内
+    # 判断是否为相对坐标（针对太阳射电）
     ra_range = ra_fin.max() - ra_fin.min()
     dec_range = dec_fin.max() - dec_fin.min()
     
-    # 判断条件更宽松：如果范围小于20度，认为是相对坐标
-    is_absolute = (ra_range > 20.0) or (dec_range > 20.0) or (abs(ra_median) > 20.0)
+    # 对于太阳射电，相对坐标通常范围在±10度内
+    is_relative = ra_range < 10.0 and dec_range < 10.0
 
     if cfg.debug_mode:
         print(f"    坐标中值: RA={ra_median:.4f}°  Dec={dec_median:.4f}°")
         print(f"    坐标范围: RA范围={ra_range:.4f}°, Dec范围={dec_range:.4f}°")
-        print(f"    坐标类型: {'【绝对坐标】' if is_absolute else '【相对坐标】'}")
+        print(f"    坐标类型: {'【相对坐标】' if is_relative else '【绝对坐标】'}")
 
-    if (not is_absolute) and (radio_header is not None):
-        crval1 = float(radio_header.get('CRVAL1', 0.0))
-        crval2 = float(radio_header.get('CRVAL2', 0.0))
+    # 如果坐标是绝对的（RA在0-360范围内），确保RA在[0,360)
+    if not is_relative:
+        ra = np.mod(ra, 360.0)
         if cfg.debug_mode:
-            print(f"    相位中心: CRVAL1={crval1:.6f}°  CRVAL2={crval2:.6f}°")
-        
-        # 只有当CRVAL不为0时才叠加
-        if abs(crval1) > 1e-6 or abs(crval2) > 1e-6:
-            ra  = ra  + crval1
-            dec = dec + crval2
-            if cfg.debug_mode:
-                r = ra[np.isfinite(ra)]
-                d = dec[np.isfinite(dec)]
-                print(f"    叠加CRVAL后: RA [{r.min():.4f}, {r.max():.4f}], "
-                      f"Dec [{d.min():.4f}, {d.max():.4f}]")
-        else:
-            if cfg.debug_mode:
-                print("    相位中心为0，不进行叠加（将在后续步骤中处理）")
+            print(f"    标准化RA到[0,360)范围")
 
-    # 标准化赤经到 [0, 360)
-    ra = np.mod(ra, 360.0)
     return ra, dec
 
 
@@ -590,34 +574,10 @@ def reproject_radio_forward_paste(
         radio_data:    np.ndarray,
         ra_map:        np.ndarray,
         dec_map:       np.ndarray,
-        aia_cutout_map,                          # sunpy.map.GenericMap
+        aia_cutout_map,
         cfg:           Config,
         radio_header:  Optional[fits.Header] = None) -> Optional[np.ndarray]:
-    """
-    前向投影贴图法（Forward Projection / Paste）。
-
-    原理
-    ----
-    对每个射电像素 (i, j)：
-        (RA, Dec) [来自坐标图]
-            → ICRS SkyCoord
-            → Helioprojective (Tx, Ty)  [AIA观测者坐标系]
-            → AIA 子图像素坐标 (px, py) [cutout_aia.wcs.world_to_pixel]
-            → 写入输出数组 output[py, px] = radio_data[i, j]
-
-    优势（相比逆向KD树法）
-    ---------------------
-    - **不依赖坐标数值重叠**：无论坐标图格式如何，只要 (RA,Dec) → AIA像素
-      的变换链是正确的，射电源就一定落到 AIA 图像的正确位置上。
-    - 彻底避免赤经 0°/360° 卷绕问题。
-    - 避免随机降采样导致峰值丢失。
-
-    间隙填充
-    --------
-    射电图像分辨率低，每个射电像素映射到 AIA 上通常为稀疏散点。
-    函数内部做一次归一化高斯扩散（sigma ≈ 1.5 像素），使散点连成连续区域，
-    确保等值线可以正常绘制。这一步不影响峰值位置与相对强度。
-    """
+    
     try:
         ny_aia, nx_aia = aia_cutout_map.data.shape
 
@@ -633,75 +593,13 @@ def reproject_radio_forward_paste(
                       f"data={radio_data.shape} RA={ra_map.shape} Dec={dec_map.shape}")
             return None
 
+        # 预处理坐标图
         ra_abs, dec_abs = _preprocess_radec_maps(ra_map, dec_map, radio_header, cfg)
         
-        # ── 获取射电观测时间 ──────────────────────────────────────────────
-        # 尝试从header获取观测时间
-        radio_time = None
-        if radio_header is not None:
-            try:
-                # 尝试多个可能的时间关键字
-                time_keys = ['DATE-OBS', 'DATE_OBS', 'DATEOBS', 'DATE-BEG', 'DATE_BEG', 'DATEBEG']
-                for key in time_keys:
-                    if key in radio_header:
-                        date_str = str(radio_header[key]).strip()
-                        if date_str:
-                            # 移除可能的多余空格
-                            if '  ' in date_str:
-                                date_str = ' '.join(date_str.split())
-                            radio_time = _parse_flexible_datetime(date_str)
-                            if radio_time:
-                                break
-            except Exception:
-                pass
+        # ── 关键修正：直接使用相对坐标进行转换 ─────────────────────────────
+        # 对于太阳射电观测，相对坐标就是相对于太阳中心的偏移
+        # 直接将这些坐标转换为日心坐标系
         
-        if radio_time is None:
-            # 尝试从文件名中提取时间
-            # 这里需要调用parse_radio_time_from_header的逻辑，但简化处理
-            # 实际上，我们已经在build_matched_pairs中解析了时间，可以传递进来
-            # 暂时使用AIA时间作为近似
-            try:
-                radio_time = aia_cutout_map.date.to_datetime()
-            except Exception:
-                radio_time = None
-        
-        # ── 计算太阳中心位置（关键修复）────────────────────────────────────
-        # 如果坐标图是相对坐标，需要加上太阳中心位置
-        from sunpy.coordinates import get_sun
-        
-        if radio_time is not None:
-            try:
-                # 计算射电观测时刻的太阳中心位置
-                sun_center = get_sun(radio_time)
-                sun_ra = sun_center.ra.deg
-                sun_dec = sun_center.dec.deg
-                
-                if cfg.debug_mode:
-                    print(f"    [太阳位置] 射电观测时间: {radio_time}")
-                    print(f"    [太阳位置] 太阳中心: RA={sun_ra:.6f}°, Dec={sun_dec:.6f}°")
-                
-                # 检查坐标图是否是相对坐标
-                # 相对坐标通常范围较小（如±5度）
-                ra_range = np.nanmax(ra_abs) - np.nanmin(ra_abs)
-                dec_range = np.nanmax(dec_abs) - np.nanmin(dec_abs)
-                
-                if ra_range < 20.0 and dec_range < 20.0:
-                    # 这是相对坐标，需要加上太阳中心位置
-                    if cfg.debug_mode:
-                        print(f"    [坐标修正] 检测到相对坐标，添加太阳中心位置")
-                        print(f"    [坐标修正] 修正前: RA范围[{np.nanmin(ra_abs):.4f}, {np.nanmax(ra_abs):.4f}], "
-                              f"Dec范围[{np.nanmin(dec_abs):.4f}, {np.nanmax(dec_abs):.4f}]")
-                    
-                    ra_abs = ra_abs + sun_ra
-                    dec_abs = dec_abs + sun_dec
-                    
-                    if cfg.debug_mode:
-                        print(f"    [坐标修正] 修正后: RA范围[{np.nanmin(ra_abs):.4f}, {np.nanmax(ra_abs):.4f}], "
-                              f"Dec范围[{np.nanmin(dec_abs):.4f}, {np.nanmax(dec_abs):.4f}]")
-            except Exception as e:
-                if cfg.debug_mode:
-                    print(f"    [警告] 计算太阳位置失败: {e}")
-
         # ── 有效点筛选 ────────────────────────────────────────────────────
         valid_mask = (np.isfinite(ra_abs) & np.isfinite(dec_abs)
                       & np.isfinite(radio_data))
@@ -721,17 +619,50 @@ def reproject_radio_forward_paste(
                   f"RA [{v_ra.min():.4f}, {v_ra.max():.4f}]  "
                   f"Dec [{v_dec.min():.4f}, {v_dec.max():.4f}]")
 
-        # ── ICRS → AIA Helioprojective → AIA 像素坐标 ────────────────────
-        # 为太阳观测添加距离信息（1 AU）
-        distance = 1 * u.AU  # 天文单位
+        # ── 关键修复：使用正确的坐标转换方法 ──────────────────────────────
+        # 对于相对坐标，我们直接创建太阳日心坐标
+        # 假设坐标图已经是太阳中心的相对坐标（单位：度）
+        
+        # 获取射电观测时间
+        radio_time = None
+        if radio_header is not None:
+            try:
+                time_keys = ['DATE-OBS', 'DATE_OBS', 'DATEOBS', 'DATE-BEG', 'DATE_BEG', 'DATEBEG']
+                for key in time_keys:
+                    if key in radio_header:
+                        date_str = str(radio_header[key]).strip()
+                        if date_str:
+                            if '  ' in date_str:
+                                date_str = ' '.join(date_str.split())
+                            radio_time = _parse_flexible_datetime(date_str)
+                            if radio_time:
+                                break
+            except Exception:
+                pass
+        
+        # 如果无法获取射电时间，使用AIA时间
+        if radio_time is None:
+            try:
+                radio_time = aia_cutout_map.date.to_datetime()
+            except Exception:
+                from datetime import datetime
+                radio_time = datetime.now()  # 最后手段
+        
+        # 创建ICRS坐标（相对坐标）
+        # 注意：相对坐标已经是相对于太阳中心的偏移
         radio_icrs = SkyCoord(ra=v_ra * u.deg, dec=v_dec * u.deg, 
-                              distance=distance, frame='icrs')
+                              obstime=radio_time, frame='icrs')
 
-        # transform_to 使用 AIA Map 的观测者信息（日期、DSUN、B0 等）
+        # 转换到AIA的坐标系
+        # 关键：使用AIA地图的观测者位置和时间
         aia_frame = aia_cutout_map.coordinate_frame
-        radio_hpc = radio_icrs.transform_to(aia_frame)
+        
+        # 应用太阳自转修正（如果需要）
+        from sunpy.coordinates import propagate_with_solar_surface
+        with propagate_with_solar_surface():
+            radio_hpc = radio_icrs.transform_to(aia_frame)
 
-        # SunPy Map.wcs.world_to_pixel 接受原生坐标帧（Helioprojective）
+        # 获取像素坐标
         px_f, py_f = aia_cutout_map.wcs.world_to_pixel(radio_hpc)
         px_f = np.asarray(px_f, dtype=np.float64)
         py_f = np.asarray(py_f, dtype=np.float64)
@@ -750,7 +681,7 @@ def reproject_radio_forward_paste(
             print(f"    [前向投影] 射电像素落入AIA视野: {n_in} / {int(np.sum(fin_pix))}")
 
         if n_in == 0:
-            # ── 诊断：打印AIA坐标范围与射电Tx/Ty范围 ──────────────────────
+            # 诊断信息
             if cfg.debug_mode:
                 tx = radio_hpc.Tx.arcsec
                 ty = radio_hpc.Ty.arcsec
@@ -776,9 +707,7 @@ def reproject_radio_forward_paste(
 
         output = np.where(acc > -np.inf, acc, np.nan).astype(np.float32)
 
-        # ── 间隙填充（归一化高斯扩散，sigma=1.5像素）──────────────────────
-        # 射电分辨率远低于AIA，散点之间存在空洞，填充后等值线才连续。
-        # 使用归一化卷积保持峰值幅度不衰减。
+        # ── 间隙填充 ───────────────────────────────────────────────────
         nan_mask = np.isnan(output)
         if nan_mask.any():
             fill_sigma = 1.5
@@ -788,7 +717,6 @@ def reproject_radio_forward_paste(
             sm_w = gaussian_filter(weights, sigma=fill_sigma)
             with np.errstate(invalid='ignore', divide='ignore'):
                 diffused = np.where(sm_w > 1e-6, sm_d / sm_w, np.nan)
-            # 仅在原本为 NaN 的区域填充，不修改已有散射值
             output = np.where(nan_mask, diffused.astype(np.float32), output)
 
         valid_final = int(np.sum(~np.isnan(output)))
