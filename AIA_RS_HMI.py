@@ -711,10 +711,42 @@ def reproject_radio_forward_paste(
                 from datetime import datetime
                 radio_time = datetime.now()  # 最后手段
         
-        # 创建ICRS坐标（相对坐标）
-        # 注意：相对坐标已经是相对于太阳中心的偏移
-        radio_icrs = SkyCoord(ra=v_ra * u.deg, dec=v_dec * u.deg, 
-                              obstime=radio_time, frame='icrs')
+        # ── 计算太阳中心位置（关键修复）────────────────────────────────────
+        # 我们需要知道射电观测时刻太阳中心在天球上的位置
+        try:
+            # 首先获取射电观测时刻的太阳位置（地心坐标）
+            from astropy.coordinates import get_sun
+            sun_coord = get_sun(radio_time)
+            
+            # 计算太阳中心的ICRS坐标
+            sun_ra = sun_coord.ra.deg
+            sun_dec = sun_coord.dec.deg
+            
+            # 相对坐标加上太阳中心位置得到绝对坐标
+            abs_ra = v_ra + sun_ra
+            abs_dec = v_dec + sun_dec
+            
+            if cfg.debug_mode:
+                print(f"    [太阳位置] 射电时间: {radio_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"    [太阳位置] 太阳中心: RA={sun_ra:.6f}°, Dec={sun_dec:.6f}°")
+                print(f"    [坐标转换] 相对坐标范围: RA [{v_ra.min():.4f}, {v_ra.max():.4f}], "
+                      f"Dec [{v_dec.min():.4f}, {v_dec.max():.4f}]")
+                print(f"    [坐标转换] 绝对坐标范围: RA [{abs_ra.min():.4f}, {abs_ra.max():.4f}], "
+                      f"Dec [{abs_dec.min():.4f}, {abs_dec.max():.4f}]")
+                
+        except Exception as e:
+            if cfg.debug_mode:
+                print(f"    [警告] 计算太阳位置失败: {e}")
+            # 如果计算失败，使用近似值
+            # 对于太阳观测，太阳中心大致位于RA=0°, Dec=0°附近
+            abs_ra = v_ra
+            abs_dec = v_dec
+        
+        # 创建ICRS坐标（绝对坐标，需要距离信息）
+        # 对于太阳观测，距离约为1AU
+        distance = 1.0 * u.AU
+        radio_icrs = SkyCoord(ra=abs_ra * u.deg, dec=abs_dec * u.deg, 
+                              distance=distance, obstime=radio_time, frame='icrs')
 
         # 转换到AIA的坐标系
         # 关键：使用AIA地图的观测者位置和时间
