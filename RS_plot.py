@@ -1055,8 +1055,8 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
         
         # 确保颜色条完全在子图内部
         cax = ax.inset_axes(colorbar_pos)  # [x, y, width, height] 相对于子图内部
-        cbar = fig.colorbar(im, cax=cax, orientation='horizontal', colors = 'y')
-        cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 10, colors = 'y')
+        cbar = fig.colorbar(im, cax=cax, orientation='horizontal')
+        cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 10, colors='y')
         # cbar.set_label('log10(I)', fontsize=cfg["tick_fontsize"] - 10, colors='y')
         cbar.ax.locator_params(nbins=3)
 
