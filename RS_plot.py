@@ -755,12 +755,12 @@ def plot_single_band(file_path: str, output_dir: str, cfg: dict,
 
     im   = ax.imshow(img_data, **im_kwargs)
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 4, color = 'y')
+    cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 4, colors = 'y')
 
     ax.set_title(title, fontsize=cfg["title_fontsize"], fontweight="bold", pad=20)
     ax.set_xlabel("x (arcsec)", fontsize=cfg["label_fontsize"])
     ax.set_ylabel("y (arcsec)", fontsize=cfg["label_fontsize"])
-    ax.tick_params(axis="both", which="major", labelsize=cfg["tick_fontsize"], color = 'y')
+    ax.tick_params(axis="both", which="major", labelsize=cfg["tick_fontsize"], colors = 'y')
 
     ax.add_patch(patches.Circle(
         (0, 0), radius=rsun_obs,
@@ -847,13 +847,13 @@ def _save_single_pol_image(img_data, header, output_dir, cfg, vmin, vmax, polar_
     
     im = ax.imshow(img_data, **im_kwargs)
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 4, color='y')
+    cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 4, colors='y')
     
     title = f"{base_filename}   {freq} MHz  {polar_display}   {time_str}"
     ax.set_title(title, fontsize=cfg["title_fontsize"] - 4, fontweight="bold", pad=20)
     ax.set_xlabel("x (arcsec)", fontsize=cfg["label_fontsize"] - 4)
     ax.set_ylabel("y (arcsec)", fontsize=cfg["label_fontsize"] - 4)
-    ax.tick_params(axis="both", which="major", labelsize=cfg["tick_fontsize"] - 4, color='y')
+    ax.tick_params(axis="both", which="major", labelsize=cfg["tick_fontsize"] - 4, colors='y')
     
     # 添加太阳轮廓
     ax.add_patch(patches.Circle(
@@ -1038,26 +1038,26 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
             ax.set_ylabel("y (arcsec)", fontsize=cfg["label_fontsize"] - 6)
         else:
             ax.set_ylabel("")
-            ax.tick_params(axis='y', which='both', left=False, labelleft=False, color = 'y')
+            ax.tick_params(axis='y', which='both', left=False, labelleft=False, colors = 'y')
             
         if row == nrow - 1:  # 最下面一行
             ax.set_xlabel("x (arcsec)", fontsize=cfg["label_fontsize"] - 6)
         else:
             ax.set_xlabel("")
-            ax.tick_params(axis='x', which='both', bottom=False, labelbottom=False, color = 'y')
+            ax.tick_params(axis='x', which='both', bottom=False, labelbottom=False, colors = 'y')
 
         # 调整刻度标签大小
         ax.tick_params(axis="both", which="major",
-                       labelsize=cfg["tick_fontsize"] - 8, color = 'y')
+                       labelsize=cfg["tick_fontsize"] - 8, colors = 'y')
 
         # 为每个子图添加嵌入式颜色条，使用用户配置的位置
         colorbar_pos = cfg.get("colorbar_position", [0.75, 0.05, 0.22, 0.03])
         
         # 确保颜色条完全在子图内部
         cax = ax.inset_axes(colorbar_pos)  # [x, y, width, height] 相对于子图内部
-        cbar = fig.colorbar(im, cax=cax, orientation='horizontal', color = 'y')
-        cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 10, color = 'y')
-        # cbar.set_label('log10(I)', fontsize=cfg["tick_fontsize"] - 10, color='y')
+        cbar = fig.colorbar(im, cax=cax, orientation='horizontal', colors = 'y')
+        cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 10, colors = 'y')
+        # cbar.set_label('log10(I)', fontsize=cfg["tick_fontsize"] - 10, colors='y')
         cbar.ax.locator_params(nbins=3)
 
     # 隐藏多余的子图
