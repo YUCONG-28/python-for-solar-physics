@@ -48,7 +48,7 @@ CONFIG = {
 
     # File range (only effective in batch mode)
     "start_idx": 1400,          # start index (inclusive)
-    "end_idx":   1900,          # end index (exclusive)
+    "end_idx":   1410,          # end index (exclusive)
 
     # ---------- Multi-band mode configuration ----------
     "multi_band_root": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450",
@@ -568,13 +568,13 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
         valid_data = log_data[~np.isnan(log_data)]
         if len(valid_data) > 0:
             # 使用数据的5%和95%分位数，避免极端值影响
-            q5 = np.percentile(valid_data, 5)
+            q5 = np.percentile(valid_data, 66)
             q95 = np.percentile(valid_data, 95)
             
             # 确保范围合理，如果数据范围太小，则使用1%和99%分位数
             if q95 - q5 < 0.5:  # 对数范围太小
-                q5 = np.percentile(valid_data, 1)
-                q95 = np.percentile(valid_data, 99)
+                q5 = np.percentile(valid_data, 66)
+                q95 = np.percentile(valid_data, 95)
             
             band_vmins.append(q5)
             band_vmaxs.append(q95)
