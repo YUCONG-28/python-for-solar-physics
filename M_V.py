@@ -355,6 +355,7 @@ def process_single_frame(file_path, target_size_tuple=None):
 
 def main():
     global num_workers  # Declare num_workers as global variable
+    global video_quality  # Declare video_quality as global variable
     # ── 5.1 Basic validation ─────────────────────────────────────────────
     if not os.path.isdir(input_dir):
         raise FileNotFoundError(f"Input folder does not exist: {input_dir}")
