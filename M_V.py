@@ -46,6 +46,11 @@ output_dir    = r'<PROJECT_ROOT>\2025\20250124\RS_multi_band\video'
 video_name    = "RR.mp4"
 target_suffix = ".png"      # Target file extension (case-insensitive)
 
+# ── Video quality ──────────────────────────────────────────────
+#   'high'   High quality (slower encoding, larger file size)
+#   'low'    Low quality (faster encoding, smaller file size)
+video_quality = 'high'      # 'high' or 'low'
+
 # Frame range (based on sorted index, starting from 1)
 start_frame = 1            # Start frame (inclusive)
 end_frame   = None         # End frame (inclusive), None = process until last frame
@@ -207,10 +212,11 @@ def align16(n: int) -> int:
 # § 3  Video Writing (Triple Fallback)
 # ──────────────────────────────────────────────────────────────
 
-def write_video(images: list, output_path: str, fps: int) -> bool:
+def write_video(images: list, output_path: str, fps: int, quality: str = 'high') -> bool:
     """
     Prioritize FFmpeg for video writing to ensure maximum compatibility.
     images: List of RGB uint8 ndarrays, all frames must have identical dimensions.
+    quality: 'high' for high quality, 'low' for low quality
     """
     h, w = images[0].shape[:2]
     n    = len(images)
@@ -227,6 +233,19 @@ def write_video(images: list, output_path: str, fps: int) -> bool:
         images = resized_images
         w, h = new_w, new_h
 
+    # Set encoding parameters based on quality
+    if quality == 'high':
+        crf = 18        # High quality: lower CRF = better quality
+        preset = 'slow' # Slow preset = better compression efficiency
+        quality_label = "高质量"
+    else:  # 'low'
+        crf = 28        # Low quality: higher CRF = smaller file size
+        preset = 'fast' # Fast preset = faster encoding
+        quality_label = "低质量"
+    
+    print(f"视频质量设置: {quality_label}")
+    print(f"  编码参数: CRF={crf}, preset={preset}")
+
     # Option 1: FFmpeg command line (most reliable)
     try:
         import subprocess, tempfile
@@ -236,15 +255,15 @@ def write_video(images: list, output_path: str, fps: int) -> bool:
                 # Use imageio to save PNG
                 imageio.imwrite(os.path.join(tmpdir, f"{i:06d}.png"), img)
             
-            # Build FFmpeg command
+            # Build FFmpeg command with quality parameters
             cmd = [
                 'ffmpeg', '-y',
                 '-framerate', str(fps),
                 '-i', os.path.join(tmpdir, '%06d.png'),
                 '-c:v', 'libx264',        # H.264 encoding
                 '-pix_fmt', 'yuv420p',    # Compatible pixel format
-                '-preset', 'medium',      # Balance between encoding speed and quality
-                '-crf', '23',             # Quality factor (18-28, lower is better quality)
+                '-preset', preset,        # Encoding preset based on quality
+                '-crf', str(crf),         # Quality factor
                 '-movflags', '+faststart', # Enable streaming playback
                 '-vf', 'format=yuv420p',  # Ensure output is yuv420p
                 output_path
@@ -252,23 +271,37 @@ def write_video(images: list, output_path: str, fps: int) -> bool:
             # Run FFmpeg
             result = subprocess.run(cmd, capture_output=True, text=True, shell=False)
             if result.returncode == 0:
-                print(f"[OK] Video saved (FFmpeg): {output_path}")
-                print(f"  {n} frames | {fps} fps | {w}×{h}")
-                print(f"  Encoding: H.264 (libx264), pixel format: yuv420p")
+                print(f"[OK] 视频已保存 (FFmpeg, {quality_label}): {output_path}")
+                print(f"  {n} 帧 | {fps} fps | {w}×{h}")
+                print(f"  编码: H.264 (libx264), 像素格式: yuv420p")
+                print(f"  质量参数: CRF={crf}, preset={preset}")
                 return True
             else:
-                print(f"  [FFmpeg] Failed: {result.stderr[-500:]}")
+                print(f"  [FFmpeg] 失败: {result.stderr[-500:]}")
     except Exception as e:
-        print(f"  [FFmpeg] Exception: {e}")
+        print(f"  [FFmpeg] 异常: {e}")
 
     # Option 2: imageio (fallback)
     try:
-        imageio.mimwrite(output_path, images, fps=fps, codec='libx264', pixelformat='yuv420p')
-        print(f"[OK] Video saved (imageio): {output_path}")
-        print(f"  {n} frames | {fps} fps | {w}×{h}")
+        # Adjust imageio quality parameter based on selected quality
+        if quality == 'high':
+            imageio_quality = 7   # Higher quality for imageio (0-10, 10 is best)
+        else:
+            imageio_quality = 4   # Lower quality for imageio
+        
+        imageio.mimwrite(
+            output_path, 
+            images, 
+            fps=fps, 
+            codec='libx264', 
+            pixelformat='yuv420p',
+            quality=imageio_quality
+        )
+        print(f"[OK] 视频已保存 (imageio, {quality_label}): {output_path}")
+        print(f"  {n} 帧 | {fps} fps | {w}×{h}")
         return True
     except Exception as e:
-        print(f"  [imageio] Failed: {e}")
+        print(f"  [imageio] 失败: {e}")
 
     # Option 3: OpenCV (last attempt)
     try:
@@ -281,15 +314,15 @@ def write_video(images: list, output_path: str, fps: int) -> bool:
                 # Convert to BGR
                 out.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
             out.release()
-            print(f"[OK] Video saved (OpenCV): {output_path}")
+            print(f"[OK] 视频已保存 (OpenCV, {quality_label}): {output_path}")
             return True
         else:
-            print(f"  [OpenCV] Cannot open VideoWriter")
+            print(f"  [OpenCV] 无法打开 VideoWriter")
     except Exception as e:
-        print(f"  [OpenCV] Failed: {e}")
+        print(f"  [OpenCV] 失败: {e}")
 
-    print("[ERROR] All writing methods failed, please ensure FFmpeg is installed and added to system PATH")
-    print("        Or install imageio[ffmpeg]: pip install imageio[ffmpeg]")
+    print("[错误] 所有写入方法都失败，请确保 FFmpeg 已安装并添加到系统 PATH")
+    print("        或者安装 imageio[ffmpeg]: pip install imageio[ffmpeg]")
     return False
 
 
@@ -440,8 +473,21 @@ def main():
 
     # ── 5.7 Write video ─────────────────────────────────────────────
     output_path = os.path.join(output_dir, video_name)
-    write_video(images, output_path, fps)
+    # Validate video_quality setting
+    if video_quality not in ['high', 'low']:
+        print(f"[警告] 无效的视频质量设置 '{video_quality}'，使用默认值 'high'")
+        video_quality = 'high'
+    
+    write_video(images, output_path, fps, quality=video_quality)
 
+
+# Validate configuration
+VALID_QUALITIES = ['high', 'low']
+if 'video_quality' in globals() and video_quality not in VALID_QUALITIES:
+    print(f"[警告] 无效的视频质量设置 '{video_quality}'，必须是 {VALID_QUALITIES} 之一，使用默认值 'high'")
+    video_quality = 'high'
+elif 'video_quality' not in globals():
+    video_quality = 'high'  # Default value
 
 if __name__ == '__main__':
     # On Windows, multiprocessing requires protecting the main module
