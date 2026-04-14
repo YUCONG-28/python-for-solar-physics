@@ -107,8 +107,8 @@ CONFIG = {
 
     # ---------- Image display limits ----------
     "use_custom_lim": True,
-    "custom_xlim":    (500, 1500),
-    "custom_ylim":    (-700, 300),
+    "custom_xlim":    (500, 1700),
+    "custom_ylim":    (-900, 300),
 
     # ---------- Image appearance ----------
     "fig_size":            (18, 16),
@@ -1089,7 +1089,7 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
 
     # 进一步调整布局
     # 使用tight_layout确保布局紧凑，但保留足够的空间给标题
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    # plt.tight_layout(rect=[0, 0, 1, 0.96])
 
     # ★ 优化：输出目录已预创建，直接拼接文件名
     polarization        = cfg.get("polarization", "RR")
