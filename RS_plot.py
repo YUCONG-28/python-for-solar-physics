@@ -78,7 +78,7 @@ CONFIG = {
     "fig_size":            (18, 16),
     "multi_band_fig_size": (24, 20),
     "dpi":                 300,
-    "cmap":                "gist_heat",
+    "cmap":                "jet",
     "scale_factor":        3.5,
 
     # ---------- Annotation styles ----------
