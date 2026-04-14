@@ -1088,7 +1088,8 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
                  fontsize=cfg["title_fontsize"] + 2, fontweight="bold", y=0.98)
 
     # 进一步调整布局
-    # plt.tight_layout(rect=[0, 0, 1, 0.96])
+    # 使用tight_layout确保布局紧凑，但保留足够的空间给标题
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
 
     # ★ 优化：输出目录已预创建，直接拼接文件名
     polarization        = cfg.get("polarization", "RR")
