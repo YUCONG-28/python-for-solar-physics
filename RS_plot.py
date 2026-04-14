@@ -70,10 +70,10 @@ CONFIG = {
     
     # 当使用fixed_percentile方法时的百分位数设置
     # 例如: [5, 95] 表示使用5%到95%的数据范围
-    "per_band_percentiles": [66, 95],
+    "per_band_percentiles": [99.9, 99.99],
     
     # 当数据范围太小时的最小对数范围阈值
-    "min_log_range": 0.5,
+    "min_log_range": 0.001,
 
     # ---------- Output configuration ----------
     "output_dir": r'D:\spike_topping_type_III\2025\20250124\RS_multi_band',
