@@ -1098,7 +1098,7 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
                                        f"multi_band_slot_{slot_idx:04d}.png")
 
     if cfg["save_plot"]:
-        plt.savefig(output_path, dpi=cfg["dpi"], bbox_inches="tight())
+        plt.savefig(output_path, dpi=cfg["dpi"], bbox_inches="tight")
 
     if cfg["show_plot"] and cfg.get("_interactive", False):
         plt.show()
