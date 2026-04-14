@@ -7,7 +7,7 @@ RS_plot.py: Process solar radio spectrogram (FITS files) and generate single-ban
 Supports two operation modes: single-band mode (process FITS files one by one) and multi-band mode (synthesize multiple bands at the same time).
 Supports parallel processing, automatic memory safety detection, multiple color range modes, and generates images with solar limb, coordinate grid, and directional markers.
 
-
+新增功能: 左右旋数据加和（可配置加权平均）
 """
 
 import os
@@ -37,7 +37,18 @@ CONFIG = {
     # ---------- Polarization configuration ----------
     # "RR": right circular polarization
     # "LL": left circular polarization
-    "polarization": "RR",  # "RR" or "LL"
+    # "RR+LL": sum of right and left circular polarization
+    "polarization": "RR",  # "RR", "LL", or "RR+LL"
+
+    # ---------- 左右旋数据加和配置 ----------
+    "combine_polarizations": False,  # 是否启用左右旋数据加和功能
+    "rr_dir_suffix": "RR",           # 右旋数据目录后缀
+    "ll_dir_suffix": "LL",           # 左旋数据目录后缀
+    "weighted_average": False,       # 是否使用加权平均（True）或简单相加（False）
+    "rr_weight": 0.5,                # 右旋权重（加权平均时使用）
+    "ll_weight": 0.5,                # 左旋权重（加权平均时使用）
+    "save_individual_pols": False,   # 是否同时保存单独的RR、LL图像
+    "time_tolerance_seconds": 1.0,   # 时间对齐容差（秒）
 
     # ---------- Single-band mode configuration ----------
     # Single-file mode: if you only want to plot a single file, fill in the full absolute path here
@@ -338,6 +349,59 @@ def _sorted_fits_for_band(band_dir: str, start_idx: int, end_idx) -> list:
     return selected
 
 
+def _parse_time_from_filename(filename):
+    """从文件名中解析时间信息，用于时间对齐检查"""
+    # 示例文件名: 149MHz_2025124_045710_093.fits
+    # 提取日期和时间部分
+    import re
+    pattern = r'_(\d+)_(\d+)'
+    match = re.search(pattern, filename)
+    if match:
+        date_part = match.group(1)  # 2025124
+        time_part = match.group(2)  # 045710
+        return f"{date_part}_{time_part}"
+    return None
+
+
+def _check_time_alignment(rr_header, ll_header, rr_path, ll_path, tolerance_seconds=1.0):
+    """检查RR和LL文件的时间对齐情况"""
+    from astropy.time import Time
+    
+    # 尝试从header获取时间
+    rr_time_str = get_time_from_header(rr_header)
+    ll_time_str = get_time_from_header(ll_header)
+    
+    if rr_time_str == "Unknown" or ll_time_str == "Unknown":
+        # 如果header中没有时间，尝试从文件名解析
+        rr_time_key = _parse_time_from_filename(os.path.basename(rr_path))
+        ll_time_key = _parse_time_from_filename(os.path.basename(ll_path))
+        
+        if rr_time_key and ll_time_key:
+            return rr_time_key == ll_time_key
+        else:
+            # 无法检查时间，假设对齐
+            return True
+    
+    try:
+        # 尝试解析时间字符串
+        rr_time = Time(rr_time_str, format='isot', scale='utc')
+        ll_time = Time(ll_time_str, format='isot', scale='utc')
+        
+        # 计算时间差（秒）
+        time_diff = abs((rr_time - ll_time).sec)
+        
+        if time_diff > tolerance_seconds:
+            print(f"警告: RR和LL文件时间差 {time_diff:.2f} 秒超过容差 {tolerance_seconds} 秒")
+            print(f"  RR文件: {rr_time_str}")
+            print(f"  LL文件: {ll_time_str}")
+            return False
+        return True
+    except Exception as e:
+        # 解析失败，使用字符串比较
+        print(f"时间解析失败: {e}，使用字符串比较")
+        return rr_time_str == ll_time_str
+
+
 def _build_multi_band_slots(cfg: dict) -> list:
     """
     Build multi-band synthesis time slots (each slot contains files of each band at the same time).
@@ -351,12 +415,47 @@ def _build_multi_band_slots(cfg: dict) -> list:
     polarization = cfg["polarization"]
     start_idx    = cfg.get("start_idx", 0)
     end_idx      = cfg.get("end_idx", None)
-
+    
+    # 检查是否启用左右旋数据加和
+    combine_polarizations = cfg.get("combine_polarizations", False)
+    time_tolerance = cfg.get("time_tolerance_seconds", 1.0)
+    
     per_band = []
     for freq in freqs:
-        band_dir = os.path.join(root, pattern.format(freq=freq, polar=polarization))
-        files    = _sorted_fits_for_band(band_dir, start_idx, end_idx)
-        per_band.append(files)
+        if combine_polarizations and polarization == "RR+LL":
+            # 左右旋数据加和模式：需要读取RR和LL两个目录的文件
+            rr_dir = os.path.join(root, pattern.format(freq=freq, polar=cfg["rr_dir_suffix"]))
+            ll_dir = os.path.join(root, pattern.format(freq=freq, polar=cfg["ll_dir_suffix"]))
+            
+            rr_files = _sorted_fits_for_band(rr_dir, start_idx, end_idx)
+            ll_files = _sorted_fits_for_band(ll_dir, start_idx, end_idx)
+            
+            # 检查两个偏振的文件数量是否一致
+            if len(rr_files) != len(ll_files):
+                raise ValueError(f"频率 {freq}MHz: RR和LL文件数量不一致 (RR={len(rr_files)}, LL={len(ll_files)})")
+            
+            # 检查时间对齐
+            misaligned_count = 0
+            for rr_path, ll_path in zip(rr_files, ll_files):
+                try:
+                    rr_header = fits.getheader(rr_path)
+                    ll_header = fits.getheader(ll_path)
+                    if not _check_time_alignment(rr_header, ll_header, rr_path, ll_path, time_tolerance):
+                        misaligned_count += 1
+                except Exception as e:
+                    print(f"检查时间对齐时出错: {e}")
+            
+            if misaligned_count > 0:
+                print(f"频率 {freq}MHz: 发现 {misaligned_count} 个时间未对齐的文件对")
+            
+            # 将RR和LL文件路径组成元组，以便后续同时读取
+            combined_files = [(rr, ll) for rr, ll in zip(rr_files, ll_files)]
+            per_band.append(combined_files)
+        else:
+            # 普通模式：只读取指定偏振的文件
+            band_dir = os.path.join(root, pattern.format(freq=freq, polar=polarization))
+            files    = _sorted_fits_for_band(band_dir, start_idx, end_idx)
+            per_band.append(files)
 
     lengths = [len(f) for f in per_band]
     if len(set(lengths)) > 1:
@@ -369,6 +468,12 @@ def _build_multi_band_slots(cfg: dict) -> list:
 
     print(f"Built {len(slots)} time slots, each slot contains {len(freqs)} bands")
     print(f"Polarization: {polarization}")
+    if combine_polarizations and polarization == "RR+LL":
+        print("Mode: RR + LL data combination")
+        if cfg.get("weighted_average", False):
+            print(f"Weighted average: RR weight={cfg['rr_weight']}, LL weight={cfg['ll_weight']}")
+        else:
+            print("Simple summation")
     return slots
 
 
@@ -523,6 +628,20 @@ def _calculate_per_band_ranges(all_log_data: list, cfg: dict) -> tuple:
 # 核心绘图函数（在子进程中执行）
 # ──────────────────────────────────────────────────────────────
 
+def _combine_polarization_data(rr_data, ll_data, cfg):
+    """组合RR和LL数据（加权平均或简单相加）"""
+    weighted = cfg.get("weighted_average", False)
+    
+    if weighted:
+        rr_weight = cfg.get("rr_weight", 0.5)
+        ll_weight = cfg.get("ll_weight", 0.5)
+        combined_data = rr_data * rr_weight + ll_data * ll_weight
+    else:
+        combined_data = rr_data + ll_data
+    
+    return combined_data
+
+
 def plot_single_band(file_path: str, output_dir: str, cfg: dict,
                      vmin=None, vmax=None) -> str:
     """
@@ -536,21 +655,93 @@ def plot_single_band(file_path: str, output_dir: str, cfg: dict,
     from matplotlib.lines import Line2D
     import matplotlib.patches as patches
 
-    img_data, header = read_fits(file_path)
+    # 检查是否启用左右旋数据加和
+    combine_polarizations = cfg.get("combine_polarizations", False)
+    
+    if combine_polarizations:
+        # 获取对应的左旋/右旋文件路径
+        base_dir = os.path.dirname(os.path.dirname(file_path))  # 获取频率目录
+        file_name = os.path.basename(file_path)
+        
+        # 根据当前文件路径判断是RR还是LL
+        if cfg["rr_dir_suffix"] in file_path:
+            # 当前是RR文件，查找对应的LL文件
+            rr_path = file_path
+            ll_path = os.path.join(base_dir, cfg["ll_dir_suffix"], file_name)
+            current_pol = "RR"
+        elif cfg["ll_dir_suffix"] in file_path:
+            # 当前是LL文件，查找对应的RR文件
+            ll_path = file_path
+            rr_path = os.path.join(base_dir, cfg["rr_dir_suffix"], file_name)
+            current_pol = "LL"
+        else:
+            # 无法确定偏振，使用单个文件
+            img_data, header = read_fits(file_path)
+            rr_data, ll_data = None, None
+            current_pol = get_polar_from_header(header)
+    
+    if combine_polarizations and 'rr_path' in locals() and 'll_path' in locals():
+        # 读取两个偏振的数据并组合
+        try:
+            rr_data, rr_header = read_fits(rr_path)
+            ll_data, ll_header = read_fits(ll_path)
+            
+            # 检查时间对齐
+            time_tolerance = cfg.get("time_tolerance_seconds", 1.0)
+            if not _check_time_alignment(rr_header, ll_header, rr_path, ll_path, time_tolerance):
+                warnings.warn(f"RR和LL文件时间未对齐: {rr_path} vs {ll_path}")
+            
+            # 数据组合（加权平均或简单相加）
+            img_data = _combine_polarization_data(rr_data, ll_data, cfg)
+            header = rr_header  # 使用RR文件的头文件
+            polar_display = "RR+LL"
+            
+            # 如果需要保存单独的偏振图像
+            save_individual = cfg.get("save_individual_pols", False)
+            if save_individual:
+                # 保存单独的RR图像
+                rr_polar_display = "RR"
+                rr_out_path = _save_single_pol_image(rr_data, rr_header, output_dir, cfg, 
+                                                     vmin, vmax, rr_polar_display, file_name)
+                # 保存单独的LL图像
+                ll_polar_display = "LL"
+                ll_out_path = _save_single_pol_image(ll_data, ll_header, output_dir, cfg,
+                                                     vmin, vmax, ll_polar_display, file_name)
+            
+        except FileNotFoundError as e:
+            warnings.warn(f"无法找到对应的偏振文件: {e}，使用单个文件")
+            if current_pol == "RR" and rr_data is not None:
+                img_data, header = rr_data, rr_header
+                polar_display = "RR"
+            elif current_pol == "LL" and ll_data is not None:
+                img_data, header = ll_data, ll_header
+                polar_display = "LL"
+            else:
+                img_data, header = read_fits(file_path)
+                polar_display = get_polar_from_header(header)
+    else:
+        polar_display = get_polar_from_header(header)
+    
     extent           = calc_extent(header, img_data.shape)
 
     rsun_obs  = header.get("RSUN_OBS", 960.0)
     freq      = get_freq_from_header(header) or "Unknown"
-    polar     = get_polar_from_header(header)
     time_str  = get_time_from_header(header)
     file_name = os.path.basename(file_path)
-    # 将偏振缩写转换为可读名称
-    if polar == "RR":
+    
+    # 将偏振显示名称
+    if polar_display == "RR":
         polar_display = "Right Circular (RR)"
-    elif polar == "LL":
+    elif polar_display == "LL":
         polar_display = "Left Circular (LL)"
-    else:
-        polar_display = polar
+    elif polar_display == "RR+LL":
+        if cfg.get("weighted_average", False):
+            rr_weight = cfg.get("rr_weight", 0.5)
+            ll_weight = cfg.get("ll_weight", 0.5)
+            polar_display = f"RR+LL Combined (weighted: RR={rr_weight}, LL={ll_weight})"
+        else:
+            polar_display = "RR+LL Combined (sum)"
+        
     title     = f"{file_name}   {freq} MHz  {polar_display}   {time_str}"
 
     fig, ax = plt.subplots(figsize=cfg["fig_size"])
@@ -626,6 +817,58 @@ def plot_single_band(file_path: str, output_dir: str, cfg: dict,
     return out_path
 
 
+def _save_single_pol_image(img_data, header, output_dir, cfg, vmin, vmax, polar_display, base_filename):
+    """保存单独的偏振图像"""
+    import matplotlib.pyplot as plt
+    
+    extent = calc_extent(header, img_data.shape)
+    rsun_obs = header.get("RSUN_OBS", 960.0)
+    freq = get_freq_from_header(header) or "Unknown"
+    time_str = get_time_from_header(header)
+    
+    # 修改文件名以包含偏振信息
+    filename_no_ext = os.path.splitext(base_filename)[0]
+    new_filename = f"{filename_no_ext}_{polar_display}.png"
+    
+    # 创建子目录
+    subdir = f"{int(freq)}MHz_{polar_display}" if isinstance(freq, (int, float)) else f"unknown_{polar_display}"
+    pol_output_dir = os.path.join(output_dir, "individual_pols", subdir)
+    os.makedirs(pol_output_dir, exist_ok=True)
+    
+    # 创建图像
+    fig, ax = plt.subplots(figsize=cfg["fig_size"])
+    
+    im_kwargs = dict(extent=extent, origin="upper",
+                     cmap=cfg["cmap"], aspect="equal")
+    if vmin is not None:
+        im_kwargs["vmin"] = vmin
+    if vmax is not None:
+        im_kwargs["vmax"] = vmax
+    
+    im = ax.imshow(img_data, **im_kwargs)
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 4, color='y')
+    
+    title = f"{base_filename}   {freq} MHz  {polar_display}   {time_str}"
+    ax.set_title(title, fontsize=cfg["title_fontsize"] - 4, fontweight="bold", pad=20)
+    ax.set_xlabel("x (arcsec)", fontsize=cfg["label_fontsize"] - 4)
+    ax.set_ylabel("y (arcsec)", fontsize=cfg["label_fontsize"] - 4)
+    ax.tick_params(axis="both", which="major", labelsize=cfg["tick_fontsize"] - 4, color='y')
+    
+    # 添加太阳轮廓
+    ax.add_patch(patches.Circle(
+        (0, 0), radius=rsun_obs,
+        edgecolor="white", facecolor="none", linewidth=2,
+    ))
+    
+    plt.tight_layout()
+    out_path = os.path.join(pol_output_dir, new_filename)
+    plt.savefig(out_path, dpi=cfg["dpi"] - 50, bbox_inches="tight")
+    plt.close(fig)
+    
+    return out_path
+
+
 def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
                          cfg: dict, vmin=None, vmax=None) -> str:
     """
@@ -645,15 +888,59 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
     
     # 存储每个波段的对数化数据
     all_log_data = []
+    
+    # 检查是否启用左右旋数据加和
+    combine_polarizations = cfg.get("combine_polarizations", False)
+    polarization = cfg.get("polarization", "RR")
+    time_tolerance = cfg.get("time_tolerance_seconds", 1.0)
+    
+    # 如果需要保存单独的偏振图像，创建存储路径
+    save_individual = cfg.get("save_individual_pols", False)
+    individual_outputs = []
 
-    for file_path in slot_files:
-        img_data, header = read_fits(file_path)
+    for file_item in slot_files:
+        if combine_polarizations and polarization == "RR+LL" and isinstance(file_item, tuple):
+            # 左右旋数据加和模式：file_item是(RR文件路径, LL文件路径)的元组
+            rr_path, ll_path = file_item
+            
+            # 读取两个偏振的数据
+            rr_data, rr_header = read_fits(rr_path)
+            ll_data, ll_header = read_fits(ll_path)
+            
+            # 检查时间对齐
+            if not _check_time_alignment(rr_header, ll_header, rr_path, ll_path, time_tolerance):
+                warnings.warn(f"RR和LL文件时间未对齐: {rr_path} vs {ll_path}")
+            
+            # 数据组合（加权平均或简单相加）
+            img_data = _combine_polarization_data(rr_data, ll_data, cfg)
+            header = rr_header  # 使用RR文件的头文件
+            polar_display = "RR+LL"
+            
+            # 如果需要保存单独的偏振图像
+            if save_individual:
+                freq = get_freq_from_header(rr_header) or "Unknown"
+                time_str = get_time_from_header(rr_header)
+                base_filename = f"slot_{slot_idx:04d}_freq_{freq}MHz"
+                
+                # 保存RR图像
+                rr_out = _save_single_pol_image(rr_data, rr_header, output_dir, cfg, 
+                                                vmin, vmax, "RR", base_filename)
+                # 保存LL图像
+                ll_out = _save_single_pol_image(ll_data, ll_header, output_dir, cfg,
+                                                vmin, vmax, "LL", base_filename)
+                individual_outputs.extend([rr_out, ll_out])
+            
+        else:
+            # 普通模式：file_item是单个文件路径
+            img_data, header = read_fits(file_item)
+            polar_display = get_polar_from_header(header)
+        
         all_data.append(img_data)
         all_headers.append(header)
         all_extents.append(calc_extent(header, img_data.shape))
         band_info.append((
             get_freq_from_header(header) or "Unknown",
-            get_polar_from_header(header),
+            polar_display,
             get_time_from_header(header),
         ))
         
@@ -780,9 +1067,16 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
         axes[row, col].axis("off")
 
     main_time = band_info[0][2] if band_info else "Unknown"
-    polarization = cfg.get("polarization", "RR")
-    # 将偏振缩写转换为可读名称
-    if polarization == "RR":
+    
+    # 确定显示名称
+    if combine_polarizations and polarization == "RR+LL":
+        if cfg.get("weighted_average", False):
+            rr_weight = cfg.get("rr_weight", 0.5)
+            ll_weight = cfg.get("ll_weight", 0.5)
+            polar_display = f"RR+LL Combined (weighted: RR={rr_weight}, LL={ll_weight})"
+        else:
+            polar_display = "RR+LL Combined (sum)"
+    elif polarization == "RR":
         polar_display = "Right Circular"
     elif polarization == "LL":
         polar_display = "Left Circular"
@@ -804,12 +1098,17 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
                                        f"multi_band_slot_{slot_idx:04d}.png")
 
     if cfg["save_plot"]:
-        plt.savefig(output_path, dpi=cfg["dpi"], bbox_inches="tight")
+        plt.savefig(output_path, dpi=cfg["dpi"], bbox_inches="tight())
 
     if cfg["show_plot"] and cfg.get("_interactive", False):
         plt.show()
 
     plt.close(fig)
+    
+    # 如果保存了单独的偏振图像，打印信息
+    if save_individual and individual_outputs:
+        print(f"Slot {slot_idx}: Saved {len(individual_outputs)} individual polarization images")
+    
     return output_path
 
 
@@ -840,6 +1139,33 @@ def main():
     cfg  = CONFIG
     cfg  = _migrate_config(cfg)
     mode = cfg.get("mode", "single_band")
+    
+    # 检查左右旋数据加和配置
+    combine_polarizations = cfg.get("combine_polarizations", False)
+    polarization = cfg.get("polarization", "RR")
+    
+    if combine_polarizations and polarization != "RR+LL":
+        print(f"Warning: combine_polarizations is True but polarization is '{polarization}'")
+        print("Setting polarization to 'RR+LL' for combined mode")
+        cfg["polarization"] = "RR+LL"
+    
+    if combine_polarizations:
+        print("=" * 60)
+        print("左右旋数据加和功能已启用")
+        print(f"  RR目录后缀: {cfg['rr_dir_suffix']}")
+        print(f"  LL目录后缀: {cfg['ll_dir_suffix']}")
+        print(f"  时间对齐容差: {cfg.get('time_tolerance_seconds', 1.0)} 秒")
+        
+        if cfg.get("weighted_average", False):
+            print(f"  组合方式: 加权平均 (RR权重={cfg.get('rr_weight', 0.5)}, LL权重={cfg.get('ll_weight', 0.5)})")
+        else:
+            print("  组合方式: 简单相加")
+        
+        if cfg.get("save_individual_pols", False):
+            print("  同时保存单独的RR、LL图像: 是")
+        else:
+            print("  同时保存单独的RR、LL图像: 否")
+        print("=" * 60)
 
     # ── 1. 根据模式决定文件列表 / 时间槽 ──────────────────────
     if mode == "multi_band":
@@ -865,9 +1191,27 @@ def main():
         else:
             if single_file:
                 print(f"[Warning] Specified single file does not exist: {single_file}. Falling back to batch processing mode.")
-            polarization = cfg.get("polarization", "RR")
-            data_dir     = cfg["data_dir"]
-            print(f"Single-band mode, polarization: {polarization}")
+            
+            # 根据是否启用左右旋数据加和来决定数据目录
+            if combine_polarizations and polarization == "RR+LL":
+                # 左右旋加和模式：需要从RR目录获取文件列表
+                data_dir = cfg["data_dir"]
+                # 检查是否是RR目录，如果不是则尝试转换为RR目录
+                if cfg["rr_dir_suffix"] not in data_dir and cfg["ll_dir_suffix"] not in data_dir:
+                    # 假设数据目录是频率目录，需要添加RR子目录
+                    data_dir = os.path.join(data_dir, cfg["rr_dir_suffix"])
+                elif cfg["ll_dir_suffix"] in data_dir:
+                    # 如果是LL目录，转换为RR目录
+                    data_dir = data_dir.replace(cfg["ll_dir_suffix"], cfg["rr_dir_suffix"])
+                
+                if not os.path.exists(data_dir):
+                    raise FileNotFoundError(f"找不到RR数据目录: {data_dir}")
+                    
+                print(f"Single-band mode with RR+LL summation, using RR directory: {data_dir}")
+            else:
+                data_dir = cfg["data_dir"]
+                print(f"Single-band mode, polarization: {polarization}")
+                
             output_dir = cfg.get("output_dir") or os.path.join(data_dir, "plot")
             os.makedirs(output_dir, exist_ok=True)
             files = get_sorted_fits(data_dir, cfg["start_idx"], cfg["end_idx"])
@@ -917,7 +1261,7 @@ def main():
     elif color_range_mode == "fixed":
         fixed_vmin = cfg.get("fixed_vmin")
         fixed_vmax = cfg.get("fixed_vmax")
-        if fixed_vmin is None or fixed_vmax is not None:
+        if fixed_vmin is not None or fixed_vmax is not None:
             print(f"Color range mode: fixed values [{fixed_vmin:.3e}, {fixed_vmax:.3e}]")
             vmin, vmax = fixed_vmin, fixed_vmax
         else:
