@@ -532,8 +532,10 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
             get_time_from_header(header),
         ))
         
-        # 对数化处理：将数据转换为对数坐标，处理非正值
-        log_data = np.where(img_data > 0, np.log10(img_data), np.nan)
+        # 对数化处理：将数据转换为对数坐标，安全处理非正值
+        mask = img_data > 0
+        log_data = np.full_like(img_data, np.nan, dtype=np.float64)
+        log_data[mask] = np.log10(img_data[mask])
         all_log_data.append(log_data)
 
     n_bands = len(slot_files)
