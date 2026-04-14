@@ -75,6 +75,13 @@ CONFIG = {
     # 当数据范围太小时的最小对数范围阈值
     "min_log_range": 0.001,
 
+    # ---------- 多波段子图间距配置 ----------
+    "multi_band_wspace": 0.0,      # 子图之间的水平间距（0表示无间隙）
+    "multi_band_hspace": 0.0,      # 子图之间的垂直间距（0表示无间隙）
+    
+    # ---------- 颜色条位置配置 ----------
+    "colorbar_position": [0.85, 0.05, 0.12, 0.03],  # [x, y, width, height] 相对于子图内部
+
     # ---------- Output configuration ----------
     "output_dir": r'D:\spike_topping_type_III\2025\20250124\RS_multi_band',
     "multi_band_also_save_single": False,
@@ -664,8 +671,10 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
 
     fig, axes = plt.subplots(nrow, ncol, figsize=cfg["multi_band_fig_size"])
     
-    # 进一步减少子图之间的间隙
-    plt.subplots_adjust(wspace=0.02, hspace=0.02, left=0.05, right=0.95, top=0.95, bottom=0.05)
+    # 使用用户配置的子图间距
+    wspace = cfg.get("multi_band_wspace", 0.0)
+    hspace = cfg.get("multi_band_hspace", 0.0)
+    plt.subplots_adjust(wspace=wspace, hspace=hspace, left=0.05, right=0.95, top=0.95, bottom=0.05)
     
     # 将axes转换为二维数组以便索引
     if nrow == 1 and ncol == 1:
@@ -751,12 +760,13 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
         ax.tick_params(axis="both", which="major",
                        labelsize=cfg["tick_fontsize"] - 8)
 
-        # 为每个子图添加嵌入式颜色条
-        # 创建颜色条轴，位置在子图内部右下角
-        cax = ax.inset_axes([0.82, 0.05, 0.15, 0.03])  # [x, y, width, height]
+        # 为每个子图添加嵌入式颜色条，使用用户配置的位置
+        colorbar_pos = cfg.get("colorbar_position", [0.85, 0.05, 0.12, 0.03])
+        
+        # 确保颜色条完全在子图内部
+        cax = ax.inset_axes(colorbar_pos)  # [x, y, width, height] 相对于子图内部
         cbar = fig.colorbar(im, cax=cax, orientation='horizontal')
         cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 10)
-        # 简化颜色条标签
         cbar.set_label('log10(I)', fontsize=cfg["tick_fontsize"] - 10)
 
     # 隐藏多余的子图
