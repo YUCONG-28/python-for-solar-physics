@@ -624,6 +624,113 @@ def _calculate_per_band_ranges(all_log_data: list, cfg: dict) -> tuple:
     return band_vmins, band_vmaxs
 
 
+def _compute_fixed_band_ranges(cfg: dict) -> tuple:
+    """
+    为每个波段计算固定的颜色范围（基于该波段所有文件的数据）。
+    
+    参数:
+    ----------
+    cfg : dict
+        配置字典
+    
+    返回:
+    -------
+    tuple : (band_vmins, band_vmaxs)
+        每个波段的固定颜色范围
+    """
+    root = cfg["multi_band_root"]
+    freqs = cfg["multi_band_freqs"]
+    pattern = cfg["band_dir_pattern"]
+    start_idx = cfg.get("start_idx", 0)
+    end_idx = cfg.get("end_idx", None)
+    
+    combine_polarizations = cfg.get("combine_polarizations", False)
+    polarization = cfg.get("polarization", "RR")
+    
+    band_vmins = []
+    band_vmaxs = []
+    
+    print("开始计算每个波段的固定颜色范围...")
+    
+    for freq_idx, freq in enumerate(tqdm(freqs, desc="计算波段颜色范围", unit="波段")):
+        all_band_data = []
+        
+        if combine_polarizations and polarization == "RR+LL":
+            # 读取RR和LL两个文件夹的所有文件
+            rr_dir = os.path.join(root, pattern.format(freq=freq, polar=cfg["rr_dir_suffix"]))
+            ll_dir = os.path.join(root, pattern.format(freq=freq, polar=cfg["ll_dir_suffix"]))
+            
+            # 获取两个文件夹的文件列表
+            rr_files = _sorted_fits_for_band(rr_dir, start_idx, end_idx)
+            ll_files = _sorted_fits_for_band(ll_dir, start_idx, end_idx)
+            
+            if len(rr_files) != len(ll_files):
+                raise ValueError(f"频率 {freq}MHz: RR和LL文件数量不一致")
+            
+            # 读取所有文件的数据
+            for rr_path, ll_path in zip(rr_files, ll_files):
+                try:
+                    rr_data, rr_header = read_fits(rr_path)
+                    ll_data, ll_header = read_fits(ll_path)
+                    
+                    # 组合数据（加权平均或简单相加）
+                    combined_data = _combine_polarization_data(rr_data, ll_data, cfg)
+                    
+                    # 对数化处理
+                    mask = combined_data > 0
+                    log_data = np.full_like(combined_data, np.nan, dtype=np.float64)
+                    log_data[mask] = np.log10(combined_data[mask])
+                    
+                    # 收集有效数据
+                    valid_data = log_data[~np.isnan(log_data)]
+                    if len(valid_data) > 0:
+                        all_band_data.extend(valid_data)
+                        
+                except Exception as e:
+                    warnings.warn(f"读取文件时出错（频率 {freq}MHz）: {e}")
+                    continue
+        else:
+            # 普通模式：只读取指定偏振的文件
+            band_dir = os.path.join(root, pattern.format(freq=freq, polar=polarization))
+            files = _sorted_fits_for_band(band_dir, start_idx, end_idx)
+            
+            # 读取所有文件的数据
+            for file_path in files:
+                try:
+                    img_data, header = read_fits(file_path)
+                    
+                    # 对数化处理
+                    mask = img_data > 0
+                    log_data = np.full_like(img_data, np.nan, dtype=np.float64)
+                    log_data[mask] = np.log10(img_data[mask])
+                    
+                    # 收集有效数据
+                    valid_data = log_data[~np.isnan(log_data)]
+                    if len(valid_data) > 0:
+                        all_band_data.extend(valid_data)
+                        
+                except Exception as e:
+                    warnings.warn(f"读取文件时出错（频率 {freq}MHz）: {e}")
+                    continue
+        
+        # 计算该波段的固定颜色范围
+        if len(all_band_data) > 0:
+            all_band_data_array = np.array(all_band_data)
+            vmin_band, vmax_band = _calculate_range(all_band_data_array, cfg, is_global=False)
+            band_vmins.append(vmin_band)
+            band_vmaxs.append(vmax_band)
+            
+            print(f"频率 {freq}MHz: 固定颜色范围 = [{vmin_band:.3f}, {vmax_band:.3f}] (基于{len(all_band_data)}个数据点)")
+        else:
+            # 如果没有有效数据，使用默认范围
+            band_vmins.append(0)
+            band_vmaxs.append(1)
+            print(f"频率 {freq}MHz: 警告 - 没有有效数据，使用默认范围")
+    
+    print("每个波段的固定颜色范围计算完成！")
+    return band_vmins, band_vmaxs
+
+
 # ──────────────────────────────────────────────────────────────
 # 核心绘图函数（在子进程中执行）
 # ──────────────────────────────────────────────────────────────
@@ -748,9 +855,13 @@ def plot_single_band(file_path: str, output_dir: str, cfg: dict,
 
     im_kwargs = dict(extent=extent, origin="upper",
                      cmap=cfg["cmap"], aspect="equal")
-    if vmin is not None:
+
+    # 优先使用固定颜色范围
+    if cfg.get("color_range_mode") == "fixed" and "fixed_vmin" in cfg and "fixed_vmax" in cfg:
+        im_kwargs["vmin"] = cfg["fixed_vmin"]
+        im_kwargs["vmax"] = cfg["fixed_vmax"]
+    elif vmin is not None and vmax is not None:
         im_kwargs["vmin"] = vmin
-    if vmax is not None:
         im_kwargs["vmax"] = vmax
 
     im   = ax.imshow(img_data, **im_kwargs)
@@ -973,8 +1084,13 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
     else:
         axes = axes.reshape(nrow, ncol)
 
-    # 为每个波段计算合适的对数数据范围
-    band_vmins, band_vmaxs = _calculate_per_band_ranges(all_log_data, cfg)
+    # 使用预先计算的固定波段颜色范围
+    if 'fixed_band_vmins' in cfg and 'fixed_band_vmaxs' in cfg:
+        band_vmins = cfg['fixed_band_vmins']
+        band_vmaxs = cfg['fixed_band_vmaxs']
+    else:
+        # 如果没有预先计算的范围，则按原有方法计算（兼容性）
+        band_vmins, band_vmaxs = _calculate_per_band_ranges(all_log_data, cfg)
     
     # 计算整体对数范围（用于统一颜色条时）
     all_valid = np.concatenate([d[~np.isnan(d)] for d in all_log_data if len(d[~np.isnan(d)]) > 0])
@@ -1175,7 +1291,12 @@ def main():
         output_dir = cfg.get("output_dir") or os.path.join(cfg["multi_band_root"], "plot")
         os.makedirs(output_dir, exist_ok=True)
         print(f"Output directory: {output_dir}")
-
+        
+        # 计算每个波段的固定颜色范围
+        fixed_band_vmins, fixed_band_vmaxs = _compute_fixed_band_ranges(cfg)
+        cfg['fixed_band_vmins'] = fixed_band_vmins
+        cfg['fixed_band_vmaxs'] = fixed_band_vmaxs
+        
         if cfg.get("multi_band_also_save_single", False):
             print("Note: multi_band_also_save_single=True, will also save single-band images")
 
@@ -1189,6 +1310,8 @@ def main():
                 os.path.dirname(single_file), "plot")
             os.makedirs(output_dir, exist_ok=True)
             print(f"Single-file mode, processing only: {single_file}")
+            
+            # 单文件模式不需要预先计算颜色范围
         else:
             if single_file:
                 print(f"[Warning] Specified single file does not exist: {single_file}. Falling back to batch processing mode.")
@@ -1217,6 +1340,50 @@ def main():
             os.makedirs(output_dir, exist_ok=True)
             files = get_sorted_fits(data_dir, cfg["start_idx"], cfg["end_idx"])
             print(f"Selected {len(files)} FITS files, output directory: {output_dir}")
+            
+            # 为单波段模式计算固定颜色范围
+            if len(files) > 0:
+                print("计算单波段模式的固定颜色范围...")
+                all_band_data = []
+                
+                for file_path in tqdm(files, desc="读取文件数据", unit="文件"):
+                    try:
+                        img_data, header = read_fits(file_path)
+                        
+                        # 如果是RR+LL模式，需要读取对应的LL文件
+                        if combine_polarizations and polarization == "RR+LL":
+                            # 获取对应的LL文件路径
+                            base_dir = os.path.dirname(os.path.dirname(file_path))
+                            file_name = os.path.basename(file_path)
+                            ll_path = os.path.join(base_dir, cfg["ll_dir_suffix"], file_name)
+                            
+                            if os.path.exists(ll_path):
+                                ll_data, ll_header = read_fits(ll_path)
+                                # 组合数据
+                                img_data = _combine_polarization_data(img_data, ll_data, cfg)
+                        
+                        # 对数化处理
+                        mask = img_data > 0
+                        log_data = np.full_like(img_data, np.nan, dtype=np.float64)
+                        log_data[mask] = np.log10(img_data[mask])
+                        
+                        # 收集有效数据
+                        valid_data = log_data[~np.isnan(log_data)]
+                        if len(valid_data) > 0:
+                            all_band_data.extend(valid_data)
+                            
+                    except Exception as e:
+                        warnings.warn(f"读取文件时出错 {file_path}: {e}")
+                        continue
+                
+                if len(all_band_data) > 0:
+                    all_band_data_array = np.array(all_band_data)
+                    vmin_band, vmax_band = _calculate_range(all_band_data_array, cfg, is_global=False)
+                    cfg['fixed_vmin'] = vmin_band
+                    cfg['fixed_vmax'] = vmax_band
+                    print(f"单波段固定颜色范围: [{vmin_band:.3f}, {vmax_band:.3f}] (基于{len(all_band_data)}个数据点)")
+                else:
+                    print("警告: 没有有效数据用于计算颜色范围")
 
     # ── 2. 确定运行模式（交互 / 并行） ─────────────────────────
     if cfg["show_plot"]:
