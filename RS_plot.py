@@ -57,6 +57,11 @@ CONFIG = {
     "multi_band_output_subdir": "multi_band_{polar}",
     "multi_band_layout": "auto",
 
+    # ---------- 多波段颜色范围 ----------
+    # True: 每个波段使用独立的颜色范围
+    # False: 所有波段使用统一的全局颜色范围
+    "use_per_band_colormap": True,
+
     # ---------- Output configuration ----------
     "output_dir": r'D:\spike_topping_type_III\2025\20250124\RS_multi_band',
     "multi_band_also_save_single": False,
@@ -512,6 +517,9 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
     all_headers = []
     all_extents = []
     band_info   = []
+    
+    # 存储每个波段的对数化数据
+    all_log_data = []
 
     for file_path in slot_files:
         img_data, header = read_fits(file_path)
@@ -523,6 +531,10 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
             get_polar_from_header(header),
             get_time_from_header(header),
         ))
+        
+        # 对数化处理：将数据转换为对数坐标，处理非正值
+        log_data = np.where(img_data > 0, np.log10(img_data), np.nan)
+        all_log_data.append(log_data)
 
     n_bands = len(slot_files)
     if cfg["multi_band_layout"] == "auto":
@@ -531,21 +543,71 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
         nrow, ncol = cfg["multi_band_layout"]
 
     fig, axes = plt.subplots(nrow, ncol, figsize=cfg["multi_band_fig_size"])
-    axes = axes.flatten() if hasattr(axes, "flatten") else [axes]
+    
+    # 减少子图之间的间隙
+    plt.subplots_adjust(wspace=0.05, hspace=0.05)
+    
+    # 将axes转换为二维数组以便索引
+    if nrow == 1 and ncol == 1:
+        axes = np.array([[axes]])
+    elif nrow == 1:
+        axes = axes.reshape(1, -1)
+    elif ncol == 1:
+        axes = axes.reshape(-1, 1)
+    else:
+        axes = axes.reshape(nrow, ncol)
+
+    # 为每个波段计算对数数据的最大值和最小值
+    band_vmins = []
+    band_vmaxs = []
+    
+    for idx in range(n_bands):
+        log_data = all_log_data[idx]
+        valid_data = log_data[~np.isnan(log_data)]
+        if len(valid_data) > 0:
+            # 使用数据的分位数避免极端值影响
+            q1 = np.percentile(valid_data, 1)
+            q99 = np.percentile(valid_data, 99)
+            band_vmins.append(q1)
+            band_vmaxs.append(q99)
+        else:
+            band_vmins.append(0)
+            band_vmaxs.append(1)
+    
+    # 计算整体对数范围（可选，用于保持颜色条一致性）
+    all_valid = np.concatenate([d[~np.isnan(d)] for d in all_log_data if len(d[~np.isnan(d)]) > 0])
+    if len(all_valid) > 0:
+        global_q1 = np.percentile(all_valid, 1)
+        global_q99 = np.percentile(all_valid, 99)
+    else:
+        global_q1, global_q99 = 0, 1
 
     for idx in range(n_bands):
-        ax       = axes[idx]
+        row = idx // ncol
+        col = idx % ncol
+        ax = axes[row, col]
+        
         freq, polar, _ = band_info[idx]
         rsun_obs = all_headers[idx].get("RSUN_OBS", 960.0)
-
+        
+        # 使用对数化数据
+        log_data = all_log_data[idx]
+        
         im_kwargs = dict(extent=all_extents[idx], origin="upper",
                          cmap=cfg["cmap"], aspect="equal")
-        if vmin is not None:
-            im_kwargs["vmin"] = vmin
-        if vmax is not None:
-            im_kwargs["vmax"] = vmax
+        
+        # 为每个波段设置独立的对数颜色范围
+        if cfg.get("use_per_band_colormap", True):
+            # 使用每个波段自己的范围
+            vmin_band, vmax_band = band_vmins[idx], band_vmaxs[idx]
+        else:
+            # 使用全局范围
+            vmin_band, vmax_band = global_q1, global_q99
+            
+        im_kwargs["vmin"] = vmin_band
+        im_kwargs["vmax"] = vmax_band
 
-        im = ax.imshow(all_data[idx], **im_kwargs)
+        im = ax.imshow(log_data, **im_kwargs)
 
         ax.add_patch(patches.Circle(
             (0, 0), radius=rsun_obs,
@@ -567,22 +629,38 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
             polar_display = "Left Circular (LL)"
         else:
             polar_display = polar
+            
+        # 添加波段频率和偏振信息
         ax.set_title(f"{freq} MHz  {polar_display}",
                      fontsize=cfg["title_fontsize"] - 4, fontweight="bold")
 
-        if idx % ncol == 0:
+        # 坐标轴标签设置：只在最左边一列显示Y轴，最下面一行显示X轴
+        if col == 0:  # 最左边一列
             ax.set_ylabel("y (arcsec)", fontsize=cfg["label_fontsize"] - 4)
-        if idx >= (nrow - 1) * ncol:
+        else:
+            ax.set_ylabel("")
+            ax.tick_params(axis='y', which='both', left=False, labelleft=False)
+            
+        if row == nrow - 1:  # 最下面一行
             ax.set_xlabel("x (arcsec)", fontsize=cfg["label_fontsize"] - 4)
+        else:
+            ax.set_xlabel("")
+            ax.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
 
+        # 调整刻度标签大小
         ax.tick_params(axis="both", which="major",
                        labelsize=cfg["tick_fontsize"] - 6)
 
+        # 为每个子图添加颜色条
         cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
         cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 8)
+        cbar.set_label('log10(Intensity)', fontsize=cfg["tick_fontsize"] - 8)
 
-    for idx in range(n_bands, len(axes)):
-        axes[idx].axis("off")
+    # 隐藏多余的子图
+    for idx in range(n_bands, nrow * ncol):
+        row = idx // ncol
+        col = idx % ncol
+        axes[row, col].axis("off")
 
     main_time = band_info[0][2] if band_info else "Unknown"
     polarization = cfg.get("polarization", "RR")
@@ -593,9 +671,12 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
         polar_display = "Left Circular"
     else:
         polar_display = polarization
+        
+    # 添加总标题
     fig.suptitle(f"Multi-band Radio Synthesis ({polar_display}) - {main_time}",
                  fontsize=cfg["title_fontsize"] + 4, fontweight="bold", y=0.98)
 
+    # 进一步调整布局
     plt.tight_layout(rect=[0, 0, 1, 0.96])
 
     # ★ 优化：输出目录已预创建，直接拼接文件名
