@@ -546,8 +546,8 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
 
     fig, axes = plt.subplots(nrow, ncol, figsize=cfg["multi_band_fig_size"])
     
-    # 减少子图之间的间隙
-    plt.subplots_adjust(wspace=0.05, hspace=0.05)
+    # 进一步减少子图之间的间隙
+    plt.subplots_adjust(wspace=0.02, hspace=0.02, left=0.05, right=0.95, top=0.95, bottom=0.05)
     
     # 将axes转换为二维数组以便索引
     if nrow == 1 and ncol == 1:
@@ -559,7 +559,7 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
     else:
         axes = axes.reshape(nrow, ncol)
 
-    # 为每个波段计算对数数据的最大值和最小值
+    # 为每个波段计算合适的对数数据范围（基于数据分布）
     band_vmins = []
     band_vmaxs = []
     
@@ -567,22 +567,32 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
         log_data = all_log_data[idx]
         valid_data = log_data[~np.isnan(log_data)]
         if len(valid_data) > 0:
-            # 使用数据的分位数避免极端值影响
-            q1 = np.percentile(valid_data, 1)
-            q99 = np.percentile(valid_data, 99)
-            band_vmins.append(q1)
-            band_vmaxs.append(q99)
+            # 使用数据的5%和95%分位数，避免极端值影响
+            q5 = np.percentile(valid_data, 5)
+            q95 = np.percentile(valid_data, 95)
+            
+            # 确保范围合理，如果数据范围太小，则使用1%和99%分位数
+            if q95 - q5 < 0.5:  # 对数范围太小
+                q5 = np.percentile(valid_data, 1)
+                q95 = np.percentile(valid_data, 99)
+            
+            band_vmins.append(q5)
+            band_vmaxs.append(q95)
         else:
+            # 如果没有有效数据，使用默认范围
             band_vmins.append(0)
             band_vmaxs.append(1)
     
-    # 计算整体对数范围（可选，用于保持颜色条一致性）
+    # 计算整体对数范围（用于统一颜色条时）
     all_valid = np.concatenate([d[~np.isnan(d)] for d in all_log_data if len(d[~np.isnan(d)]) > 0])
     if len(all_valid) > 0:
-        global_q1 = np.percentile(all_valid, 1)
-        global_q99 = np.percentile(all_valid, 99)
+        global_q5 = np.percentile(all_valid, 5)
+        global_q95 = np.percentile(all_valid, 95)
+        if global_q95 - global_q5 < 0.5:
+            global_q5 = np.percentile(all_valid, 1)
+            global_q95 = np.percentile(all_valid, 99)
     else:
-        global_q1, global_q99 = 0, 1
+        global_q5, global_q95 = 0, 1
 
     for idx in range(n_bands):
         row = idx // ncol
@@ -598,13 +608,13 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
         im_kwargs = dict(extent=all_extents[idx], origin="upper",
                          cmap=cfg["cmap"], aspect="equal")
         
-        # 为每个波段设置独立的对数颜色范围
+        # 为每个波段设置合适的颜色范围
         if cfg.get("use_per_band_colormap", True):
-            # 使用每个波段自己的范围
+            # 使用每个波段自己的合适范围
             vmin_band, vmax_band = band_vmins[idx], band_vmaxs[idx]
         else:
             # 使用全局范围
-            vmin_band, vmax_band = global_q1, global_q99
+            vmin_band, vmax_band = global_q5, global_q95
             
         im_kwargs["vmin"] = vmin_band
         im_kwargs["vmax"] = vmax_band
@@ -613,7 +623,7 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
 
         ax.add_patch(patches.Circle(
             (0, 0), radius=rsun_obs,
-            edgecolor="white", facecolor="none", linewidth=2,
+            edgecolor="white", facecolor="none", linewidth=1.5,
         ))
 
         if cfg.get("use_custom_lim", False):
@@ -624,39 +634,37 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
             ax.set_xlim(-rsun_obs * sf, rsun_obs * sf)
             ax.set_ylim(-rsun_obs * sf, rsun_obs * sf)
 
-        # 将偏振缩写转换为可读名称
-        if polar == "RR":
-            polar_display = "Right Circular (RR)"
-        elif polar == "LL":
-            polar_display = "Left Circular (LL)"
-        else:
-            polar_display = polar
-            
-        # 添加波段频率和偏振信息
-        ax.set_title(f"{freq} MHz  {polar_display}",
-                     fontsize=cfg["title_fontsize"] - 4, fontweight="bold")
+        # 在子图中标注频率（替代标题）
+        freq_text = f"{freq} MHz"
+        ax.text(0.02, 0.98, freq_text, transform=ax.transAxes,
+                fontsize=cfg["title_fontsize"] - 6, fontweight="bold",
+                color="white", verticalalignment="top",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="black", alpha=0.7, edgecolor="white"))
 
         # 坐标轴标签设置：只在最左边一列显示Y轴，最下面一行显示X轴
         if col == 0:  # 最左边一列
-            ax.set_ylabel("y (arcsec)", fontsize=cfg["label_fontsize"] - 4)
+            ax.set_ylabel("y (arcsec)", fontsize=cfg["label_fontsize"] - 6)
         else:
             ax.set_ylabel("")
             ax.tick_params(axis='y', which='both', left=False, labelleft=False)
             
         if row == nrow - 1:  # 最下面一行
-            ax.set_xlabel("x (arcsec)", fontsize=cfg["label_fontsize"] - 4)
+            ax.set_xlabel("x (arcsec)", fontsize=cfg["label_fontsize"] - 6)
         else:
             ax.set_xlabel("")
             ax.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
 
         # 调整刻度标签大小
         ax.tick_params(axis="both", which="major",
-                       labelsize=cfg["tick_fontsize"] - 6)
+                       labelsize=cfg["tick_fontsize"] - 8)
 
-        # 为每个子图添加颜色条
-        cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
-        cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 8)
-        cbar.set_label('log10(Intensity)', fontsize=cfg["tick_fontsize"] - 8)
+        # 为每个子图添加嵌入式颜色条
+        # 创建颜色条轴，位置在子图内部右下角
+        cax = ax.inset_axes([0.82, 0.05, 0.15, 0.03])  # [x, y, width, height]
+        cbar = fig.colorbar(im, cax=cax, orientation='horizontal')
+        cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 10)
+        # 简化颜色条标签
+        cbar.set_label('log10(I)', fontsize=cfg["tick_fontsize"] - 10)
 
     # 隐藏多余的子图
     for idx in range(n_bands, nrow * ncol):
@@ -676,7 +684,7 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
         
     # 添加总标题
     fig.suptitle(f"Multi-band Radio Synthesis ({polar_display}) - {main_time}",
-                 fontsize=cfg["title_fontsize"] + 4, fontweight="bold", y=0.98)
+                 fontsize=cfg["title_fontsize"] + 2, fontweight="bold", y=0.98)
 
     # 进一步调整布局
     plt.tight_layout(rect=[0, 0, 1, 0.96])
