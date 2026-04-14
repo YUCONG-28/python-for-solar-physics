@@ -61,6 +61,19 @@ CONFIG = {
     # True: 每个波段使用独立的颜色范围
     # False: 所有波段使用统一的全局颜色范围
     "use_per_band_colormap": True,
+    
+    # ---------- 波段颜色范围计算方法 ----------
+    # "percentile": 使用固定百分位数（5%-95%，范围太小时自动调整到1%-99%）
+    # "fixed_percentile": 使用用户自定义的百分位数
+    # "minmax": 使用最小最大值方法
+    "per_band_range_method": "fixed_percentile",
+    
+    # 当使用fixed_percentile方法时的百分位数设置
+    # 例如: [5, 95] 表示使用5%到95%的数据范围
+    "per_band_percentiles": [66, 95],
+    
+    # 当数据范围太小时的最小对数范围阈值
+    "min_log_range": 0.5,
 
     # ---------- Output configuration ----------
     "output_dir": r'D:\spike_topping_type_III\2025\20250124\RS_multi_band',
@@ -395,6 +408,111 @@ def _precreate_multi_band_dir(output_dir: str, cfg: dict) -> str:
 
 
 # ──────────────────────────────────────────────────────────────
+# 颜色范围计算辅助函数
+# ──────────────────────────────────────────────────────────────
+
+def _calculate_range(data: np.ndarray, cfg: dict, is_global: bool = False) -> tuple:
+    """
+    计算数据范围。
+    
+    参数:
+    ----------
+    data : np.ndarray
+        输入数据（通常是对数化后的数据）
+    cfg : dict
+        配置字典
+    is_global : bool
+        是否为全局范围计算
+    
+    返回:
+    -------
+    tuple : (vmin, vmax)
+    """
+    method = cfg.get("per_band_range_method", "fixed_percentile")
+    min_log_range = cfg.get("min_log_range", 0.5)
+    
+    if len(data) == 0:
+        return 0, 1
+    
+    if method == "percentile":
+        # 使用5%和95%分位数
+        low = np.percentile(data, 5)
+        high = np.percentile(data, 95)
+        
+        # 如果范围太小，使用1%和99%分位数
+        if high - low < min_log_range:
+            low = np.percentile(data, 1)
+            high = np.percentile(data, 99)
+            
+    elif method == "fixed_percentile":
+        # 使用用户自定义的百分位数
+        percentiles = cfg.get("per_band_percentiles", [66, 95])
+        if len(percentiles) == 2:
+            low = np.percentile(data, percentiles[0])
+            high = np.percentile(data, percentiles[1])
+        else:
+            # 如果配置错误，使用默认值
+            low = np.percentile(data, 5)
+            high = np.percentile(data, 95)
+            
+        # 如果范围太小，给出警告但保持用户设置
+        if high - low < min_log_range:
+            warnings.warn(f"颜色范围过小 ({high - low:.3f})，考虑调整百分位数设置。")
+            
+    elif method == "minmax":
+        # 使用最小最大值方法
+        low = np.min(data)
+        high = np.max(data)
+        
+        # 如果范围太小，给出警告
+        if high - low < min_log_range:
+            warnings.warn(f"颜色范围过小 ({high - low:.3f})，考虑使用百分位数方法。")
+    else:
+        # 默认使用5%和95%分位数
+        low = np.percentile(data, 5)
+        high = np.percentile(data, 95)
+        
+        if high - low < min_log_range:
+            low = np.percentile(data, 1)
+            high = np.percentile(data, 99)
+    
+    return low, high
+
+
+def _calculate_per_band_ranges(all_log_data: list, cfg: dict) -> tuple:
+    """
+    为每个波段计算合适的对数数据范围。
+    
+    参数:
+    ----------
+    all_log_data : list
+        所有波段的对数数据列表
+    cfg : dict
+        配置字典
+    
+    返回:
+    -------
+    tuple : (band_vmins, band_vmaxs)
+    """
+    band_vmins = []
+    band_vmaxs = []
+    
+    for idx, log_data in enumerate(all_log_data):
+        valid_data = log_data[~np.isnan(log_data)]
+        if len(valid_data) > 0:
+            # 使用配置的方法计算范围
+            vmin_band, vmax_band = _calculate_range(valid_data, cfg, is_global=False)
+            band_vmins.append(vmin_band)
+            band_vmaxs.append(vmax_band)
+        else:
+            # 如果没有有效数据，使用默认范围
+            band_vmins.append(0)
+            band_vmaxs.append(1)
+    
+    return band_vmins, band_vmaxs
+
+
+# ──────────────────────────────────────────────────────────────
 # 核心绘图函数（在子进程中执行）
 # ──────────────────────────────────────────────────────────────
 
@@ -559,40 +677,15 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
     else:
         axes = axes.reshape(nrow, ncol)
 
-    # 为每个波段计算合适的对数数据范围（基于数据分布）
-    band_vmins = []
-    band_vmaxs = []
-    
-    for idx in range(n_bands):
-        log_data = all_log_data[idx]
-        valid_data = log_data[~np.isnan(log_data)]
-        if len(valid_data) > 0:
-            # 使用数据的5%和95%分位数，避免极端值影响
-            q5 = np.percentile(valid_data, 66)
-            q95 = np.percentile(valid_data, 95)
-            
-            # 确保范围合理，如果数据范围太小，则使用1%和99%分位数
-            if q95 - q5 < 0.5:  # 对数范围太小
-                q5 = np.percentile(valid_data, 66)
-                q95 = np.percentile(valid_data, 95)
-            
-            band_vmins.append(q5)
-            band_vmaxs.append(q95)
-        else:
-            # 如果没有有效数据，使用默认范围
-            band_vmins.append(0)
-            band_vmaxs.append(1)
+    # 为每个波段计算合适的对数数据范围
+    band_vmins, band_vmaxs = _calculate_per_band_ranges(all_log_data, cfg)
     
     # 计算整体对数范围（用于统一颜色条时）
     all_valid = np.concatenate([d[~np.isnan(d)] for d in all_log_data if len(d[~np.isnan(d)]) > 0])
     if len(all_valid) > 0:
-        global_q5 = np.percentile(all_valid, 5)
-        global_q95 = np.percentile(all_valid, 95)
-        if global_q95 - global_q5 < 0.5:
-            global_q5 = np.percentile(all_valid, 1)
-            global_q95 = np.percentile(all_valid, 99)
+        global_low, global_high = _calculate_range(all_valid, cfg, is_global=True)
     else:
-        global_q5, global_q95 = 0, 1
+        global_low, global_high = 0, 1
 
     for idx in range(n_bands):
         row = idx // ncol
@@ -614,7 +707,7 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
             vmin_band, vmax_band = band_vmins[idx], band_vmaxs[idx]
         else:
             # 使用全局范围
-            vmin_band, vmax_band = global_q5, global_q95
+            vmin_band, vmax_band = global_low, global_high
             
         im_kwargs["vmin"] = vmin_band
         im_kwargs["vmax"] = vmax_band
@@ -810,11 +903,11 @@ def main():
     elif color_range_mode == "fixed":
         fixed_vmin = cfg.get("fixed_vmin")
         fixed_vmax = cfg.get("fixed_vmax")
-        if fixed_vmin is None or fixed_vmax is None:
-            print("Warning: color_range_mode='fixed' but fixed_vmin/vmax not set, fallback to auto mode")
-        else:
+        if fixed_vmin is None or fixed_vmax is not None:
             print(f"Color range mode: fixed values [{fixed_vmin:.3e}, {fixed_vmax:.3e}]")
             vmin, vmax = fixed_vmin, fixed_vmax
+        else:
+            print("Warning: color_range_mode='fixed' but fixed_vmin/vmax not set, fallback to auto mode")
 
     else:
         print(f"Warning: unknown mode '{color_range_mode}', using auto‑adjust mode")
