@@ -38,7 +38,7 @@ CONFIG = {
     # "RR": right circular polarization
     # "LL": left circular polarization
     # "RR+LL": sum of right and left circular polarization
-    "polarization": "RR",  # "RR", "LL", or "RR+LL"
+    "polarization": "RR+LL",  # "RR", "LL", or "RR+LL"
 
     # ---------- 左右旋数据加和配置 ----------
     "combine_polarizations": False,  # 是否启用左右旋数据加和功能
@@ -107,8 +107,8 @@ CONFIG = {
 
     # ---------- Image display limits ----------
     "use_custom_lim": True,
-    "custom_xlim":    (-1500, 1500),
-    "custom_ylim":    (-1500, 1500),
+    "custom_xlim":    (500, 1500),
+    "custom_ylim":    (-700, 300),
 
     # ---------- Image appearance ----------
     "fig_size":            (18, 16),
