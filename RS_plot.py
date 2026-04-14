@@ -37,7 +37,7 @@ CONFIG = {
     # ---------- Polarization configuration ----------
     # "RR": right circular polarization
     # "LL": left circular polarization
-    "polarization": "LL",  # "RR" or "LL"
+    "polarization": "RR",  # "RR" or "LL"
 
     # ---------- Single-band mode configuration ----------
     # Single-file mode: if you only want to plot a single file, fill in the full absolute path here
@@ -47,8 +47,8 @@ CONFIG = {
     "data_dir": r"D:\spike_topping_type_III\2025\20250124\RS_0447-0450\149MHz\RR",
 
     # File range (only effective in batch mode)
-    "start_idx": 1400,          # start index (inclusive)
-    "end_idx":   1410,          # end index (exclusive)
+    "start_idx": 1580,          # start index (inclusive)
+    "end_idx":   1700,          # end index (exclusive)
 
     # ---------- Multi-band mode configuration ----------
     "multi_band_root": r"D:\spike_topping_type_III\2025\20250124\RS_0447-0450",
@@ -80,7 +80,7 @@ CONFIG = {
     "multi_band_hspace": 0.0,      # 子图之间的垂直间距（0表示无间隙）
     
     # ---------- 颜色条位置配置 ----------
-    "colorbar_position": [0.85, 0.05, 0.12, 0.03],  # [x, y, width, height] 相对于子图内部
+    "colorbar_position": [0.75, 0.05, 0.22, 0.03],  # [x, y, width, height] 相对于子图内部
 
     # ---------- Output configuration ----------
     "output_dir": r'D:\spike_topping_type_III\2025\20250124\RS_multi_band',
@@ -101,7 +101,7 @@ CONFIG = {
 
     # ---------- Image appearance ----------
     "fig_size":            (18, 16),
-    "multi_band_fig_size": (24, 20),
+    "multi_band_fig_size": (24, 24),
     "dpi":                 300,
     "cmap":                "jet",
     "scale_factor":        3.5,
@@ -564,12 +564,12 @@ def plot_single_band(file_path: str, output_dir: str, cfg: dict,
 
     im   = ax.imshow(img_data, **im_kwargs)
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 4)
+    cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 4, color = 'y')
 
     ax.set_title(title, fontsize=cfg["title_fontsize"], fontweight="bold", pad=20)
     ax.set_xlabel("x (arcsec)", fontsize=cfg["label_fontsize"])
     ax.set_ylabel("y (arcsec)", fontsize=cfg["label_fontsize"])
-    ax.tick_params(axis="both", which="major", labelsize=cfg["tick_fontsize"])
+    ax.tick_params(axis="both", which="major", labelsize=cfg["tick_fontsize"], color = 'y')
 
     ax.add_patch(patches.Circle(
         (0, 0), radius=rsun_obs,
@@ -707,8 +707,11 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
         # 使用对数化数据
         log_data = all_log_data[idx]
         
+        current_cmap = plt.get_cmap(cfg["cmap"]).copy()
+        current_cmap.set_bad(color='#000080')
+        
         im_kwargs = dict(extent=all_extents[idx], origin="upper",
-                         cmap=cfg["cmap"], aspect="equal")
+                         cmap=current_cmap, aspect="equal")
         
         # 为每个波段设置合适的颜色范围
         if cfg.get("use_per_band_colormap", True):
@@ -748,26 +751,27 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
             ax.set_ylabel("y (arcsec)", fontsize=cfg["label_fontsize"] - 6)
         else:
             ax.set_ylabel("")
-            ax.tick_params(axis='y', which='both', left=False, labelleft=False)
+            ax.tick_params(axis='y', which='both', left=False, labelleft=False, color = 'y')
             
         if row == nrow - 1:  # 最下面一行
             ax.set_xlabel("x (arcsec)", fontsize=cfg["label_fontsize"] - 6)
         else:
             ax.set_xlabel("")
-            ax.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+            ax.tick_params(axis='x', which='both', bottom=False, labelbottom=False, color = 'y')
 
         # 调整刻度标签大小
         ax.tick_params(axis="both", which="major",
-                       labelsize=cfg["tick_fontsize"] - 8)
+                       labelsize=cfg["tick_fontsize"] - 8, color = 'y')
 
         # 为每个子图添加嵌入式颜色条，使用用户配置的位置
-        colorbar_pos = cfg.get("colorbar_position", [0.85, 0.05, 0.12, 0.03])
+        colorbar_pos = cfg.get("colorbar_position", [0.75, 0.05, 0.22, 0.03])
         
         # 确保颜色条完全在子图内部
         cax = ax.inset_axes(colorbar_pos)  # [x, y, width, height] 相对于子图内部
-        cbar = fig.colorbar(im, cax=cax, orientation='horizontal')
-        cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 10)
-        cbar.set_label('log10(I)', fontsize=cfg["tick_fontsize"] - 10)
+        cbar = fig.colorbar(im, cax=cax, orientation='horizontal', color = 'y')
+        cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 10, color = 'y')
+        # cbar.set_label('log10(I)', fontsize=cfg["tick_fontsize"] - 10, color='y')
+        cbar.ax.locator_params(nbins=3)
 
     # 隐藏多余的子图
     for idx in range(n_bands, nrow * ncol):
@@ -790,7 +794,7 @@ def plot_multi_band_slot(slot_idx: int, slot_files: list, output_dir: str,
                  fontsize=cfg["title_fontsize"] + 2, fontweight="bold", y=0.98)
 
     # 进一步调整布局
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    # plt.tight_layout(rect=[0, 0, 1, 0.96])
 
     # ★ 优化：输出目录已预创建，直接拼接文件名
     polarization        = cfg.get("polarization", "RR")
