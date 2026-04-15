@@ -18,7 +18,7 @@ AIA_RS_HMI.py  –  AIA、射电和 HMI 数据叠加绘图脚本
 ==========================================
 支持三种偏振模式：
 1. "RR": 仅使用右旋圆偏振数据
-2. "LL": 仅使用左旋圆偏振数据  
+2. "LL": 仅使用左旋圆偏振数据
 3. "RR+LL": 右旋和左旋数据合并（加权平均或简单相加）
 """
 
@@ -42,7 +42,8 @@ from typing import Dict, List, Optional, Tuple
 # ============================================================
 import astropy.units as u
 import matplotlib
-matplotlib.use("Agg")          # 非交互后端，子进程安全，节省内存
+
+matplotlib.use("Agg")  # 非交互后端，子进程安全，节省内存
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
@@ -55,7 +56,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from matplotlib.lines import Line2D
 from matplotlib.patches import Ellipse
-from scipy.interpolate import RegularGridInterpolator   # 提前导入，避免函数内重复导入
+from scipy.interpolate import RegularGridInterpolator  # 提前导入，避免函数内重复导入
 from scipy.ndimage import gaussian_filter
 from sunpy.coordinates import frames
 
@@ -70,8 +71,8 @@ plt.rcParams["font.family"] = ["SimHei", "Microsoft YaHei", "sans-serif"]
 plt.rcParams["axes.unicode_minus"] = False
 
 # 正则表达式常量（全部预编译，避免运行时重复编译）
-_RE_MHZ             = re.compile(r"(\d+\.?\d*)\s*MHz", re.IGNORECASE)
-_RE_BAND_SORTED     = re.compile(r"(\d+\.?\d*)MHz")
+_RE_MHZ = re.compile(r"(\d+\.?\d*)\s*MHz", re.IGNORECASE)
+_RE_BAND_SORTED = re.compile(r"(\d+\.?\d*)MHz")
 _RE_AIA_PATS = [
     re.compile(r"aia\.lev1_euv_12s\.(\d{4}-\d{2}-\d{2}T\d{6}Z)\.\d+\.image_lev1\.fits"),
     re.compile(r"aia\.lev1_euv_12s\.(\d{4}-\d{2}-\d{2}T\d{6}Z)"),
@@ -80,11 +81,13 @@ _RE_AIA_PATS = [
     re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"),
     re.compile(r"(\d{4}\d{2}\d{2}T\d{2}\d{2}\d{2})"),
 ]
-_RE_HMI_PAT         = re.compile(r"(\d{8})_(\d{6})")
-_RE_RADIO_PAT_YYYYJJJ  = re.compile(r"(\d{7})_(\d{6})_(\d{1,3})")
+_RE_HMI_PAT = re.compile(r"(\d{8})_(\d{6})")
+_RE_RADIO_PAT_YYYYJJJ = re.compile(r"(\d{7})_(\d{6})_(\d{1,3})")
 _RE_RADIO_PAT_YYYYMMDD = re.compile(r"(\d{8})_(\d{6})")
-_RE_AIA_NEW_PAT     = re.compile(r"aia\.lev1_euv_12s\.(\d{4}-\d{2}-\d{2}T\d{6}Z)\.\d+\.image_lev1\.fits")
-_RE_HMI_NEW_PAT     = re.compile(r"hmi\.M_45s\.(\d{8})_(\d{6})_TAI")
+_RE_AIA_NEW_PAT = re.compile(
+    r"aia\.lev1_euv_12s\.(\d{4}-\d{2}-\d{2}T\d{6}Z)\.\d+\.image_lev1\.fits"
+)
+_RE_HMI_NEW_PAT = re.compile(r"hmi\.M_45s\.(\d{8})_(\d{6})_TAI")
 
 # 时间格式常量（按命中频率粗略排序，减少无效尝试次数）
 _DATETIME_FMTS = [
@@ -117,6 +120,7 @@ _DATETIME_FMTS = [
 # 4. 配置类
 # ============================================================
 
+
 @dataclass
 class CanvasStyle:
     """
@@ -124,21 +128,22 @@ class CanvasStyle:
     --------------------
     修改此处即可一键调整图像整体配色风格，不需要改动绘图逻辑。
     """
+
     # 背景色
-    figure_bg: str = "white"     # 整幅图背景
-    axes_bg: str = "black"       # 绘图区背景
+    figure_bg: str = "white"  # 整幅图背景
+    axes_bg: str = "black"  # 绘图区背景
 
     # 坐标轴
-    tick_color: str = "black"    # 刻度颜色
-    spine_color: str = "white"   # 轴边框颜色
+    tick_color: str = "black"  # 刻度颜色
+    spine_color: str = "white"  # 轴边框颜色
     xlabel_color: str = "black"  # X 轴标签颜色
     ylabel_color: str = "black"  # Y 轴标签颜色
-    title_color: str = "black"   # 标题颜色
+    title_color: str = "black"  # 标题颜色
 
     # 图例
-    legend_face: str = "white"   # 图例背景
-    legend_text: str = "black"   # 图例文字颜色
-    legend_alpha: float = 0.6    # 图例背景透明度
+    legend_face: str = "white"  # 图例背景
+    legend_text: str = "black"  # 图例文字颜色
+    legend_alpha: float = 0.6  # 图例背景透明度
 
     # 日面边缘
     limb_color: str = "gray"
@@ -146,7 +151,7 @@ class CanvasStyle:
     limb_alpha: float = 0.6
 
     # HMI 等值线
-    hmi_pos_color: str = "red"   # 正极性等值线
+    hmi_pos_color: str = "red"  # 正极性等值线
     hmi_neg_color: str = "blue"  # 负极性等值线
     hmi_lw: float = 0.8
     hmi_alpha: float = 0.7
@@ -158,46 +163,52 @@ class Config:
 
     # ── 目录配置 ──────────────────────────────────────────────
     radio_base_dir: str = r"D:\spike_topping_type_III\2025\20250124\RS_0447-0450"
-    aia_base_dir:   str = r"D:\spike_topping_type_III\2025\20250124\AIA\171\1"
-    hmi_base_dir:   str = r"D:\spike_topping_type_III\2025\20250124\AIA\hmi\1"
-    output_dir:     str = r"D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\LL"
+    aia_base_dir: str = r"D:\spike_topping_type_III\2025\20250124\AIA\171\1"
+    hmi_base_dir: str = r"D:\spike_topping_type_III\2025\20250124\AIA\hmi\1"
+    output_dir: str = r"D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\RR+LL"
 
     # ── 文件处理配置 ───────────────────────────────────────────
     save_figure: bool = True
     dpi: int = 300
     aia_file_start_idx: int = 392
-    aia_file_end_idx: Optional[int] = 397
+    aia_file_end_idx: Optional[int] = 396
 
     # ── 射电波段配置 ───────────────────────────────────────────
     selected_bands: List[str] = field(
         default_factory=lambda: [
-            "149MHz", "164MHz", "190MHz", "223MHz",
-            "238MHz", "300MHz", "309MHz", "324MHz",
+            "149MHz",
+            "164MHz",
+            "190MHz",
+            "223MHz",
+            "238MHz",
+            "300MHz",
+            "309MHz",
+            "324MHz",
         ]
     )
-    
+
     # 偏振模式配置
     # "RR": 仅使用右旋圆偏振数据
-    # "LL": 仅使用左旋圆偏振数据  
+    # "LL": 仅使用左旋圆偏振数据
     # "RR+LL": 右旋和左旋数据合并
     polarization_mode: str = "RR+LL"
-    
+
     # ── 左右旋数据加和配置 ─────────────────────────────────────
-    combine_polarizations: bool = True           # 是否启用左右旋数据加和功能
-    rr_dir_suffix: str = "RR"                    # 右旋数据目录后缀
-    ll_dir_suffix: str = "LL"                    # 左旋数据目录后缀
-    weighted_average: bool = False               # 是否使用加权平均（True）或简单相加（False）
-    rr_weight: float = 0.5                       # 右旋权重（加权平均时使用）
-    ll_weight: float = 0.5                       # 左旋权重（加权平均时使用）
-    save_individual_pols: bool = False           # 是否同时保存单独的RR、LL图像
-    time_tolerance_seconds: float = 1.0          # 时间对齐容差（秒）
-    
-    radio_time_threshold: int = 6       # 射电与 AIA 时间匹配阈值（秒）
+    combine_polarizations: bool = True  # 是否启用左右旋数据加和功能
+    rr_dir_suffix: str = "RR"  # 右旋数据目录后缀
+    ll_dir_suffix: str = "LL"  # 左旋数据目录后缀
+    weighted_average: bool = False  # 是否使用加权平均（True）或简单相加（False）
+    rr_weight: float = 0.5  # 右旋权重（加权平均时使用）
+    ll_weight: float = 0.5  # 左旋权重（加权平均时使用）
+    save_individual_pols: bool = False  # 是否同时保存单独的RR、LL图像
+    time_tolerance_seconds: float = 0.01  # 时间对齐容差（秒）
+
+    radio_time_threshold: int = 6  # 射电与 AIA 时间匹配阈值（秒）
     max_radio_per_band: int = 28
 
     # ── 等值线配置 ─────────────────────────────────────────────
     normalization_mode: str = "peak"
-    contour_levels_peak: List[float] = field(default_factory=lambda: [0.95])
+    contour_levels_peak: List[float] = field(default_factory=lambda: [0.90])
     rms_sigma_levels: List[float] = field(default_factory=lambda: [5.0, 15.0, 30.0])
     rms_box_fraction: float = 0.15
     contour_linewidths: List[float] = field(default_factory=lambda: [2.0])
@@ -208,7 +219,7 @@ class Config:
     show_beam: bool = True
     beam_inset_fraction: float = 0.12
     overlay_hmi: bool = True
-    hmi_time_threshold: int = 24        # HMI 与 AIA 时间匹配阈值（小时）
+    hmi_time_threshold: int = 24  # HMI 与 AIA 时间匹配阈值（小时）
     hmi_threshold_gauss: float = 0.0
     hmi_sigma: int = 2
     hmi_levels_gauss: List[float] = field(default_factory=lambda: [100.0])
@@ -217,8 +228,8 @@ class Config:
     aia_vmin: float = 16
     aia_vmax: float = 6666
     aia_cmap: str = "sdoaia171"
-    roi_bottom_left: List[float] = field(default_factory=lambda: [500, -1000])
-    roi_top_right: List[float]   = field(default_factory=lambda: [1900, 400])
+    roi_bottom_left: List[float] = field(default_factory=lambda: [700, -800])
+    roi_top_right: List[float] = field(default_factory=lambda: [1700, 200])
 
     # ── 画布颜色配置 ───────────────────────────────────────────
     style: CanvasStyle = field(default_factory=CanvasStyle)
@@ -226,28 +237,28 @@ class Config:
     # ── 射电波段颜色配置 ───────────────────────────────────────
     band_colors_dict: dict = field(
         default_factory=lambda: {
-            "149.0MHz": ("cyan",    "deepskyblue"),
-            "164.0MHz": ("lime",    "green"),
+            "149.0MHz": ("cyan", "deepskyblue"),
+            "164.0MHz": ("lime", "green"),
             "190.0MHz": ("magenta", "darkviolet"),
-            "205.0MHz": ("yellow",  "orange"),
-            "223.0MHz": ("red",     "darkred"),
-            "238.0MHz": ("white",   "lightgray"),
+            "205.0MHz": ("yellow", "orange"),
+            "223.0MHz": ("red", "darkred"),
+            "238.0MHz": ("white", "lightgray"),
         }
     )
     default_colors: List[Tuple] = field(
         default_factory=lambda: [
-            ("yellow",  "orange"),
-            ("red",     "darkred"),
-            ("white",   "lightgray"),
-            ("pink",    "hotpink"),
+            ("orange", "orange"),
+            ("deepskyblue", "darkred"),
+            ("lightgray", "lightgray"),
+            ("pink", "hotpink"),
             ("skyblue", "deepskyblue"),
-            ("violet",  "darkviolet"),
+            ("violet", "darkviolet"),
         ]
     )
 
     # ── 性能配置 ───────────────────────────────────────────────
     num_workers: int = 8
-    memory_limit_pct: float = 85.0
+    memory_limit_pct: float = 90
     radio_use_float32: bool = True
 
     # ── 处理选项 ───────────────────────────────────────────────
@@ -271,6 +282,7 @@ class Config:
 # 5. 工具函数 – 时间处理
 # ============================================================
 
+
 def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
     """灵活解析各种时间字符串格式，返回 datetime 或 None"""
     date_str = date_str.strip()
@@ -279,8 +291,12 @@ def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
     if len(date_str) == 17 and date_str.isdigit():
         try:
             return datetime(
-                int(date_str[0:4]), int(date_str[4:6]),  int(date_str[6:8]),
-                int(date_str[8:10]), int(date_str[10:12]), int(date_str[12:14]),
+                int(date_str[0:4]),
+                int(date_str[4:6]),
+                int(date_str[6:8]),
+                int(date_str[8:10]),
+                int(date_str[10:12]),
+                int(date_str[12:14]),
                 int(date_str[14:17]) * 1000,
             )
         except Exception:
@@ -295,12 +311,16 @@ def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
                 year = int(date_part[:4])
                 parsed_date = None
                 try:
-                    parsed_date = datetime(year, int(date_part[4:5]), int(date_part[5:7]))
+                    parsed_date = datetime(
+                        year, int(date_part[4:5]), int(date_part[5:7])
+                    )
                 except ValueError:
                     pass
                 if parsed_date is None:
                     try:
-                        parsed_date = datetime(year, 1, 1) + timedelta(days=int(date_part[4:]) - 1)
+                        parsed_date = datetime(year, 1, 1) + timedelta(
+                            days=int(date_part[4:]) - 1
+                        )
                     except Exception:
                         pass
                 if parsed_date is not None and len(time_part) == 6:
@@ -308,8 +328,12 @@ def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
                     if len(parts) > 2 and parts[2]:
                         microsecond = int(parts[2].strip().ljust(3, "0")[:3]) * 1000
                     return datetime(
-                        parsed_date.year, parsed_date.month, parsed_date.day,
-                        int(time_part[0:2]), int(time_part[2:4]), int(time_part[4:6]),
+                        parsed_date.year,
+                        parsed_date.month,
+                        parsed_date.day,
+                        int(time_part[0:2]),
+                        int(time_part[2:4]),
+                        int(time_part[4:6]),
                         microsecond,
                     )
 
@@ -344,8 +368,12 @@ def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
                 else:
                     microsecond = int(remaining.ljust(6, "0")[:6])
             return datetime(
-                int(date_str[0:4]), int(date_str[4:6]),  int(date_str[6:8]),
-                int(date_str[8:10]), int(date_str[10:12]), int(date_str[12:14]),
+                int(date_str[0:4]),
+                int(date_str[4:6]),
+                int(date_str[6:8]),
+                int(date_str[8:10]),
+                int(date_str[10:12]),
+                int(date_str[12:14]),
                 microsecond,
             )
         except Exception:
@@ -440,7 +468,16 @@ def parse_hmi_time_from_filename(filename: str) -> Optional[datetime]:
 
 def parse_radio_time_from_header(header: fits.Header) -> Optional[datetime]:
     """从 FITS 头解析射电观测时间"""
-    time_keys = ["DATE-OBS", "DATE_OBS", "DATEOBS", "DATE-BEG", "DATE_BEG", "DATEBEG", "TIME-OBS", "DATE"]
+    time_keys = [
+        "DATE-OBS",
+        "DATE_OBS",
+        "DATEOBS",
+        "DATE-BEG",
+        "DATE_BEG",
+        "DATEBEG",
+        "TIME-OBS",
+        "DATE",
+    ]
     for key in time_keys:
         if key not in header:
             continue
@@ -476,9 +513,9 @@ def _parse_time_from_filename(filename: str) -> Optional[Tuple[str, int]]:
     pattern = r"_(\d{7,8})_(\d{6})_(\d{1,3})"
     match = re.search(pattern, filename)
     if match:
-        date_part = match.group(1)       # e.g. "2025124"
-        time_part = match.group(2)       # e.g. "043739"
-        ms_str    = match.group(3)       # e.g. "681"
+        date_part = match.group(1)  # e.g. "2025124"
+        time_part = match.group(2)  # e.g. "043739"
+        ms_str = match.group(3)  # e.g. "681"
 
         hh = int(time_part[0:2])
         mm = int(time_part[2:4])
@@ -504,7 +541,9 @@ def _parse_time_from_filename(filename: str) -> Optional[Tuple[str, int]]:
     return None
 
 
-def _match_rr_ll_by_time(rr_files: list, ll_files: list, tolerance_ms: float = 10.0) -> List[Tuple[str, str]]:
+def _match_rr_ll_by_time(
+    rr_files: list, ll_files: list, tolerance_ms: float = 10.0
+) -> List[Tuple[str, str]]:
     """
     根据文件名时间戳将RR与LL文件逐一配对（毫秒级精度）。
 
@@ -536,16 +575,17 @@ def _match_rr_ll_by_time(rr_files: list, ll_files: list, tolerance_ms: float = 1
                 ll_index[key] = ll_path
 
     if ll_no_parse:
-        warnings.warn(
-            f"有 {len(ll_no_parse)} 个LL文件无法从文件名解析时间，将被跳过。"
-        )
+        warnings.warn(f"有 {len(ll_no_parse)} 个LL文件无法从文件名解析时间，将被跳过。")
 
     matched_pairs: List[Tuple[str, str]] = []
     unmatched_rr: List[str] = []
 
     # 将LL索引按日期分组，加速搜索
     from collections import defaultdict
-    ll_by_date: Dict[str, List[Tuple[int, str]]] = defaultdict(list)  # {date_str: [(total_ms, ll_path), ...]}
+
+    ll_by_date: Dict[str, List[Tuple[int, str]]] = defaultdict(
+        list
+    )  # {date_str: [(total_ms, ll_path), ...]}
     for (date_str, total_ms), ll_path in ll_index.items():
         ll_by_date[date_str].append((total_ms, ll_path))
     # 每个日期内按ms排序，以便未来二分查找（当前数据量不大，线性也可）
@@ -556,9 +596,7 @@ def _match_rr_ll_by_time(rr_files: list, ll_files: list, tolerance_ms: float = 1
         parsed = _parse_time_from_filename(os.path.basename(rr_path))
         if parsed is None:
             unmatched_rr.append(rr_path)
-            warnings.warn(
-                f"RR文件 {os.path.basename(rr_path)} 无法解析时间，跳过。"
-            )
+            warnings.warn(f"RR文件 {os.path.basename(rr_path)} 无法解析时间，跳过。")
             continue
 
         rr_date, rr_ms = parsed
@@ -603,7 +641,9 @@ def _match_rr_ll_by_time(rr_files: list, ll_files: list, tolerance_ms: float = 1
     return matched_pairs
 
 
-def _combine_polarization_data(rr_data: np.ndarray, ll_data: np.ndarray, cfg: Config) -> np.ndarray:
+def _combine_polarization_data(
+    rr_data: np.ndarray, ll_data: np.ndarray, cfg: Config
+) -> np.ndarray:
     """组合RR和LL数据（加权平均或简单相加）"""
     if cfg.weighted_average:
         combined_data = rr_data * cfg.rr_weight + ll_data * cfg.ll_weight
@@ -615,6 +655,7 @@ def _combine_polarization_data(rr_data: np.ndarray, ll_data: np.ndarray, cfg: Co
 # ============================================================
 # 6. 工具函数 – 坐标处理
 # ============================================================
+
 
 def get_sun_center_and_radius(header) -> Tuple:
     """从 FITS 头获取太阳中心坐标和可视半径"""
@@ -642,10 +683,10 @@ def get_sun_center_and_radius(header) -> Tuple:
 def calculate_image_extent(data_shape, crpix1, crpix2, crval1, crval2, cdelt1, cdelt2):
     """计算图像完整空间范围（角秒）"""
     nx, ny = data_shape[1], data_shape[0]
-    x_min = crval1 + (1   - crpix1) * cdelt1
-    x_max = crval1 + (nx  - crpix1) * cdelt1
-    y_min = crval2 + (1   - crpix2) * cdelt2
-    y_max = crval2 + (ny  - crpix2) * cdelt2
+    x_min = crval1 + (1 - crpix1) * cdelt1
+    x_max = crval1 + (nx - crpix1) * cdelt1
+    y_min = crval2 + (1 - crpix2) * cdelt2
+    y_max = crval2 + (ny - crpix2) * cdelt2
 
     x_extent = [x_min, x_max] if cdelt1 > 0 else [x_max, x_min]
     y_extent = [y_min, y_max] if cdelt2 > 0 else [y_max, y_min]
@@ -657,6 +698,7 @@ def get_solar_position(obs_time: datetime) -> Tuple[float, float]:
     try:
         from astropy.coordinates import get_sun
         from astropy.time import Time
+
         sun_coord = get_sun(Time(obs_time, format="datetime", scale="utc"))
         return sun_coord.ra.deg, sun_coord.dec.deg
     except Exception as e:
@@ -678,23 +720,27 @@ def _preprocess_radec_maps(
     """
     if not cfg.use_radec_maps:
         if cfg.debug_mode:
-            print(f"    [坐标预处理] 太阳坐标模式 "
-                  f"Tx=[{ra_map.min():.1f},{ra_map.max():.1f}] "
-                  f"Ty=[{dec_map.min():.1f},{dec_map.max():.1f}] 角秒")
+            print(
+                f"    [坐标预处理] 太阳坐标模式 "
+                f"Tx=[{ra_map.min():.1f},{ra_map.max():.1f}] "
+                f"Ty=[{dec_map.min():.1f},{dec_map.max():.1f}] 角秒"
+            )
         return ra_map, dec_map, True
 
-    ra  = ra_map.copy().astype(np.float64)
+    ra = ra_map.copy().astype(np.float64)
     dec = dec_map.copy().astype(np.float64)
 
-    ra_fin  = ra[np.isfinite(ra)]
+    ra_fin = ra[np.isfinite(ra)]
     dec_fin = dec[np.isfinite(dec)]
     if len(ra_fin) == 0 or len(dec_fin) == 0:
         return ra, dec, False
 
     if cfg.debug_mode:
-        print(f"    [坐标预处理] 赤经赤纬模式 "
-              f"RA=[{ra_fin.min():.6f},{ra_fin.max():.6f}] "
-              f"Dec=[{dec_fin.min():.6f},{dec_fin.max():.6f}] 度")
+        print(
+            f"    [坐标预处理] 赤经赤纬模式 "
+            f"RA=[{ra_fin.min():.6f},{ra_fin.max():.6f}] "
+            f"Dec=[{dec_fin.min():.6f},{dec_fin.max():.6f}] 度"
+        )
 
     # 将赤经规范化到 [0, 360)
     if ra_fin.min() < 0 or ra_fin.max() > 360:
@@ -711,7 +757,9 @@ def _preprocess_radec_maps(
 _radec_file_cache: Dict[Tuple[str, str, str], Optional[str]] = {}
 
 
-def _find_radec_file(search_dirs: List[str], freq_value: str, kind: str) -> Optional[str]:
+def _find_radec_file(
+    search_dirs: List[str], freq_value: str, kind: str
+) -> Optional[str]:
     """
     查找赤经（kind='ra'）或赤纬（kind='dec'）坐标文件，结果缓存避免重复搜索。
     """
@@ -769,7 +817,13 @@ def extract_radio_2d_data(
     fits_path: str,
     use_float32: bool = True,
     cfg: Optional[Config] = None,
-) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Optional[fits.Header], None]:
+) -> Tuple[
+    Optional[np.ndarray],
+    Optional[np.ndarray],
+    Optional[np.ndarray],
+    Optional[fits.Header],
+    None,
+]:
     """
     提取射电强度数据及配套的赤经赤纬坐标图。
 
@@ -790,13 +844,13 @@ def extract_radio_2d_data(
             data = np.squeeze(data)
             header = hdu[0].header.copy()
 
-        dtype  = np.float32 if use_float32 else np.float64
-        data   = data.astype(dtype)
+        dtype = np.float32 if use_float32 else np.float64
+        data = data.astype(dtype)
 
         ra_map = dec_map = None
 
         if cfg is not None and cfg.use_radec_maps:
-            base_dir  = os.path.dirname(fits_path)
+            base_dir = os.path.dirname(fits_path)
             base_name = os.path.basename(fits_path)
 
             # 提取频率值
@@ -811,17 +865,21 @@ def extract_radio_2d_data(
                     os.path.dirname(base_dir),
                     os.path.join(os.path.dirname(base_dir), ".."),
                 ]
-                ra_path  = _find_radec_file(search_dirs, freq_value, "ra")
+                ra_path = _find_radec_file(search_dirs, freq_value, "ra")
                 dec_path = _find_radec_file(search_dirs, freq_value, "dec")
 
                 if ra_path:
-                    ra_map  = _load_fits_2d(ra_path,  use_float32)
+                    ra_map = _load_fits_2d(ra_path, use_float32)
                     if cfg.debug_mode and ra_map is not None:
-                        print(f"    [坐标图] 已加载 RA 文件: {os.path.basename(ra_path)}")
+                        print(
+                            f"    [坐标图] 已加载 RA 文件: {os.path.basename(ra_path)}"
+                        )
                 if dec_path:
                     dec_map = _load_fits_2d(dec_path, use_float32)
                     if cfg.debug_mode and dec_map is not None:
-                        print(f"    [坐标图] 已加载 Dec 文件: {os.path.basename(dec_path)}")
+                        print(
+                            f"    [坐标图] 已加载 Dec 文件: {os.path.basename(dec_path)}"
+                        )
 
                 if cfg.debug_mode:
                     if ra_map is not None and dec_map is not None:
@@ -843,19 +901,28 @@ def estimate_rms_noise(data: np.ndarray, box_fraction: float = 0.15) -> float:
     by = max(int(ny * box_fraction), 5)
 
     corners = [data[:by, :bx], data[:by, -bx:], data[-by:, :bx], data[-by:, -bx:]]
-    pixels  = np.concatenate([c.ravel() for c in corners])
-    pixels  = pixels[np.isfinite(pixels)]
+    pixels = np.concatenate([c.ravel() for c in corners])
+    pixels = pixels[np.isfinite(pixels)]
 
     if len(pixels) < 10:
-        edges  = np.concatenate([data[:by].ravel(), data[-by:].ravel(),
-                                  data[:, :bx].ravel(), data[:, -bx:].ravel()])
+        edges = np.concatenate(
+            [
+                data[:by].ravel(),
+                data[-by:].ravel(),
+                data[:, :bx].ravel(),
+                data[:, -bx:].ravel(),
+            ]
+        )
         pixels = edges[np.isfinite(edges)]
 
     if len(pixels) == 0:
-        return float(np.nanstd(data) * 0.1)
+        val = np.nanstd(data)
+        if not np.isfinite(val):
+            return 0.0  # ✅ 不要返回 None
+        return float(val * 0.1)
 
     median = np.median(pixels)
-    mad    = np.median(np.abs(pixels - median))
+    mad = np.median(np.abs(pixels - median))
     std_est = mad * 1.4826
     filtered = pixels[np.abs(pixels - median) < 3 * std_est]
     return float(np.std(filtered)) if len(filtered) > 0 else float(std_est)
@@ -870,7 +937,7 @@ def compute_contour_levels(data: np.ndarray, cfg: Config) -> List[float]:
 
     if cfg.normalization_mode == "rms":
         rms = estimate_rms_noise(data, cfg.rms_box_fraction)
-        if rms <= 0:
+        if rms is None or not np.isfinite(rms) or rms <= 0:
             return []
         levels = [s * rms for s in cfg.rms_sigma_levels if 0 < s * rms < peak]
     else:
@@ -883,6 +950,7 @@ def compute_contour_levels(data: np.ndarray, cfg: Config) -> List[float]:
 # 8. 工具函数 – 重投影
 # ============================================================
 
+
 def reproject_radio_simple_scale(
     radio_data: np.ndarray,
     radio_header: fits.Header,
@@ -894,21 +962,41 @@ def reproject_radio_simple_scale(
     按太阳半径比例缩放射电图像，插值到 AIA 网格。
     """
     try:
-        (radio_crpix1, radio_crpix2, radio_crval1, radio_crval2,
-         radio_cdelt1, radio_cdelt2, radio_rsun) = get_sun_center_and_radius(radio_header)
+        (
+            radio_crpix1,
+            radio_crpix2,
+            radio_crval1,
+            radio_crval2,
+            radio_cdelt1,
+            radio_cdelt2,
+            radio_rsun,
+        ) = get_sun_center_and_radius(radio_header)
 
-        (aia_crpix1, aia_crpix2, aia_crval1, aia_crval2,
-         aia_cdelt1, aia_cdelt2, aia_rsun) = get_sun_center_and_radius(aia_cutout_map.meta)
+        (
+            aia_crpix1,
+            aia_crpix2,
+            aia_crval1,
+            aia_crval2,
+            aia_cdelt1,
+            aia_cdelt2,
+            aia_rsun,
+        ) = get_sun_center_and_radius(aia_cutout_map.meta)
 
         if cfg.debug_mode:
-            print(f"    [简单投影] AIA 太阳半径: {aia_rsun:.1f}\"  射电太阳半径: {radio_rsun:.1f}\"")
+            print(
+                f'    [简单投影] AIA 太阳半径: {aia_rsun:.1f}"  射电太阳半径: {radio_rsun:.1f}"'
+            )
 
         scale = aia_rsun / radio_rsun
 
         radio_x_ext, radio_y_ext = calculate_image_extent(
             radio_data.shape,
-            radio_crpix1, radio_crpix2, radio_crval1, radio_crval2,
-            radio_cdelt1, radio_cdelt2,
+            radio_crpix1,
+            radio_crpix2,
+            radio_crval1,
+            radio_crval2,
+            radio_cdelt1,
+            radio_cdelt2,
         )
 
         cx, cy = radio_crval1, radio_crval2
@@ -916,8 +1004,12 @@ def reproject_radio_simple_scale(
         sx_max = cx + (radio_x_ext[1] - cx) * scale
         sy_min = cy + (radio_y_ext[0] - cy) * scale
         sy_max = cy + (radio_y_ext[1] - cy) * scale
-        scaled_ext = [min(sx_min, sx_max), max(sx_min, sx_max),
-                      min(sy_min, sy_max), max(sy_min, sy_max)]
+        scaled_ext = [
+            min(sx_min, sx_max),
+            max(sx_min, sx_max),
+            min(sy_min, sy_max),
+            max(sy_min, sy_max),
+        ]
 
         ny, nx = radio_data.shape
         x_radio = np.linspace(scaled_ext[0], scaled_ext[1], nx)
@@ -933,11 +1025,19 @@ def reproject_radio_simple_scale(
 
         aia_x_ext, aia_y_ext = calculate_image_extent(
             aia_cutout_map.data.shape,
-            aia_crpix1, aia_crpix2, aia_crval1, aia_crval2,
-            aia_cdelt1, aia_cdelt2,
+            aia_crpix1,
+            aia_crpix2,
+            aia_crval1,
+            aia_crval2,
+            aia_cdelt1,
+            aia_cdelt2,
         )
-        aia_ext = [min(aia_x_ext[0], aia_x_ext[1]), max(aia_x_ext[0], aia_x_ext[1]),
-                   min(aia_y_ext[0], aia_y_ext[1]), max(aia_y_ext[0], aia_y_ext[1])]
+        aia_ext = [
+            min(aia_x_ext[0], aia_x_ext[1]),
+            max(aia_x_ext[0], aia_x_ext[1]),
+            min(aia_y_ext[0], aia_y_ext[1]),
+            max(aia_y_ext[0], aia_y_ext[1]),
+        ]
 
         ny_a, nx_a = aia_cutout_map.data.shape
         x_aia = np.linspace(aia_ext[0], aia_ext[1], nx_a)
@@ -949,7 +1049,9 @@ def reproject_radio_simple_scale(
         ).reshape(ny_a, nx_a)
 
         if cfg.debug_mode:
-            print(f"    [简单投影] 有效像素: {np.sum(~np.isnan(reprojected))}/{ny_a*nx_a}")
+            print(
+                f"    [简单投影] 有效像素: {np.sum(~np.isnan(reprojected))}/{ny_a*nx_a}"
+            )
 
         return reprojected, X_aia, Y_aia
 
@@ -982,7 +1084,9 @@ def reproject_radio_forward_paste(
             print("    [前向投影] 失败：坐标图形状不匹配")
         return None
 
-    ra_abs, dec_abs, is_relative = _preprocess_radec_maps(ra_map, dec_map, radio_header, cfg)
+    ra_abs, dec_abs, is_relative = _preprocess_radec_maps(
+        ra_map, dec_map, radio_header, cfg
+    )
 
     # ── 坐标转换 ──────────────────────────────────────────────
     if cfg.use_radec_maps:
@@ -992,7 +1096,14 @@ def reproject_radio_forward_paste(
         # 确定射电观测时间
         radio_time = None
         if radio_header is not None:
-            for key in ["DATE-OBS", "DATE_OBS", "DATEOBS", "DATE-BEG", "DATE_BEG", "DATEBEG"]:
+            for key in [
+                "DATE-OBS",
+                "DATE_OBS",
+                "DATEOBS",
+                "DATE-BEG",
+                "DATE_BEG",
+                "DATEBEG",
+            ]:
                 if key in radio_header:
                     ds = str(radio_header[key]).strip()
                     if "  " in ds:
@@ -1009,6 +1120,7 @@ def reproject_radio_forward_paste(
 
         try:
             from astropy.time import Time
+
             radio_coords = SkyCoord(
                 ra=ra_abs * u.deg,
                 dec=dec_abs * u.deg,
@@ -1044,9 +1156,17 @@ def reproject_radio_forward_paste(
 
     v_data = radio_data[valid_mask].astype(np.float64)
 
-    radio_hpc_valid = radio_hpc[valid_mask] if hasattr(radio_hpc, "__len__") and len(radio_hpc) > 1 else radio_hpc
-    px_f = np.asarray(aia_cutout_map.wcs.world_to_pixel(radio_hpc_valid)[0], dtype=np.float64)
-    py_f = np.asarray(aia_cutout_map.wcs.world_to_pixel(radio_hpc_valid)[1], dtype=np.float64)
+    radio_hpc_valid = (
+        radio_hpc[valid_mask]
+        if hasattr(radio_hpc, "__len__") and len(radio_hpc) > 1
+        else radio_hpc
+    )
+    px_f = np.asarray(
+        aia_cutout_map.wcs.world_to_pixel(radio_hpc_valid)[0], dtype=np.float64
+    )
+    py_f = np.asarray(
+        aia_cutout_map.wcs.world_to_pixel(radio_hpc_valid)[1], dtype=np.float64
+    )
 
     if np.isscalar(px_f):
         px_f, py_f = np.array([px_f]), np.array([py_f])
@@ -1070,10 +1190,10 @@ def reproject_radio_forward_paste(
     # ── 间隙填充（高斯扩散）──────────────────────────────────
     nan_mask = np.isnan(output)
     if nan_mask.any():
-        filled  = np.where(nan_mask, 0.0, output)
+        filled = np.where(nan_mask, 0.0, output)
         weights = (~nan_mask).astype(np.float64)
-        sm_d    = gaussian_filter(filled.astype(np.float64), sigma=15.0)
-        sm_w    = gaussian_filter(weights, sigma=15.0)
+        sm_d = gaussian_filter(filled.astype(np.float64), sigma=15.0)
+        sm_w = gaussian_filter(weights, sigma=15.0)
         with np.errstate(invalid="ignore", divide="ignore"):
             diffused = np.where(sm_w > 1e-6, sm_d / sm_w, np.nan)
         output = np.where(nan_mask, diffused.astype(np.float32), output)
@@ -1094,42 +1214,55 @@ def reproject_radio_to_aia(
         if cfg.debug_mode:
             print("    reproject_radio_to_aia: 无坐标图，跳过")
         return None
-    return reproject_radio_forward_paste(radio_data, ra_map, dec_map, aia_cutout_map, cfg, radio_header)
+    return reproject_radio_forward_paste(
+        radio_data, ra_map, dec_map, aia_cutout_map, cfg, radio_header
+    )
 
 
 # ============================================================
 # 9. 工具函数 – 绘图辅助
 # ============================================================
 
+
 def smooth_for_contour(data: np.ndarray, sigma: float) -> np.ndarray:
     """对等值线数据做加权高斯平滑（保留 NaN 边界）"""
     if sigma <= 0:
         return data
     nan_mask = np.isnan(data)
-    filled   = np.where(nan_mask, 0.0, data)
-    weights  = (~nan_mask).astype(np.float64)
+    filled = np.where(nan_mask, 0.0, data)
+    weights = (~nan_mask).astype(np.float64)
     sm_d = gaussian_filter(filled, sigma=sigma)
     sm_w = gaussian_filter(weights, sigma=sigma)
     with np.errstate(invalid="ignore", divide="ignore"):
         return np.where(sm_w > 1e-6, sm_d / sm_w, np.nan)
 
 
-def _get_padded_aia_map(aia_map: sunpy.map.GenericMap, cfg: Config) -> sunpy.map.GenericMap:
+def _get_padded_aia_map(
+    aia_map: sunpy.map.GenericMap, cfg: Config
+) -> sunpy.map.GenericMap:
     """
     若 ROI 超出原图视场，先扩充画布再裁剪，
     避免射电数据在图像边缘被截断。
     """
-    bl = SkyCoord(cfg.roi_bottom_left[0] * u.arcsec, cfg.roi_bottom_left[1] * u.arcsec,
-                  frame=aia_map.coordinate_frame)
-    tr = SkyCoord(cfg.roi_top_right[0]   * u.arcsec, cfg.roi_top_right[1]   * u.arcsec,
-                  frame=aia_map.coordinate_frame)
+    bl = SkyCoord(
+        cfg.roi_bottom_left[0] * u.arcsec,
+        cfg.roi_bottom_left[1] * u.arcsec,
+        frame=aia_map.coordinate_frame,
+    )
+    tr = SkyCoord(
+        cfg.roi_top_right[0] * u.arcsec,
+        cfg.roi_top_right[1] * u.arcsec,
+        frame=aia_map.coordinate_frame,
+    )
 
     px_bl = aia_map.wcs.world_to_pixel(bl)
     px_tr = aia_map.wcs.world_to_pixel(tr)
     x0, y0 = int(np.floor(float(px_bl[0]))), int(np.floor(float(px_bl[1])))
-    x1, y1 = int(np.ceil (float(px_tr[0]))), int(np.ceil (float(px_tr[1])))
-    if x0 > x1: x0, x1 = x1, x0
-    if y0 > y1: y0, y1 = y1, y0
+    x1, y1 = int(np.ceil(float(px_tr[0]))), int(np.ceil(float(px_tr[1])))
+    if x0 > x1:
+        x0, x1 = x1, x0
+    if y0 > y1:
+        y0, y1 = y1, y0
 
     ny, nx = aia_map.data.shape
     min_x, min_y = min(0, x0), min(0, y0)
@@ -1142,13 +1275,13 @@ def _get_padded_aia_map(aia_map: sunpy.map.GenericMap, cfg: Config) -> sunpy.map
     # 创建扩充画布并嵌入原图
     new_data = np.full((max_y - min_y, max_x - min_x), np.nan, dtype=aia_map.data.dtype)
     ox, oy = -min_x, -min_y
-    new_data[oy:oy+ny, ox:ox+nx] = aia_map.data
+    new_data[oy : oy + ny, ox : ox + nx] = aia_map.data
 
     new_meta = aia_map.meta.copy()
     new_meta["CRPIX1"] += ox
     new_meta["CRPIX2"] += oy
-    new_meta["NAXIS1"]  = max_x - min_x
-    new_meta["NAXIS2"]  = max_y - min_y
+    new_meta["NAXIS1"] = max_x - min_x
+    new_meta["NAXIS2"] = max_y - min_y
 
     return sunpy.map.Map(new_data, new_meta).submap(bl, top_right=tr)
 
@@ -1162,26 +1295,42 @@ def get_beam_params_from_header(header: fits.Header) -> Optional[Dict]:
     return {
         "bmaj_arcsec": float(bmaj) * 3600.0,
         "bmin_arcsec": float(bmin) * 3600.0,
-        "bpa_deg":     float(header.get("BPA", 0.0)),
+        "bpa_deg": float(header.get("BPA", 0.0)),
     }
 
 
-def draw_beam_ellipse_pixel(ax, beam: Dict, aia_cutout_map: sunpy.map.GenericMap, color: str = "white"):
+def draw_beam_ellipse_pixel(
+    ax, beam: Dict, aia_cutout_map: sunpy.map.GenericMap, color: str = "white"
+):
     """在图像左下角绘制综合波束椭圆"""
-    cdelt   = abs(aia_cutout_map.scale.axis1.to(u.arcsec / u.pix).value)
+    cdelt = abs(aia_cutout_map.scale.axis1.to(u.arcsec / u.pix).value)
     bmaj_px = beam["bmaj_arcsec"] / cdelt
     bmin_px = beam["bmin_arcsec"] / cdelt
-    ny, nx  = aia_cutout_map.data.shape
+    ny, nx = aia_cutout_map.data.shape
     cx_px, cy_px = nx * 0.08, ny * 0.08
 
-    ax.add_patch(Ellipse(
-        xy=(cx_px, cy_px),
-        width=bmin_px, height=bmaj_px,
-        angle=beam["bpa_deg"],
-        linewidth=1.5, edgecolor=color, facecolor="none", alpha=0.85,
-    ))
-    ax.text(cx_px, cy_px - bmaj_px * 0.7, "Beam",
-            color=color, fontsize=8, ha="center", va="top", alpha=0.85)
+    ax.add_patch(
+        Ellipse(
+            xy=(cx_px, cy_px),
+            width=bmin_px,
+            height=bmaj_px,
+            angle=beam["bpa_deg"],
+            linewidth=1.5,
+            edgecolor=color,
+            facecolor="none",
+            alpha=0.85,
+        )
+    )
+    ax.text(
+        cx_px,
+        cy_px - bmaj_px * 0.7,
+        "Beam",
+        color=color,
+        fontsize=8,
+        ha="center",
+        va="top",
+        alpha=0.85,
+    )
 
 
 def _build_band_color_cache(cfg: Config) -> List[Tuple[float, Tuple]]:
@@ -1193,7 +1342,9 @@ def _build_band_color_cache(cfg: Config) -> List[Tuple[float, Tuple]]:
     ]
 
 
-def get_band_color(band_label: str, band_idx: int, cfg: Config, color_cache: Optional[List] = None) -> Tuple[str, str]:
+def get_band_color(
+    band_label: str, band_idx: int, cfg: Config, color_cache: Optional[List] = None
+) -> Tuple[str, str]:
     """根据波段标签返回（主色，暗色）颜色对"""
     m = _RE_MHZ.search(band_label)
     if m and color_cache is not None:
@@ -1204,7 +1355,9 @@ def get_band_color(band_label: str, band_idx: int, cfg: Config, color_cache: Opt
     return cfg.default_colors[band_idx % len(cfg.default_colors)]
 
 
-def process_hmi_for_overlay(hmi_file: str, target_wcs, cfg: Config) -> Optional[sunpy.map.GenericMap]:
+def process_hmi_for_overlay(
+    hmi_file: str, target_wcs, cfg: Config
+) -> Optional[sunpy.map.GenericMap]:
     """重投影 HMI 磁图到 AIA WCS，并做高斯平滑和阈值处理"""
     try:
         hmi_map = sunpy.map.Map(hmi_file)
@@ -1220,6 +1373,7 @@ def process_hmi_for_overlay(hmi_file: str, target_wcs, cfg: Config) -> Optional[
 # ============================================================
 # 10. 工具函数 – 系统辅助
 # ============================================================
+
 
 def check_memory_usage(limit: float = 90.0):
     """若内存超限则强制 GC 并等待恢复"""
@@ -1248,7 +1402,10 @@ def _worker_init():
 # 11. 核心处理函数
 # ============================================================
 
-def _read_one_radio_header(rf: str, selected_bands: Tuple[str, ...], pol: str, cfg: Config) -> Optional[Dict]:
+
+def _read_one_radio_header(
+    rf: str, selected_bands: Tuple[str, ...], pol: str, cfg: Config
+) -> Optional[Dict]:
     """（线程安全）读取单个射电文件的波段/时间信息"""
     # 检查是否包含任何波段信息
     band_found = next((b for b in selected_bands if b in rf), None)
@@ -1260,7 +1417,7 @@ def _read_one_radio_header(rf: str, selected_bands: Tuple[str, ...], pol: str, c
         if r_time:
             return {"path": rf, "band": band_found, "pol": pol, "time": r_time}
 
-        hdr    = fits.getheader(rf)
+        hdr = fits.getheader(rf)
         r_time = parse_radio_time_from_header(hdr)
         if r_time:
             return {"path": rf, "band": band_found, "pol": pol, "time": r_time}
@@ -1270,7 +1427,9 @@ def _read_one_radio_header(rf: str, selected_bands: Tuple[str, ...], pol: str, c
 
     except Exception as e:
         if cfg.debug_mode:
-            print(f"    读取射电文件头出错: {os.path.basename(rf)}, 错误: {str(e)[:100]}")
+            print(
+                f"    读取射电文件头出错: {os.path.basename(rf)}, 错误: {str(e)[:100]}"
+            )
 
     return None
 
@@ -1301,65 +1460,85 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
 
     # 收集射电文件（排除坐标图文件）
     pol = cfg.polarization_mode
-    
+
     # 检查是否启用左右旋合并
     if cfg.combine_polarizations and pol == "RR+LL":
         print(f"启用左右旋数据合并模式: {cfg.rr_dir_suffix} + {cfg.ll_dir_suffix}")
-        
+
         # 分别收集RR和LL文件
         rr_files = set()
         ll_files = set()
-        
+
         # 收集RR文件
         rr_raw = set(
-            glob.glob(os.path.join(cfg.radio_base_dir, "**", cfg.rr_dir_suffix, "*.fits"), recursive=True) +
-            glob.glob(os.path.join(cfg.radio_base_dir, "**", f"*{cfg.rr_dir_suffix}*.fits"), recursive=True)
+            glob.glob(
+                os.path.join(cfg.radio_base_dir, "**", cfg.rr_dir_suffix, "*.fits"),
+                recursive=True,
+            )
+            + glob.glob(
+                os.path.join(cfg.radio_base_dir, "**", f"*{cfg.rr_dir_suffix}*.fits"),
+                recursive=True,
+            )
         )
         rr_files = [
-            f for f in rr_raw
-            if "_RightAscensionDegree.fits" not in f and "_DeclinationDegree.fits" not in f
+            f
+            for f in rr_raw
+            if "_RightAscensionDegree.fits" not in f
+            and "_DeclinationDegree.fits" not in f
         ]
-        
+
         # 收集LL文件
         ll_raw = set(
-            glob.glob(os.path.join(cfg.radio_base_dir, "**", cfg.ll_dir_suffix, "*.fits"), recursive=True) +
-            glob.glob(os.path.join(cfg.radio_base_dir, "**", f"*{cfg.ll_dir_suffix}*.fits"), recursive=True)
+            glob.glob(
+                os.path.join(cfg.radio_base_dir, "**", cfg.ll_dir_suffix, "*.fits"),
+                recursive=True,
+            )
+            + glob.glob(
+                os.path.join(cfg.radio_base_dir, "**", f"*{cfg.ll_dir_suffix}*.fits"),
+                recursive=True,
+            )
         )
         ll_files = [
-            f for f in ll_raw
-            if "_RightAscensionDegree.fits" not in f and "_DeclinationDegree.fits" not in f
+            f
+            for f in ll_raw
+            if "_RightAscensionDegree.fits" not in f
+            and "_DeclinationDegree.fits" not in f
         ]
-        
+
         if cfg.quick_test:
             rr_files = rr_files[: min(10, len(rr_files))]
             ll_files = ll_files[: min(10, len(ll_files))]
-            
-        print(f"成功锁定 {len(rr_files)} 个 {cfg.rr_dir_suffix} 和 {len(ll_files)} 个 {cfg.ll_dir_suffix} 射电数据文件。")
-        
+
+        print(
+            f"成功锁定 {len(rr_files)} 个 {cfg.rr_dir_suffix} 和 {len(ll_files)} 个 {cfg.ll_dir_suffix} 射电数据文件。"
+        )
+
         # 按波段和文件名匹配RR和LL文件
         print("正在匹配RR和LL文件...")
         matched_pairs_by_band = {}
-        
+
         # 按波段分组
         for band in cfg.selected_bands:
             # 获取该波段的RR和LL文件
             band_rr_files = [f for f in rr_files if band in f]
             band_ll_files = [f for f in ll_files if band in f]
-            
+
             if not band_rr_files or not band_ll_files:
                 print(f"  波段 {band}: 缺少RR或LL文件，跳过")
                 continue
-                
+
             # 按时间匹配
             tolerance_ms = cfg.time_tolerance_seconds * 1000
-            band_matched_pairs = _match_rr_ll_by_time(band_rr_files, band_ll_files, tolerance_ms)
-            
+            band_matched_pairs = _match_rr_ll_by_time(
+                band_rr_files, band_ll_files, tolerance_ms
+            )
+
             if band_matched_pairs:
                 matched_pairs_by_band[band] = band_matched_pairs
                 print(f"  波段 {band}: 成功匹配 {len(band_matched_pairs)} 对文件")
             else:
                 print(f"  波段 {band}: 无法匹配RR和LL文件")
-        
+
         # 将匹配对转换为文件列表，供后续处理
         radio_cache = []
         for band, pairs in matched_pairs_by_band.items():
@@ -1370,48 +1549,67 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
                     if not r_time:
                         hdr = fits.getheader(rr_path)
                         r_time = parse_radio_time_from_header(hdr)
-                    
+
                     if r_time:
                         # 存储为元组，表示这是一对文件
-                        radio_cache.append({
-                            "path": (rr_path, ll_path),  # 存储为元组
-                            "band": band,
-                            "pol": "RR+LL",
-                            "time": r_time
-                        })
+                        radio_cache.append(
+                            {
+                                "path": (rr_path, ll_path),  # 存储为元组
+                                "band": band,
+                                "pol": "RR+LL",
+                                "time": r_time,
+                            }
+                        )
                 except Exception as e:
                     if cfg.debug_mode:
-                        print(f"    读取射电文件头出错: {os.path.basename(rr_path)}, 错误: {str(e)[:100]}")
-        
+                        print(
+                            f"    读取射电文件头出错: {os.path.basename(rr_path)}, 错误: {str(e)[:100]}"
+                        )
+
         print(f"  读取完毕，有效射电观测记录（RR+LL对）: {len(radio_cache)} 条")
-        
+
     else:
         # 原模式：仅收集指定偏振的文件
         radio_raw = set(
-            glob.glob(os.path.join(cfg.radio_base_dir, "**", pol, "*.fits"), recursive=True) +
-            glob.glob(os.path.join(cfg.radio_base_dir, "**", f"*{pol}*.fits"), recursive=True)
+            glob.glob(
+                os.path.join(cfg.radio_base_dir, "**", pol, "*.fits"), recursive=True
+            )
+            + glob.glob(
+                os.path.join(cfg.radio_base_dir, "**", f"*{pol}*.fits"), recursive=True
+            )
         )
         radio_files = [
-            f for f in radio_raw
-            if "_RightAscensionDegree.fits" not in f and "_DeclinationDegree.fits" not in f
+            f
+            for f in radio_raw
+            if "_RightAscensionDegree.fits" not in f
+            and "_DeclinationDegree.fits" not in f
         ]
         if cfg.quick_test:
             radio_files = radio_files[: min(10, len(radio_files))]
 
-        print(f"成功锁定 {len(radio_files)} 个 {pol} 射电数据文件。正在并发提取观测时间...")
+        print(
+            f"成功锁定 {len(radio_files)} 个 {pol} 射电数据文件。正在并发提取观测时间..."
+        )
 
         # 并发读取头文件
         max_threads = min(32, (os.cpu_count() or 4) * 2, max(1, len(radio_files)))
-        _read_fn    = partial(_read_one_radio_header, selected_bands=tuple(cfg.selected_bands), pol=pol, cfg=cfg)
+        _read_fn = partial(
+            _read_one_radio_header,
+            selected_bands=tuple(cfg.selected_bands),
+            pol=pol,
+            cfg=cfg,
+        )
         with ThreadPoolExecutor(max_workers=max_threads) as ex:
             radio_cache = [r for r in ex.map(_read_fn, radio_files) if r is not None]
 
         print(f"  读取完毕，有效射电观测记录: {len(radio_cache)} 条")
 
-    start_idx       = cfg.aia_file_start_idx if cfg.aia_file_start_idx is not None else 0
-    end_idx         = cfg.aia_file_end_idx   if cfg.aia_file_end_idx   is not None else len(aia_files)
-    hmi_thresh_sec  = cfg.hmi_time_threshold * 3600
-    grouped_tasks   = []
+    start_idx = cfg.aia_file_start_idx if cfg.aia_file_start_idx is not None else 0
+    end_idx = (
+        cfg.aia_file_end_idx if cfg.aia_file_end_idx is not None else len(aia_files)
+    )
+    hmi_thresh_sec = cfg.hmi_time_threshold * 3600
+    grouped_tasks = []
     stats = {"processed": 0, "matched": 0, "slices": 0}
 
     for aia_file in aia_files[start_idx:end_idx]:
@@ -1424,16 +1622,24 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
         # 寻找最近 HMI 文件
         best_hmi = None
         if hmi_times:
-            valid_hmi = [x for x in hmi_times if abs((x[1] - aia_time).total_seconds()) <= hmi_thresh_sec]
+            valid_hmi = [
+                x
+                for x in hmi_times
+                if abs((x[1] - aia_time).total_seconds()) <= hmi_thresh_sec
+            ]
             if valid_hmi:
-                best_hmi = min(valid_hmi, key=lambda x: abs((x[1] - aia_time).total_seconds()))[0]
+                best_hmi = min(
+                    valid_hmi, key=lambda x: abs((x[1] - aia_time).total_seconds())
+                )[0]
 
         # 按波段分组时间窗内的射电文件
         band_groups: Dict[str, list] = {}
         for rc in radio_cache:
             dt = abs((rc["time"] - aia_time).total_seconds())
             if dt <= cfg.radio_time_threshold:
-                band_groups.setdefault(rc["band"], []).append((rc["path"], rc["pol"], rc["time"], dt))
+                band_groups.setdefault(rc["band"], []).append(
+                    (rc["path"], rc["pol"], rc["time"], dt)
+                )
 
         if not band_groups:
             if cfg.debug_mode:
@@ -1488,22 +1694,26 @@ def process_aia_group(
     check_memory_usage(limit=cfg.memory_limit_pct)
     print(f"\n[{task_index}/{total_tasks}] 加载 AIA: {os.path.basename(aia_file)}")
 
-    sty = cfg.style                                    # 画布颜色快捷引用
+    sty = cfg.style  # 画布颜色快捷引用
     selected_bands_idx = {b: i for i, b in enumerate(cfg.selected_bands)}
-    aia_cmap_name      = cfg.aia_cmap if cfg.aia_cmap in plt.colormaps() else "hot"
+    aia_cmap_name = cfg.aia_cmap if cfg.aia_cmap in plt.colormaps() else "hot"
 
     # 预先构建等值线线宽列表（避免在循环内重复创建）
     _max_lev = max(len(cfg.rms_sigma_levels), len(cfg.contour_levels_peak), 1)
-    _lw_lut  = [cfg.contour_linewidths[min(i, len(cfg.contour_linewidths) - 1)] for i in range(_max_lev)]
+    _lw_lut = [
+        cfg.contour_linewidths[min(i, len(cfg.contour_linewidths) - 1)]
+        for i in range(_max_lev)
+    ]
 
     aia_map = cutout_aia = hmi_processed = None
 
     try:
-        aia_map    = sunpy.map.Map(aia_file)
+        aia_map = sunpy.map.Map(aia_file)
         cutout_aia = _get_padded_aia_map(aia_map, cfg)
         hmi_processed = (
             process_hmi_for_overlay(hmi_file, cutout_aia.wcs, cfg)
-            if cfg.overlay_hmi and hmi_file else None
+            if cfg.overlay_hmi and hmi_file
+            else None
         )
 
         # 输出目录只需创建一次
@@ -1515,7 +1725,7 @@ def process_aia_group(
             print(f"  -> 绘制序列帧 {sub_index + 1}/{len(sub_tasks)}")
 
             fig = plt.figure(figsize=(12, 10))
-            ax  = fig.add_subplot(111, projection=cutout_aia.wcs)
+            ax = fig.add_subplot(111, projection=cutout_aia.wcs)
 
             # ── AIA 底图 ──────────────────────────────────────
             cutout_aia.plot(
@@ -1529,32 +1739,46 @@ def process_aia_group(
             ax.set_xlim(0, cutout_aia.data.shape[1] - 1)
             ax.set_ylim(0, cutout_aia.data.shape[0] - 1)
 
-            legend_handles    = []
-            first_radio_time  = None
+            legend_handles = []
+            first_radio_time = None
             collected_beams: Dict[str, Dict] = {}
 
             # ── HMI 磁场等值线 ────────────────────────────────
             if hmi_processed is not None:
-                ax.contour(hmi_processed.data,
-                           levels=cfg.hmi_levels_gauss,
-                           colors=[sty.hmi_pos_color],
-                           linewidths=sty.hmi_lw,
-                           alpha=sty.hmi_alpha)
-                ax.contour(hmi_processed.data,
-                           levels=[-lv for lv in cfg.hmi_levels_gauss],
-                           colors=[sty.hmi_neg_color],
-                           linewidths=sty.hmi_lw,
-                           alpha=sty.hmi_alpha)
+                ax.contour(
+                    hmi_processed.data,
+                    levels=cfg.hmi_levels_gauss,
+                    colors=[sty.hmi_pos_color],
+                    linewidths=sty.hmi_lw,
+                    alpha=sty.hmi_alpha,
+                )
+                ax.contour(
+                    hmi_processed.data,
+                    levels=[-lv for lv in cfg.hmi_levels_gauss],
+                    colors=[sty.hmi_neg_color],
+                    linewidths=sty.hmi_lw,
+                    alpha=sty.hmi_alpha,
+                )
                 legend_handles += [
-                    Line2D([0], [0], color=sty.hmi_pos_color, lw=sty.hmi_lw,
-                           label=f"+{cfg.hmi_levels_gauss[0]:.0f}G"),
-                    Line2D([0], [0], color=sty.hmi_neg_color, lw=sty.hmi_lw,
-                           label=f"-{cfg.hmi_levels_gauss[0]:.0f}G"),
+                    Line2D(
+                        [0],
+                        [0],
+                        color=sty.hmi_pos_color,
+                        lw=sty.hmi_lw,
+                        label=f"+{cfg.hmi_levels_gauss[0]:.0f}G",
+                    ),
+                    Line2D(
+                        [0],
+                        [0],
+                        color=sty.hmi_neg_color,
+                        lw=sty.hmi_lw,
+                        label=f"-{cfg.hmi_levels_gauss[0]:.0f}G",
+                    ),
                 ]
 
             # ── 按频率排序波段 ────────────────────────────────
             def _band_freq(item):
-                m = _RE_BAND_SORTED.search(item[0])       # 每个 item 只搜索一次
+                m = _RE_BAND_SORTED.search(item[0])  # 每个 item 只搜索一次
                 return float(m.group(1)) if m else 0.0
 
             sorted_bands = sorted(single_slice_bands.items(), key=_band_freq)
@@ -1562,49 +1786,68 @@ def process_aia_group(
             # ── 射电等值线叠加 ────────────────────────────────
             for band_idx, (band_label, file_list) in enumerate(sorted_bands):
                 orig_idx = selected_bands_idx.get(band_label, band_idx)
-                main_color, dark_color = get_band_color(band_label, orig_idx, cfg, color_cache)
+                main_color, dark_color = get_band_color(
+                    band_label, orig_idx, cfg, color_cache
+                )
                 drawn_any = False
 
                 for file_item, polarization, radio_time in file_list:
                     # 检查是否启用左右旋合并
-                    if cfg.combine_polarizations and polarization == "RR+LL" and isinstance(file_item, tuple):
+                    if (
+                        cfg.combine_polarizations
+                        and polarization == "RR+LL"
+                        and isinstance(file_item, tuple)
+                    ):
                         # file_item 是 (rr_path, ll_path) 元组
                         rr_path, ll_path = file_item
-                        
+
                         try:
                             # 读取RR数据
-                            rr_data, rr_ra_map, rr_dec_map, rr_header, _ = extract_radio_2d_data(
-                                rr_path, use_float32=cfg.radio_use_float32, cfg=cfg
+                            rr_data, rr_ra_map, rr_dec_map, rr_header, _ = (
+                                extract_radio_2d_data(
+                                    rr_path, use_float32=cfg.radio_use_float32, cfg=cfg
+                                )
                             )
                             # 读取LL数据
-                            ll_data, ll_ra_map, ll_dec_map, ll_header, _ = extract_radio_2d_data(
-                                ll_path, use_float32=cfg.radio_use_float32, cfg=cfg
+                            ll_data, ll_ra_map, ll_dec_map, ll_header, _ = (
+                                extract_radio_2d_data(
+                                    ll_path, use_float32=cfg.radio_use_float32, cfg=cfg
+                                )
                             )
-                            
+
                             if rr_data is None or ll_data is None:
                                 continue
-                                
+
                             # 合并左右旋数据
-                            radio_data_2d = _combine_polarization_data(rr_data, ll_data, cfg)
-                            
+                            radio_data_2d = _combine_polarization_data(
+                                rr_data, ll_data, cfg
+                            )
+
                             # 使用RR文件的坐标图和头文件
                             ra_map = rr_ra_map
                             dec_map = rr_dec_map
                             radio_header_2d = rr_header
-                            
+
                         except Exception as e:
                             if cfg.debug_mode:
                                 print(f"    合并左右旋数据时出错: {e}")
                             continue
-                            
+
                     else:
                         # 原模式：单个文件
-                        if cfg.polarization_mode != "BOTH" and polarization != cfg.polarization_mode:
+                        if (
+                            cfg.polarization_mode != "BOTH"
+                            and polarization != cfg.polarization_mode
+                        ):
                             continue
-                            
+
                         try:
-                            radio_data_2d, ra_map, dec_map, radio_header_2d, _ = extract_radio_2d_data(
-                                file_item, use_float32=cfg.radio_use_float32, cfg=cfg
+                            radio_data_2d, ra_map, dec_map, radio_header_2d, _ = (
+                                extract_radio_2d_data(
+                                    file_item,
+                                    use_float32=cfg.radio_use_float32,
+                                    cfg=cfg,
+                                )
                             )
                         except Exception:
                             continue
@@ -1626,14 +1869,19 @@ def process_aia_group(
                     if np.isnan(np.nanmax(reprojected)) or np.nanmax(reprojected) <= 0:
                         continue
 
-                    display_data = smooth_for_contour(reprojected, cfg.contour_smooth_sigma)
+                    display_data = smooth_for_contour(
+                        reprojected, cfg.contour_smooth_sigma
+                    )
                     levels = compute_contour_levels(display_data, cfg)
                     if not levels:
                         continue
 
-                    n_lev       = len(levels)
-                    lws         = _lw_lut[:n_lev]
-                    colors_list = [dark_color if i < n_lev - 1 else main_color for i in range(n_lev)]
+                    n_lev = len(levels)
+                    lws = _lw_lut[:n_lev]
+                    colors_list = [
+                        dark_color if i < n_lev - 1 else main_color
+                        for i in range(n_lev)
+                    ]
 
                     ax.contour(
                         display_data,
@@ -1656,7 +1904,7 @@ def process_aia_group(
                             label = f"{band_label} (RR+LL sum)"
                     else:
                         label = f"{band_label} ({polarization})"
-                    
+
                     legend_handles.append(
                         Line2D([0], [0], color=main_color, linewidth=2.0, label=label)
                     )
@@ -1678,9 +1926,12 @@ def process_aia_group(
             )
 
             # ── 标题与图例 ─────────────────────────────────────
-            title_time = (first_radio_time.strftime("%Y-%m-%d %H:%M:%S") + " UT"
-                          if first_radio_time else os.path.basename(aia_file))
-            
+            title_time = (
+                first_radio_time.strftime("%Y-%m-%d %H:%M:%S") + " UT"
+                if first_radio_time
+                else os.path.basename(aia_file)
+            )
+
             # 在标题中显示偏振信息
             if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL":
                 if cfg.weighted_average:
@@ -1689,10 +1940,12 @@ def process_aia_group(
                     polar_display = "RR+LL (sum)"
             else:
                 polar_display = cfg.polarization_mode
-            
+
             ax.set_title(
                 f"AIA 171Å + Radio ({polar_display}) + HMI\n{title_time}",
-                fontsize=12, pad=10, color=sty.title_color,
+                fontsize=12,
+                pad=10,
+                color=sty.title_color,
             )
             ax.legend(
                 handles=legend_handles,
@@ -1714,9 +1967,12 @@ def process_aia_group(
 
             # ── 保存 ──────────────────────────────────────────
             if cfg.save_figure:
-                ts_str = (first_radio_time.strftime("%Y%m%d_%H%M%S")
-                          if first_radio_time else f"unknown_{sub_index}")
-                
+                ts_str = (
+                    first_radio_time.strftime("%Y%m%d_%H%M%S")
+                    if first_radio_time
+                    else f"unknown_{sub_index}"
+                )
+
                 # 在文件名中包含偏振信息
                 if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL":
                     if cfg.weighted_average:
@@ -1725,8 +1981,8 @@ def process_aia_group(
                         polar_suffix = "RR_LL_sum"
                 else:
                     polar_suffix = cfg.polarization_mode
-                    
-                out_name = f"{ts_str}_{polar_suffix}_seq{sub_index + 1:02d}.png"
+
+                out_name = f"{ts_str}_{polar_suffix}.png"
                 plt.savefig(
                     os.path.join(cfg.output_dir, out_name),
                     dpi=cfg.dpi,
@@ -1740,6 +1996,7 @@ def process_aia_group(
 
     except Exception:
         import traceback
+
         traceback.print_exc()
     finally:
         del aia_map, cutout_aia, hmi_processed
@@ -1749,6 +2006,7 @@ def process_aia_group(
 # ============================================================
 # 12. 主函数
 # ============================================================
+
 
 def test_time_parsing():
     """调试用：验证时间解析是否正常"""
@@ -1770,7 +2028,9 @@ def main():
 
     # 如果启用左右旋合并但偏振模式不是RR+LL，自动调整
     if cfg.combine_polarizations and cfg.polarization_mode != "RR+LL":
-        print(f"注意: combine_polarizations=True 但 polarization_mode='{cfg.polarization_mode}'")
+        print(
+            f"注意: combine_polarizations=True 但 polarization_mode='{cfg.polarization_mode}'"
+        )
         print("自动将 polarization_mode 设置为 'RR+LL'")
         cfg.polarization_mode = "RR+LL"
 
@@ -1784,7 +2044,9 @@ def main():
         print(f"  时间对齐容差: {cfg.time_tolerance_seconds} 秒")
 
         if cfg.weighted_average:
-            print(f"  组合方式: 加权平均 (RR权重={cfg.rr_weight}, LL权重={cfg.ll_weight})")
+            print(
+                f"  组合方式: 加权平均 (RR权重={cfg.rr_weight}, LL权重={cfg.ll_weight})"
+            )
         else:
             print("  组合方式: 简单相加")
 
@@ -1818,7 +2080,7 @@ def main():
         except Exception as e:
             print(f"  失败: {e}")
 
-    color_cache  = _build_band_color_cache(cfg)
+    color_cache = _build_band_color_cache(cfg)
     grouped_tasks = build_matched_pairs(cfg)
 
     if not grouped_tasks:

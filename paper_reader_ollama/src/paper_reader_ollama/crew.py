@@ -1,21 +1,19 @@
-from crewai import Agent, Crew, Process, Task, LLM  # <-- 引入官方 LLM
+from crewai import LLM, Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from crewai_tools import ArxivPaperTool
+
 from paper_reader_ollama.tools.custom_tool import LocalPDFReaderTool
-from langchain_ollama import ChatOllama
+
 
 @CrewBase
 class PaperReaderOllamaCrew:
-    """三智能体协作的论文阅读团队"""
+    """研究生级论文精读团队"""
 
-    # 直接使用 CrewAI 内置的 LLM 类，它会自动处理各种复杂的上下文和通信问题！
     ollama_llm = LLM(
-        model="openai/deepseek-r1:7b",  # <--- 换成我们刚生成的 16k 版本
+        model="openai/deepseek-r1:7b",
         base_url="http://localhost:11434/v1",
         api_key="ollama",
         temperature=0.1,
-        # max_tokens=2048, # 保持注释状态
-        # num_ctx=16384,   # <--- 把这行删掉！不要在代码里传了
     )
 
     # 实例化工具
@@ -23,49 +21,50 @@ class PaperReaderOllamaCrew:
     pdf_tool = LocalPDFReaderTool()
 
     @agent
-    def 摘要提取员(self) -> Agent:
+    def 理论拆解员(self) -> Agent:
         return Agent(
-            config=self.agents_config["摘要提取员"],
+            config=self.agents_config["理论拆解员"],
             llm=self.ollama_llm,
-            tools=[self.arxiv_tool, self.pdf_tool],
+            tools=[self.arxiv_tool, self.pdf_tool],  # 理论拆解需要阅读工具
             verbose=True,
         )
 
     @agent
-    def 批判分析员(self) -> Agent:
+    def 复现审查员(self) -> Agent:
         return Agent(
-            config=self.agents_config["批判分析员"],
+            config=self.agents_config["复现审查员"],
             llm=self.ollama_llm,
             verbose=True,
             allow_delegation=False,
         )
 
     @agent
-    def 报告撰写员(self) -> Agent:
+    def Idea启发导师(self) -> Agent:
         return Agent(
-            config=self.agents_config["报告撰写员"],
+            config=self.agents_config["Idea启发导师"],
             llm=self.ollama_llm,
             verbose=True,
             allow_delegation=False,
         )
 
     @task
-    def 提取摘要任务(self) -> Task:
+    def 理论拆解任务(self) -> Task:
         return Task(
-            config=self.tasks_config["提取摘要任务"],
+            config=self.tasks_config["理论拆解任务"],
         )
 
     @task
-    def 批判分析任务(self) -> Task:
+    def 复现审查任务(self) -> Task:
         return Task(
-            config=self.tasks_config["批判分析任务"],
+            config=self.tasks_config["复现审查任务"],
         )
 
     @task
-    def 撰写报告任务(self) -> Task:
+    def 撰写导师报告任务(self) -> Task:
         return Task(
-            config=self.tasks_config["撰写报告任务"],
-            output_file="论文分析报告.md"
+            config=self.tasks_config["撰写导师报告任务"],
+            # 注意：这里的 output_file 我们已经在 main.py 中动态控制了，
+            # 所以这里不再硬编码，直接去掉即可。
         )
 
     @crew
