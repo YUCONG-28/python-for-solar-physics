@@ -57,6 +57,11 @@ _RE_AIA_PATS = [
 ]
 _RE_HMI_PAT = re.compile(r"(\d{8})_(\d{6})")
 _RE_BAND_SORTED = re.compile(r"(\d+\.?\d*)MHz")
+# 新增正则表达式，用于解析新的文件名格式
+_RE_RADIO_PAT_YYYYJJJ = re.compile(r"(\d{7})_(\d{6})_(\d{1,3})")  # 射电文件：YYYYJJJ_HHMMSS_SSS
+_RE_RADIO_PAT_YYYYMMDD = re.compile(r"(\d{8})_(\d{6})")  # 射电文件：YYYYMMDD_HHMMSS
+_RE_AIA_NEW_PAT = re.compile(r"aia\.lev1_euv_12s\.(\d{4}-\d{2}-\d{2}T\d{6}Z)\.\d+\.image_lev1\.fits")  # 新的AIA文件名
+_RE_HMI_NEW_PAT = re.compile(r"hmi\.M_45s\.(\d{8})_(\d{6})_TAI")  # 新的HMI文件名
 # 扩展时间格式常量
 _DATETIME_FMTS = [
     # 标准ISO格式
@@ -363,8 +368,50 @@ def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
     return None
 
 
+def parse_radio_time_from_filename(filename: str) -> Optional[datetime]:
+    """从射电文件名中提取观测时间（支持多种格式，包括新格式）"""
+    basename = os.path.basename(filename)
+    
+    # 新格式：223MHz_2025124_043740_183.fits (YYYYJJJ_HHMMSS_SSS)
+    m1 = _RE_RADIO_PAT_YYYYJJJ.search(basename)
+    if m1:
+        date_part = m1.group(1)  # 2025124 (年+儒略日)
+        time_part = m1.group(2)  # 043740 (时分秒)
+        ms_part = m1.group(3)    # 183 (毫秒)
+        
+        # 构建时间字符串
+        time_str = f"{date_part}_{time_part}_{ms_part}"
+        parsed_time = _parse_flexible_datetime(time_str)
+        if parsed_time:
+            return parsed_time
+    
+    # 其他常见格式
+    m2 = _RE_RADIO_PAT_YYYYMMDD.search(basename)
+    if m2:
+        date_part = m2.group(1)  # YYYYMMDD
+        time_part = m2.group(2)  # HHMMSS
+        time_str = f"{date_part}_{time_part}"
+        parsed_time = _parse_flexible_datetime(time_str)
+        if parsed_time:
+            return parsed_time
+    
+    # 尝试从头文件读取
+    try:
+        if os.path.exists(filename):
+            header = fits.getheader(filename, 0)
+            date_obs = str(header.get("DATE-OBS", "")).strip()
+            if date_obs:
+                parsed_time = _parse_flexible_datetime(date_obs)
+                if parsed_time:
+                    return parsed_time
+    except Exception:
+        pass
+    
+    return None
+
+
 def parse_aia_time_from_filename(filename: str) -> Optional[datetime]:
-    """从 AIA 文件名中提取观测时间（支持多种命名模式）。"""
+    """从 AIA 文件名中提取观测时间（支持多种命名模式，包括新格式）。"""
     basename = os.path.basename(filename)
 
     # 尝试从FITS头直接读取（如果文件可访问）
@@ -379,22 +426,28 @@ def parse_aia_time_from_filename(filename: str) -> Optional[datetime]:
     except Exception:
         pass
 
-    # 从文件名解析（备用方法）
+    # 优先尝试新格式：aia.lev1_euv_12s.2025-01-24T033025Z.94.image_lev1.fits
+    m = _RE_AIA_NEW_PAT.search(basename)
+    if m:
+        ts = m.group(1)  # 如 "2025-01-24T033025Z"
+        ts = ts.rstrip("Z")
+        parsed_time = _parse_flexible_datetime(ts)
+        if parsed_time:
+            return parsed_time
+
+    # 原有的解析模式
     for pat in _RE_AIA_PATS:
         m = pat.search(basename)
         if m:
             ts = m.group(1)
             # 移除常见的后缀
             ts = ts.rstrip("Z")
-
             parsed_time = _parse_flexible_datetime(ts)
             if parsed_time:
                 return parsed_time
 
     # 如果都没成功，尝试直接提取数字部分
-    # 查找所有数字序列，尝试解析为时间
     import re
-
     all_digits = re.findall(r"\d{4,}", basename)
     for digits in all_digits:
         if len(digits) >= 8:  # 至少要有年月日
@@ -408,14 +461,88 @@ def parse_aia_time_from_filename(filename: str) -> Optional[datetime]:
 
 
 def parse_hmi_time_from_filename(filename: str) -> Optional[datetime]:
-    """从 HMI 文件名中提取观测时间（格式如 YYYYMMDD_HHMMSS）。"""
-    m = _RE_HMI_PAT.search(filename)
-    if m:
+    """从 HMI 文件名中提取观测时间（支持多种格式，包括新格式）"""
+    basename = os.path.basename(filename)
+    
+    # 新格式：hmi.M_45s.20250124_033215_TAI.2.magnetogram.fits
+    m1 = _RE_HMI_NEW_PAT.search(basename)
+    if m1:
+        date_part = m1.group(1)  # 20250124
+        time_part = m1.group(2)  # 033215
+        time_str = f"{date_part}_{time_part}"
         try:
-            return datetime.strptime(f"{m.group(1)}_{m.group(2)}", "%Y%m%d_%H%M%S")
+            return datetime.strptime(time_str, "%Y%m%d_%H%M%S")
         except ValueError:
             pass
+    
+    # 原有的HMI格式
+    m2 = _RE_HMI_PAT.search(basename)
+    if m2:
+        try:
+            return datetime.strptime(f"{m2.group(1)}_{m2.group(2)}", "%Y%m%d_%H%M%S")
+        except ValueError:
+            pass
+    
     return None
+
+
+# ============================================================
+#  从 AIA_RS.py 复制的函数
+# ============================================================
+
+def get_sun_center_and_radius(header):
+    """从FITS头文件中获取太阳中心坐标和半径（从AIA_RS.py复制）"""
+    try:
+        # 获取太阳中心像素位置
+        crpix1 = header.get("CRPIX1", 0)
+        crpix2 = header.get("CRPIX2", 0)
+
+        # 获取太阳中心坐标（角秒）
+        crval1 = header.get("CRVAL1", 0)
+        crval2 = header.get("CRVAL2", 0)
+
+        # 获取像素比例
+        cdelt1 = header.get("CDELT1", 1)
+        cdelt2 = header.get("CDELT2", 1)
+
+        # 获取太阳半径
+        if "RSUN_OBS" in header:
+            rsun_obs = header["RSUN_OBS"]  # 角秒
+        elif "R_SUN" in header and "CDELT1" in header:
+            # 如果半径是像素单位，转换为角秒
+            rsun_obs = abs(header["R_SUN"] * header["CDELT1"])
+        else:
+            rsun_obs = 960.0  # 默认值
+
+        return crpix1, crpix2, crval1, crval2, cdelt1, cdelt2, rsun_obs
+    except Exception as e:
+        print(f"获取太阳信息时出错: {e}")
+        return 0, 0, 0, 0, 1, 1, 960.0
+
+
+def calculate_image_extent(data_shape, crpix1, crpix2, crval1, crval2, cdelt1, cdelt2):
+    """计算图像的完整范围（角秒）（从AIA_RS.py复制）"""
+    nx, ny = data_shape[1], data_shape[0]
+
+    # 计算每个像素的角秒坐标
+    # 像素索引从1开始，所以第一个像素的位置是 (1 - crpix1) * cdelt1 + crval1
+    x_min = crval1 + (1 - crpix1) * cdelt1
+    x_max = crval1 + (nx - crpix1) * cdelt1
+    y_min = crval2 + (1 - crpix2) * cdelt2
+    y_max = crval2 + (ny - crpix2) * cdelt2
+
+    # 确保正确的顺序（x从左到右，y从下到上）
+    if cdelt1 > 0:
+        x_extent = [x_min, x_max]
+    else:
+        x_extent = [x_max, x_min]
+
+    if cdelt2 > 0:
+        y_extent = [y_min, y_max]
+    else:
+        y_extent = [y_max, y_min]
+
+    return x_extent, y_extent
 
 
 # ============================================================
@@ -774,6 +901,143 @@ def auto_adjust_coordinate_scale(
     if cfg.debug_mode:
         print(f"    [自动调整] 未能找到合适缩放因子，使用默认值")
     return ra_map, dec_map, cfg.radio_to_solar_scale_factor
+
+
+# ============================================================
+#  简化的射电数据投影方法（参照AIA_RS.py）
+# ============================================================
+
+def reproject_radio_simple_scale(
+    radio_data: np.ndarray,
+    radio_header: fits.Header,
+    aia_cutout_map,
+    cfg: Config,
+) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """
+    简化的射电数据投影方法，参照AIA_RS.py
+    返回: (重投影数据, Tx坐标数组, Ty坐标数组)
+    """
+    try:
+        # 获取射电图像的太阳信息
+        (radio_crpix1, radio_crpix2, radio_crval1, radio_crval2, 
+         radio_cdelt1, radio_cdelt2, radio_rsun) = get_sun_center_and_radius(radio_header)
+        
+        # 获取AIA图像的太阳信息
+        aia_header = aia_cutout_map.meta
+        (aia_crpix1, aia_crpix2, aia_crval1, aia_crval2,
+         aia_cdelt1, aia_cdelt2, aia_rsun) = get_sun_center_and_radius(aia_header)
+        
+        if cfg.debug_mode:
+            print(f"    [简单投影] AIA太阳半径: {aia_rsun:.1f} arcsec")
+            print(f"    [简单投影] 射电太阳半径: {radio_rsun:.1f} arcsec")
+            print(f"    [简单投影] 射电像素比例: {radio_cdelt1:.6f} arcsec/pixel")
+            print(f"    [简单投影] 射电图像尺寸: {radio_data.shape}")
+        
+        # 计算射电图像的完整范围
+        radio_x_extent, radio_y_extent = calculate_image_extent(
+            radio_data.shape,
+            radio_crpix1, radio_crpix2,
+            radio_crval1, radio_crval2,
+            radio_cdelt1, radio_cdelt2,
+        )
+        
+        # 计算缩放因子，使射电太阳半径与AIA太阳半径匹配
+        scale_factor = aia_rsun / radio_rsun
+        
+        # 计算缩放后的射电图像范围
+        radio_center_x = radio_crval1
+        radio_center_y = radio_crval2
+        
+        scaled_radio_x_min = radio_center_x + (radio_x_extent[0] - radio_center_x) * scale_factor
+        scaled_radio_x_max = radio_center_x + (radio_x_extent[1] - radio_center_x) * scale_factor
+        scaled_radio_y_min = radio_center_y + (radio_y_extent[0] - radio_center_y) * scale_factor
+        scaled_radio_y_max = radio_center_y + (radio_y_extent[1] - radio_center_y) * scale_factor
+        
+        scaled_radio_extent = [
+            min(scaled_radio_x_min, scaled_radio_x_max),
+            max(scaled_radio_x_min, scaled_radio_x_max),
+            min(scaled_radio_y_min, scaled_radio_y_max),
+            max(scaled_radio_y_min, scaled_radio_y_max),
+        ]
+        
+        if cfg.debug_mode:
+            print(f"    [简单投影] 缩放因子: {scale_factor:.4f}")
+            print(f"    [简单投影] 缩放后射电范围: X={scaled_radio_extent[0]:.0f}~{scaled_radio_extent[1]:.0f}, "
+                  f"Y={scaled_radio_extent[2]:.0f}~{scaled_radio_extent[3]:.0f}")
+        
+        # 创建射电图像的像素网格
+        ny, nx = radio_data.shape
+        y_indices, x_indices = np.indices((ny, nx))
+        
+        # 计算每个像素在缩放后的太阳坐标
+        # 线性插值：像素索引 -> 缩放后的角秒坐标
+        tx_map = scaled_radio_extent[0] + (x_indices / (nx - 1)) * (scaled_radio_extent[1] - scaled_radio_extent[0])
+        ty_map = scaled_radio_extent[2] + (y_indices / (ny - 1)) * (scaled_radio_extent[3] - scaled_radio_extent[2])
+        
+        # 获取AIA图像的范围
+        aia_x_extent, aia_y_extent = calculate_image_extent(
+            aia_cutout_map.data.shape,
+            aia_crpix1, aia_crpix2,
+            aia_crval1, aia_crval2,
+            aia_cdelt1, aia_cdelt2,
+        )
+        
+        aia_extent = [
+            min(aia_x_extent[0], aia_x_extent[1]),
+            max(aia_x_extent[0], aia_x_extent[1]),
+            min(aia_y_extent[0], aia_y_extent[1]),
+            max(aia_y_extent[0], aia_y_extent[1]),
+        ]
+        
+        # 将射电数据重采样到AIA网格
+        # 首先，创建射电数据的插值器
+        from scipy.interpolate import RegularGridInterpolator
+        
+        # 创建射电数据的规则网格
+        x_radio = np.linspace(scaled_radio_extent[0], scaled_radio_extent[1], nx)
+        y_radio = np.linspace(scaled_radio_extent[2], scaled_radio_extent[3], ny)
+        
+        # 清理射电数据中的NaN
+        radio_data_clean = np.nan_to_num(radio_data, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        # 创建插值器
+        interpolator = RegularGridInterpolator(
+            (y_radio, x_radio),  # 注意：scipy要求y在前，x在后
+            radio_data_clean,
+            method='linear',
+            bounds_error=False,
+            fill_value=0.0
+        )
+        
+        # 创建AIA图像的网格
+        ny_aia, nx_aia = aia_cutout_map.data.shape
+        x_aia = np.linspace(aia_extent[0], aia_extent[1], nx_aia)
+        y_aia = np.linspace(aia_extent[2], aia_extent[3], ny_aia)
+        
+        # 生成AIA网格点
+        X_aia, Y_aia = np.meshgrid(x_aia, y_aia)
+        
+        # 插值到AIA网格
+        points = np.column_stack([Y_aia.ravel(), X_aia.ravel()])
+        reprojected = interpolator(points).reshape(ny_aia, nx_aia)
+        
+        # 创建AIA网格的Tx, Ty坐标
+        tx_aia = X_aia
+        ty_aia = Y_aia
+        
+        if cfg.debug_mode:
+            valid_count = np.sum(~np.isnan(reprojected))
+            print(f"    [简单投影] 成功重投影: 有效像素 {valid_count}/{ny_aia*nx_aia}")
+            print(f"    [简单投影] 重投影数据范围: [{np.nanmin(reprojected):.2e}, {np.nanmax(reprojected):.2e}]")
+        
+        return reprojected, tx_aia, ty_aia
+        
+    except Exception as e:
+        if cfg.debug_mode:
+            print(f"    [简单投影] 异常: {e}")
+            import traceback
+            traceback.print_exc()
+        return None
 
 
 # ============================================================
@@ -1723,16 +1987,18 @@ def process_aia_group(
                         if beam and band_label not in collected_beams:
                             collected_beams[band_label] = beam
 
-                        # 重投影射电数据到AIA坐标（前向投影贴图法）
-                        # 直接调用前向投影函数，传递所有必要参数
-                        reprojected = reproject_radio_forward_paste(
+                        # 使用简化的投影方法（参照AIA_RS.py）
+                        result = reproject_radio_simple_scale(
                             radio_data_2d,
-                            ra_map,
-                            dec_map,
+                            radio_header_2d,
                             cutout_aia,
                             cfg,
-                            radio_header=radio_header_2d,
                         )
+
+                        if result is not None:
+                            reprojected, tx_map, ty_map = result
+                        else:
+                            reprojected = None
 
                         if (
                             reprojected is None
@@ -1922,67 +2188,28 @@ def _read_one_radio_header(
     rf: str, selected_bands: Tuple[str, ...], pol: str, cfg: Config
 ) -> Optional[Dict]:
     """
-    优化版：改进时间解析和错误处理
+    优化版：改进时间解析和错误处理，优先从文件名解析时间
     """
     band_found = next((b for b in selected_bands if b in rf), None)
     if not band_found:
         return None
     try:
+        # 优先从文件名解析时间
+        r_time = parse_radio_time_from_filename(rf)
+        
+        if r_time:
+            return {"path": rf, "band": band_found, "pol": pol, "time": r_time}
+        
+        # 如果文件名解析失败，尝试从头文件读取
         hdr = fits.getheader(rf)
-
-        # 使用新的时间解析函数
         r_time = parse_radio_time_from_header(hdr)
 
         if r_time:
             return {"path": rf, "band": band_found, "pol": pol, "time": r_time}
         else:
-            # 调试信息：显示无法解析的时间
-            date_obs = str(hdr.get("DATE-OBS", "")).strip()
+            # 调试信息
             if cfg.debug_mode:
-                print(
-                    f"    警告: 无法解析射电文件时间: '{date_obs}' (长度: {len(date_obs)}), 文件: {os.path.basename(rf)}"
-                )
-
-            # 尝试从文件名中提取时间 - 这是关键修复
-            basename = os.path.basename(rf)
-
-            # 查找文件名中的时间模式
-            import re
-
-            # 模式1: 年儒略日_时分秒_毫秒 (如 2025124_044317_038)
-            time_match1 = re.search(r"(\d{7})_(\d{6})_(\d{1,3})", basename)
-            if time_match1:
-                date_part = time_match1.group(1)  # 2025124
-                time_part = time_match1.group(2)  # 044317
-                ms_part = time_match1.group(3)  # 038
-                time_str = f"{date_part}_{time_part}_{ms_part}"
-                r_time = _parse_flexible_datetime(time_str)
-                if r_time:
-                    if cfg.debug_mode:
-                        print(f"    从文件名解析时间成功: {time_str} -> {r_time}")
-                    return {"path": rf, "band": band_found, "pol": pol, "time": r_time}
-
-            # 模式2: 17位数字格式 (YYYYMMDDHHMMSSmmm) - 从文件名直接提取
-            time_match2 = re.search(r"(\d{17})", basename)
-            if time_match2:
-                time_str = time_match2.group(1)
-                r_time = _parse_flexible_datetime(time_str)
-                if r_time:
-                    if cfg.debug_mode:
-                        print(f"    从文件名解析时间成功(17位): {time_str} -> {r_time}")
-                    return {"path": rf, "band": band_found, "pol": pol, "time": r_time}
-
-            # 模式3: 年月日_时分秒 (如 20250124_044317)
-            time_match3 = re.search(r"(\d{8})_(\d{6})", basename)
-            if time_match3:
-                date_part = time_match3.group(1)  # 20250124
-                time_part = time_match3.group(2)  # 044317
-                time_str = f"{date_part}_{time_part}"
-                r_time = _parse_flexible_datetime(time_str)
-                if r_time:
-                    if cfg.debug_mode:
-                        print(f"    从文件名解析时间成功: {time_str} -> {r_time}")
-                    return {"path": rf, "band": band_found, "pol": pol, "time": r_time}
+                print(f"    警告: 无法解析射电文件时间: {os.path.basename(rf)}")
 
     except Exception as e:
         if cfg.debug_mode:
