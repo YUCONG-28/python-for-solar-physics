@@ -35,6 +35,7 @@ MANIFEST
 backup_*/
 *.bak
 *~
+*.docx
 
 # IDE和编辑器文件
 .vscode/

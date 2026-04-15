@@ -16,9 +16,9 @@ file_path0 = r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450\149MHz\149MHz_Declinati
 file_path1 = r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450\149MHz\149MHz_RightAscensionDegree.fits"
 # 读取FITS文件
 hdul0 = fits.open(file_path0)
-header0 = hdul0[1].header
+header0 = hdul0[0].header
 hdul1 = fits.open(file_path1)
 header1 = hdul1[0].header
-print(header1)
+print(header0)
 print("***********************")
-# print(header1)
+print(header1)
