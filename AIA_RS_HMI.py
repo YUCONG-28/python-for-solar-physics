@@ -1481,6 +1481,11 @@ def reproject_radio_forward_paste(
                             f"    [太阳坐标模式] Ty范围: [{ty[fin_h].min():.1f}, {ty[fin_h].max():.1f}]角秒"
                         )
 
+            except Exception as e:
+                if cfg.debug_mode:
+                    print(f"    [太阳坐标模式] 构建太阳坐标失败: {e}")
+                return None
+
         # ── 有效点筛选 ────────────────────────────────────────────────────
         # 注意：对于赤经赤纬模式，radio_hpc可能是一个标量或数组
         # 我们需要确保正确提取有效点的坐标
