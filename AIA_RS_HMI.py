@@ -276,13 +276,27 @@ def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
             time_part = parts[1]  # 如"044317"
 
             # 将年儒略日转换为标准日期
-            if len(date_part) == 7:  # YYYYDDD
-                year = date_part[:4]
-                doy = date_part[4:]
+            if len(date_part) == 7:  
+                year = int(date_part[:4])
+                parsed_date = None
+                
+                # 1. 优先尝试解析为 YYYYmDD (缺少月份前导零，如 2025124 -> 2025-01-24)
                 try:
-                    base_date = datetime(int(year), 1, 1)
-                    parsed_date = base_date + timedelta(days=int(doy) - 1)
-
+                    month_candidate = int(date_part[4:5])
+                    day_candidate = int(date_part[5:7])
+                    parsed_date = datetime(year, month_candidate, day_candidate)
+                except ValueError:
+                    pass  # 如果遇到非法月日（如2025135），自动跳过
+                
+                # 2. 如果不符合 YYYYmDD，则回退到 年+儒略日 (YYYYDDD) 逻辑
+                if parsed_date is None:
+                    try:
+                        doy = int(date_part[4:])
+                        parsed_date = datetime(year, 1, 1) + timedelta(days=doy - 1)
+                    except Exception:
+                        pass
+                
+                if parsed_date is not None:
                     # 解析时间部分
                     if len(time_part) == 6:  # HHMMSS
                         hour = int(time_part[0:2])
@@ -305,8 +319,6 @@ def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
                             second,
                             microsecond,
                         )
-                except Exception:
-                    pass
 
     # 处理小数点格式
     if "." in date_str:
