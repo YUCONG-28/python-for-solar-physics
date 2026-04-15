@@ -164,9 +164,29 @@ def _estimate_safe_workers(file_list: list, requested, memory_per_worker_mb) -> 
         if file_list:
             try:
                 sample = file_list[:3]
-                avg_bytes = sum(os.path.getsize(f) for f in sample) / len(sample)
-                memory_per_worker_mb = avg_bytes * 20 / (1024**2)
-            except OSError:
+                total_bytes = 0
+                count = 0
+                
+                for item in sample:
+                    if isinstance(item, tuple):
+                        # 如果是元组，取第一个文件（RR文件）作为大小估计
+                        file_path = item[0]
+                    else:
+                        file_path = item
+                    
+                    try:
+                        total_bytes += os.path.getsize(file_path)
+                        count += 1
+                    except (OSError, TypeError) as e:
+                        # 如果文件不存在或路径有问题，跳过
+                        continue
+                
+                if count > 0:
+                    avg_bytes = total_bytes / count
+                    memory_per_worker_mb = avg_bytes * 20 / (1024**2)
+                else:
+                    memory_per_worker_mb = 500.0
+            except (OSError, TypeError) as e:
                 memory_per_worker_mb = 500.0
         else:
             memory_per_worker_mb = 500.0
@@ -255,13 +275,19 @@ def calc_extent(header, img_shape):
         return [-1500, 1500, 1500, -1500]
 
 
-def _global_range_one(fp: str):
+def _global_range_one(fp):
     """
     Read a single file, return (nanmin, nanmax).
     For parallel calls, exceptions are caught independently.
     """
     try:
-        data, _ = read_fits(fp)
+        # 处理元组情况：如果是元组，取第一个文件（RR文件）
+        if isinstance(fp, tuple):
+            file_path = fp[0]
+        else:
+            file_path = fp
+            
+        data, _ = read_fits(file_path)
         return float(np.nanmin(data)), float(np.nanmax(data))
     except Exception as e:
         warnings.warn(f"Skipping file {fp}: {e}")
@@ -646,7 +672,13 @@ def _precreate_single_band_dirs(files: list, output_dir: str):
     """
     for fp in files:
         try:
-            with fits.open(fp, memmap=True) as hdul:
+            # 处理元组情况：如果是元组，取第一个文件（RR文件）
+            if isinstance(fp, tuple):
+                file_path = fp[0]
+            else:
+                file_path = fp
+                
+            with fits.open(file_path, memmap=True) as hdul:
                 hdr = (
                     hdul[1].header
                     if (len(hdul) > 1 and isinstance(hdul[1], fits.ImageHDU))
@@ -1713,9 +1745,19 @@ def main():
         use_parallel = True
 
     # ── 3. 安全 max_workers ─────────────────────────────────────
-    sample_files = (
-        [slot[0] for slot in slots[:5]] if mode == "multi_band" else files[:5]
-    )
+    if mode == "multi_band":
+        # 对于多波段模式，提取每个slot的第一个文件的第一个元素（如果是元组）
+        sample_files = []
+        for slot in slots[:5]:
+            if slot and len(slot) > 0:
+                first_item = slot[0]
+                if isinstance(first_item, tuple):
+                    sample_files.append(first_item[0])  # 取RR文件
+                else:
+                    sample_files.append(first_item)
+    else:
+        sample_files = files[:5]
+        
     safe_workers = _estimate_safe_workers(
         file_list=sample_files,
         requested=cfg.get("max_workers"),
@@ -1731,9 +1773,18 @@ def main():
 
     elif color_range_mode == "global":
         print("Color range mode: fixed to global min/max")
-        all_files = (
-            [fp for slot in slots for fp in slot] if mode == "multi_band" else files
-        )
+        all_files = []
+        if mode == "multi_band":
+            # 对于多波段模式，提取所有文件的第一个元素（如果是元组）
+            for slot in slots:
+                for item in slot:
+                    if isinstance(item, tuple):
+                        all_files.append(item[0])  # 取RR文件
+                    else:
+                        all_files.append(item)
+        else:
+            all_files = files
+            
         # ★ parallel statistics, reuse safe_workers
         vmin, vmax = compute_global_range(
             all_files, None, None, max_workers=safe_workers
