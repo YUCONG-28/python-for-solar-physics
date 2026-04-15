@@ -190,7 +190,7 @@ class Config:
     test_file_limit: int = 5  # 快速测试时的文件数量限制
 
     # 新增配置：是否使用赤经赤纬坐标图
-    use_radec_maps: bool = False  # True: 使用赤经赤纬文件; False: 直接转换为太阳坐标
+    use_radec_maps: bool = True  # True: 使用赤经赤纬文件; False: 直接转换为太阳坐标
     radio_to_solar_scale_factor: float = (
         0.1  # 射电坐标到太阳坐标的缩放因子，默认改为0.1
     )
