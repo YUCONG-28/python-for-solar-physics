@@ -50,6 +50,7 @@ import numpy as np
 import psutil
 import sunpy.coordinates
 import sunpy.map
+from astropy.constants import R_sun
 from astropy.convolution import Gaussian2DKernel
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
@@ -59,7 +60,6 @@ from matplotlib.patches import Ellipse
 from scipy.interpolate import RegularGridInterpolator  # 提前导入，避免函数内重复导入
 from scipy.ndimage import gaussian_filter
 from sunpy.coordinates import frames
-from astropy.constants import R_sun
 
 warnings.filterwarnings("ignore")
 
@@ -229,8 +229,8 @@ class Config:
     aia_vmin: float = 16
     aia_vmax: float = 6666
     aia_cmap: str = "sdoaia171"
-    roi_bottom_left: List[float] = field(default_factory=lambda: [600, -800])
-    roi_top_right: List[float] = field(default_factory=lambda: [1600, 200])
+    roi_bottom_left: List[float] = field(default_factory=lambda: [-1500, -1500])
+    roi_top_right: List[float] = field(default_factory=lambda: [1500, 1500])
 
     # ── 画布颜色配置 ───────────────────────────────────────────
     style: CanvasStyle = field(default_factory=CanvasStyle)
@@ -241,14 +241,14 @@ class Config:
             "149.0MHz": ("cyan", "deepskyblue"),
             "164.0MHz": ("lime", "green"),
             "190.0MHz": ("magenta", "darkviolet"),
-            "205.0MHz": ("yellow", "orange"),
+            "205.0MHz": ("darkviolet", "orange"),
             "223.0MHz": ("red", "darkred"),
             "238.0MHz": ("white", "lightgray"),
         }
     )
     default_colors: List[Tuple] = field(
         default_factory=lambda: [
-            ("orange", "orange"),
+            ("darkred", "orange"),
             ("deepskyblue", "darkred"),
             ("lightgray", "lightgray"),
             ("pink", "hotpink"),
@@ -277,25 +277,6 @@ class Config:
     auto_adjust_scale_factor: bool = True
     min_pixels_in_view: int = 100
     max_scale_factor_adjustments: int = 3
-
-    # ── 高度投影配置 ─────────────────────────────────────────────
-    use_height_projection: bool = True  # 是否启用高度投影
-    height_scale_factor: float = 1.0  # 高度缩放因子
-    min_height_rsun: float = 1.05  # 最小高度（Rsun）
-    max_height_rsun: float = 1.5   # 最大高度（Rsun）
-    
-    # ── 轨迹分析配置 ─────────────────────────────────────────────
-    analyze_trajectory: bool = True  # 是否分析轨迹
-    show_trajectory_line: bool = True  # 是否显示轨迹线
-    show_frequency_labels: bool = True  # 是否显示频率标签
-    trajectory_line_color: str = "white"  # 轨迹线颜色
-    trajectory_line_style: str = "--"  # 轨迹线样式
-    trajectory_line_width: float = 2.0  # 轨迹线宽度
-    
-    # ── 等值线颜色配置 ───────────────────────────────────────────
-    use_frequency_colormap: bool = True  # 是否使用频率渐变颜色
-    frequency_colormap: str = "jet"  # 频率渐变色彩映射
-    contour_color_alpha: float = 0.9  # 等值线颜色透明度
 
 
 # ============================================================
@@ -733,38 +714,21 @@ def _preprocess_radec_maps(
     cfg: Config,
 ) -> Tuple[np.ndarray, np.ndarray, bool]:
     """
-    统一坐标预处理。
-
-    use_radec_maps=True  → 返回处理后的赤经赤纬（度），is_relative=False
-    use_radec_maps=False → 直接返回太阳坐标（角秒），is_relative=True
+    修正版坐标预处理：精准保留太阳半径偏移，并过滤背景填充值
     """
     if not cfg.use_radec_maps:
-        if cfg.debug_mode:
-            print(
-                f"    [坐标预处理] 太阳坐标模式 "
-                f"Tx=[{ra_map.min():.1f},{ra_map.max():.1f}] "
-                f"Ty=[{dec_map.min():.1f},{dec_map.max():.1f}] 角秒"
-            )
         return ra_map, dec_map, True
 
     ra = ra_map.copy().astype(np.float64)
     dec = dec_map.copy().astype(np.float64)
 
-    ra_fin = ra[np.isfinite(ra)]
-    dec_fin = dec[np.isfinite(dec)]
-    if len(ra_fin) == 0 or len(dec_fin) == 0:
-        return ra, dec, False
+    # 【修复 1】：精准击杀背景幽灵！
+    # 探针检测到背景填充区使用了精确的 0.0，把它们设为 NaN，防止堆积在日心
+    invalid_mask = (ra == 0.0) & (dec == 0.0)
+    ra[invalid_mask] = np.nan
+    dec[invalid_mask] = np.nan
 
-    if cfg.debug_mode:
-        print(
-            f"    [坐标预处理] 赤经赤纬模式 "
-            f"RA=[{ra_fin.min():.6f},{ra_fin.max():.6f}] "
-            f"Dec=[{dec_fin.min():.6f},{dec_fin.max():.6f}] 度"
-        )
-
-    # 将赤经规范化到 [0, 360)
-    if ra_fin.min() < 0 or ra_fin.max() > 360:
-        ra = np.mod(ra, 360.0)
+    # （彻底删除了原有的 np.mod 取模逻辑，防止坐标系左半边被撕裂）
 
     return ra, dec, False
 
@@ -820,7 +784,7 @@ def _find_radec_file(
             if matches:
                 found = matches[0]
                 break
-        
+
         _radec_file_cache[cache_key] = found
         if found:
             return found
@@ -912,6 +876,20 @@ def extract_radio_2d_data(
                 if cfg.debug_mode:
                     if ra_map is not None and dec_map is not None:
                         print("    [坐标图] 成功加载赤经赤纬坐标图")
+
+                        ra_valid = ra_map[np.isfinite(ra_map)]
+                        dec_valid = dec_map[np.isfinite(dec_map)]
+                        if len(ra_valid) > 0:
+                            print("\n" + "=" * 30)
+                            print("【坐标原始数值探针 - 诊断用】")
+                            print(
+                                f"RA 范围:  {np.nanmin(ra_valid):.4f} 至 {np.nanmax(ra_valid):.4f}"
+                            )
+                            print(
+                                f"Dec 范围: {np.nanmin(dec_valid):.4f} 至 {np.nanmax(dec_valid):.4f}"
+                            )
+                            print(f"检测到为 0 的异常像素数: {np.sum(ra_map == 0)}")
+                            print("=" * 30 + "\n")
                     else:
                         print("    [坐标图] 警告: 未找到完整的坐标图文件")
 
@@ -1097,7 +1075,7 @@ def reproject_radio_forward_paste(
     cfg: Config,
     radio_header: Optional[fits.Header] = None,
 ) -> Optional[np.ndarray]:
-    """前向投影贴图法（彻底解决假单位与 3D 报错 Bug 版）"""
+    """前向投影贴图法（终极真理版：正确比例 + 动态网格桥接）"""
     if ra_map is None or dec_map is None:
         return None
 
@@ -1105,6 +1083,7 @@ def reproject_radio_forward_paste(
 
     # ── 1. 有效点严格筛选 ─────────────────────────────────────────
     valid_mask = np.isfinite(ra_abs) & np.isfinite(dec_abs) & np.isfinite(radio_data)
+
     n_valid = int(np.sum(valid_mask))
     if n_valid < 9:
         return None
@@ -1113,26 +1092,23 @@ def reproject_radio_forward_paste(
     dec_valid = dec_abs[valid_mask]
     v_vals_fin = radio_data[valid_mask].astype(np.float64)
 
-    # ── 2. 识破“假单位”，按太阳半径 (R_sun) 转换坐标 ──────────────
+    # ── 2. 坐标转换 (Degree → Arcsec) ──────────────
     try:
         import astropy.units as u
         from astropy.coordinates import SkyCoord
-        
-        # 获取 AIA 图像当时的真实太阳视半径 (通常在 960 角秒左右)
-        aia_rsun = aia_cutout_map.meta.get("RSUN_OBS", 960.0)
-        
-        # 核心逻辑：将假 Degree (实际是 R_sun) 转换为实际的角秒 (arcsec)
-        tx_arcsec = ra_valid * aia_rsun
-        ty_arcsec = dec_valid * aia_rsun
-        
+
+        # 真实单位是度 (Degree)，必须乘 3600 才能归位到太阳边缘
+        tx_arcsec = ra_valid * 3600.0
+        ty_arcsec = dec_valid * 3600.0
+
         radio_hpc = SkyCoord(
             Tx=tx_arcsec * u.arcsec,
             Ty=ty_arcsec * u.arcsec,
-            frame=aia_cutout_map.coordinate_frame
+            frame=aia_cutout_map.coordinate_frame,
         )
-        
+
         px_f, py_f = aia_cutout_map.wcs.world_to_pixel(radio_hpc)
-        
+
     except Exception as e:
         if cfg.debug_mode:
             print(f"    [警告] 坐标映射失败: {e}")
@@ -1145,170 +1121,130 @@ def reproject_radio_forward_paste(
     fin_pix = np.isfinite(px_f) & np.isfinite(py_f)
     px_i = np.round(px_f[fin_pix]).astype(int)
     py_i = np.round(py_f[fin_pix]).astype(int)
-    v_vals_mapped = v_vals_fin[fin_pix] 
+    v_vals_mapped = v_vals_fin[fin_pix]
 
     ny_a, nx_a = aia_cutout_map.data.shape
     in_bounds = (px_i >= 0) & (px_i < nx_a) & (py_i >= 0) & (py_i < ny_a)
 
     if not np.any(in_bounds):
-        if cfg.debug_mode:
-            print(f"    [前向投影] 警告：映射后像素均在边界外。")
         return None
 
     acc = np.full((ny_a, nx_a), -np.inf, dtype=np.float64)
     np.maximum.at(acc, (py_i[in_bounds], px_i[in_bounds]), v_vals_mapped[in_bounds])
     output = np.where(acc > -np.inf, acc, np.nan).astype(np.float32)
 
-    # ── 4. 间隙填充（高斯扩散）───────────────────────────────────
+    # ── 4. 间隙填充（动态高斯扩散 - 解决钉板消失效应）─────────────
     nan_mask = np.isnan(output)
     if nan_mask.any():
+        try:
+            # 估算射电图原有的像素度数分辨率
+            deg_per_pix = np.sqrt(
+                (np.nanmax(ra_valid) - np.nanmin(ra_valid))
+                * (np.nanmax(dec_valid) - np.nanmin(dec_valid))
+                / n_valid
+            )
+            # 转换为 AIA 像素间距
+            aia_scale = abs(aia_cutout_map.scale.axis1.value)
+            gap_pixels = (deg_per_pix * 3600.0) / aia_scale
+            # 动态调整 Sigma：保证平滑半径足够大以桥接拉伸后的缝隙
+            dynamic_sigma = float(max(15.0, gap_pixels * 0.6))
+        except Exception:
+            dynamic_sigma = 50.0  # 兜底值
+
+        if cfg.debug_mode:
+            print(f"    [投影] 动态平滑 Sigma: {dynamic_sigma:.1f}")
+
         filled = np.where(nan_mask, 0.0, output)
         weights = (~nan_mask).astype(np.float64)
+
         from scipy.ndimage import gaussian_filter
-        sm_d = gaussian_filter(filled.astype(np.float64), sigma=15.0)
-        sm_w = gaussian_filter(weights, sigma=15.0)
+
+        sm_d = gaussian_filter(filled.astype(np.float64), sigma=dynamic_sigma)
+        sm_w = gaussian_filter(weights, sigma=dynamic_sigma)
+
         with np.errstate(invalid="ignore", divide="ignore"):
             diffused = np.where(sm_w > 1e-6, sm_d / sm_w, np.nan)
         output = np.where(nan_mask, diffused.astype(np.float32), output)
 
     return output
 
+
 def parse_freq(band_str):
     return float(band_str.replace("MHz", ""))
 
-def freq_to_height(freq_mhz, cfg: Optional[Config] = None):
-    """
-    针对150-324MHz优化的频率-高度关系
-    返回单位为太阳半径(Rsun)
-    """
-    if cfg and hasattr(cfg, 'min_height_rsun') and hasattr(cfg, 'max_height_rsun'):
-        # 使用配置的缩放参数
-        base_height = cfg.min_height_rsun
-        # 计算高度
-        return base_height + (300 / freq_mhz) ** 0.5 * (cfg.height_scale_factor * 0.08)
-    else:
-        # 默认关系
-        return 1.05 + (300 / freq_mhz) ** 0.5 * 0.08
 
-def get_centroid(img: np.ndarray) -> Optional[Tuple[float, float]]:
+def freq_to_height(freq_mhz):
     """
-    计算图像的强度加权质心
-    
-    参数:
-    img: 输入图像数组
-    
-    返回:
-    (x, y) 质心坐标，如果无法计算返回None
+    针对你 150–324 MHz 优化
     """
-    if img is None or np.all(np.isnan(img)):
-        return None
-    
-    # 创建有效数据掩码
-    mask = np.isfinite(img)
-    if np.sum(mask) == 0:
-        return None
-    
-    # 获取坐标网格
-    y, x = np.indices(img.shape)
-    
-    # 强度加权质心计算
-    w = img[mask]
-    x_c = np.sum(x[mask] * w) / np.sum(w)
-    y_c = np.sum(y[mask] * w) / np.sum(w)
-    
-    return (x_c, y_c)
+    return 1.05 + (300 / freq_mhz) ** 0.5 * 0.08
+
 
 def reproject_radio_with_height(
     radio_data,
     ra_map,
     dec_map,
     aia_map,
-    cfg: Config,
-    freq_mhz: Optional[float] = None,
-    height_rsun: Optional[float] = None,
-) -> Optional[np.ndarray]:
-    """
-    带高度修正的射电数据重投影
-    
-    参数:
-    radio_data: 射电强度数据
-    ra_map: 赤经坐标图
-    dec_map: 赤纬坐标图
-    aia_map: AIA地图
-    cfg: 配置对象
-    freq_mhz: 频率(MHz)，用于计算高度
-    height_rsun: 直接指定的高度(Rsun)
-    
-    返回:
-    重投影后的数据或None
-    """
-    # 检查输入数据有效性
+    cfg,
+    height_rsun=1.1,
+):
     mask = np.isfinite(ra_map) & np.isfinite(dec_map) & np.isfinite(radio_data)
     if np.sum(mask) < 10:
         return None
-    
-    # 提取有效数据
+
     x = ra_map[mask]
     y = dec_map[mask]
     vals = radio_data[mask]
-    
-    # 获取太阳视半径
+
+    # 🔑 关键：Rsun → arcsec
     rsun_arcsec = aia_map.meta.get("RSUN_OBS", 960.0)
-    
-    # 将假单位(Rsun)转换为角秒
+
     Tx = x * rsun_arcsec * u.arcsec
     Ty = y * rsun_arcsec * u.arcsec
-    
-    # 计算或使用指定的高度
-    if height_rsun is None and freq_mhz is not None:
-        height_rsun = freq_to_height(freq_mhz, cfg)
-    elif height_rsun is None:
-        height_rsun = 1.1  # 默认值
-    
+
+    # 🌟 加入高度（核心升级）
+    distance = height_rsun * R_sun
+
+    hpc_3d = SkyCoord(
+        Tx=Tx,
+        Ty=Ty,
+        distance=distance,
+        frame=frames.Helioprojective,
+        observer=aia_map.observer_coordinate,
+        obstime=aia_map.date,
+    )
+
+    px, py = aia_map.wcs.world_to_pixel(hpc_3d)
+
+    out = np.full(aia_map.data.shape, np.nan, dtype=np.float32)
+
+    px = np.round(px).astype(int)
+    py = np.round(py).astype(int)
+
+    valid = (px >= 0) & (px < out.shape[1]) & (py >= 0) & (py < out.shape[0])
+
+    np.maximum.at(out, (py[valid], px[valid]), vals[valid])
+
+    return out
+
+
+def reproject_radio_auto_height(
+    radio_data,
+    ra_map,
+    dec_map,
+    aia_map,
+    freq_mhz,
+    cfg,
+):
+    height = freq_to_height(freq_mhz)
+
     if cfg.debug_mode:
-        print(f"    高度投影: {height_rsun:.3f} Rsun")
-    
-    try:
-        # 创建3D坐标（包含高度信息）
-        distance = height_rsun * R_sun
-        
-        hpc_3d = SkyCoord(
-            Tx=Tx,
-            Ty=Ty,
-            distance=distance,
-            frame=frames.Helioprojective,
-            observer=aia_map.observer_coordinate,
-            obstime=aia_map.date,
-        )
-        
-        # 投影到AIA像素坐标
-        px, py = aia_map.wcs.world_to_pixel(hpc_3d)
-        
-        # 创建输出数组
-        out = np.full(aia_map.data.shape, np.nan, dtype=np.float32)
-        
-        # 四舍五入到最近的像素
-        px_int = np.round(px).astype(int)
-        py_int = np.round(py).astype(int)
-        
-        # 确保在边界内
-        ny, nx = out.shape
-        valid = (
-            (px_int >= 0) & (px_int < nx) &
-            (py_int >= 0) & (py_int < ny)
-        )
-        
-        if np.any(valid):
-            # 使用最大值投影（避免重叠像素取平均值）
-            np.maximum.at(out, (py_int[valid], px_int[valid]), vals[valid])
-            return out
-        else:
-            return None
-            
-    except Exception as e:
-        if cfg.debug_mode:
-            print(f"    高度投影失败: {e}")
-        return None
+        print(f"{freq_mhz} MHz → {height:.3f} Rsun")
+
+    return reproject_radio_with_height(
+        radio_data, ra_map, dec_map, aia_map, cfg, height_rsun=height
+    )
+
 
 def reproject_radio_to_aia(
     radio_data,
@@ -1328,9 +1264,7 @@ def reproject_radio_to_aia(
     if cfg.debug_mode:
         print("    使用简单投影模式")
 
-    result = reproject_radio_simple_scale(
-        radio_data, radio_header, aia_cutout_map, cfg
-    )
+    result = reproject_radio_simple_scale(radio_data, radio_header, aia_cutout_map, cfg)
 
     if result is None:
         return None
@@ -1872,67 +1806,59 @@ def process_aia_group(
                 neg_levels = [-lv for lv in cfg.hmi_levels_gauss if -lv > min_hmi]
 
                 if pos_levels:
-                    ax.contour(hmi_processed.data,
-                               levels=pos_levels,
-                               colors=[sty.hmi_pos_color],
-                               linewidths=sty.hmi_lw,
-                               alpha=sty.hmi_alpha)
+                    ax.contour(
+                        hmi_processed.data,
+                        levels=pos_levels,
+                        colors=[sty.hmi_pos_color],
+                        linewidths=sty.hmi_lw,
+                        alpha=sty.hmi_alpha,
+                    )
                 if neg_levels:
-                    ax.contour(hmi_processed.data,
-                               levels=neg_levels,
-                               colors=[sty.hmi_neg_color],
-                               linewidths=sty.hmi_lw,
-                               alpha=sty.hmi_alpha)
-                
+                    ax.contour(
+                        hmi_processed.data,
+                        levels=neg_levels,
+                        colors=[sty.hmi_neg_color],
+                        linewidths=sty.hmi_lw,
+                        alpha=sty.hmi_alpha,
+                    )
+
                 # 仅当真正画了线才添加图例
                 if pos_levels:
-                    legend_handles.append(Line2D([0], [0], color=sty.hmi_pos_color, lw=sty.hmi_lw, label=f"+{pos_levels[0]:.0f}G"))
+                    legend_handles.append(
+                        Line2D(
+                            [0],
+                            [0],
+                            color=sty.hmi_pos_color,
+                            lw=sty.hmi_lw,
+                            label=f"+{pos_levels[0]:.0f}G",
+                        )
+                    )
                 if neg_levels:
-                    legend_handles.append(Line2D([0], [0], color=sty.hmi_neg_color, lw=sty.hmi_lw, label=f"-{-neg_levels[0]:.0f}G"))
+                    legend_handles.append(
+                        Line2D(
+                            [0],
+                            [0],
+                            color=sty.hmi_neg_color,
+                            lw=sty.hmi_lw,
+                            label=f"-{-neg_levels[0]:.0f}G",
+                        )
+                    )
 
-            # ── 射电等值线叠加（带高度投影） ──────────────────────────────
-            # 按频率排序（从高频到低频）
-            def get_freq_from_band(band_str):
-                try:
-                    return float(band_str.replace("MHz", ""))
-                except:
-                    return 0.0
+            # ── 按频率排序波段 ────────────────────────────────
+            def _band_freq(item):
+                m = _RE_BAND_SORTED.search(item[0])  # 每个 item 只搜索一次
+                return float(m.group(1)) if m else 0.0
 
-            sorted_bands = sorted(single_slice_bands.items(), 
-                                 key=lambda x: get_freq_from_band(x[0]), 
-                                 reverse=True)
+            sorted_bands = sorted(single_slice_bands.items(), key=_band_freq)
 
-            # 准备频率渐变颜色
-            if cfg.use_frequency_colormap and len(sorted_bands) > 1:
-                freqs = [get_freq_from_band(band) for band, _ in sorted_bands]
-                freq_min, freq_max = min(freqs), max(freqs)
-                
-                if freq_max > freq_min:
-                    # 创建颜色映射
-                    cmap = plt.cm.get_cmap(cfg.frequency_colormap)
-                    norm = plt.Normalize(vmin=freq_min, vmax=freq_max)
-                    band_colors = {band: cmap(norm(freq)) for band, freq in zip([b[0] for b in sorted_bands], freqs)}
-                else:
-                    band_colors = {}
-            else:
-                band_colors = {}
-
-            # 存储轨迹点用于后续分析
-            trajectory_points = []
-
+            # ── 射电等值线叠加 ────────────────────────────────
             for band_idx, (band_label, file_list) in enumerate(sorted_bands):
                 orig_idx = selected_bands_idx.get(band_label, band_idx)
-                
-                # 获取颜色（优先使用频率渐变颜色）
-                if band_label in band_colors:
-                    color = band_colors[band_label]
-                    main_color = color
-                    dark_color = color
-                else:
-                    main_color, dark_color = get_band_color(band_label, orig_idx, cfg, color_cache)
-                
+                main_color, dark_color = get_band_color(
+                    band_label, orig_idx, cfg, color_cache
+                )
                 drawn_any = False
-                
+
                 for file_item, polarization, radio_time in file_list:
                     # 检查是否启用左右旋合并
                     if (
@@ -2001,22 +1927,22 @@ def process_aia_group(
                     if beam and band_label not in collected_beams:
                         collected_beams[band_label] = beam
 
-                    # === 智能投影路由（带高度修正） ===
+                    # === 修复后的智能投影路由 ===
                     reprojected = None
-                    
-                    if cfg.use_radec_maps and ra_map is not None and dec_map is not None:
-                        if cfg.use_height_projection:
-                            # 使用带高度的投影
-                            freq_value = get_freq_from_band(band_label)
-                            reprojected = reproject_radio_with_height(
-                                radio_data_2d, ra_map, dec_map, cutout_aia, 
-                                cfg, freq_mhz=freq_value
-                            )
-                        else:
-                            # 使用原有投影
-                            reprojected = reproject_radio_forward_paste(
-                                radio_data_2d, ra_map, dec_map, cutout_aia, cfg, radio_header_2d
-                            )
+                    if (
+                        cfg.use_radec_maps
+                        and ra_map is not None
+                        and dec_map is not None
+                    ):
+                        # 使用赤经赤纬前向投影
+                        reprojected = reproject_radio_forward_paste(
+                            radio_data_2d,
+                            ra_map,
+                            dec_map,
+                            cutout_aia,
+                            cfg,
+                            radio_header_2d,
+                        )
                     else:
                         # 缺失坐标图时，回退到简单缩放投影
                         result = reproject_radio_simple_scale(
@@ -2024,23 +1950,10 @@ def process_aia_group(
                         )
                         if result is not None:
                             reprojected = result[0]
-                    
+
                     if reprojected is None:
                         continue
-                    
-                    # 计算质心并存储（用于轨迹分析）
-                    if cfg.analyze_trajectory:
-                        centroid = get_centroid(reprojected)
-                        if centroid is not None:
-                            # 转换到世界坐标（可选）
-                            trajectory_points.append({
-                                'band': band_label,
-                                'freq': get_freq_from_band(band_label),
-                                'pixel_x': centroid[0],
-                                'pixel_y': centroid[1],
-                                'height': freq_to_height(get_freq_from_band(band_label), cfg),
-                                'time': radio_time
-                            })
+                    # ==========================
                     # ==========================
                     if np.isnan(np.nanmax(reprojected)) or np.nanmax(reprojected) <= 0:
                         continue
@@ -2072,50 +1985,18 @@ def process_aia_group(
                     drawn_any = True
 
                 if drawn_any:
-                    # 更新图例标签以包含频率和高度信息
-                    freq_value = get_freq_from_band(band_label)
-                    height_value = freq_to_height(freq_value, cfg)
-                    
+                    # 在图例中显示偏振信息
                     if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL":
                         if cfg.weighted_average:
-                            label = f"{band_label} (H={height_value:.2f}Rsun, RR+LL w={cfg.rr_weight:.1f}:{cfg.ll_weight:.1f})"
+                            label = f"{band_label} (RR+LL, w={cfg.rr_weight:.1f}:{cfg.ll_weight:.1f})"
                         else:
-                            label = f"{band_label} (H={height_value:.2f}Rsun, RR+LL sum)"
+                            label = f"{band_label} (RR+LL sum)"
                     else:
-                        label = f"{band_label} (H={height_value:.2f}Rsun, {polarization})"
-                    
+                        label = f"{band_label} ({polarization})"
+
                     legend_handles.append(
                         Line2D([0], [0], color=main_color, linewidth=2.0, label=label)
                     )
-
-            # ── 绘制轨迹线（如果启用） ──────────────────────────────
-            if cfg.analyze_trajectory and cfg.show_trajectory_line and len(trajectory_points) > 1:
-                # 按频率排序轨迹点
-                trajectory_points.sort(key=lambda x: x['freq'], reverse=True)
-                
-                # 提取像素坐标
-                xs = [p['pixel_x'] for p in trajectory_points]
-                ys = [p['pixel_y'] for p in trajectory_points]
-                
-                # 绘制轨迹线
-                ax.plot(xs, ys, 
-                        linestyle=cfg.trajectory_line_style,
-                        color=cfg.trajectory_line_color,
-                        linewidth=cfg.trajectory_line_width,
-                        alpha=cfg.contour_alpha,
-                        label='Radio Source Trajectory')
-                
-                # 添加频率标签
-                if cfg.show_frequency_labels:
-                    for point in trajectory_points:
-                        ax.text(point['pixel_x'], point['pixel_y'], 
-                               f"{point['freq']:.0f}MHz",
-                               color=cfg.trajectory_line_color,
-                               fontsize=8, ha='center', va='center',
-                               bbox=dict(boxstyle="round,pad=0.2", 
-                                       facecolor="black", 
-                                       alpha=0.5,
-                                       edgecolor="none"))
 
             # ── 波束椭圆 ───────────────────────────────────────
             if cfg.show_beam and collected_beams:
@@ -2144,12 +2025,6 @@ def process_aia_group(
                 else os.path.basename(aia_file)
             )
 
-            # 在标题中显示投影模式
-            if cfg.use_height_projection:
-                projection_mode = "3D Height Projection"
-            else:
-                projection_mode = "2D Projection"
-
             # 在标题中显示偏振信息
             if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL":
                 if cfg.weighted_average:
@@ -2160,7 +2035,7 @@ def process_aia_group(
                 polar_display = cfg.polarization_mode
 
             ax.set_title(
-                f"AIA 171Å + Radio ({projection_mode}) + HMI\n{title_time}",
+                f"AIA 171Å + Radio ({polar_display}) + HMI\n{title_time}",
                 fontsize=12,
                 pad=10,
                 color=sty.title_color,
@@ -2207,29 +2082,6 @@ def process_aia_group(
                     bbox_inches="tight",
                     facecolor=sty.figure_bg,
                 )
-
-            # ── 轨迹分析输出 ─────────────────────────────────────
-            if cfg.analyze_trajectory and trajectory_points:
-                print(f"  轨迹分析结果:")
-                for point in trajectory_points:
-                    print(f"    {point['band']}: 质心({point['pixel_x']:.1f}, {point['pixel_y']:.1f}), "
-                          f"高度={point['height']:.3f} Rsun")
-                
-                # 计算轨迹角度（如果至少有两个点）
-                if len(trajectory_points) >= 2:
-                    # 使用最高和最低频率点计算方向
-                    high_freq = trajectory_points[0]  # 最高频率（已排序）
-                    low_freq = trajectory_points[-1]  # 最低频率
-                    
-                    dx = low_freq['pixel_x'] - high_freq['pixel_x']
-                    dy = low_freq['pixel_y'] - high_freq['pixel_y']
-                    
-                    # 计算角度（相对于太阳中心或图像坐标系）
-                    angle_deg = np.degrees(np.arctan2(dy, dx))
-                    distance_pixels = np.sqrt(dx**2 + dy**2)
-                    
-                    print(f"    传播方向: {angle_deg:.1f}° (从{high_freq['band']}到{low_freq['band']})")
-                    print(f"    像素距离: {distance_pixels:.1f} pixels")
 
             fig.clf()
             plt.close(fig)
