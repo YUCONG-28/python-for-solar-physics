@@ -1184,7 +1184,7 @@ def freq_to_height(freq_mhz, cfg: Optional[Config] = None):
     if cfg and hasattr(cfg, 'min_height_rsun') and hasattr(cfg, 'max_height_rsun'):
         # 使用配置的缩放参数
         base_height = cfg.min_height_rsun
-        scaling = (cfg.max_height_rsun - cfg.min_height_rsun) / (150 - 324)
+        # 计算高度
         return base_height + (300 / freq_mhz) ** 0.5 * (cfg.height_scale_factor * 0.08)
     else:
         # 默认关系
