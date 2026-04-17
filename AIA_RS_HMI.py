@@ -167,7 +167,7 @@ class Config:
     aia_base_dir: str = r"D:\spike_topping_type_III\2025\20250124\AIA\171\1"
     hmi_base_dir: str = r"D:\spike_topping_type_III\2025\20250124\AIA\hmi\1"
     output_dir: str = (
-        r"D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\RR+LL_rms mode_5"
+        r"D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\RR+LL_peak mode_0.75"
     )
 
     # ── 文件处理配置 ───────────────────────────────────────────
@@ -211,9 +211,9 @@ class Config:
     max_radio_per_band: int = 28
 
     # ── 等值线配置 ─────────────────────────────────────────────
-    normalization_mode: str = "rms"
-    contour_levels_peak: List[float] = field(default_factory=lambda: [0.90])
-    rms_sigma_levels: List[float] = field(default_factory=lambda: [5.0])
+    normalization_mode: str = "peak"
+    contour_levels_peak: List[float] = field(default_factory=lambda: [0.75])
+    rms_sigma_levels: List[float] = field(default_factory=lambda: [20.0])
     rms_box_fraction: float = 0.05
     contour_linewidths: List[float] = field(default_factory=lambda: [2.0])
     contour_alpha: float = 0.90
@@ -1849,6 +1849,23 @@ def process_aia_group(
                         )
                     )
 
+            # 【新增：强制常驻射电图例】
+            # 无论数据是否缺失或被过滤，统一将配置中的所有波段加入图例
+            for band_idx, band_label in enumerate(cfg.selected_bands):
+                main_color, _ = get_band_color(band_label, band_idx, cfg, color_cache)
+
+                if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL":
+                    if cfg.weighted_average:
+                        label = f"{band_label} (RR+LL, w={cfg.rr_weight:.1f}:{cfg.ll_weight:.1f})"
+                    else:
+                        label = f"{band_label} (RR+LL sum)"
+                else:
+                    label = f"{band_label} ({cfg.polarization_mode})"
+
+                legend_handles.append(
+                    Line2D([0], [0], color=main_color, linewidth=2.0, label=label)
+                )
+
             # ── 按频率排序波段 ────────────────────────────────
             def _band_freq(item):
                 m = _RE_BAND_SORTED.search(item[0])  # 每个 item 只搜索一次
@@ -1989,19 +2006,19 @@ def process_aia_group(
                         first_radio_time = radio_time
                     drawn_any = True
 
-                if drawn_any:
-                    # 在图例中显示偏振信息
-                    if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL":
-                        if cfg.weighted_average:
-                            label = f"{band_label} (RR+LL, w={cfg.rr_weight:.1f}:{cfg.ll_weight:.1f})"
-                        else:
-                            label = f"{band_label} (RR+LL sum)"
-                    else:
-                        label = f"{band_label} ({polarization})"
+                # if drawn_any:
+                #     # 在图例中显示偏振信息
+                #     if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL":
+                #         if cfg.weighted_average:
+                #             label = f"{band_label} (RR+LL, w={cfg.rr_weight:.1f}:{cfg.ll_weight:.1f})"
+                #         else:
+                #             label = f"{band_label} (RR+LL sum)"
+                #     else:
+                #         label = f"{band_label} ({polarization})"
 
-                    legend_handles.append(
-                        Line2D([0], [0], color=main_color, linewidth=2.0, label=label)
-                    )
+                #     legend_handles.append(
+                #         Line2D([0], [0], color=main_color, linewidth=2.0, label=label)
+                #     )
 
             # ── 波束椭圆 ───────────────────────────────────────
             if cfg.show_beam and collected_beams:
