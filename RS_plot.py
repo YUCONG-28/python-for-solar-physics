@@ -29,6 +29,20 @@ from tqdm import tqdm
 #   ★ All configurable parameters are centralized here, no need to dive into code to adjust ★
 # ============================================================
 CONFIG = {
+    # ---------- 时间解析配置 ----------
+    # 支持的日期格式:
+    #   "6digit": YYDDD (6位，如202553表示2025年第53天)  
+    #   "7digit": YYYYDDD (7位，如2025124表示2025年第124天)
+    #   "8digit": YYYYDDDD (8位，不常见)
+    #   "auto": 自动检测（默认）
+    "date_format": "auto",  # "6digit", "7digit", "8digit", 或 "auto"（自动检测）
+    # 文件名时间解析模式（正则表达式）
+    "filename_patterns": {
+        "with_ms": r"_(\d{6,8})_(\d{6})_(\d{1,3})",      # 带毫秒
+        "without_ms": r"_(\d{6,8})_(\d{6})",            # 不带毫秒
+    },
+    # 时间解析容错模式
+    "time_parsing_fallback": True,  # 如果精确解析失败，是否尝试宽松解析
     # ---------- Operation mode ----------
     # "single_band": single-band mode (similar to original)
     # "multi_band": multi-band synthesis mode (similar to AIA.py)
@@ -367,50 +381,174 @@ def _sorted_fits_for_band(band_dir: str, start_idx: int, end_idx) -> list:
     return selected
 
 
+# ──────────────────────────────────────────────────────────────
+# 时间解析工具
+# ──────────────────────────────────────────────────────────────
+
+class TimeParser:
+    """时间解析器，支持多种日期格式"""
+    
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.date_format = cfg.get("date_format", "auto")
+        self.fallback = cfg.get("time_parsing_fallback", True)
+        
+    def parse_date_part(self, date_str):
+        """解析日期字符串，返回(年份, 天数)"""
+        if len(date_str) == 6:
+            # 格式: YYDDD (6位)
+            year = int(date_str[0:2])
+            # 假设20xx年
+            full_year = 2000 + year if year < 100 else year
+            day_of_year = int(date_str[2:])
+            return full_year, day_of_year
+        elif len(date_str) == 7:
+            # 格式: YYYYDDD (7位)
+            year = int(date_str[0:4])
+            day_of_year = int(date_str[4:])
+            return year, day_of_year
+        elif len(date_str) == 8:
+            # 格式: YYYYDDDD (8位，不常见)
+            year = int(date_str[0:4])
+            day_of_year = int(date_str[4:])
+            return year, day_of_year
+        else:
+            raise ValueError(f"不支持的日期格式长度: {len(date_str)}位")
+    
+    def parse_time_from_filename(self, filename):
+        """从文件名解析时间信息（精确到毫秒），支持多种格式。
+        
+        支持的格式:
+        1. 6位日期+毫秒: 149MHz_202553_071600_353.fits
+        2. 7位日期+毫秒: 149MHz_2025124_043739_681.fits  
+        3. 6位日期无毫秒: 149MHz_202553_071600.fits
+        4. 7位日期无毫秒: 149MHz_2025124_043739.fits
+        
+        返回: (date_key, total_ms) 或 None
+          - date_key : 用于跨天比较的日期键
+          - total_ms : 当天从0点起的毫秒数
+        """
+        import re
+        
+        # 从配置获取正则表达式模式
+        patterns = self.cfg.get("filename_patterns", {})
+        pattern_with_ms = patterns.get("with_ms", r"_(\d{6,8})_(\d{6})_(\d{1,3})")
+        pattern_without_ms = patterns.get("without_ms", r"_(\d{6,8})_(\d{6})")
+        
+        # 尝试带毫秒的模式
+        match = re.search(pattern_with_ms, filename)
+        if match:
+            date_part = match.group(1)    # 如 "202553" 或 "2025124"
+            time_part = match.group(2)    # 如 "071600"
+            ms_str = match.group(3)       # 如 "353"
+            
+            # 解析时间部分
+            hh = int(time_part[0:2])
+            mm = int(time_part[2:4])
+            ss = int(time_part[4:6])
+            
+            # 处理毫秒：不足3位的补零到3位
+            ms = int(ms_str.ljust(3, "0"))
+            
+            total_ms = (hh * 3600 + mm * 60 + ss) * 1000 + ms
+            
+            # 根据配置的日期格式生成date_key
+            if self.date_format == "auto":
+                # 自动根据长度选择
+                date_key = date_part  # 使用原始字符串作为键
+            else:
+                # 使用指定格式解析并生成标准键
+                year, day_of_year = self.parse_date_part(date_part)
+                # 生成标准格式的日期键: YYYY-DDD
+                date_key = f"{year:04d}-{day_of_year:03d}"
+                
+            return (date_key, total_ms)
+        
+        # 尝试不带毫秒的模式
+        match = re.search(pattern_without_ms, filename)
+        if match:
+            date_part = match.group(1)
+            time_part = match.group(2)
+            
+            hh = int(time_part[0:2])
+            mm = int(time_part[2:4])
+            ss = int(time_part[4:6])
+            total_ms = (hh * 3600 + mm * 60 + ss) * 1000
+            
+            if self.date_format == "auto":
+                date_key = date_part
+            else:
+                year, day_of_year = self.parse_date_part(date_part)
+                date_key = f"{year:04d}-{day_of_year:03d}"
+                
+            return (date_key, total_ms)
+        
+        # 容错模式：尝试更宽松的匹配
+        if self.fallback:
+            # 尝试匹配任何看起来像时间格式的部分
+            fallback_pattern = r"_(\d{6,8})_(\d{6})"
+            match = re.search(fallback_pattern, filename)
+            if match:
+                date_part = match.group(1)
+                time_part = match.group(2)
+                
+                # 尝试解析时间
+                try:
+                    hh = int(time_part[0:2])
+                    mm = int(time_part[2:4])
+                    ss = int(time_part[4:6])
+                    total_ms = (hh * 3600 + mm * 60 + ss) * 1000
+                    
+                    if self.date_format == "auto":
+                        date_key = date_part
+                    else:
+                        year, day_of_year = self.parse_date_part(date_part)
+                        date_key = f"{year:04d}-{day_of_year:03d}"
+                        
+                    return (date_key, total_ms)
+                except (ValueError, IndexError):
+                    pass
+        
+        return None
+
 def _parse_time_from_filename(filename):
-    """从文件名中解析时间信息（精确到毫秒），用于时间对齐匹配。
-
-    文件名格式: 149MHz_2025124_043739_681.fits
-      - 日期部分:   2025124  (YYYYDDD，7~8位)
-      - 时间部分:   043739   (HHMMSS，6位)
-      - 毫秒部分:   681      (1~3位，不足3位按实际值处理)
-
+    """从文件名解析时间信息（精确到毫秒），用于时间对齐匹配。
+    
+    这是向后兼容的包装函数，使用新的TimeParser类。
+    
+    文件名格式:
+      - 新格式6位日期: 149MHz_202553_071600_353.fits
+      - 原格式7位日期: 149MHz_2025124_043739_681.fits
+      
     返回: (date_str, total_ms) 或 None
       - date_str  : 日期字符串，用于跨天判断
       - total_ms  : 当天从0点起的毫秒数，用于数值比较
     """
-    import re
-
-    # 匹配: _日期(7-8位)_时间(6位)_毫秒(1-3位)
-    pattern = r"_(\d{7,8})_(\d{6})_(\d{1,3})"
-    match = re.search(pattern, filename)
-    if match:
-        date_part = match.group(1)       # e.g. "2025124"
-        time_part = match.group(2)       # e.g. "043739"
-        ms_str    = match.group(3)       # e.g. "681"
-
-        hh = int(time_part[0:2])
-        mm = int(time_part[2:4])
-        ss = int(time_part[4:6])
-        # 对齐到毫秒：不足3位的补零到3位再取整数
-        ms = int(ms_str.ljust(3, "0"))
-
-        total_ms = (hh * 3600 + mm * 60 + ss) * 1000 + ms
-        return (date_part, total_ms)
-
-    # 降级：仅匹配 _日期_时间（无毫秒字段）
-    pattern_no_ms = r"_(\d{7,8})_(\d{6})"
-    match2 = re.search(pattern_no_ms, filename)
-    if match2:
-        date_part = match2.group(1)
-        time_part = match2.group(2)
-        hh = int(time_part[0:2])
-        mm = int(time_part[2:4])
-        ss = int(time_part[4:6])
-        total_ms = (hh * 3600 + mm * 60 + ss) * 1000
-        return (date_part, total_ms)
-
+    # 创建解析器实例，使用默认配置（日期格式自动检测）
+    parser = TimeParser({"date_format": "auto", "time_parsing_fallback": True})
+    
+    result = parser.parse_time_from_filename(filename)
+    if result:
+        date_key, total_ms = result
+        # 为了向后兼容，返回原始格式
+        return (date_key, total_ms)
     return None
+
+def create_time_parser(cfg=None):
+    """创建时间解析器实例
+    
+    参数:
+    ----------
+    cfg : dict, 可选
+        配置字典，如果为None则使用全局CONFIG
+    
+    返回:
+    -------
+    TimeParser 实例
+    """
+    if cfg is None:
+        cfg = CONFIG
+    return TimeParser(cfg)
 
 
 def _check_time_alignment(
@@ -474,33 +612,32 @@ def _check_time_alignment(
         return rr_time_str == ll_time_str
 
 
-def _match_rr_ll_by_time(rr_files: list, ll_files: list, tolerance_ms: float = 10.0):
+def _match_rr_ll_by_time(rr_files: list, ll_files: list, tolerance_ms: float = 10.0, cfg=None):
     """根据文件名时间戳将RR与LL文件逐一配对（毫秒级精度）。
-
-    算法:
-      1. 解析所有LL文件的时间戳，建立 {(date, ms): path} 索引。
-      2. 遍历每个RR文件，先精确匹配，再在容差范围内找最近邻。
-      3. 返回已匹配的 [(rr_path, ll_path), ...] 列表，并报告未匹配数量。
-
-    Parameters
+    
+    参数:
     ----------
     rr_files      : RR文件路径列表（已排序）
     ll_files      : LL文件路径列表（已排序）
     tolerance_ms  : 时间匹配容差（毫秒），默认10ms
-
-    Returns
+    cfg          : 配置字典，用于时间解析
+    
+    返回:
     -------
     matched_pairs : list of (rr_path, ll_path)
     """
-    # 构建LL时间索引: {(date, total_ms): ll_path}
+    # 创建时间解析器
+    parser = create_time_parser(cfg)
+    
+    # 构建LL时间索引: {(date_key, total_ms): ll_path}
     ll_index: dict = {}
     ll_no_parse: list = []
     for ll_path in ll_files:
-        parsed = _parse_time_from_filename(os.path.basename(ll_path))
+        parsed = parser.parse_time_from_filename(os.path.basename(ll_path))
         if parsed is None:
             ll_no_parse.append(ll_path)
         else:
-            key = parsed  # (date_str, total_ms)
+            key = parsed  # (date_key, total_ms)
             if key in ll_index:
                 # 重复时间戳：保留先出现的（有序列表中索引更小的）
                 pass
@@ -517,15 +654,15 @@ def _match_rr_ll_by_time(rr_files: list, ll_files: list, tolerance_ms: float = 1
 
     # 将LL索引按日期分组，加速搜索
     from collections import defaultdict
-    ll_by_date: dict = defaultdict(list)  # {date_str: [(total_ms, ll_path), ...]}
-    for (date_str, total_ms), ll_path in ll_index.items():
-        ll_by_date[date_str].append((total_ms, ll_path))
-    # 每个日期内按ms排序，以便未来二分查找（当前数据量不大，线性也可）
-    for date_str in ll_by_date:
-        ll_by_date[date_str].sort(key=lambda x: x[0])
+    ll_by_date: dict = defaultdict(list)  # {date_key: [(total_ms, ll_path), ...]}
+    for (date_key, total_ms), ll_path in ll_index.items():
+        ll_by_date[date_key].append((total_ms, ll_path))
+    # 每个日期内按ms排序
+    for date_key in ll_by_date:
+        ll_by_date[date_key].sort(key=lambda x: x[0])
 
     for rr_path in rr_files:
-        parsed = _parse_time_from_filename(os.path.basename(rr_path))
+        parsed = parser.parse_time_from_filename(os.path.basename(rr_path))
         if parsed is None:
             unmatched_rr.append(rr_path)
             warnings.warn(
@@ -533,15 +670,15 @@ def _match_rr_ll_by_time(rr_files: list, ll_files: list, tolerance_ms: float = 1
             )
             continue
 
-        rr_date, rr_ms = parsed
+        rr_date_key, rr_ms = parsed
 
         # ① 精确匹配
-        if (rr_date, rr_ms) in ll_index:
-            matched_pairs.append((rr_path, ll_index[(rr_date, rr_ms)]))
+        if (rr_date_key, rr_ms) in ll_index:
+            matched_pairs.append((rr_path, ll_index[(rr_date_key, rr_ms)]))
             continue
 
         # ② 容差范围内最近邻匹配
-        candidates = ll_by_date.get(rr_date, [])
+        candidates = ll_by_date.get(rr_date_key, [])
         best_ll_path = None
         best_diff = float("inf")
         for ll_ms, ll_path in candidates:
@@ -613,7 +750,8 @@ def _build_multi_band_slots(cfg: dict) -> list:
                 f"  频率 {freq}MHz: RR={len(rr_files)} 文件, "
                 f"LL={len(ll_files)} 文件，开始时间匹配 (容差={tolerance_ms:.1f}ms)..."
             )
-            combined_files = _match_rr_ll_by_time(rr_files, ll_files, tolerance_ms)
+            # 传递cfg给匹配函数，以便使用正确的时间解析配置
+            combined_files = _match_rr_ll_by_time(rr_files, ll_files, tolerance_ms, cfg)
 
             if not combined_files:
                 raise ValueError(
