@@ -49,15 +49,15 @@ class PlotConfig:
     
     # File path
     file_path: str = (
-        r'D:\spike_topping_type_III\2025\20250124'
-        r'\OROCH_MWRS01_SRSP_L1_05M_20250124041219_V01.01.fits'
+        r'D:\spike_topping_type_III\2025\20250503'
+        r'\OROCH_MWRS01_SRSP_L1_05M_20250503071510_V01.01.fits'
     )
 
     # Time range (UTC)
     t_start: datetime.datetime = field(
-        default_factory=lambda: datetime.datetime(2025, 1, 24, 4, 14, 14))
+        default_factory=lambda: datetime.datetime(2025, 5, 3, 7, 14, 0))
     t_end:   datetime.datetime = field(
-        default_factory=lambda: datetime.datetime(2025, 1, 24, 4, 15, 16))
+        default_factory=lambda: datetime.datetime(2025, 5, 3, 7, 21, 0))
 
     # Frequency range (MHz)
     f_start: float = 80
@@ -65,8 +65,8 @@ class PlotConfig:
 
     # Target number of grid points after downsampling (time / frequency axes)
     # Larger values produce finer plots but are slower; None = no downsampling
-    rebin_t_target: int = 10000
-    rebin_f_target: int = 10000
+    rebin_t_target: int = 1000
+    rebin_f_target: int = 1000
 
     # Peak memory limit per chunk during block reading (MB)
     # Lower values reduce memory pressure further
@@ -100,8 +100,8 @@ class PlotConfig:
     manual_rr_vmin: Optional[float] = 1.8
     manual_rr_vmax: Optional[float] = 5
     # Sum and ratio limits
-    manual_sum_vmin: Optional[float] = 2.4
-    manual_sum_vmax: Optional[float] = 6
+    manual_sum_vmin: Optional[float] = 1.8
+    manual_sum_vmax: Optional[float] = 3.2
     manual_ratio_vmin: Optional[float] = -1.0
     manual_ratio_vmax: Optional[float] = 1.0
     
@@ -118,11 +118,11 @@ class PlotConfig:
     minor_tick_interval: int = 2
 
     # Save path (empty for display only)
-    save_path: str = r'D:\spike_topping_type_III\2025\20250124\CSO_PLOT\3\1'
+    save_path: str = r'D:\spike_topping_type_III\2025\20250503\CSO_PLOT\3\1'
     dpi:       int = 300
     
     # List of frequencies to highlight (MHz)
-    highlight_freqs: Optional[List[float]] = field(default_factory=lambda: [149, 164, 190, 205, 223, 238, 285, 300, 309, 324])
+    highlight_freqs: Optional[List[float]] = field(default_factory=lambda: None)
     #[149, 164, 190, 205, 223, 238, 285, 300, 309, 324]
 
 # ============================================================
