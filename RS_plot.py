@@ -32,6 +32,11 @@ CONFIG = {
     # ---------- 坐标轴和颜色条数字颜色 ----------
     "tick_color": "black",  # 坐标轴刻度数字颜色
     "colorbar_tick_color": "white",  # 颜色条刻度数字颜色
+    # ---------- 坐标轴刻度配置 ----------
+    "x_tick_step": 200,  # x轴刻度显示步长（单位：角秒），0表示自动计算
+    "y_tick_step": 200,  # y轴刻度显示步长（单位：角秒），0表示自动计算
+    "tick_label_rotation": 0,  # 刻度标签旋转角度（度），0表示不旋转
+    "hide_inner_ticks": True,  # 是否隐藏内部子图的刻度标签（只显示边缘子图）
     # ---------- 时间解析配置 ----------
     # 支持的日期格式:
     #   "6digit": YYDDD (6位，如202553表示2025年第53天)  
@@ -1232,6 +1237,10 @@ def plot_single_band(
     im = ax.imshow(img_data, **im_kwargs)
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 4, colors=cfg.get("colorbar_tick_color", "yellow"))
+    # 添加颜色条刻度旋转（新增代码）
+    tick_rotation = cfg.get("tick_label_rotation", 0)
+    if tick_rotation != 0:
+        cbar.ax.tick_params(axis='y', rotation=tick_rotation)
 
     ax.set_title(title, fontsize=cfg["title_fontsize"], fontweight="bold", pad=20)
     ax.set_xlabel("x (arcsec)", fontsize=cfg["label_fontsize"])
@@ -1239,6 +1248,34 @@ def plot_single_band(
     ax.tick_params(
         axis="both", which="major", labelsize=cfg["tick_fontsize"], colors=cfg.get("tick_color", "yellow")
     )
+    
+    # 设置坐标轴刻度步长（新增代码）
+    x_tick_step = cfg.get("x_tick_step", 200)
+    y_tick_step = cfg.get("y_tick_step", 200)
+    
+    # 获取当前坐标轴范围
+    current_xlim = ax.get_xlim()
+    current_ylim = ax.get_ylim()
+    
+    # 计算x轴刻度位置
+    if x_tick_step and x_tick_step > 0:
+        x_start = math.ceil(current_xlim[0] / x_tick_step) * x_tick_step
+        x_end = math.floor(current_xlim[1] / x_tick_step) * x_tick_step
+        x_ticks = np.arange(x_start, x_end + x_tick_step/2, x_tick_step)
+        ax.set_xticks(x_ticks)
+    
+    # 计算y轴刻度位置
+    if y_tick_step and y_tick_step > 0:
+        y_start = math.ceil(current_ylim[0] / y_tick_step) * y_tick_step
+        y_end = math.floor(current_ylim[1] / y_tick_step) * y_tick_step
+        y_ticks = np.arange(y_start, y_end + y_tick_step/2, y_tick_step)
+        ax.set_yticks(y_ticks)
+    
+    # 应用刻度标签旋转
+    tick_rotation = cfg.get("tick_label_rotation", 0)
+    if tick_rotation != 0:
+        ax.tick_params(axis='x', rotation=tick_rotation)
+        ax.tick_params(axis='y', rotation=tick_rotation)
 
     ax.add_patch(
         patches.Circle(
@@ -1598,7 +1635,7 @@ def plot_multi_band_slot(
             ax.tick_params(
                 axis="y", which="both", left=False, labelleft=False, colors=cfg.get("tick_color", "yellow")
             )
-
+        
         if row == nrow - 1:  # 最下面一行
             ax.set_xlabel("x (arcsec)", fontsize=cfg["label_fontsize"] - 6)
         else:
@@ -1606,11 +1643,53 @@ def plot_multi_band_slot(
             ax.tick_params(
                 axis="x", which="both", bottom=False, labelbottom=False, colors=cfg.get("tick_color", "yellow")
             )
-
+        
         # 调整刻度标签大小
         ax.tick_params(
             axis="both", which="major", labelsize=cfg["tick_fontsize"] - 8, colors=cfg.get("tick_color", "yellow")
         )
+        
+        # 设置坐标轴刻度步长（新增代码）
+        hide_inner_ticks = cfg.get("hide_inner_ticks", True)
+        x_tick_step = cfg.get("x_tick_step", 200)
+        y_tick_step = cfg.get("y_tick_step", 200)
+        tick_rotation = cfg.get("tick_label_rotation", 0)
+        
+        # 获取当前坐标轴范围
+        current_xlim = ax.get_xlim()
+        current_ylim = ax.get_ylim()
+        
+        # 计算x轴刻度位置
+        if x_tick_step and x_tick_step > 0:
+            x_start = math.ceil(current_xlim[0] / x_tick_step) * x_tick_step
+            x_end = math.floor(current_xlim[1] / x_tick_step) * x_tick_step
+            x_ticks = np.arange(x_start, x_end + x_tick_step/2, x_tick_step)
+            ax.set_xticks(x_ticks)
+            
+            # 隐藏内部子图的x轴刻度标签（如果配置要求）
+            if hide_inner_ticks and row < nrow - 1:
+                ax.set_xticklabels([])
+        
+        # 计算y轴刻度位置
+        if y_tick_step and y_tick_step > 0:
+            y_start = math.ceil(current_ylim[0] / y_tick_step) * y_tick_step
+            y_end = math.floor(current_ylim[1] / y_tick_step) * y_tick_step
+            y_ticks = np.arange(y_start, y_end + y_tick_step/2, y_tick_step)
+            ax.set_yticks(y_ticks)
+            
+            # 隐藏内部子图的y轴刻度标签（如果配置要求）
+            if hide_inner_ticks and col > 0:
+                ax.set_yticklabels([])
+        
+        # 应用刻度标签旋转
+        if tick_rotation != 0:
+            # x轴刻度标签旋转（只对底部行应用）
+            if row == nrow - 1:
+                ax.tick_params(axis='x', rotation=tick_rotation, labelrotation=tick_rotation)
+            
+            # y轴刻度标签旋转（只对最左列应用）
+            if col == 0:
+                ax.tick_params(axis='y', rotation=tick_rotation, labelrotation=tick_rotation)
 
         # 为每个子图添加嵌入式颜色条，使用用户配置的位置
         colorbar_pos = cfg.get("colorbar_position", [0.75, 0.05, 0.22, 0.03])
@@ -1619,6 +1698,10 @@ def plot_multi_band_slot(
         cax = ax.inset_axes(colorbar_pos)  # [x, y, width, height] 相对于子图内部
         cbar = fig.colorbar(im, cax=cax, orientation="horizontal")
         cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 10, colors=cfg.get("colorbar_tick_color", "yellow"))
+        # 添加颜色条刻度旋转（新增代码）
+        tick_rotation = cfg.get("tick_label_rotation", 0)
+        if tick_rotation != 0:
+            cbar.ax.tick_params(axis='x', rotation=tick_rotation)
         # cbar.set_label('log10(I)', fontsize=cfg["tick_fontsize"] - 10, colors='y')
         cbar.ax.locator_params(nbins=3)
 
