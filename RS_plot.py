@@ -53,11 +53,11 @@ CONFIG = {
     # Batch single-band mode: directory containing FITS files
     "data_dir": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450\149MHz\RR",
     # File range (only effective in batch mode)
-    "start_idx": 1580,  # start index (inclusive)
-    "end_idx": 1700,  # end index (exclusive)
+    "start_idx": 600,  # start index (inclusive)
+    "end_idx": None,  # end index (exclusive)
     # ---------- Multi-band mode configuration ----------
-    "multi_band_root": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450",
-    "multi_band_freqs": [149, 164, 190, 223, 238, 285, 300, 309, 324],
+    "multi_band_root": r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600",
+    "multi_band_freqs": [149, 164, 190, 205, 223, 238, 285, 309, 324],
     "band_dir_pattern": "{freq}MHz/{polar}",
     "multi_band_output_subdir": "multi_band_{polar}",
     "multi_band_layout": "auto",
@@ -86,7 +86,7 @@ CONFIG = {
         0.03,
     ],  # [x, y, width, height] 相对于子图内部
     # ---------- Output configuration ----------
-    "output_dir": r"<PROJECT_ROOT>\2025\20250124\RS_multi_band",
+    "output_dir": r"<PROJECT_ROOT>\2025\20250503\RS_multi_band",
     "multi_band_also_save_single": False,
     # ---------- Color range ----------
     # "auto": adjust per frame automatically
