@@ -125,6 +125,14 @@ class PlotConfig:
     highlight_freqs: Optional[List[float]] = field(default_factory=lambda: None)
     #[149, 164, 190, 205, 223, 238, 285, 300, 309, 324]
 
+    # 坐标轴显示控制
+    show_axis_labels: bool = True  # 是否显示坐标轴标签
+    axis_label_rotation: float = 0.0  # 标签旋转角度（度）
+    xtick_interval: Optional[int] = None  # X轴刻度间隔（秒），None为自动
+    ytick_interval: Optional[float] = None  # Y轴刻度间隔（MHz），None为自动
+    xtick_format: str = "%H:%M:%S"  # X轴时间格式
+    show_minor_ticks: bool = True  # 是否显示次要刻度
+
 # ============================================================
 #  UTILITY FUNCTIONS
 # ============================================================
@@ -229,6 +237,9 @@ def validate_config(cfg: PlotConfig) -> None:
     # Check memory configuration
     if cfg.chunk_mem_mb > 500:
         warnings.warn(f"chunk_mem_mb={cfg.chunk_mem_mb} MB is quite high. Consider reducing for memory-constrained systems.")
+    
+    # 验证坐标轴配置
+    validate_axis_config(cfg)
 
 
 # ============================================================
@@ -376,6 +387,140 @@ def read_cso_fits(fn: str):
     except Exception:
         hdu.close()
         raise
+
+
+def validate_axis_config(cfg: PlotConfig) -> None:
+    """验证坐标轴配置参数"""
+    if not isinstance(cfg.show_axis_labels, bool):
+        raise TypeError(f"show_axis_labels must be boolean, got {type(cfg.show_axis_labels)}")
+    
+    if not isinstance(cfg.axis_label_rotation, (int, float)):
+        raise TypeError(f"axis_label_rotation must be numeric, got {type(cfg.axis_label_rotation)}")
+    
+    if not (-90 <= cfg.axis_label_rotation <= 90):
+        warnings.warn(f"axis_label_rotation should be between -90 and 90 degrees, got {cfg.axis_label_rotation}")
+        cfg.axis_label_rotation = np.clip(cfg.axis_label_rotation, -90, 90)
+    
+    if cfg.xtick_interval is not None and cfg.xtick_interval <= 0:
+        raise ValueError(f"xtick_interval must be positive, got {cfg.xtick_interval}")
+    
+    if cfg.ytick_interval is not None and cfg.ytick_interval <= 0:
+        raise ValueError(f"ytick_interval must be positive, got {cfg.ytick_interval}")
+    
+    if not isinstance(cfg.show_minor_ticks, bool):
+        raise TypeError(f"show_minor_ticks must be boolean, got {type(cfg.show_minor_ticks)}")
+
+
+class AxisConfigManager:
+    """坐标轴配置管理器，负责处理和优化坐标轴显示"""
+    
+    @staticmethod
+    def calculate_optimal_ticks(data_range: float, num_points: int = None, 
+                               max_ticks: int = 10) -> float:
+        """
+        计算最优刻度间隔
+        
+        Args:
+            data_range: 数据范围
+            num_points: 数据点数（可选）
+            max_ticks: 最大刻度数
+            
+        Returns:
+            建议的刻度间隔
+        """
+        if data_range <= 0:
+            return 1.0
+        
+        # 基于范围计算基础间隔
+        base_intervals = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]
+        estimated_ticks = max_ticks
+        
+        # 如果提供点数，尝试基于点数调整
+        if num_points is not None and num_points > 0:
+            points_per_tick = num_points / max_ticks
+            if points_per_tick < 1:
+                estimated_ticks = min(max_ticks, num_points)
+        
+        ideal_interval = data_range / estimated_ticks
+        
+        # 找到最接近的理想刻度间隔
+        for base in base_intervals:
+            for multiplier in [0.1, 0.2, 0.5, 1, 2, 5, 10]:
+                interval = base * multiplier
+                if interval >= ideal_interval:
+                    return interval
+        
+        return ideal_interval
+    
+    @staticmethod
+    def configure_time_axis(ax, cfg: PlotConfig, time_values: List[datetime.datetime]) -> None:
+        """配置时间轴"""
+        if not cfg.show_axis_labels:
+            ax.set_xticklabels([])
+            ax.set_xlabel('')
+        else:
+            # 设置主要刻度定位器
+            if cfg.xtick_interval is not None:
+                major_locator = mdates.SecondLocator(interval=cfg.xtick_interval)
+            else:
+                # 自动计算：基于时间范围计算最优间隔
+                time_range = (time_values[-1] - time_values[0]).total_seconds()
+                optimal_interval = AxisConfigManager.calculate_optimal_ticks(
+                    time_range, len(time_values), max_ticks=15
+                )
+                major_locator = mdates.SecondLocator(interval=max(1, int(optimal_interval)))
+            
+            ax.xaxis.set_major_locator(major_locator)
+            ax.xaxis.set_major_formatter(mdates.DateFormatter(cfg.xtick_format))
+            
+            # 设置次要刻度
+            if cfg.show_minor_ticks:
+                if cfg.xtick_interval is not None:
+                    minor_interval = max(1, cfg.xtick_interval // 5)
+                else:
+                    minor_interval = max(1, int(major_locator._interval // 5))
+                ax.xaxis.set_minor_locator(mdates.SecondLocator(interval=minor_interval))
+            
+            # 设置标签旋转
+            if cfg.axis_label_rotation != 0:
+                plt.setp(ax.get_xticklabels(), rotation=cfg.axis_label_rotation, 
+                        ha='right' if cfg.axis_label_rotation > 0 else 'left')
+    
+    @staticmethod
+    def configure_frequency_axis(ax, cfg: PlotConfig, freq_values: np.ndarray) -> None:
+        """配置频率轴"""
+        if not cfg.show_axis_labels:
+            ax.set_yticklabels([])
+            ax.set_ylabel('')
+        else:
+            # 设置主要刻度
+            if cfg.ytick_interval is not None:
+                yticks = np.arange(
+                    np.ceil(freq_values[0] / cfg.ytick_interval) * cfg.ytick_interval,
+                    freq_values[-1],
+                    cfg.ytick_interval
+                )
+                ax.set_yticks(yticks)
+            else:
+                # 自动计算刻度
+                freq_range = freq_values[-1] - freq_values[0]
+                optimal_interval = AxisConfigManager.calculate_optimal_ticks(
+                    freq_range, len(freq_values), max_ticks=10
+                )
+                yticks = np.arange(
+                    np.ceil(freq_values[0] / optimal_interval) * optimal_interval,
+                    freq_values[-1],
+                    optimal_interval
+                )
+                ax.set_yticks(yticks)
+            
+            # 设置次要刻度
+            if cfg.show_minor_ticks:
+                ax.yaxis.set_minor_locator(plt.AutoMinorLocator(5))
+            
+            # 设置标签旋转
+            if cfg.axis_label_rotation != 0:
+                plt.setp(ax.get_yticklabels(), rotation=cfg.axis_label_rotation, va='center')
 
 
 # ============================================================
@@ -822,7 +967,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         axs = [axs]
 
     # Plot each item
-    for ax, item in zip(axs, items):
+    for idx, (ax, item) in enumerate(zip(axs, items)):
         im = ax.pcolormesh(
             xx, yy, item['data'][:-1, :-1],
             shading='flat',
@@ -831,55 +976,52 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
             vmax=item['vmax']
         )
         ax.set_title(item['title'], fontsize=12)
-        ax.set_ylabel('Frequency (MHz)', fontsize=10)
+        
+        # 配置Y轴（频率）
+        AxisConfigManager.configure_frequency_axis(ax, cfg, freq)
+        
+        # 配置X轴（时间）- 只在最后一个子图设置标签
+        if idx == len(items) - 1:
+            AxisConfigManager.configure_time_axis(ax, cfg, dt_list)
+            if cfg.show_axis_labels:
+                ax.set_xlabel('Time (UT)', fontsize=10)
+        else:
+            ax.set_xticklabels([])  # 非最后一个子图不显示x轴标签
+        
+        # 颜色条
         cbar = fig.colorbar(im, ax=ax, pad=0.01)
         cbar.set_label(item['cbar_label'], fontsize=9)
-        ax.tick_params(axis='x', labelsize=8, rotation=0)
-        ax.tick_params(axis='y', labelsize=8)
         
-        # Add frequency highlight lines if specified
+        # 添加频率高亮线
         if cfg.highlight_freqs is not None:
-            for freq in cfg.highlight_freqs:
-                if cfg.f_start <= freq <= cfg.f_end:
-                    # Add horizontal line
+            for freq_val in cfg.highlight_freqs:
+                if cfg.f_start <= freq_val <= cfg.f_end:
                     ax.axhline(
-                        y=freq,
+                        y=freq_val,
                         color='red',
                         linestyle='--',
                         linewidth=1.3,
                         alpha=0.6
                     )
-                    # Add text label
-                    x_min = mdates.date2num(dt_list[0])
-                    x_max = mdates.date2num(dt_list[-1])
-                    x_pos = x_min + 0.01 * (x_max - x_min)
-                    ax.text(
-                        x_pos,
-                        freq + 0.01 * (cfg.f_end - cfg.f_start),
-                        f'{freq} MHz',
-                        color='red',
-                        fontsize=4,
-                        verticalalignment='bottom',
-                        horizontalalignment='left',
-                        bbox=dict(
-                            boxstyle='round,pad=0.2',
-                            facecolor='g',
-                            alpha=0.3
+                    # 添加文本标签（只在有标签显示时才添加）
+                    if cfg.show_axis_labels:
+                        x_min = mdates.date2num(dt_list[0])
+                        x_max = mdates.date2num(dt_list[-1])
+                        x_pos = x_min + 0.01 * (x_max - x_min)
+                        ax.text(
+                            x_pos,
+                            freq_val + 0.01 * (cfg.f_end - cfg.f_start),
+                            f'{freq_val} MHz',
+                            color='red',
+                            fontsize=4,
+                            verticalalignment='bottom',
+                            horizontalalignment='left',
+                            bbox=dict(
+                                boxstyle='round,pad=0.2',
+                                facecolor='g',
+                                alpha=0.3
+                            )
                         )
-                    )
-                else:
-                    print(f"Warning: Frequency {freq} MHz is not within display range [{cfg.f_start}, {cfg.f_end}], skipping.")
-
-    # Configure time axis
-    axs[-1].set_xlabel('Time (UT)', fontsize=10)
-    for ax in axs:
-        ax.xaxis.set_major_locator(
-            mdates.SecondLocator(interval=cfg.major_tick_interval)
-        )
-        ax.xaxis.set_minor_locator(
-            mdates.SecondLocator(interval=cfg.minor_tick_interval)
-        )
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
 
     # Save or display the figure
     if cfg.save_path:
@@ -931,6 +1073,40 @@ def test_polarization_formula():
         print()
 
 
+class ConfigManager:
+    """配置管理器，集中处理所有配置逻辑"""
+    
+    @staticmethod
+    def create_default_config() -> PlotConfig:
+        """创建默认配置"""
+        return PlotConfig()
+    
+    @staticmethod
+    def update_config_from_dict(cfg: PlotConfig, config_dict: dict) -> PlotConfig:
+        """从字典更新配置"""
+        for key, value in config_dict.items():
+            if hasattr(cfg, key):
+                setattr(cfg, key, value)
+        return cfg
+    
+    @staticmethod
+    def validate_all(cfg: PlotConfig) -> Tuple[bool, List[str]]:
+        """验证所有配置，返回(是否有效, 错误信息列表)"""
+        errors = []
+        
+        try:
+            validate_config(cfg)
+        except Exception as e:
+            errors.append(f"基础配置错误: {e}")
+        
+        try:
+            validate_axis_config(cfg)
+        except Exception as e:
+            errors.append(f"坐标轴配置错误: {e}")
+        
+        return len(errors) == 0, errors
+
+
 if __name__ == '__main__':
     # Run polarization formula test
     test_polarization_formula()
@@ -968,6 +1144,20 @@ if __name__ == '__main__':
     # Example 4: Adjust memory usage
     # cfg.chunk_mem_mb = 50  # Increase chunk size for faster processing
     # cfg.chunk_mem_mb = 10  # Decrease chunk size for memory-constrained systems
+
+    # 示例：使用坐标轴控制功能
+    # cfg.show_axis_labels = True  # 显示坐标轴标签
+    # cfg.axis_label_rotation = 45  # 旋转45度防止重叠
+    # cfg.xtick_interval = 30  # X轴每30秒一个主刻度
+    # cfg.ytick_interval = 50  # Y轴每50MHz一个主刻度
+    # cfg.xtick_format = "%H:%M"  # 只显示小时和分钟
+    # cfg.show_minor_ticks = False  # 不显示次要刻度
+    
+    # 验证配置
+    is_valid, errors = ConfigManager.validate_all(cfg)
+    if not is_valid:
+        print("配置错误:", "\n".join(errors))
+        exit(1)
     
     # ============================================================
     #  EXECUTION
@@ -995,6 +1185,15 @@ if __name__ == '__main__':
         print(f"  Percentile clipping - LL/RR: [{cfg.vmin_pct}%, {cfg.vmax_pct}%]")
         print(f"  Percentile clipping - Sum: [{cfg.sum_vmin_pct}%, {cfg.sum_vmax_pct}%]")
         print(f"  Percentile clipping - Ratio: [{cfg.ratio_vmin_pct}%, {cfg.ratio_vmax_pct}%]")
+    
+    # 显示坐标轴配置
+    print(f"坐标轴配置:")
+    print(f"  - 显示标签: {cfg.show_axis_labels}")
+    print(f"  - 标签旋转: {cfg.axis_label_rotation} 度")
+    print(f"  - X轴刻度间隔: {cfg.xtick_interval if cfg.xtick_interval is not None else '自动'}")
+    print(f"  - Y轴刻度间隔: {cfg.ytick_interval if cfg.ytick_interval is not None else '自动'}")
+    print(f"  - X轴格式: {cfg.xtick_format}")
+    print(f"  - 显示次要刻度: {cfg.show_minor_ticks}")
     
     # Display memory information
     total_gb, available_gb, usage_percent = get_system_memory_info()
