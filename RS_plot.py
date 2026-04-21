@@ -29,6 +29,9 @@ from tqdm import tqdm
 #   ★ All configurable parameters are centralized here, no need to dive into code to adjust ★
 # ============================================================
 CONFIG = {
+    # ---------- 坐标轴和颜色条数字颜色 ----------
+    "tick_color": "yellow",  # 坐标轴刻度数字颜色
+    "colorbar_tick_color": "yellow",  # 颜色条刻度数字颜色
     # ---------- 时间解析配置 ----------
     # 支持的日期格式:
     #   "6digit": YYDDD (6位，如202553表示2025年第53天)  
@@ -408,7 +411,7 @@ class TimeParser:
             day_of_year = int(date_str[4:])
             return year, day_of_year
         elif len(date_str) == 8:
-            # 格式: YYYYDDDD (8位，不常见)
+            # 格式: YYYYDDDD (8位，不常见）
             year = int(date_str[0:4])
             day_of_year = int(date_str[4:])
             return year, day_of_year
@@ -1228,13 +1231,13 @@ def plot_single_band(
 
     im = ax.imshow(img_data, **im_kwargs)
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 4, colors="y")
+    cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 4, colors=cfg.get("colorbar_tick_color", "yellow"))
 
     ax.set_title(title, fontsize=cfg["title_fontsize"], fontweight="bold", pad=20)
     ax.set_xlabel("x (arcsec)", fontsize=cfg["label_fontsize"])
     ax.set_ylabel("y (arcsec)", fontsize=cfg["label_fontsize"])
     ax.tick_params(
-        axis="both", which="major", labelsize=cfg["tick_fontsize"], colors="y"
+        axis="both", which="major", labelsize=cfg["tick_fontsize"], colors=cfg.get("tick_color", "yellow")
     )
 
     ax.add_patch(
@@ -1355,14 +1358,14 @@ def _save_single_pol_image(
 
     im = ax.imshow(img_data, **im_kwargs)
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 4, colors="y")
+    cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 4, colors=cfg.get("colorbar_tick_color", "yellow"))
 
     title = f"{base_filename}   {freq} MHz  {polar_display}   {time_str}"
     ax.set_title(title, fontsize=cfg["title_fontsize"] - 4, fontweight="bold", pad=20)
     ax.set_xlabel("x (arcsec)", fontsize=cfg["label_fontsize"] - 4)
     ax.set_ylabel("y (arcsec)", fontsize=cfg["label_fontsize"] - 4)
     ax.tick_params(
-        axis="both", which="major", labelsize=cfg["tick_fontsize"] - 4, colors="y"
+        axis="both", which="major", labelsize=cfg["tick_fontsize"] - 4, colors=cfg.get("tick_color", "yellow")
     )
 
     # 添加太阳轮廓
@@ -1593,7 +1596,7 @@ def plot_multi_band_slot(
         else:
             ax.set_ylabel("")
             ax.tick_params(
-                axis="y", which="both", left=False, labelleft=False, colors="y"
+                axis="y", which="both", left=False, labelleft=False, colors=cfg.get("tick_color", "yellow")
             )
 
         if row == nrow - 1:  # 最下面一行
@@ -1601,12 +1604,12 @@ def plot_multi_band_slot(
         else:
             ax.set_xlabel("")
             ax.tick_params(
-                axis="x", which="both", bottom=False, labelbottom=False, colors="y"
+                axis="x", which="both", bottom=False, labelbottom=False, colors=cfg.get("tick_color", "yellow")
             )
 
         # 调整刻度标签大小
         ax.tick_params(
-            axis="both", which="major", labelsize=cfg["tick_fontsize"] - 8, colors="y"
+            axis="both", which="major", labelsize=cfg["tick_fontsize"] - 8, colors=cfg.get("tick_color", "yellow")
         )
 
         # 为每个子图添加嵌入式颜色条，使用用户配置的位置
@@ -1615,7 +1618,7 @@ def plot_multi_band_slot(
         # 确保颜色条完全在子图内部
         cax = ax.inset_axes(colorbar_pos)  # [x, y, width, height] 相对于子图内部
         cbar = fig.colorbar(im, cax=cax, orientation="horizontal")
-        cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 10, colors="y")
+        cbar.ax.tick_params(labelsize=cfg["tick_fontsize"] - 10, colors=cfg.get("colorbar_tick_color", "yellow"))
         # cbar.set_label('log10(I)', fontsize=cfg["tick_fontsize"] - 10, colors='y')
         cbar.ax.locator_params(nbins=3)
 
