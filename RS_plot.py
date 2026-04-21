@@ -30,8 +30,8 @@ from tqdm import tqdm
 # ============================================================
 CONFIG = {
     # ---------- 坐标轴和颜色条数字颜色 ----------
-    "tick_color": "yellow",  # 坐标轴刻度数字颜色
-    "colorbar_tick_color": "yellow",  # 颜色条刻度数字颜色
+    "tick_color": "black",  # 坐标轴刻度数字颜色
+    "colorbar_tick_color": "white",  # 颜色条刻度数字颜色
     # ---------- 时间解析配置 ----------
     # 支持的日期格式:
     #   "6digit": YYDDD (6位，如202553表示2025年第53天)  
@@ -70,7 +70,7 @@ CONFIG = {
     # Batch single-band mode: directory containing FITS files
     "data_dir": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450\149MHz\RR",
     # File range (only effective in batch mode)
-    "start_idx": 600,  # start index (inclusive)
+    "start_idx": 0,  # start index (inclusive)
     "end_idx": None,  # end index (exclusive)
     # ---------- Multi-band mode configuration ----------
     "multi_band_root": r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600",
@@ -114,8 +114,8 @@ CONFIG = {
     "fixed_vmax": 4 * 1e9,
     # ---------- Image display limits ----------
     "use_custom_lim": True,
-    "custom_xlim": (-1000, 1000),
-    "custom_ylim": (-1000, 1000),
+    "custom_xlim": (-1000, 200),
+    "custom_ylim": (-400, 800),
     # ---------- Image appearance ----------
     "fig_size": (18, 16),
     "multi_band_fig_size": (24, 24),
