@@ -111,8 +111,8 @@ CONFIG = {
     "fixed_vmax": 4 * 1e9,
     # ---------- Image display limits ----------
     "use_custom_lim": True,
-    "custom_xlim": (500, 1900),
-    "custom_ylim": (-1000, 400),
+    "custom_xlim": (-1000, 1000),
+    "custom_ylim": (-1000, 1000),
     # ---------- Image appearance ----------
     "fig_size": (18, 16),
     "multi_band_fig_size": (24, 24),
