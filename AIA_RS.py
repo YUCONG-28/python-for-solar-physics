@@ -57,8 +57,6 @@ plt.rcParams["font.family"] = ["SimHei", "Microsoft YaHei", "sans-serif"]
 plt.rcParams["axes.unicode_minus"] = False
 
 # 正则表达式常量（全部预编译，避免运行时重复编译）
-_RE_MHZ = re.compile(r"(\d+\.?\d*)\s*MHz", re.IGNORECASE)
-_RE_BAND_SORTED = re.compile(r"(\d+\.?\d*)MHz")
 _RE_AIA_PATS = [
     re.compile(r"aia\.lev1_euv_12s\.(\d{4}-\d{2}-\d{2}T\d{6}Z)\.\d+\.image_lev1\.fits"),
     re.compile(r"aia\.lev1_euv_12s\.(\d{4}-\d{2}-\d{2}T\d{6}Z)"),
@@ -201,8 +199,6 @@ class Config:
     contour_smooth_sigma: float = 0
 
     # ── 显示配置 ───────────────────────────────────────────────
-    show_beam: bool = True
-    beam_inset_fraction: float = 0.12
     overlay_hmi: bool = True
     hmi_time_threshold: int = 24  # HMI 与 AIA 时间匹配阈值（小时）
     hmi_threshold_gauss: float = 0.0
@@ -244,25 +240,13 @@ class Config:
     )
 
     # ── 性能配置 ───────────────────────────────────────────────
-    num_workers: int = 8
-    memory_limit_pct: float = 90
     radio_use_float32: bool = True
 
     # ── 处理选项 ───────────────────────────────────────────────
-    apply_background_subtraction: bool = False
     debug_mode: bool = True
-
-    # ── 坐标处理配置 ───────────────────────────────────────────
-    coordinate_search_radius: float = 3.0
-    quick_test: bool = False
-    test_file_limit: int = 5
 
     # ── 坐标图配置 ─────────────────────────────────────────────
     use_radec_maps: bool = True  # 是否使用赤经赤纬坐标
-    radio_to_solar_scale_factor: float = 0.05
-    auto_adjust_scale_factor: bool = True
-    min_pixels_in_view: int = 100
-    max_scale_factor_adjustments: int = 3
 
 
 # ============================================================
@@ -453,36 +437,6 @@ def parse_hmi_time_from_filename(filename: str) -> Optional[datetime]:
     return None
 
 
-def parse_radio_time_from_header(header: fits.Header) -> Optional[datetime]:
-    """从 FITS 头解析射电观测时间"""
-    time_keys = [
-        "DATE-OBS",
-        "DATE_OBS",
-        "DATEOBS",
-        "DATE-BEG",
-        "DATE_BEG",
-        "DATEBEG",
-        "TIME-OBS",
-        "DATE",
-    ]
-    for key in time_keys:
-        if key not in header:
-            continue
-        date_str = str(header[key]).strip()
-        if not date_str:
-            continue
-        if "  " in date_str:
-            date_str = " ".join(date_str.split())
-        if " " in date_str:
-            parts = date_str.split(" ")
-            if len(parts) == 2:
-                date_str = f"{parts[0]}.{parts[1].ljust(3, '0')[:3]}"
-        t = _parse_flexible_datetime(date_str.rstrip("Z"))
-        if t:
-            return t
-    return None
-
-
 def _parse_time_from_filename(filename: str) -> Optional[Tuple[str, int]]:
     """
     从文件名中解析时间信息（精确到毫秒），用于时间对齐匹配。
@@ -642,42 +596,6 @@ def _combine_polarization_data(
 # ============================================================
 # 6. 工具函数 – 坐标处理
 # ============================================================
-
-
-def get_sun_center_and_radius(header) -> Tuple:
-    """从 FITS 头获取太阳中心坐标和可视半径"""
-    try:
-        crpix1 = header.get("CRPIX1", 0)
-        crpix2 = header.get("CRPIX2", 0)
-        crval1 = header.get("CRVAL1", 0)
-        crval2 = header.get("CRVAL2", 0)
-        cdelt1 = header.get("CDELT1", 1)
-        cdelt2 = header.get("CDELT2", 1)
-
-        if "RSUN_OBS" in header:
-            rsun_obs = header["RSUN_OBS"]
-        elif "R_SUN" in header and "CDELT1" in header:
-            rsun_obs = abs(header["R_SUN"] * header["CDELT1"])
-        else:
-            rsun_obs = 960.0
-
-        return crpix1, crpix2, crval1, crval2, cdelt1, cdelt2, rsun_obs
-    except Exception as e:
-        print(f"获取太阳信息时出错: {e}")
-        return 0, 0, 0, 0, 1, 1, 960.0
-
-
-def calculate_image_extent(data_shape, crpix1, crpix2, crval1, crval2, cdelt1, cdelt2):
-    """计算图像完整空间范围（角秒）"""
-    nx, ny = data_shape[1], data_shape[0]
-    x_min = crval1 + (1 - crpix1) * cdelt1
-    x_max = crval1 + (nx - crpix1) * cdelt1
-    y_min = crval2 + (1 - crpix2) * cdelt2
-    y_max = crval2 + (ny - crpix2) * cdelt2
-
-    x_extent = [x_min, x_max] if cdelt1 > 0 else [x_max, x_min]
-    y_extent = [y_min, y_max] if cdelt2 > 0 else [y_max, y_min]
-    return x_extent, y_extent
 
 
 def get_solar_position(obs_time: datetime) -> Tuple[float, float]:
@@ -1667,47 +1585,7 @@ def process_hmi_for_overlay(hmi_file: str, target_wcs, cfg: Config, ax):
 
 
 # ============================================================
-# 14. 新增函数：波束绘制相关
-# ============================================================
-
-
-def get_beam_params_from_header(header: fits.Header) -> Optional[Dict]:
-    """从射电 FITS 头提取波束参数（BMAJ, BMIN, BPA）"""
-    try:
-        bmaj = header.get("BMAJ", None)  # 单位度
-        bmin = header.get("BMIN", None)
-        bpa = header.get("BPA", 0.0)
-        if bmaj is not None and bmin is not None:
-            return {"bmaj": bmaj, "bmin": bmin, "bpa": bpa}
-    except:
-        pass
-    return None
-
-
-def draw_beam_ellipse_pixel(
-    ax, beam: Dict, aia_cutout_map: sunpy.map.GenericMap, color: str = "white"
-):
-    """在图像上绘制波束椭圆（单位：弧秒）"""
-    bmaj = beam["bmaj"] * 3600  # 度转弧秒
-    bmin = beam["bmin"] * 3600
-    bpa = beam["bpa"]
-    # 放在左下角
-    x_lo = aia_cutout_map.bottom_left_coord.Tx.value + bmaj * 0.1
-    y_lo = aia_cutout_map.bottom_left_coord.Ty.value + bmin * 0.1
-    ellipse = Ellipse(
-        (x_lo, y_lo),
-        width=bmaj,
-        height=bmin,
-        angle=90 - bpa,  # matplotlib 角度定义
-        fill=False,
-        edgecolor=color,
-        lw=1.5,
-    )
-    ax.add_patch(ellipse)
-
-
-# ============================================================
-# 15. 新增函数：波段颜色
+# 14. 新增函数：波段颜色
 # ============================================================
 
 
@@ -1722,20 +1600,7 @@ def get_band_color(
 
 
 # ============================================================
-# 16. 新增函数：内存检查（可选）
-# ============================================================
-
-
-def check_memory_usage(limit: float = 90.0):
-    """检查内存使用率，超过限制则释放缓存"""
-    mem = psutil.virtual_memory()
-    if mem.percent > limit:
-        print(f"  内存使用率 {mem.percent:.1f}%，触发 GC")
-        gc.collect()
-
-
-# ============================================================
-# 17. 主程序入口
+# 15. 主程序入口
 # ============================================================
 
 
