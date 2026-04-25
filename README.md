@@ -214,13 +214,17 @@ If you find this project useful for your research, please consider giving it a â
 
 ## ðŸ“š Citation
 
-If you use this toolkit in your research, please cite it as:
+If you use this toolkit in your research, please cite it as follows:
 
+**Plain Text (APA Style):**
+> Li, Y. (2025). *Python for Solar Physics: Multi-wavelength Data Processing Toolkit*. Shandong University. https://github.com/YUCONG-28/python-for-solar-physics
+
+**BibTeX:**
 ```bibtex
-@software{solar_physics_python_2025,
-  author = {Solar Physics Research Team (Severus, Lee, Ninghao)},
-  title = {Python for Solar Physics: Multi-wavelength Data Processing Toolkit},
-  year = {2025},
-  url = {https://github.com/YUCONG-28/python-for-solar-physics}
+@software{li_solar_physics_python_2025,
+  author       = {Li, Yucong},
+  title        = {Python for Solar Physics: Multi-wavelength Data Processing Toolkit},
+  year         = {2025},
+  organization = {Shandong University},
+  url          = {[https://github.com/YUCONG-28/python-for-solar-physics](https://github.com/YUCONG-28/python-for-solar-physics)}
 }
-```
