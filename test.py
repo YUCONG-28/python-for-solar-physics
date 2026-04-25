@@ -1080,7 +1080,8 @@ def reproject_radio_via_gaussian_fit(
 
         # 将 RA/Dec 转换到 AIA HPC 像素
         try:
-            coord_icrs = SkyCoord(ra_center * u.deg, dec_center * u.deg, frame='icrs')
+            # 添加 distance=1*u.AU 以避免 ICRS→HPC 转换时因缺少距离导致的错误
+            coord_icrs = SkyCoord(ra_center * u.deg, dec_center * u.deg, distance=1*u.AU, frame='icrs')
             coord_hpc = coord_icrs.transform_to(aia_cutout_map.coordinate_frame)
             px, py = aia_cutout_map.wcs.world_to_pixel(coord_hpc)
             x0_aia = float(px)
