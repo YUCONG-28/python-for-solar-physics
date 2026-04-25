@@ -168,7 +168,7 @@ class Config:
     aia_base_dir: str = r"D:\spike_topping_type_III\2025\20250124\AIA\171\1"
     hmi_base_dir: str = r"D:\spike_topping_type_III\2025\20250124\AIA\hmi\1"
     output_dir: str = (
-        r"D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\RR+LL_peak mode_0.75"
+        r"D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\test"
     )
 
     # ── 文件处理配置 ───────────────────────────────────────────
@@ -1234,3 +1234,4 @@ def _get_padded_aia_map(
         top_right=tr,
     )
     return submap
+
