@@ -1,9 +1,9 @@
 [project]
 name = "solar-physics-toolkit"
 version = "0.1.0"
-description = "A research-oriented toolkit for multi-wavelength solar data analysis"
+description = "A comprehensive collection of Python scripts for multi-wavelength solar data analysis"
 authors = [
-    {name = "Solar Physics Researcher", email = "researcher@example.com"}
+    {name = "Severus / Lee / Ninghao", email = ""}
 ]
 readme = "README.md"
 license = {text = "MIT"}
@@ -44,16 +44,10 @@ gui = [
     "pyqtgraph>=0.13.0",
 ]
 
-[project.scripts]
-solar-process = "solar_toolkit.cli:main"
-aia-process = "solar_toolkit.processors.aia:cli_main"
-radio-process = "solar_toolkit.processors.radio:cli_main"
-
 [project.urls]
-Homepage = "https://github.com/your-username/solar-physics-toolkit"
-Documentation = "https://github.com/your-username/solar-physics-toolkit/docs"
-Repository = "https://github.com/your-username/solar-physics-toolkit.git"
-Issues = "https://github.com/your-username/solar-physics-toolkit/issues"
+Homepage = "https://github.com/YUCONG-28/python-for-solar-physics"
+Repository = "https://github.com/YUCONG-28/python-for-solar-physics.git"
+Issues = "https://github.com/YUCONG-28/python-for-solar-physics/issues"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
