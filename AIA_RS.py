@@ -5,6 +5,14 @@ Created on Sat Apr 25 19:57:54 2026
 @author: Lee
 """
 
+"""
+AIA_RS.py – 射电、AIA 与 HMI 数据叠加绘图模块
+
+功能：
+- 根据配置文件处理 AIA、射电（含偏振组合）、HMI 数据
+- 通过椭圆高斯拟合将射电数据重投影到 AIA 坐标系
+- 生成带等值线叠加的最终图像并保存
+"""
 
 # ============================================================
 # 1. 基础库导入
@@ -1254,6 +1262,33 @@ def process_aia_group(
     cfg: Config,
     color_cache: List,
 ):
+    """
+    处理单个 AIA 文件及其对应的所有时间切片绘图任务。
+
+    参数
+    ----------
+    aia_file   : str
+        AIA FITS 文件完整路径。
+    hmi_file   : Optional[str]
+        HMI FITS 文件完整路径，若无则传入 None。
+    sub_tasks  : List[Tuple[int, Dict]]
+        时间切片列表，每个元素为 (索引, {波段: [(文件路径, 偏振, 时间), ...]}).
+    task_index : int
+        当前任务序号（从 1 开始，用于打印进度）。
+    total_tasks: int
+        任务总数。
+    cfg        : Config
+        全局配置对象。
+    color_cache: List
+        颜色缓存列表，用于图例颜色一致性。
+
+    功能描述
+    ----------
+    - 加载 AIA 图像并裁剪/扩充到用户设定 ROI。
+    - 遍历每个时间切片，对各个射电波段执行：数据提取、高斯拟合、坐标重投影、平滑及等值线绘制。
+    - 若启用 HMI，将其重投影到 AIA 坐标系并绘制磁图等值线。
+    - 添加图例、标题，保存图像到输出目录。
+    """
     print(f"\n处理 AIA 文件 [{task_index}/{total_tasks}]: {os.path.basename(aia_file)}")
 
     try:
@@ -1557,7 +1592,7 @@ def get_band_color(
 # 15. 主程序入口
 # ============================================================
 
-
+# ---- 主流程：创建配置、构建匹配任务、串行处理所有 AIA 文件 ----
 if __name__ == "__main__":
     cfg = Config()
     os.makedirs(cfg.output_dir, exist_ok=True)
