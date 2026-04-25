@@ -190,10 +190,7 @@ class Config:
     max_radio_per_band: int = 28
 
     # ── 等值线配置 ─────────────────────────────────────────────
-    normalization_mode: str = "peak"
-    contour_levels_peak: List[float] = field(default_factory=lambda: [0.75])
-    rms_sigma_levels: List[float] = field(default_factory=lambda: [20.0])
-    rms_box_fraction: float = 0.05
+    contour_levels_peak: List[float] = field(default_factory=lambda: [0.90])
     contour_linewidths: List[float] = field(default_factory=lambda: [2.0])
     contour_alpha: float = 0.90
     contour_smooth_sigma: float = 0
@@ -777,57 +774,14 @@ def extract_radio_2d_data(
         print(f"读取 FITS 文件失败 {fits_path}: {e}")
         return None, None, None, None, None
 
-
-def estimate_rms_noise(data: np.ndarray, box_fraction: float = 0.15) -> float:
-    """通过图像四角估算背景 RMS 噪声"""
-    ny, nx = data.shape
-    bx = max(int(nx * box_fraction), 5)
-    by = max(int(ny * box_fraction), 5)
-
-    corners = [data[:by, :bx], data[:by, -bx:], data[-by:, :bx], data[-by:, -bx:]]
-    pixels = np.concatenate([c.ravel() for c in corners])
-    pixels = pixels[np.isfinite(pixels)]
-
-    if len(pixels) < 10:
-        edges = np.concatenate(
-            [
-                data[:by].ravel(),
-                data[-by:].ravel(),
-                data[:, :bx].ravel(),
-                data[:, -bx:].ravel(),
-            ]
-        )
-        pixels = edges[np.isfinite(edges)]
-
-    if len(pixels) == 0:
-        val = np.nanstd(data)
-        if not np.isfinite(val):
-            return 0.0  # ✅ 不要返回 None
-        return float(val * 0.1)
-
-    median = np.median(pixels)
-    mad = np.median(np.abs(pixels - median))
-    std_est = mad * 1.4826
-    filtered = pixels[np.abs(pixels - median) < 3 * std_est]
-    return float(np.std(filtered)) if len(filtered) > 0 else float(std_est)
-
-
 def compute_contour_levels(data: np.ndarray, cfg: Config) -> List[float]:
-    """根据归一化模式计算等值线级别"""
+    """直接基于高斯模型的峰值计算等值线级别"""
     finite = data[np.isfinite(data)]
     if len(finite) == 0:
         return []
     peak = float(np.nanmax(finite))
-
-    if cfg.normalization_mode == "rms":
-        rms = estimate_rms_noise(data, cfg.rms_box_fraction)
-        if rms is None or not np.isfinite(rms) or rms <= 0:
-            return []
-        levels = [s * rms for s in cfg.rms_sigma_levels if 0 < s * rms < peak]
-    else:
-        levels = [f * peak for f in cfg.contour_levels_peak]
-
-    return levels
+    # 直接返回峰值的百分比（例如 90%）
+    return [f * peak for f in cfg.contour_levels_peak]
 
 
 # ============================================================
@@ -1326,17 +1280,17 @@ def process_aia_group(
         # --- 1. 绘制 AIA 底图 ---
         # 提取当前的 colormap，并强制将无数据的 NaN 区域（即扩充的深空画布）渲染为纯黑
         my_cmap = plt.get_cmap(cfg.aia_cmap).copy()
-        my_cmap.set_bad(color="black")
+        my_cmap.set_bad(color='black')
 
+        # 【核心修复】：加入 norm=mcolors.LogNorm(...)，使用对数缩放！
         ax.imshow(
-            aia_data,
-            cmap=my_cmap,
-            vmin=cfg.aia_vmin,
-            vmax=cfg.aia_vmax,
-            origin="lower",
+            aia_data, 
+            cmap=my_cmap, 
+            norm=mcolors.LogNorm(vmin=cfg.aia_vmin, vmax=cfg.aia_vmax), 
+            origin="lower", 
             extent=extent_arcsec,
         )
-
+        
         # 同时也把坐标轴的背景底色设为黑，作为双重保险
         ax.set_facecolor("black")
 
