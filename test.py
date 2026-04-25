@@ -1185,4 +1185,52 @@ def _get_padded_aia_map(
 
     px_bl = aia_map.wcs.world_to_pixel(bl)
     px_tr = aia_map.wcs.world_to_pixel(tr)
-    x0, y0 = int(np.floor(float(px_bl[0]))), int(np.floor(float(px_bl[1]
+    x0, y0 = int(np.floor(float(px_bl[0]))), int(np.floor(float(px_bl[1])))
+    x1, y1 = int(np.ceil(float(px_tr[0]))), int(np.ceil(float(px_tr[1])))
+
+    # 确保裁剪区域在图像范围内
+    ny, nx = aia_map.data.shape
+    x0 = max(0, x0)
+    y0 = max(0, y0)
+    x1 = min(nx, x1)
+    y1 = min(ny, y1)
+
+    # 如果裁剪区域完全在图像内，直接裁剪
+    if x0 >= 0 and y0 >= 0 and x1 <= nx and y1 <= ny:
+        submap = aia_map.submap(
+            bl,
+            top_right=tr,
+        )
+        return submap
+
+    # 否则需要扩充画布
+    # 计算需要扩充的像素数
+    pad_left = max(0, -x0)
+    pad_right = max(0, x1 - nx)
+    pad_bottom = max(0, -y0)
+    pad_top = max(0, y1 - ny)
+
+    # 使用 NaN 填充
+    data = aia_map.data
+    padded_data = np.pad(
+        data,
+        ((pad_bottom, pad_top), (pad_left, pad_right)),
+        mode='constant',
+        constant_values=np.nan,
+    )
+
+    # 更新 WCS
+    wcs = aia_map.wcs
+    wcs.wcs.crpix[0] += pad_left
+    wcs.wcs.crpix[1] += pad_bottom
+
+    # 创建新的 map
+    from sunpy.map import Map
+    padded_map = Map(padded_data, wcs)
+
+    # 裁剪到 ROI
+    submap = padded_map.submap(
+        bl,
+        top_right=tr,
+    )
+    return submap
