@@ -40,12 +40,10 @@ import numpy as np
 # ║                    USER CONFIGURATION                       ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-fps = 10  # Video frame rate
-input_dir = (
-    r"<PROJECT_ROOT>\2025\20250124\AIA_RS_HMI\RR+LL_rms mode_sigma=20"
-)
+fps = 7  # Video frame rate
+input_dir = r"<PROJECT_ROOT>\2025\20250124\AIA_RS_HMI\RR+LL"
 output_dir = r"<PROJECT_ROOT>\2025\20250124\AIA_RS_HMI\video"
-video_name = "RR+LL_rms mode_sigma=20.mp4"
+video_name = "RR+LL.mp4"
 target_suffix = ".png"  # Target file extension (case-insensitive)
 
 # ── Video quality ──────────────────────────────────────────────
