@@ -1500,7 +1500,7 @@ def process_aia_group(
             facecolor=cfg.style.legend_face,
             edgecolor="none",
             labelcolor=cfg.style.legend_text,
-            alpha=cfg.style.legend_alpha,
+            framealpha=cfg.style.legend_alpha,
         )
 
     # 保存
