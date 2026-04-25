@@ -166,7 +166,9 @@ class Config:
     radio_base_dir: str = r"D:\spike_topping_type_III\2025\20250124\RS_0447-0450"
     aia_base_dir: str = r"D:\spike_topping_type_III\2025\20250124\AIA\171\1"
     hmi_base_dir: str = r"D:\spike_topping_type_III\2025\20250124\AIA\hmi\1"
-    output_dir: str = r"D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\test"
+    output_dir: str = (
+        r"D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\RR+LL_peak mode_0.75"
+    )
 
     # ── 文件处理配置 ───────────────────────────────────────────
     save_figure: bool = True
@@ -192,15 +194,16 @@ class Config:
     # "RR": 仅使用右旋圆偏振数据
     # "LL": 仅使用左旋圆偏振数据
     # "RR+LL": 右旋和左旋数据合并
-    polarization_mode: str = "LL"
+    polarization_mode: str = "RR+LL"
 
     # ── 左右旋数据加和配置 ─────────────────────────────────────
-    combine_polarizations: bool = False  # 是否启用左右旋数据加和功能
+    combine_polarizations: bool = True  # 是否启用左右旋数据加和功能
     rr_dir_suffix: str = "RR"  # 右旋数据目录后缀
     ll_dir_suffix: str = "LL"  # 左旋数据目录后缀
     weighted_average: bool = False  # 是否使用加权平均（True）或简单相加（False）
     rr_weight: float = 0.5  # 右旋权重（加权平均时使用）
     ll_weight: float = 0.5  # 左旋权重（加权平均时使用）
+    # 同时保存功能暂未实现
     save_individual_pols: bool = False  # 是否同时保存单独的RR、LL图像
     time_tolerance_seconds: float = 0.01  # 时间对齐容差（秒）
 
@@ -210,8 +213,8 @@ class Config:
     # ── 等值线配置 ─────────────────────────────────────────────
     normalization_mode: str = "peak"
     contour_levels_peak: List[float] = field(default_factory=lambda: [0.75])
-    rms_sigma_levels: List[float] = field(default_factory=lambda: [5.0, 15.0, 30.0])
-    rms_box_fraction: float = 0.15
+    rms_sigma_levels: List[float] = field(default_factory=lambda: [20.0])
+    rms_box_fraction: float = 0.05
     contour_linewidths: List[float] = field(default_factory=lambda: [2.0])
     contour_alpha: float = 0.90
     contour_smooth_sigma: float = 0
@@ -229,8 +232,8 @@ class Config:
     aia_vmin: float = 16
     aia_vmax: float = 6666
     aia_cmap: str = "sdoaia171"
-    roi_bottom_left: List[float] = field(default_factory=lambda: [-1500, -1500])
-    roi_top_right: List[float] = field(default_factory=lambda: [1500, 1500])
+    roi_bottom_left: List[float] = field(default_factory=lambda: [600, -800])
+    roi_top_right: List[float] = field(default_factory=lambda: [1600, 200])
 
     # ── 画布颜色配置 ───────────────────────────────────────────
     style: CanvasStyle = field(default_factory=CanvasStyle)
@@ -238,22 +241,24 @@ class Config:
     # ── 射电波段颜色配置 ───────────────────────────────────────
     band_colors_dict: dict = field(
         default_factory=lambda: {
-            "149.0MHz": ("cyan", "deepskyblue"),
-            "164.0MHz": ("lime", "green"),
-            "190.0MHz": ("magenta", "darkviolet"),
-            "205.0MHz": ("darkviolet", "orange"),
-            "223.0MHz": ("red", "darkred"),
-            "238.0MHz": ("white", "lightgray"),
+            "149.0MHz": ("dodgerblue", "navy"),  # 深蓝系（清晰）
+            "164.0MHz": ("orange", "darkorange"),  # 橙色（强对比）
+            "190.0MHz": ("crimson", "darkred"),  # 红色（最醒目）
+            "205.0MHz": ("mediumorchid", "purple"),  # 紫色（区别红）
+            "223.0MHz": ("gold", "goldenrod"),  # 金色（对AIA很好）
+            "238.0MHz": ("teal", "darkslategray"),  # 青绿偏暗（避开背景）
         }
     )
     default_colors: List[Tuple] = field(
         default_factory=lambda: [
-            ("darkred", "orange"),
-            ("deepskyblue", "darkred"),
-            ("lightgray", "lightgray"),
-            ("pink", "hotpink"),
-            ("skyblue", "deepskyblue"),
-            ("violet", "darkviolet"),
+            ("dodgerblue", "navy"),
+            ("orange", "darkorange"),
+            ("crimson", "darkred"),
+            ("mediumorchid", "purple"),
+            ("gold", "goldenrod"),
+            ("teal", "darkslategray"),
+            ("deeppink", "hotpink"),  # 额外增强区分
+            ("royalblue", "midnightblue"),  # 更深蓝备选
         ]
     )
 
@@ -272,7 +277,7 @@ class Config:
     test_file_limit: int = 5
 
     # ── 坐标图配置 ─────────────────────────────────────────────
-    use_radec_maps: bool = True
+    use_radec_maps: bool = True  # 是否使用赤经赤纬坐标
     radio_to_solar_scale_factor: float = 0.05
     auto_adjust_scale_factor: bool = True
     min_pixels_in_view: int = 100
@@ -1844,6 +1849,23 @@ def process_aia_group(
                         )
                     )
 
+            # 【新增：强制常驻射电图例】
+            # 无论数据是否缺失或被过滤，统一将配置中的所有波段加入图例
+            for band_idx, band_label in enumerate(cfg.selected_bands):
+                main_color, _ = get_band_color(band_label, band_idx, cfg, color_cache)
+
+                if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL":
+                    if cfg.weighted_average:
+                        label = f"{band_label} (RR+LL, w={cfg.rr_weight:.1f}:{cfg.ll_weight:.1f})"
+                    else:
+                        label = f"{band_label} (RR+LL sum)"
+                else:
+                    label = f"{band_label} ({cfg.polarization_mode})"
+
+                legend_handles.append(
+                    Line2D([0], [0], color=main_color, linewidth=2.0, label=label)
+                )
+
             # ── 按频率排序波段 ────────────────────────────────
             def _band_freq(item):
                 m = _RE_BAND_SORTED.search(item[0])  # 每个 item 只搜索一次
@@ -1984,19 +2006,19 @@ def process_aia_group(
                         first_radio_time = radio_time
                     drawn_any = True
 
-                if drawn_any:
-                    # 在图例中显示偏振信息
-                    if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL":
-                        if cfg.weighted_average:
-                            label = f"{band_label} (RR+LL, w={cfg.rr_weight:.1f}:{cfg.ll_weight:.1f})"
-                        else:
-                            label = f"{band_label} (RR+LL sum)"
-                    else:
-                        label = f"{band_label} ({polarization})"
+                # if drawn_any:
+                #     # 在图例中显示偏振信息
+                #     if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL":
+                #         if cfg.weighted_average:
+                #             label = f"{band_label} (RR+LL, w={cfg.rr_weight:.1f}:{cfg.ll_weight:.1f})"
+                #         else:
+                #             label = f"{band_label} (RR+LL sum)"
+                #     else:
+                #         label = f"{band_label} ({polarization})"
 
-                    legend_handles.append(
-                        Line2D([0], [0], color=main_color, linewidth=2.0, label=label)
-                    )
+                #     legend_handles.append(
+                #         Line2D([0], [0], color=main_color, linewidth=2.0, label=label)
+                #     )
 
             # ── 波束椭圆 ───────────────────────────────────────
             if cfg.show_beam and collected_beams:
