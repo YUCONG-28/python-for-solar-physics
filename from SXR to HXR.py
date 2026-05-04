@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 模块用途: 比较 GOES SXR 导数与 HXR 辐射，用于 Neupert 效应时序分析。
+# 主要输入: GOES 软 X 射线光变和硬 X 射线光变数据。
+# 主要输出/运行说明: 输出 SXR 导数-HXR 对比图和相关时序诊断。
 """
 Created on Tue Oct 21 23:20:37 2025
 

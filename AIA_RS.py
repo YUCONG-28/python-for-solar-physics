@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 模块用途: 生成 AIA、射电源和可选 HMI 的多仪器叠加图。
+# 主要输入: AIA/HMI FITS 图像、射电源数据、偏振信息和配准参数。
+# 主要输出/运行说明: 输出带等值线和偏振标记的综合诊断图，适合耀斑源区对比。
 """
 Created on Sat Apr 25 19:57:54 2026
 
@@ -782,6 +785,7 @@ def extract_radio_2d_data(
         print(f"读取 FITS 文件失败 {fits_path}: {e}")
         return None, None, None, None, None
 
+
 def compute_contour_levels(data: np.ndarray, cfg: Config) -> List[float]:
     """直接基于高斯模型的峰值计算等值线级别"""
     finite = data[np.isfinite(data)]
@@ -1315,17 +1319,17 @@ def process_aia_group(
         # --- 1. 绘制 AIA 底图 ---
         # 提取当前的 colormap，并强制将无数据的 NaN 区域（即扩充的深空画布）渲染为纯黑
         my_cmap = plt.get_cmap(cfg.aia_cmap).copy()
-        my_cmap.set_bad(color='black')
+        my_cmap.set_bad(color="black")
 
         # 【核心修复】：加入 norm=mcolors.LogNorm(...)，使用对数缩放！
         ax.imshow(
-            aia_data, 
-            cmap=my_cmap, 
-            norm=mcolors.LogNorm(vmin=cfg.aia_vmin, vmax=cfg.aia_vmax), 
-            origin="lower", 
+            aia_data,
+            cmap=my_cmap,
+            norm=mcolors.LogNorm(vmin=cfg.aia_vmin, vmax=cfg.aia_vmax),
+            origin="lower",
             extent=extent_arcsec,
         )
-        
+
         # 同时也把坐标轴的背景底色设为黑，作为双重保险
         ax.set_facecolor("black")
 

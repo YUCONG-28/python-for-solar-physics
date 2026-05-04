@@ -1,25 +1,30 @@
 # -*- coding: utf-8 -*-
+# 模块用途: 将 DEM 诊断结果与射电源形态叠加比较。
+# 主要输入: DEM 分析结果、AIA 图像和射电源数据。
+# 主要输出/运行说明: 输出热等离子体结构与射电辐射位置的对比图。
 """
 Author : Lee
 Created: 2026-01-26
 Modified: 添加射电源强度梯度叠加、时间匹配筛选、叠加开关
 """
 
+import glob
+
 # ============================================================
 #  导入
 # ============================================================
 import os
 import re
-import glob
-import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 from datetime import datetime
-from matplotlib import rcParams
-from matplotlib.lines import Line2D
-from matplotlib.colors import LinearSegmentedColormap
+
+import matplotlib
+import matplotlib.patches as patches
+import matplotlib.pyplot as plt
+import numpy as np
 from astropy.io import fits
+from matplotlib import rcParams
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.lines import Line2D
 from scipy.ndimage import gaussian_filter
 
 
@@ -29,13 +34,14 @@ from scipy.ndimage import gaussian_filter
 def _setup_font() -> None:
     """为 Windows 环境配置中文字体，并修复负号显示问题。"""
     candidates = ["Microsoft YaHei", "SimHei", "SimSun", "KaiTi", "FangSong"]
-    available  = {f.name for f in matplotlib.font_manager.fontManager.ttflist}
+    available = {f.name for f in matplotlib.font_manager.fontManager.ttflist}
     for font in candidates:
         if font in available:
             rcParams["font.sans-serif"] = [font] + rcParams["font.sans-serif"]
-            rcParams["font.family"]     = "sans-serif"
+            rcParams["font.family"] = "sans-serif"
             break
     rcParams["axes.unicode_minus"] = False
+
 
 _setup_font()
 
@@ -51,23 +57,19 @@ CONFIG = {
         r"<PROJECT_ROOT>\2025\20250124\DEM\aia_data"
         r"\aia.lev1_euv_12s.2025-01-24T044747Z.211.image_lev1.fits"
     ),
-    "tb_data_path": (
-        r"<PROJECT_ROOT>\2025\20250124\DEM\Tb_223000000.0.npy"
-    ),
-
+    "tb_data_path": (r"<PROJECT_ROOT>\2025\20250124\DEM\Tb_223000000.0.npy"),
     # ┌─────────────────────────────────────────────────────────┐
     # │  射电源叠加开关 & 路径                                   │
     # │                                                          │
     # │  overlay_radio : True  → 叠加射电等高线                 │
     # │                  False → 仅显示 Tb 图，跳过射电相关步骤 │
     # └─────────────────────────────────────────────────────────┘
-    "overlay_radio":         True,
+    "overlay_radio": True,
     "radio_sources_dir": (
         r"<PROJECT_ROOT>\2025\20250124\share\Data\UnPack"
         r"\20250124UT0447-0450\ImageData_RRLL\223MHz\RR"
     ),
     "radio_sources_pattern": "223MHz_*.fits",
-
     # ┌─────────────────────────────────────────────────────────┐
     # │  射电源时间匹配策略                                      │
     # │                                                          │
@@ -79,50 +81,45 @@ CONFIG = {
     # │                                                          │
     # │  自动降级：若当前粒度无候选，自动放宽至下一粒度并警告   │
     # └─────────────────────────────────────────────────────────┘
-    "time_match_level":      "minute",
-
+    "time_match_level": "minute",
     # ┌─────────────────────────────────────────────────────────┐
     # │  Tb 网格参数                                            │
     # │  像素尺度 3 arcsec/pixel，覆盖范围 ±1150 arcsec         │
     # │  验证：(1150-(-1150))/3 + 1 ≈ 767 → shape(767,767) 吻合│
     # └─────────────────────────────────────────────────────────┘
-    "tb_pixel_size":  3,      # arcsec/pixel
-    "tb_xmin":       -1150,   # arcsec
-    "tb_xmax":        1150,
-    "tb_ymin":       -1150,
-    "tb_ymax":        1150,
-
+    "tb_pixel_size": 3,  # arcsec/pixel
+    "tb_xmin": -1150,  # arcsec
+    "tb_xmax": 1150,
+    "tb_ymin": -1150,
+    "tb_ymax": 1150,
     # ┌─────────────────────────────────────────────────────────┐
     # │  显示模式                                               │
     # │  "full"       : AIA 完整视场                            │
     # │  "solar_disk" : 日面中心 ± rsun × solar_padding_factor  │
     # │  "custom"     : 手动指定 display_x/y_range（arcsec）    │
     # └─────────────────────────────────────────────────────────┘
-    "display_mode":         "custom",
-    "display_x_range":      (-1600, 1600),
-    "display_y_range":      (-1600, 1600),
+    "display_mode": "custom",
+    "display_x_range": (-1600, 1600),
+    "display_y_range": (-1600, 1600),
     "solar_padding_factor": 1.15,
-
     # ┌─────────────────────────────────────────────────────────┐
     # │  画布与 Tb 色彩                                         │
     # └─────────────────────────────────────────────────────────┘
-    "figsize":         (10, 9),
-    "dpi":             300,
-    "colorbar_label":  "Tb (MK)",
+    "figsize": (10, 9),
+    "dpi": 300,
+    "colorbar_label": "Tb (MK)",
     # 颜色映射节点（黑 → 暗红 → 橙红 → 金黄 → 白）
-    "cmap_colors":     ["#000000", "#8B0000", "#FF4500", "#FFD700", "#FFFFFF"],
-    "cmap_positions":  [0.0, 0.2, 0.4, 0.7, 1.0],
+    "cmap_colors": ["#000000", "#8B0000", "#FF4500", "#FFD700", "#FFFFFF"],
+    "cmap_positions": [0.0, 0.2, 0.4, 0.7, 1.0],
     # 动态范围（百分位数裁剪，抑制极端值干扰色标）
-    "percentile_low":  1,
+    "percentile_low": 1,
     "percentile_high": 99,
-
     # ┌─────────────────────────────────────────────────────────┐
     # │  太阳轮廓叠加                                           │
     # └─────────────────────────────────────────────────────────┘
-    "draw_optical_limb": True,    # True：叠加白色虚线 AIA 光学日面
-    "draw_radio_limb":   False,   # True：叠加红色虚线射电日面估计
-    "radio_limb_factor": 1.08,    # 射电日面半径 = rsun × radio_limb_factor
-
+    "draw_optical_limb": True,  # True：叠加白色虚线 AIA 光学日面
+    "draw_radio_limb": False,  # True：叠加红色虚线射电日面估计
+    "radio_limb_factor": 1.08,  # 射电日面半径 = rsun × radio_limb_factor
     # ┌─────────────────────────────────────────────────────────┐
     # │  射电源强度梯度等高线样式                               │
     # │                                                          │
@@ -133,16 +130,15 @@ CONFIG = {
     # │  radio_smooth_sigma   : 高斯平滑 σ（像素），            │
     # │                         越大轮廓越平滑                  │
     # └─────────────────────────────────────────────────────────┘
-    "radio_contour_levels":     [0.3, 0.6, 0.9, 0.95, 0.99],
-    "radio_contour_colors":     ["cyan", "deepskyblue", "lime", "orange", "red"],
-    "radio_contour_linewidths": [1.0,  1.5,  2.0,  2.5,  3.0],
-    "radio_smooth_sigma":       1.5,
-
+    "radio_contour_levels": [0.3, 0.6, 0.9, 0.95, 0.99],
+    "radio_contour_colors": ["cyan", "deepskyblue", "lime", "orange", "red"],
+    "radio_contour_linewidths": [1.0, 1.5, 2.0, 2.5, 3.0],
+    "radio_smooth_sigma": 1.5,
     # ┌─────────────────────────────────────────────────────────┐
     # │  网格与输出                                             │
     # └─────────────────────────────────────────────────────────┘
-    "show_grid":       True,
-    "save_figure":     True,
+    "show_grid": True,
+    "save_figure": True,
     "output_filename": "223MHz.png",
 }
 
@@ -170,22 +166,25 @@ class SolarMap:
         self._build_wcs()
         self._extract_solar_geometry()
         self.obs_time = self._parse_obs_time(path)
-        self.obs_dt   = _str_to_datetime(self.obs_time)
+        self.obs_dt = _str_to_datetime(self.obs_time)
 
     def _build_wcs(self) -> None:
-        h      = self.header
+        h = self.header
         nx, ny = h["NAXIS1"], h["NAXIS2"]
         dx, dy = h["CDELT1"], h["CDELT2"]
         x = h["CRVAL1"] + (np.arange(nx) + 1 - h["CRPIX1"]) * dx
         y = h["CRVAL2"] + (np.arange(ny) + 1 - h["CRPIX2"]) * dy
-        self.extent = [x.min() - abs(dx)/2, x.max() + abs(dx)/2,
-                       y.min() - abs(dy)/2, y.max() + abs(dy)/2]
+        self.extent = [
+            x.min() - abs(dx) / 2,
+            x.max() + abs(dx) / 2,
+            y.min() - abs(dy) / 2,
+            y.max() + abs(dy) / 2,
+        ]
         self.nx, self.ny = nx, ny
 
     def _extract_solar_geometry(self) -> None:
         h = self.header
-        self.rsun       = (h["RSUN_OBS"] if "RSUN_OBS" in h
-                           else h["R_SUN"] * abs(h["CDELT1"]))
+        self.rsun = h["RSUN_OBS"] if "RSUN_OBS" in h else h["R_SUN"] * abs(h["CDELT1"])
         self.sun_center = (h["CRVAL1"], h["CRVAL2"])
 
     def _parse_obs_time(self, path: str) -> str:
@@ -204,14 +203,17 @@ class SolarMap:
             return f"{m.group(1)} {m.group(2)}:{m.group(3)}:{m.group(4)} UT"
         m = re.search(r"(\d{4})(\d{2})(\d{2})[_T]?(\d{2})(\d{2})(\d{2})", fname)
         if m:
-            return (f"{m.group(1)}-{m.group(2)}-{m.group(3)} "
-                    f"{m.group(4)}:{m.group(5)}:{m.group(6)} UT")
+            return (
+                f"{m.group(1)}-{m.group(2)}-{m.group(3)} "
+                f"{m.group(4)}:{m.group(5)}:{m.group(6)} UT"
+            )
         return "Unknown"
 
 
 # ============================================================
 #  时间工具
 # ============================================================
+
 
 def _str_to_datetime(time_str: str):
     """
@@ -262,21 +264,25 @@ def get_radio_time(path: str) -> str:
     # CSRH/MUSER 格式：149MHz_2025124_043740_886.fits（月份无前导零）
     m = re.search(r"(\d{4})(\d{1,2})(\d{2})_(\d{2})(\d{2})(\d{2})_(\d{3})", fname)
     if m:
-        year  = m.group(1)
+        year = m.group(1)
         month = m.group(2).zfill(2)
-        day   = m.group(3)
+        day = m.group(3)
         hh, mm, ss, ms = m.group(4), m.group(5), m.group(6), m.group(7)
         return f"{year}-{month}-{day} {hh}:{mm}:{ss}.{ms} UT"
     # 标准格式：YYYYMMDD_HHMMSS 或 YYYYMMDD-HHMMSS
     m = re.search(r"(\d{4})(\d{2})(\d{2})[_\-](\d{2})(\d{2})(\d{2})", fname)
     if m:
-        return (f"{m.group(1)}-{m.group(2)}-{m.group(3)} "
-                f"{m.group(4)}:{m.group(5)}:{m.group(6)} UT")
+        return (
+            f"{m.group(1)}-{m.group(2)}-{m.group(3)} "
+            f"{m.group(4)}:{m.group(5)}:{m.group(6)} UT"
+        )
     # 连续 14 位：YYYYMMDDHHMMSS
     m = re.search(r"(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})", fname)
     if m:
-        return (f"{m.group(1)}-{m.group(2)}-{m.group(3)} "
-                f"{m.group(4)}:{m.group(5)}:{m.group(6)} UT")
+        return (
+            f"{m.group(1)}-{m.group(2)}-{m.group(3)} "
+            f"{m.group(4)}:{m.group(5)}:{m.group(6)} UT"
+        )
     return "Unknown"
 
 
@@ -318,36 +324,40 @@ def find_matching_radio(files: list, aia_dt: datetime) -> tuple:
         return files[0], get_radio_time(files[0]), None
 
     # ── 为每个文件解析 datetime ────────────────────────────────
-    parsed = []   # [(path, time_str, dt), ...]
+    parsed = []  # [(path, time_str, dt), ...]
     for p in files:
         t_str = get_radio_time(p)
-        t_dt  = _str_to_datetime(t_str)
+        t_dt = _str_to_datetime(t_str)
         parsed.append((p, t_str, t_dt))
 
     aia_key_minute = aia_dt.strftime("%Y-%m-%d %H:%M")
-    aia_key_hour   = aia_dt.strftime("%Y-%m-%d %H")
+    aia_key_hour = aia_dt.strftime("%Y-%m-%d %H")
 
     def _filter_by_key(key_fn, aia_key):
-        return [(p, ts, dt) for p, ts, dt in parsed
-                if dt is not None and key_fn(dt) == aia_key]
+        return [
+            (p, ts, dt)
+            for p, ts, dt in parsed
+            if dt is not None and key_fn(dt) == aia_key
+        ]
 
-    level      = CONFIG["time_match_level"]
+    level = CONFIG["time_match_level"]
     candidates = []
 
     if level == "minute":
-        candidates = _filter_by_key(lambda dt: dt.strftime("%Y-%m-%d %H:%M"),
-                                    aia_key_minute)
+        candidates = _filter_by_key(
+            lambda dt: dt.strftime("%Y-%m-%d %H:%M"), aia_key_minute
+        )
         if not candidates:
             print(f"  [降级] 同分钟（{aia_key_minute}）无候选，改用同小时筛选")
-            candidates = _filter_by_key(lambda dt: dt.strftime("%Y-%m-%d %H"),
-                                        aia_key_hour)
+            candidates = _filter_by_key(
+                lambda dt: dt.strftime("%Y-%m-%d %H"), aia_key_hour
+            )
         if not candidates:
             print(f"  [降级] 同小时（{aia_key_hour}）无候选，改用全局最近匹配")
             candidates = [(p, ts, dt) for p, ts, dt in parsed if dt is not None]
 
     elif level == "hour":
-        candidates = _filter_by_key(lambda dt: dt.strftime("%Y-%m-%d %H"),
-                                    aia_key_hour)
+        candidates = _filter_by_key(lambda dt: dt.strftime("%Y-%m-%d %H"), aia_key_hour)
         if not candidates:
             print(f"  [降级] 同小时（{aia_key_hour}）无候选，改用全局最近匹配")
             candidates = [(p, ts, dt) for p, ts, dt in parsed if dt is not None]
@@ -361,8 +371,7 @@ def find_matching_radio(files: list, aia_dt: datetime) -> tuple:
 
     # ── 选时间差最小的一帧 ─────────────────────────────────────
     best_path, best_time, best_dt = min(
-        candidates,
-        key=lambda x: abs((x[2] - aia_dt).total_seconds())
+        candidates, key=lambda x: abs((x[2] - aia_dt).total_seconds())
     )
     dt_diff = abs((best_dt - aia_dt).total_seconds())
 
@@ -372,6 +381,7 @@ def find_matching_radio(files: list, aia_dt: datetime) -> tuple:
 # ============================================================
 #  射电数据加载
 # ============================================================
+
 
 def load_radio(path: str) -> tuple:
     """
@@ -383,7 +393,7 @@ def load_radio(path: str) -> tuple:
     extent : [x_min, x_max, y_min, y_max]（arcsec）
     """
     with fits.open(path) as hdul:
-        data   = hdul[0].data
+        data = hdul[0].data
         header = hdul[0].header
 
     data = np.nan_to_num(data)
@@ -405,6 +415,7 @@ def load_radio(path: str) -> tuple:
 # ============================================================
 #  辅助函数
 # ============================================================
+
 
 def get_display_extent(aia_map: SolarMap) -> list:
     """返回最终绘图坐标范围 [x_min, x_max, y_min, y_max]（arcsec）。"""
@@ -440,38 +451,64 @@ def load_tb(path: str) -> np.ndarray:
 def get_tb_extent() -> list:
     """返回 Tb 图像的 imshow extent（像素外边缘，arcsec）。"""
     half = CONFIG["tb_pixel_size"] / 2.0
-    return [CONFIG["tb_xmin"] - half, CONFIG["tb_xmax"] + half,
-            CONFIG["tb_ymin"] - half, CONFIG["tb_ymax"] + half]
+    return [
+        CONFIG["tb_xmin"] - half,
+        CONFIG["tb_xmax"] + half,
+        CONFIG["tb_ymin"] - half,
+        CONFIG["tb_ymax"] + half,
+    ]
 
 
 # ============================================================
 #  绘图
 # ============================================================
 
+
 def _draw_limbs(ax, sun_center, rsun) -> None:
     """叠加光学日面（白色虚线圆）和射电日面（红色虚线圆）轮廓。"""
     cx, cy = sun_center
     if CONFIG["draw_optical_limb"]:
-        ax.plot(cx, cy, "+", color="white",
-                markersize=15, markeredgewidth=1.5, alpha=0.9, zorder=5)
-        ax.add_patch(patches.Circle(
-            (cx, cy), radius=rsun,
-            fill=False, color="white", linestyle="--", linewidth=1.5,
-            alpha=0.9, zorder=5,
-            label=f"AIA optical limb  ({rsun:.0f}\")",
-        ))
+        ax.plot(
+            cx,
+            cy,
+            "+",
+            color="white",
+            markersize=15,
+            markeredgewidth=1.5,
+            alpha=0.9,
+            zorder=5,
+        )
+        ax.add_patch(
+            patches.Circle(
+                (cx, cy),
+                radius=rsun,
+                fill=False,
+                color="white",
+                linestyle="--",
+                linewidth=1.5,
+                alpha=0.9,
+                zorder=5,
+                label=f'AIA optical limb  ({rsun:.0f}")',
+            )
+        )
     if CONFIG["draw_radio_limb"]:
         r_radio = rsun * CONFIG["radio_limb_factor"]
-        ax.add_patch(patches.Circle(
-            (cx, cy), radius=r_radio,
-            fill=False, color="red", linestyle="--", linewidth=1.5,
-            alpha=0.9, zorder=5,
-            label=f"223 MHz radio limb  ({r_radio:.0f}\", ×{CONFIG['radio_limb_factor']:.3f})",
-        ))
+        ax.add_patch(
+            patches.Circle(
+                (cx, cy),
+                radius=r_radio,
+                fill=False,
+                color="red",
+                linestyle="--",
+                linewidth=1.5,
+                alpha=0.9,
+                zorder=5,
+                label=f"223 MHz radio limb  ({r_radio:.0f}\", ×{CONFIG['radio_limb_factor']:.3f})",
+            )
+        )
 
 
-def _draw_radio_gradient(ax, radio_data: np.ndarray,
-                         radio_extent: list) -> list:
+def _draw_radio_gradient(ax, radio_data: np.ndarray, radio_extent: list) -> list:
     """
     叠加射电源强度梯度等高线（仿 DEM_RS.py plot_overlay 步骤 5–7）。
 
@@ -485,10 +522,9 @@ def _draw_radio_gradient(ax, radio_data: np.ndarray,
     -------
     list[Line2D]：图例代理线
     """
-    radio_s    = gaussian_filter(radio_data, CONFIG["radio_smooth_sigma"])
+    radio_s = gaussian_filter(radio_data, CONFIG["radio_smooth_sigma"])
     rmin, rmax = radio_s.min(), radio_s.max()
-    levels     = [rmin + lv * (rmax - rmin)
-                  for lv in CONFIG["radio_contour_levels"]]
+    levels = [rmin + lv * (rmax - rmin) for lv in CONFIG["radio_contour_levels"]]
 
     ax.contour(
         radio_s,
@@ -501,19 +537,25 @@ def _draw_radio_gradient(ax, radio_data: np.ndarray,
     )
 
     proxy = [
-        Line2D([0], [0],
-               color=CONFIG["radio_contour_colors"][i],
-               linewidth=CONFIG["radio_contour_linewidths"][i],
-               label=f"Radio {int(CONFIG['radio_contour_levels'][i] * 100)}%")
+        Line2D(
+            [0],
+            [0],
+            color=CONFIG["radio_contour_colors"][i],
+            linewidth=CONFIG["radio_contour_linewidths"][i],
+            label=f"Radio {int(CONFIG['radio_contour_levels'][i] * 100)}%",
+        )
         for i in range(len(CONFIG["radio_contour_levels"]))
     ]
     return proxy
 
 
-def plot_tb(tb_data: np.ndarray, aia_map: SolarMap,
-            radio_data: np.ndarray = None,
-            radio_extent: list = None,
-            radio_time: str = "") -> tuple:
+def plot_tb(
+    tb_data: np.ndarray,
+    aia_map: SolarMap,
+    radio_data: np.ndarray = None,
+    radio_extent: list = None,
+    radio_time: str = "",
+) -> tuple:
     """
     绘制 Tb 底图，叠加日面轮廓，并（可选）叠加射电强度梯度等高线。
 
@@ -539,7 +581,8 @@ def plot_tb(tb_data: np.ndarray, aia_map: SolarMap,
         extent=get_tb_extent(),
         origin="lower",
         cmap=make_tb_colormap(),
-        vmin=vmin, vmax=vmax,
+        vmin=vmin,
+        vmax=vmax,
         aspect="equal",
     )
 
@@ -565,10 +608,17 @@ def plot_tb(tb_data: np.ndarray, aia_map: SolarMap,
     # ── 图例 ─────────────────────────────────────────────────
     handles, labels = ax.get_legend_handles_labels()
     handles += radio_proxy
-    labels  += [p.get_label() for p in radio_proxy]
+    labels += [p.get_label() for p in radio_proxy]
     if handles:
-        ax.legend(handles, labels, loc="lower right", fontsize=9,
-                  framealpha=0.7, facecolor="black", labelcolor="white")
+        ax.legend(
+            handles,
+            labels,
+            loc="lower right",
+            fontsize=9,
+            framealpha=0.7,
+            facecolor="black",
+            labelcolor="white",
+        )
 
     # ── 色标 ─────────────────────────────────────────────────
     cbar = plt.colorbar(im, ax=ax, shrink=0.8, aspect=20)
@@ -580,7 +630,10 @@ def plot_tb(tb_data: np.ndarray, aia_map: SolarMap,
         subtitle += f"\nRadio: {radio_time}"
     fig.suptitle(
         f"Tb at 223.0 MHz\n{subtitle}",
-        fontsize=13, fontweight="bold", color="black", linespacing=1.8,
+        fontsize=13,
+        fontweight="bold",
+        color="black",
+        linespacing=1.8,
     )
     plt.tight_layout()
     return fig, ax
@@ -589,6 +642,7 @@ def plot_tb(tb_data: np.ndarray, aia_map: SolarMap,
 # ============================================================
 #  主程序
 # ============================================================
+
 
 def main() -> None:
     sep = "=" * 60
@@ -616,21 +670,26 @@ def main() -> None:
     print(f"  extent Y : [{tb_ext[2]:.1f}, {tb_ext[3]:.1f}] arcsec")
 
     # ── Step 3：射电源时间匹配（受 overlay_radio 开关控制）──
-    radio_data   = None
+    radio_data = None
     radio_extent = None
-    radio_time   = ""
+    radio_time = ""
 
     if not CONFIG["overlay_radio"]:
         print(f"\nStep 3  overlay_radio = False，跳过射电叠加")
 
     else:
-        print(f"\nStep 3  加载射电源 FITS"
-              f"（时间匹配策略：{CONFIG['time_match_level']}）")
+        print(
+            f"\nStep 3  加载射电源 FITS"
+            f"（时间匹配策略：{CONFIG['time_match_level']}）"
+        )
 
-        radio_files = sorted(glob.glob(
-            os.path.join(CONFIG["radio_sources_dir"],
-                         CONFIG["radio_sources_pattern"])
-        ))
+        radio_files = sorted(
+            glob.glob(
+                os.path.join(
+                    CONFIG["radio_sources_dir"], CONFIG["radio_sources_pattern"]
+                )
+            )
+        )
 
         if not radio_files:
             print("  [警告] 未找到射电 FITS 文件，跳过强度梯度绘制")
@@ -648,19 +707,25 @@ def main() -> None:
 
             radio_data, radio_extent = load_radio(best_path)
             print(f"  形状      : {radio_data.shape}")
-            print(f"  extent X  : [{radio_extent[0]:.1f}, {radio_extent[1]:.1f}] arcsec")
-            print(f"  extent Y  : [{radio_extent[2]:.1f}, {radio_extent[3]:.1f}] arcsec")
+            print(
+                f"  extent X  : [{radio_extent[0]:.1f}, {radio_extent[1]:.1f}] arcsec"
+            )
+            print(
+                f"  extent Y  : [{radio_extent[2]:.1f}, {radio_extent[3]:.1f}] arcsec"
+            )
 
     # ── Step 4：绘图 ─────────────────────────────────────────
     print(f"\nStep 4  绘图")
-    fig, ax = plot_tb(tb_data, aia_map,
-                      radio_data=radio_data,
-                      radio_extent=radio_extent,
-                      radio_time=radio_time)
+    fig, ax = plot_tb(
+        tb_data,
+        aia_map,
+        radio_data=radio_data,
+        radio_extent=radio_extent,
+        radio_time=radio_time,
+    )
 
     if CONFIG["save_figure"]:
-        fig.savefig(CONFIG["output_filename"],
-                    dpi=CONFIG["dpi"], bbox_inches="tight")
+        fig.savefig(CONFIG["output_filename"], dpi=CONFIG["dpi"], bbox_inches="tight")
         print(f"  图像已保存至: {CONFIG['output_filename']}")
 
     plt.show()

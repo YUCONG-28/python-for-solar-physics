@@ -1,230 +1,153 @@
-# ☀️ Python for Solar Physics
+# Python for Solar Physics
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)]()
-[![License](https://img.shields.io/badge/License-MIT-green.svg)]()
-[![Status](https://img.shields.io/badge/Status-Active-brightgreen.svg)]()
-[![Contributions](https://img.shields.io/badge/Contributions-Welcome-orange.svg)]()
+本仓库是一个面向太阳物理事件分析的 Python 脚本集合，主要用于处理和绘制多波段观测数据，包括 SDO/AIA EUV 成像、SDO/HMI 磁场、GOES 软 X 射线、ASO-S/HXI 硬 X 射线、CSO 射电频谱/射电源以及 SOHO/LASCO 日冕仪数据。当前项目以独立科研脚本为主，`solar_toolkit/` 仅保留包元数据和后续模块化迁移入口。
 
-> A comprehensive collection of Python scripts and tools for multi-wavelength solar data analysis, designed to support scientific research on solar flares, radio bursts, CMEs, and coronal heating.
+GitHub 仓库：<https://github.com/YUCONG-28/python-for-solar-physics>
 
----
+## 运行环境
 
-## 📌 Overview
+本项目当前在 Miniforge 环境 `solarphysics_env` 下运行：
 
-This repository provides a set of modular, well-documented Python scripts for processing and visualizing observations from multiple solar instruments:
-
-- **SDO/AIA** — EUV imaging (multiple wavelengths)
-- **SDO/HMI** — Photospheric magnetic field
-- **GOES** — Soft X-ray (SXR) flux
-- **ASO-S/HXI** — Hard X-ray imaging
-- **CSO / DSRT** — Solar radio spectrograms and imaging
-- **SOHO/LASCO** — Coronagraph (CME tracking)
-- **Hessi / RHESSI (HXR)** — Hard X-ray spectroscopy
-
-The scripts are designed to work together, sharing utilities via `utils_solar.py` and supporting multi-wavelength co-alignment, overlay plotting, and difference imaging.
-
----
-
-## 📂 Repository Structure
-
-### 🛰️ EUV & Magnetic Field
-
-| Script | Description |
-|--------|-------------|
-| [`AIA.py`](AIA.py) | Core AIA FITS processing: single-band, multi-band 2×3 composites, ROI extraction, parallel processing |
-| [`aia_multipanel.py`](aia_multipanel.py) | Read and plot AIA images in 6-panel multi-wavelength layout |
-| [`AIA_difference_base.py`](AIA_difference_base.py) | Base-difference imaging for AIA (pre-flare reference subtraction) |
-| [`AIA_difference_running.py`](AIA_difference_running.py) | Running difference imaging for dynamic event tracking |
-| [`AIA_Flux_data.py`](AIA_Flux_data.py) | Extract AIA light curves and flux data from FITS sequences |
-| [`AIA_Flux_data_plot.py`](AIA_Flux_data_plot.py) | Visualize AIA flux / light curves with customizable styling |
-| [`AIA_time_distance.py`](AIA_time_distance.py) | Create time-distance diagrams from AIA map sequences |
-| [`AIA_rename.py`](AIA_rename.py) | Batch rename FITS files with custom prefixes |
-| [`AIA_select_files.py`](AIA_select_files.py) | Filter and copy AIA FITS files by target time |
-| [`HMI.py`](HMI.py) | HMI magnetogram processing, alignment, and submap extraction |
-
-### 📡 Radio Data
-
-| Script | Description |
-|--------|-------------|
-| [`CSO_PLOT.py`](CSO_PLOT.py) | Comprehensive CSO spectrogram plotting: memory-mapped I/O, parallel channels (LL/RR), customizable downsampling |
-| [`plot_cso_spectrogram.py`](plot_cso_spectrogram.py) | CSO spectrogram class with rebinning and time-frequency visualization |
-| [`csoSpectraGUIV09.py`](csoSpectraGUIV09.py) | CSO spectra GUI tool |
-| [`RS_plot.py`](RS_plot.py) | Radio spectrogram processing: single-band & multi-band composite imaging, ellipse Gaussian fitting |
-| [`AIA_RS.py`](AIA_RS.py) | Radio source + AIA + HMI overlay: configurable multi-instrument composite plots with polarization overlays |
-| [`HXI_SXR.py`](HXI_SXR.py) | HXI + SXR time series comparison |
-
-### 🌡️ Thermodynamics & High-Energy
-
-| Script | Description |
-|--------|-------------|
-| [`DEM.py`](DEM.py) | Differential Emission Measure (DEM) inversion from AIA data |
-| [`DEM_RS.py`](DEM_RS.py) | DEM analysis with radio source intensity gradient overlay |
-| [`HXI.py`](HXI.py) | ASO-S/HXI hard X-ray FITS data reading and mapping |
-| [`HXR.py`](HXR.py) | Hard X-ray (RHESSI / HESSI) light curve plotting |
-| [`SXR.py`](SXR.py) | GOES soft X-ray flux data (NetCDF format) processing |
-| [`from SXR to HXR.py`](from%20SXR%20to%20HXR.py) | **Neupert effect analysis**: SXR temporal derivative vs HXR comparison |
-| [`AIA_HXI.py`](AIA_HXI.py) | AIA + HXI overlay visualization |
-| [`AIA_SXR_HXR_plot.py`](AIA_SXR_HXR_plot.py) | 3-panel figure: AIA image + GOES SXR flux + HXR light curve |
-
-### 👑 Coronagraph & CME
-
-| Script | Description |
-|--------|-------------|
-| [`LASCO_data.py`](LASCO_data.py) | Download SOHO/LASCO data from Helioviewer (hvpy) |
-| [`LOSCO_plot.py`](LOSCO_plot.py) | Basic LASCO image plotting with sunpy |
-| [`LASCO_difference_plot.py`](LASCO_difference_plot.py) | LASCO running difference imaging for CME tracking |
-
-### 🔧 Shared Utilities
-
-| Script | Description |
-|--------|-------------|
-| [`utils_solar.py`](utils_solar.py) | Shared toolkit: time parsing, file sorting, memory management, configuration, coordinate transformations |
-| [`M_V.py`](M_V.py) | Video generation from image sequences (supports FFmpeg, imageio, OpenCV) |
-
-### 🧪 Test & Experimental
-
-| Script | Description |
-|--------|-------------|
-| `01.py` | Misc/experimental |
-| `test_AIA_RS_0.py` | AIA + RS pipeline tests |
-| `test_AIA_RS_1.py` | AIA + RS pipeline tests |
-| `test_AIA_RS_3.py` | AIA + RS pipeline tests |
-| `test_CSO.py` | CSO data processing test |
-| `test_header.py` | FITS header parsing test |
-| `test_sun_contour.py` | Solar limb contour detection test |
-| `test_time.py` | Time parsing utilities test |
-| `test.py` | General test script |
-
-### 📄 Paper Reader (Subproject)
-
-| Directory | Description |
-|-----------|-------------|
-| [`paper_reader_ollama/`](paper_reader_ollama/) | AI-powered paper reader using [crewAI](https://crewai.com) + Ollama. Multi-agent system for automated literature analysis. See its [own README](paper_reader_ollama/README.md) for details. |
-
-> **Note:** The `solar_toolkit/` package is a minimal scaffold (`__init__.py` only); the core functionality lives in the standalone scripts listed above.
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Python 3.8 or higher
-- Git
-- 4GB+ RAM (8GB+ recommended for large FITS datasets)
-
-### Installation
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/YUCONG-28/python-for-solar-physics.git
-cd python-for-solar-physics
-
-# 2. Create a virtual environment (recommended)
-python -m venv venv
-
-# Activate it:
-# Windows:
-venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
-
-# 3. Install dependencies
-pip install numpy scipy astropy sunpy matplotlib pandas reproject scikit-image pyyaml tqdm
-
-# 4. Install optional dependencies for full functionality
-pip install seaborn plotly opencv-python dask fitsio drms
+```powershell
+conda activate solarphysics_env
+python --version
 ```
 
-You can also install the package in development mode:
+本机验证到的解释器为：
 
-```bash
-pip install -e .
+```text
+D:\miniforge3\envs\solarphysics_env\python.exe
+Python 3.11.15
 ```
 
-### Verification
+核心依赖包括：
 
-```python
-import numpy as np
-import astropy
-import sunpy
-import matplotlib.pyplot as plt
+- 科学计算：`numpy`, `scipy`, `pandas`, `scikit-image`
+- 天文与太阳物理：`astropy`, `sunpy`, `reproject`, `drms`
+- 绘图与交互：`matplotlib`, `plotly`, `seaborn`, `PyQt5`
+- 数据与工具：`xarray`, `h5py`, `opencv-python`, `tqdm`, `PyYAML`
 
-print(f"NumPy:     {np.__version__}")
-print(f"AstroPy:   {astropy.__version__}")
-print(f"SunPy:     {sunpy.__version__}")
-print("✅ All core dependencies loaded successfully!")
+如需按项目元数据安装基础依赖，可在仓库根目录运行：
+
+```powershell
+D:\miniforge3\envs\solarphysics_env\python.exe -m pip install -e .
 ```
 
----
+## 项目结构
 
-## 💡 Usage Examples
+### SDO/AIA 与 HMI
 
-### Multi-wavelength AIA Composite
+| 文件 | 功能 |
+| --- | --- |
+| `AIA.py` | AIA EUV FITS 批处理，支持单波段、多波段拼图、ROI 和并行绘图。 |
+| `aia_multipanel.py` | 读取多个 AIA 波段并生成六联图。 |
+| `AIA_difference_base.py` | AIA 基准差分成像。 |
+| `AIA_difference_running.py` | AIA 运行差分成像。 |
+| `AIA_Flux_data.py` | 从 AIA 图像序列提取光变/流量数据。 |
+| `AIA_Flux_data_plot.py` | 绘制 AIA 光变曲线。 |
+| `AIA_time_distance.py` | 沿指定路径生成 AIA 时间-距离图。 |
+| `AIA_rename.py` | 批量规范化 AIA FITS 文件名。 |
+| `AIA_select_files.py` | 按目标时间筛选 AIA 文件。 |
+| `HMI.py` | 读取和绘制 SDO/HMI 磁图。 |
+| `AIA_HMI.py` | AIA 与 HMI 共配准叠加。 |
 
-```python
-# Run the AIA multi-band processor
-python AIA.py --data_dir /path/to/aia/data --output_dir ./output
+### 射电数据
+
+| 文件 | 功能 |
+| --- | --- |
+| `CSO_PLOT.py` | 绘制 CSO 动态频谱，支持通道选择和降采样。 |
+| `plot_cso_spectrogram.py` | 可复用的 CSO 频谱绘图类。 |
+| `csoSpectraGUIV09.py` | CSO 射电频谱交互式 GUI。 |
+| `RS_plot.py` | 射电源图像/频谱处理、绘图和高斯拟合。 |
+| `AIA_RS.py` | AIA、射电源和可选 HMI 的综合叠加图。 |
+
+### X 射线、DEM 与多波段诊断
+
+| 文件 | 功能 |
+| --- | --- |
+| `SXR.py` | GOES 软 X 射线 NetCDF 光变绘图。 |
+| `HXR.py` | RHESSI/HESSI 风格硬 X 射线光变绘图。 |
+| `HXI.py` | ASO-S/HXI FITS 图像读取和绘图。 |
+| `HXI_SXR.py` | ASO-S/HXI 与 GOES SXR 时间序列对比。 |
+| `AIA_HXI.py` | AIA 图像叠加 HXI 硬 X 射线轮廓。 |
+| `AIA_SXR_HXR_plot.py` | AIA 图像、GOES SXR 和 HXR 光变三面板诊断图。 |
+| `from SXR to HXR.py` | Neupert 效应分析：SXR 导数与 HXR 对比。 |
+| `from SXR to HXR_finderro.py` | Neupert 效应时序误差/相关性探索。 |
+| `DEM.py` | 基于 AIA 多波段数据的 DEM 反演。 |
+| `DEM_RS.py` | DEM 诊断与射电源形态叠加。 |
+
+### LASCO/CME 与通用工具
+
+| 文件 | 功能 |
+| --- | --- |
+| `LASCO_data.py` | 通过 Helioviewer 下载 SOHO/LASCO 数据。 |
+| `LOSCO_plot.py` | 基础 LASCO 图像绘制；文件名保留历史拼写。 |
+| `LASCO_difference_plot.py` | LASCO 运行差分图像，用于 CME 前沿追踪。 |
+| `M_V.py` | 将图像序列合成为视频。 |
+| `Gauss_method.py` | 一维/二维高斯源区拟合工具。 |
+| `utils_solar.py` | 共享工具：时间解析、FITS 文件排序、内存管理、配置和坐标辅助函数。 |
+
+### 测试与开发脚本
+
+| 文件 | 功能 |
+| --- | --- |
+| `test_time.py` | 时间字符串解析和时间差计算示例。 |
+| `test_header.py` | FITS 头信息和 map 元数据检查。 |
+| `test_sun_contour.py` | 日面轮廓/边界提取测试。 |
+| `test_CSO.py` | CSO 频谱处理测试。 |
+| `test_AIA_RS_0.py`, `test_AIA_RS_1.py`, `test_AIA_RS_3.py` | AIA/射电/HMI 叠加流程的开发变体。 |
+| `test.py` | 综合叠加流程开发脚本，不作为正式单元测试入口。 |
+
+## 使用方式
+
+多数脚本仍使用文件顶部或配置类中的路径参数。运行前请先打开目标脚本，确认数据路径、输出目录、波段、时间范围和 ROI 设置。
+
+示例：
+
+```powershell
+# AIA 多波段/批处理绘图
+D:\miniforge3\envs\solarphysics_env\python.exe AIA.py
+
+# CSO 动态频谱绘图
+D:\miniforge3\envs\solarphysics_env\python.exe CSO_PLOT.py
+
+# Neupert 效应 SXR-HXR 对比
+D:\miniforge3\envs\solarphysics_env\python.exe "from SXR to HXR.py"
+
+# AIA 与 HXI 叠加
+D:\miniforge3\envs\solarphysics_env\python.exe AIA_HXI.py
 ```
 
-### Radio Spectrogram Visualization
+## 数据与输出约定
 
-```python
-# Plot CSO spectrogram with polarization channels
-python CSO_PLOT.py --input /path/to/cso.fits --mode total
+- 大型观测数据如 `*.fits`, `*.fits.gz`, `*.fits.fz` 默认不纳入 Git。
+- 生成图像、视频、表格和缓存文件通常可由脚本重建，应放在本地数据或输出目录中。
+- 仓库中的 `*.png` 和 `*.xlsx` 文件属于历史示例/辅助材料；新增数据产品应优先保持在 Git 忽略范围内。
+- 脚本文件名暂时保持原状。推荐的规范化文件名见 `CODE_ORGANIZATION_MANIFEST.md`，后续如需重命名应单独提交并同步更新引用。
+
+## 验证
+
+推荐在 `solarphysics_env` 中进行轻量验证：
+
+```powershell
+# 语法检查
+D:\miniforge3\envs\solarphysics_env\python.exe -m compileall -q .
+
+# 时间解析示例
+D:\miniforge3\envs\solarphysics_env\python.exe test_time.py
+
+# 包元数据导入
+D:\miniforge3\envs\solarphysics_env\python.exe -c "import solar_toolkit; print(solar_toolkit.__version__)"
 ```
 
-### Neupert Effect Analysis
+部分脚本依赖本地观测数据路径，不能脱离数据直接运行。若脚本报文件不存在，请先检查脚本内的 `data_path`、`output_dir` 或相关配置。
 
-```python
-# Compare SXR derivative with HXR emission
-python "from SXR to HXR.py"
-```
+## License
 
-### AIA + HXI Overlay
+本项目采用 MIT License，详见 `LICENSE`。
 
-```python
-# Overlay HXI contours on AIA EUV image
-python AIA_HXI.py
-```
+## Citation
 
----
+如在科研工作中使用本项目，可引用：
 
-## 🤝 Contributing
-
-Contributions are welcome! If you have ideas for improvements, new instruments, or bug fixes:
-
-1. Fork the repository
-2. Create a feature branch
-3. Submit a Pull Request
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
----
-
-## ⭐ Support
-
-If you find this project useful for your research, please consider giving it a ⭐ on GitHub!
-
----
-
-## 📚 Citation
-
-If you use this toolkit in your research, please cite it as follows:
-
-**Plain Text (APA Style):**
-> Li, Y. (2025). *Python for Solar Physics: Multi-wavelength Data Processing Toolkit*. Shandong University. https://github.com/YUCONG-28/python-for-solar-physics
-
-**BibTeX:**
-```bibtex
-@software{li_solar_physics_python_2025,
-  author       = {Li, Yucong},
-  title        = {Python for Solar Physics: Multi-wavelength Data Processing Toolkit},
-  year         = {2025},
-  organization = {Shandong University},
-  url          = {[https://github.com/YUCONG-28/python-for-solar-physics](https://github.com/YUCONG-28/python-for-solar-physics)}
-}
+Li, Y. (2025). *Python for Solar Physics: Multi-wavelength Data Processing Toolkit*. Shandong University. <https://github.com/YUCONG-28/python-for-solar-physics>

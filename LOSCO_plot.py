@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 模块用途: 使用 SunPy 绘制基础 SOHO/LASCO 日冕仪图像。
+# 主要输入: LASCO FITS 文件。
+# 主要输出/运行说明: 输出单帧 LASCO 图像；文件名中的 LOSCO 为历史拼写。
 """
 Created on Mon Mar 31 11:06:15 2025
 

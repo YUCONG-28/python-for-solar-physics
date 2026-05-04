@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 模块用途: 将图像序列合成为视频产品。
+# 主要输入: PNG/JPG 等图像序列目录和帧率配置。
+# 主要输出/运行说明: 输出视频文件，优先使用可用的 FFmpeg、imageio 或 OpenCV 后端。
 """
 
 Author: Severus

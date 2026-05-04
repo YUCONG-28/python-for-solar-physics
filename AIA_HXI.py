@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 模块用途: 在 SDO/AIA EUV 图像上叠加 ASO-S/HXI 硬 X 射线轮廓。
+# 主要输入: AIA FITS 图像、HXI FITS 图像和等值线参数。
+# 主要输出/运行说明: 输出 AIA-HXI 叠加图，用于比较耀斑热/非热辐射源位置。
 """
 Created on Sun May 18 20:19:49 2025
 

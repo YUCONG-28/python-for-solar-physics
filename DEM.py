@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 模块用途: 基于 AIA 多波段观测执行差分辐射度 DEM 反演。
+# 主要输入: 多波段 AIA FITS 数据和温度响应/区域配置。
+# 主要输出/运行说明: 输出 DEM、温度或辐射度相关诊断结果。
 """
 
 Author : Lee
@@ -11,13 +14,14 @@ Created: 2026-01-26
 # ============================================================
 import os
 import re
-import numpy as np
+
 import matplotlib
-import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import matplotlib.pyplot as plt
+import numpy as np
+from astropy.io import fits
 from matplotlib import rcParams
 from matplotlib.colors import LinearSegmentedColormap
-from astropy.io import fits
 
 
 # ============================================================
@@ -26,13 +30,14 @@ from astropy.io import fits
 def _setup_font() -> None:
     """为 Windows 环境配置中文字体，并修复负号显示问题。"""
     candidates = ["Microsoft YaHei", "SimHei", "SimSun", "KaiTi", "FangSong"]
-    available  = {f.name for f in matplotlib.font_manager.fontManager.ttflist}
+    available = {f.name for f in matplotlib.font_manager.fontManager.ttflist}
     for font in candidates:
         if font in available:
             rcParams["font.sans-serif"] = [font] + rcParams["font.sans-serif"]
-            rcParams["font.family"]     = "sans-serif"
+            rcParams["font.family"] = "sans-serif"
             break
-    rcParams["axes.unicode_minus"] = False   # 防止负号渲染为方块
+    rcParams["axes.unicode_minus"] = False  # 防止负号渲染为方块
+
 
 _setup_font()
 
@@ -46,51 +51,44 @@ CONFIG = {
         r"<PROJECT_ROOT>\2025\20250124\DEM\aia_data"
         r"\aia.lev1_euv_12s.2025-01-24T044747Z.211.image_lev1.fits"
     ),
-    "tb_data_path": (
-        r"<PROJECT_ROOT>\2025\20250124\DEM\Tb_149000000.0.npy"
-    ),
-
+    "tb_data_path": (r"<PROJECT_ROOT>\2025\20250124\DEM\Tb_149000000.0.npy"),
     # ── Tb 网格参数（来自生成 Tb 数据时的配置文件）─────────────
     # 像素尺度：3 arcsec/pixel
     # 空间范围：X/Y ∈ [-1150, 1150] arcsec
     # 验证：(1150 - (-1150)) / 3 + 1 ≈ 767，与 Tb 数组形状 (767, 767) 吻合
-    "tb_pixel_size":  3,        # arcsec/pixel
-    "tb_xmin":       -1150,     # arcsec
-    "tb_xmax":        1150,     # arcsec
-    "tb_ymin":       -1150,     # arcsec
-    "tb_ymax":        1150,     # arcsec
-
+    "tb_pixel_size": 3,  # arcsec/pixel
+    "tb_xmin": -1150,  # arcsec
+    "tb_xmax": 1150,  # arcsec
+    "tb_ymin": -1150,  # arcsec
+    "tb_ymax": 1150,  # arcsec
     # ── 显示模式 ─────────────────────────────────────────────
     # "full"       : 显示 AIA 完整视场
     # "solar_disk" : 以日面中心为基准，向外留白 solar_padding_factor 倍太阳半径
     # "custom"     : 手动指定 X/Y 范围（角秒）
-    "display_mode":         "custom",
-    "display_x_range":      (-1150, 1150),   # 与 Tb 网格范围一致（arcsec）
-    "display_y_range":      (-1150, 1150),   # 与 Tb 网格范围一致（arcsec）
-    "solar_padding_factor": 1.15,            # solar_disk 模式留白系数
-
+    "display_mode": "custom",
+    "display_x_range": (-1150, 1150),  # 与 Tb 网格范围一致（arcsec）
+    "display_y_range": (-1150, 1150),  # 与 Tb 网格范围一致（arcsec）
+    "solar_padding_factor": 1.15,  # solar_disk 模式留白系数
     # ── 画布与色彩 ───────────────────────────────────────────
-    "figsize":         (10, 9),
-    "dpi":             300,
-    "colorbar_label":  "Tb (MK)",
+    "figsize": (10, 9),
+    "dpi": 300,
+    "colorbar_label": "Tb (MK)",
     # 颜色映射：黑→暗红→橙红→金黄→白（从低温到高温）
-    "cmap_colors":     ["#000000", "#8B0000", "#FF4500", "#FFD700", "#FFFFFF"],
-    "cmap_positions":  [0.0, 0.2, 0.4, 0.7, 1.0],
+    "cmap_colors": ["#000000", "#8B0000", "#FF4500", "#FFD700", "#FFFFFF"],
+    "cmap_positions": [0.0, 0.2, 0.4, 0.7, 1.0],
     # 显示动态范围（百分位数裁剪，抑制极端值对色标的干扰）
-    "percentile_low":  1,
+    "percentile_low": 1,
     "percentile_high": 99,
-
     # ── 叠加轮廓 ─────────────────────────────────────────────
     # 白色虚线：AIA 光学日面（rsun，来自 FITS 头文件）
     "draw_optical_limb": True,
     # 红色虚线：149 MHz 射电日面估计（约 1.02–1.05 × rsun）
     # 调整 radio_limb_factor 使红圈与 Tb 可见边缘重合
-    "draw_radio_limb":   False,
+    "draw_radio_limb": False,
     "radio_limb_factor": 1.08,
-
     # ── 网格与输出 ───────────────────────────────────────────
-    "show_grid":       True,
-    "save_figure":     False,
+    "show_grid": True,
+    "save_figure": False,
     "output_filename": "Tb_149MHz.png",
 }
 
@@ -113,7 +111,7 @@ class SolarMap:
 
     def __init__(self, path: str) -> None:
         with fits.open(path) as hdul:
-            self.header = hdul[1].header   # AIA lev1 图像位于第 2 扩展（索引 1）
+            self.header = hdul[1].header  # AIA lev1 图像位于第 2 扩展（索引 1）
         self._build_wcs()
         self._extract_solar_geometry()
         self.obs_time = self._parse_obs_time(path)
@@ -122,7 +120,7 @@ class SolarMap:
 
     def _build_wcs(self) -> None:
         """根据 FITS WCS 线性投影关键字计算像平面坐标范围。"""
-        h      = self.header
+        h = self.header
         nx, ny = h["NAXIS1"], h["NAXIS2"]
         dx, dy = h["CDELT1"], h["CDELT2"]
 
@@ -131,15 +129,18 @@ class SolarMap:
         y = h["CRVAL2"] + (np.arange(ny) + 1 - h["CRPIX2"]) * dy
 
         # imshow extent 使用像素外边缘（像素中心 ± 半像素）
-        self.extent = [x.min() - abs(dx)/2, x.max() + abs(dx)/2,
-                       y.min() - abs(dy)/2, y.max() + abs(dy)/2]
+        self.extent = [
+            x.min() - abs(dx) / 2,
+            x.max() + abs(dx) / 2,
+            y.min() - abs(dy) / 2,
+            y.max() + abs(dy) / 2,
+        ]
         self.nx, self.ny = nx, ny
 
     def _extract_solar_geometry(self) -> None:
         """提取太阳视半径与日面中心坐标。"""
         h = self.header
-        self.rsun       = (h["RSUN_OBS"] if "RSUN_OBS" in h
-                           else h["R_SUN"] * abs(h["CDELT1"]))
+        self.rsun = h["RSUN_OBS"] if "RSUN_OBS" in h else h["R_SUN"] * abs(h["CDELT1"])
         self.sun_center = (h["CRVAL1"], h["CRVAL2"])
 
     def _parse_obs_time(self, path: str) -> str:
@@ -165,14 +166,17 @@ class SolarMap:
             return f"{m.group(1)} {m.group(2)}:{m.group(3)}:{m.group(4)} UT"
         m = re.search(r"(\d{4})(\d{2})(\d{2})[_T]?(\d{2})(\d{2})(\d{2})", fname)
         if m:
-            return (f"{m.group(1)}-{m.group(2)}-{m.group(3)} "
-                    f"{m.group(4)}:{m.group(5)}:{m.group(6)} UT")
+            return (
+                f"{m.group(1)}-{m.group(2)}-{m.group(3)} "
+                f"{m.group(4)}:{m.group(5)}:{m.group(6)} UT"
+            )
         return "Unknown"
 
 
 # ============================================================
 #  辅助函数
 # ============================================================
+
 
 def get_display_extent(aia_map: SolarMap) -> list:
     """
@@ -194,7 +198,7 @@ def get_display_extent(aia_map: SolarMap) -> list:
         ymin, ymax = CONFIG["display_y_range"]
         return [xmin, xmax, ymin, ymax]
 
-    return aia_map.extent   # 兜底
+    return aia_map.extent  # 兜底
 
 
 def make_tb_colormap() -> LinearSegmentedColormap:
@@ -213,7 +217,7 @@ def load_tb(path: str) -> np.ndarray:
     """
     data = np.load(path).astype(np.float64)
     data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
-    return data / 1e6   # K → MK
+    return data / 1e6  # K → MK
 
 
 def get_tb_extent() -> list:
@@ -245,31 +249,54 @@ def get_tb_extent() -> list:
 #  绘图
 # ============================================================
 
+
 def _draw_limbs(ax, sun_center, rsun, config) -> None:
     """在坐标轴上叠加光学日面和射电日面轮廓。"""
     cx, cy = sun_center
 
     if config["draw_optical_limb"]:
         # 日面中心十字
-        ax.plot(cx, cy, "+", color="white",
-                markersize=15, markeredgewidth=1.5, alpha=0.9, zorder=5)
+        ax.plot(
+            cx,
+            cy,
+            "+",
+            color="white",
+            markersize=15,
+            markeredgewidth=1.5,
+            alpha=0.9,
+            zorder=5,
+        )
         # 白色虚线圆：AIA 光学日面
-        ax.add_patch(patches.Circle(
-            (cx, cy), radius=rsun,
-            fill=False, color="white", linestyle="--", linewidth=1.5,
-            alpha=0.9, zorder=5,
-            label=f"AIA optical limb  ({rsun:.0f}\")",
-        ))
+        ax.add_patch(
+            patches.Circle(
+                (cx, cy),
+                radius=rsun,
+                fill=False,
+                color="white",
+                linestyle="--",
+                linewidth=1.5,
+                alpha=0.9,
+                zorder=5,
+                label=f'AIA optical limb  ({rsun:.0f}")',
+            )
+        )
 
     if config["draw_radio_limb"]:
         # 红色虚线圆：149 MHz 射电日面估计
         r_radio = rsun * config["radio_limb_factor"]
-        ax.add_patch(patches.Circle(
-            (cx, cy), radius=r_radio,
-            fill=False, color="red", linestyle="--", linewidth=1.5,
-            alpha=0.9, zorder=5,
-            label=f"149 MHz radio limb  ({r_radio:.0f}\",  ×{config['radio_limb_factor']:.3f})",
-        ))
+        ax.add_patch(
+            patches.Circle(
+                (cx, cy),
+                radius=r_radio,
+                fill=False,
+                color="red",
+                linestyle="--",
+                linewidth=1.5,
+                alpha=0.9,
+                zorder=5,
+                label=f"149 MHz radio limb  ({r_radio:.0f}\",  ×{config['radio_limb_factor']:.3f})",
+            )
+        )
 
 
 def plot_tb(tb_data: np.ndarray, aia_map: SolarMap) -> tuple:
@@ -302,7 +329,8 @@ def plot_tb(tb_data: np.ndarray, aia_map: SolarMap) -> tuple:
         extent=tb_extent,
         origin="lower",
         cmap=make_tb_colormap(),
-        vmin=vmin, vmax=vmax,
+        vmin=vmin,
+        vmax=vmax,
         aspect="equal",
     )
 
@@ -321,15 +349,23 @@ def plot_tb(tb_data: np.ndarray, aia_map: SolarMap) -> tuple:
         ax.grid(True, alpha=0.3, linestyle="--")
 
     # ── 图例、色标、标题 ─────────────────────────────────────
-    ax.legend(loc="lower right", fontsize=9,
-              framealpha=0.7, facecolor="black", labelcolor="white")
+    ax.legend(
+        loc="lower right",
+        fontsize=9,
+        framealpha=0.7,
+        facecolor="black",
+        labelcolor="white",
+    )
 
     cbar = plt.colorbar(im, ax=ax, shrink=0.8, aspect=20)
     cbar.set_label(CONFIG["colorbar_label"], fontsize=12, labelpad=10)
 
     fig.suptitle(
         f"Tb at 149.0 MHz\nAIA ref: {aia_map.obs_time}",
-        fontsize=13, fontweight="bold", color="black", linespacing=1.8,
+        fontsize=13,
+        fontweight="bold",
+        color="black",
+        linespacing=1.8,
     )
     plt.tight_layout()
     return fig, ax
@@ -338,6 +374,7 @@ def plot_tb(tb_data: np.ndarray, aia_map: SolarMap) -> tuple:
 # ============================================================
 #  主程序
 # ============================================================
+
 
 def main() -> None:
     sep = "=" * 60
@@ -369,8 +406,7 @@ def main() -> None:
     fig, ax = plot_tb(tb_data, aia_map)
 
     if CONFIG["save_figure"]:
-        fig.savefig(CONFIG["output_filename"],
-                    dpi=CONFIG["dpi"], bbox_inches="tight")
+        fig.savefig(CONFIG["output_filename"], dpi=CONFIG["dpi"], bbox_inches="tight")
         print(f"  图像已保存至: {CONFIG['output_filename']}")
 
     plt.show()
