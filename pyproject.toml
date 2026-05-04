@@ -3,7 +3,7 @@ name = "solar-physics-toolkit"
 version = "0.1.0"
 description = "A comprehensive collection of Python scripts for multi-wavelength solar data analysis"
 authors = [
-    {name = "Severus / Lee / Ninghao", email = ""}
+    {name = "Severus / Lee / Ninghao"}
 ]
 readme = "README.md"
 license = {text = "MIT"}
@@ -66,6 +66,11 @@ target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
 profile = "black"
 multi_line_output = 3
 line_length = 88
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q -p no:cacheprovider"
 
 [tool.mypy]
 python_version = "3.8"
