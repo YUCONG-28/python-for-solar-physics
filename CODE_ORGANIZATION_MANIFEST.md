@@ -9,7 +9,8 @@
 - `scripts/xray_dem/`：GOES SXR、HXR、ASO-S/HXI、DEM 和综合诊断脚本。
 - `scripts/lasco_cme/`：SOHO/LASCO 下载、绘图和 CME 差分成像脚本。
 - `scripts/tools/`：通用工具脚本。
-- `scripts/dev_tests/`：历史开发验证脚本，不作为正式 pytest 测试入口。
+- `examples/`：依赖本地观测数据的历史开发验证脚本和示例工作流。
+- `tests/`：不依赖本地观测数据的轻量 pytest 测试。
 - `solar_toolkit/solar_analysis_utils.py`：共享时间解析、文件排序、内存管理和坐标辅助函数。
 - `solar_toolkit/path_config.py`：可选本地 YAML 路径配置加载器。
 - `configs/paths.example.yaml`：路径配置模板；个人配置写入 `configs/paths.local.yaml`。
@@ -68,18 +69,18 @@
 | `Gauss_method.py` | `scripts/tools/gaussian_source_fitting.py` | 高斯源区拟合工具。 |
 | `utils_solar.py` | `solar_toolkit/solar_analysis_utils.py` | 时间解析、文件排序、内存管理、配置和坐标辅助工具。 |
 
-### 开发验证脚本
+### 示例与测试迁移
 
 | 旧文件 | 当前文件 | 功能说明 |
 | --- | --- | --- |
-| `test.py` | `scripts/dev_tests/dev_aia_radio_hmi_overlay.py` | 综合叠加流程开发脚本。 |
-| `test_AIA_RS_0.py` | `scripts/dev_tests/test_aia_radio_overlay_variant0.py` | AIA-射电叠加测试变体。 |
-| `test_AIA_RS_1.py` | `scripts/dev_tests/test_aia_radio_overlay_variant1.py` | AIA-射电叠加测试变体。 |
-| `test_AIA_RS_3.py` | `scripts/dev_tests/test_aia_radio_hmi_overlay_extended.py` | AIA-射电-HMI 扩展叠加测试。 |
-| `test_CSO.py` | `scripts/dev_tests/test_cso_spectrogram_processing.py` | CSO 频谱处理测试。 |
-| `test_header.py` | `scripts/dev_tests/test_fits_header_metadata.py` | FITS 头信息和 map 元数据测试。 |
-| `test_sun_contour.py` | `scripts/dev_tests/test_solar_limb_contour.py` | 日面轮廓提取测试。 |
-| `test_time.py` | `scripts/dev_tests/test_observation_time_parsing.py` | 观测时间解析测试。 |
+| `test.py` | `examples/radio_aia_hmi/aia_radio_hmi_overlay_demo.py` | 综合叠加流程开发示例。 |
+| `test_AIA_RS_0.py` | `examples/radio_aia_hmi/aia_radio_overlay_variant0_example.py` | AIA-射电叠加示例变体。 |
+| `test_AIA_RS_1.py` | `examples/radio_aia_hmi/aia_radio_overlay_variant1_example.py` | AIA-射电叠加示例变体。 |
+| `test_AIA_RS_3.py` | `examples/radio_aia_hmi/aia_radio_hmi_overlay_extended_example.py` | AIA-射电-HMI 扩展示例。 |
+| `test_CSO.py` | `examples/radio/cso_spectrogram_processing_example.py` | CSO 频谱处理示例。 |
+| `test_header.py` | `examples/radio/fits_header_metadata_example.py` | FITS 头信息和 map 元数据示例。 |
+| `test_sun_contour.py` | `examples/aia_hmi/solar_limb_contour_example.py` | 日面轮廓提取示例。 |
+| `test_time.py` | `tests/test_observation_time_parsing.py` | 观测时间解析正式轻量测试。 |
 
 ## 路径配置
 
@@ -90,8 +91,8 @@
 ## 验证命令
 
 ```powershell
-D:\miniforge3\envs\solarphysics_env\python.exe -m compileall -q .
-D:\miniforge3\envs\solarphysics_env\python.exe scripts\dev_tests\test_observation_time_parsing.py
+D:\miniforge3\envs\solarphysics_env\python.exe -m compileall -q solar_toolkit scripts tests examples
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"; D:\miniforge3\envs\solarphysics_env\python.exe -m pytest -q tests
 D:\miniforge3\envs\solarphysics_env\python.exe -c "from solar_toolkit import solar_analysis_utils; import solar_toolkit; print(solar_toolkit.__version__)"
 ```
 

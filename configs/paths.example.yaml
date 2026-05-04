@@ -1,5 +1,7 @@
 # Copy this file to configs/paths.local.yaml and edit paths for your machine.
 # You can also set SOLAR_PHYSICS_CONFIG to point at another YAML file.
+# Sections under scripts: map to runnable workflows in scripts/ and examples/.
+# Missing sections leave each script's built-in defaults unchanged.
 
 scripts:
   sdo_aia_euv_processor:
