@@ -8,6 +8,7 @@
 !.env.example
 config.json
 secrets.json
+configs/paths.local.yaml
 
 # Python 缓存和编译文件
 __pycache__/
