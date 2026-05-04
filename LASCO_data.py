@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 模块用途: 通过 Helioviewer 下载 SOHO/LASCO 日冕仪数据。
+# 主要输入: 观测时间、仪器通道和下载目录。
+# 主要输出/运行说明: 保存 LASCO 数据文件，供 CME 成像和差分分析使用。
 """
 Created on Mon Mar 31 11:06:15 2025
 

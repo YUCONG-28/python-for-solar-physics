@@ -1,40 +1,19 @@
-"""
-太阳物理数据处理工具包
+"""太阳物理数据处理工具包的包元数据。
 
-一个用于多波段太阳数据处理的综合工具包，支持：
-- SDO/AIA EUV 图像处理
-- SDO/HMI 磁场数据
-- 射电观测（CSO, DSRT）
-- X射线数据（GOES, HXI）
-- 日冕仪数据（LASCO）
+当前项目的主要科研流程仍以仓库根目录中的独立脚本为主。这里仅暴露包版本、
+作者等元数据，避免导入尚未迁移到 ``solar_toolkit`` 包内的脚本模块。
 """
+
+import warnings
 
 __version__ = "0.1.0"
 __author__ = "Solar Physics Research Team"
 __email__ = "solar-physics@example.com"
 
-import warnings
-warnings.filterwarnings('ignore', category=UserWarning, module='astropy')
-
-# 导出主要模块
-from . import processors
-from . import utils
-from . import visualization
-from . import analysis
-
-# 导出常用函数
-from .processors.aia import AIAProcessor
-from .processors.hmi import HMIProcessor
-from .processors.radio import RadioProcessor
-from .visualization.plotting import plot_multi_wavelength
+warnings.filterwarnings("ignore", category=UserWarning, module="astropy")
 
 __all__ = [
-    'AIAProcessor',
-    'HMIProcessor',
-    'RadioProcessor',
-    'plot_multi_wavelength',
-    'processors',
-    'utils',
-    'visualization',
-    'analysis',
+    "__version__",
+    "__author__",
+    "__email__",
 ]

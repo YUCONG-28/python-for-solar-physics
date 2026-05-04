@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 模块用途: 将 SDO/AIA EUV 图像与 SDO/HMI 磁图共配准并叠加显示。
+# 主要输入: AIA FITS 图像、HMI 磁场 FITS 图像和坐标/时间匹配参数。
+# 主要输出/运行说明: 输出 AIA-HMI 叠加图，用于分析活动区磁场背景。
 """
 Created on Thu Oct 23 21:26:10 2025
 

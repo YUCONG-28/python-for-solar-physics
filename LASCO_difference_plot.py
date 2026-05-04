@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 模块用途: 生成 SOHO/LASCO 运行差分图像以突出 CME 传播结构。
+# 主要输入: 时间排序的 LASCO FITS 图像序列。
+# 主要输出/运行说明: 输出差分日冕图，用于 CME 前沿追踪。
 """
 Created on Tue Sep 30 07:51:10 2025
 

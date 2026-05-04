@@ -1,3 +1,6 @@
+# 模块用途: 沿用户定义路径生成 AIA 时间-距离图。
+# 主要输入: AIA SunPy map 序列、路径坐标和时间范围。
+# 主要输出/运行说明: 输出时间-距离图，支持考虑太阳自转的采样分析。
 """
 =====================================================
 Creating a time-distance plot from a sequence of maps
@@ -9,14 +12,12 @@ time-distance diagram accounting for solar differential rotation using
 :func:`sunpy.coordinates.propagate_with_solar_surface` and dealing with off-disk
 pixels using :func:`sunpy.coordinates.screens.SphericalScreen`
 """
+import astropy.units as u
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
-
-import astropy.units as u
-from astropy.coordinates import SkyCoord
-
 import sunpy.map
+from astropy.coordinates import SkyCoord
 from sunpy.coordinates import propagate_with_solar_surface
 from sunpy.coordinates.screens import SphericalScreen
 from sunpy.map import pixelate_coord_path, sample_at_coords
@@ -32,9 +33,9 @@ from sunpy.net import attrs as a
 # oscillations.
 
 query = Fido.search(
-    a.Time('2012-10-20 18:14:00', '2012-10-20 18:19:00'),
+    a.Time("2012-10-20 18:14:00", "2012-10-20 18:19:00"),
     a.Instrument.aia,
-    a.Wavelength(171*u.angstrom),
+    a.Wavelength(171 * u.angstrom),
 )
 files = Fido.fetch(query, site="NSO")
 files = sorted(files)
@@ -48,12 +49,16 @@ files = sorted(files)
 
 aia_seq = [aia_map / aia_map.exposure_time for aia_map in sunpy.map.Map(files)]
 
-corner = SkyCoord(Tx=-1150*u.arcsec, Ty=-500*u.arcsec,
-                  frame=aia_seq[0].coordinate_frame)
-ref_sub_map = aia_seq[0].submap(corner, width=250*u.arcsec, height=450*u.arcsec)
+corner = SkyCoord(
+    Tx=-1150 * u.arcsec, Ty=-500 * u.arcsec, frame=aia_seq[0].coordinate_frame
+)
+ref_sub_map = aia_seq[0].submap(corner, width=250 * u.arcsec, height=450 * u.arcsec)
 
-line_coords = SkyCoord([-1030, -1057]*u.arcsec, [-220, -206]*u.arcsec,
-                       frame=aia_seq[0].coordinate_frame)
+line_coords = SkyCoord(
+    [-1030, -1057] * u.arcsec,
+    [-220, -206] * u.arcsec,
+    frame=aia_seq[0].coordinate_frame,
+)
 
 ###############################################################################
 # Next we can plot the full disk map, over-plotting the region of interest and
@@ -63,11 +68,11 @@ line_coords = SkyCoord([-1030, -1057]*u.arcsec, [-220, -206]*u.arcsec,
 fig = plt.figure(figsize=(9, 5))
 
 full_disk_ax = fig.add_subplot(121, projection=aia_seq[0])
-aia_seq[0].plot(axes=full_disk_ax, clip_interval=[1, 99.9]*u.percent)
+aia_seq[0].plot(axes=full_disk_ax, clip_interval=[1, 99.9] * u.percent)
 ref_sub_map.draw_extent(axes=full_disk_ax)
 
 sub_map_ax = fig.add_subplot(122, projection=ref_sub_map)
-ref_sub_map.plot(axes=sub_map_ax, clip_interval=[1, 99.9]*u.percent)
+ref_sub_map.plot(axes=sub_map_ax, clip_interval=[1, 99.9] * u.percent)
 sub_map_ax.plot_coord(line_coords)
 
 ###############################################################################
@@ -88,9 +93,13 @@ sub_map_ax.plot_coord(line_coords)
 
 reprojected_sub_maps = []
 for cur_map in aia_seq:
-    with (propagate_with_solar_surface(),
-          SphericalScreen(cur_map.observer_coordinate, only_off_disk=True)):
-        reprojected_sub_maps.append(cur_map.reproject_to(ref_sub_map.wcs, preserve_date_obs=True))
+    with (
+        propagate_with_solar_surface(),
+        SphericalScreen(cur_map.observer_coordinate, only_off_disk=True),
+    ):
+        reprojected_sub_maps.append(
+            cur_map.reproject_to(ref_sub_map.wcs, preserve_date_obs=True)
+        )
 
 ###############################################################################
 # Now that we have reprojected all the maps to a common WCS, we can extract the
@@ -114,8 +123,10 @@ for aia_map in reprojected_sub_maps:
 
 intensities_transform = []
 for cur_map in aia_seq:
-    with (propagate_with_solar_surface(),
-          SphericalScreen(cur_map.observer_coordinate, only_off_disk=True)):
+    with (
+        propagate_with_solar_surface(),
+        SphericalScreen(cur_map.observer_coordinate, only_off_disk=True),
+    ):
         # The coordinate will automatically be transformed into the cur_map frame
         intensities_transform.append(sample_at_coords(cur_map, intensity_coords))
 
@@ -133,8 +144,12 @@ intensities_transform = np.stack(intensities_transform, axis=1).value
 angular_separation = intensity_coords.separation(intensity_coords[0]).to(u.arcsec)
 
 # Get correct values for the extent
-extent = [reprojected_sub_maps[0].date.datetime, reprojected_sub_maps[-1].date.datetime,
-          0, angular_separation[-1].value]
+extent = [
+    reprojected_sub_maps[0].date.datetime,
+    reprojected_sub_maps[-1].date.datetime,
+    0,
+    angular_separation[-1].value,
+]
 
 ###############################################################################
 # Plot the reference submap, line and extracted data from both approaches and
@@ -143,41 +158,53 @@ extent = [reprojected_sub_maps[0].date.datetime, reprojected_sub_maps[-1].date.d
 fig = plt.figure(figsize=(10, 5), layout="constrained")
 left, right = fig.subfigures(nrows=1, ncols=2, width_ratios=[0.6, 0.75])
 left_ax = left.add_subplot(111, projection=reprojected_sub_maps[0])
-right_ax = right.subplot_mosaic([['repro'], ['trans'], ['diff']],
-                                sharex=True, sharey=True)
+right_ax = right.subplot_mosaic(
+    [["repro"], ["trans"], ["diff"]], sharex=True, sharey=True
+)
 
-imag_ax = reprojected_sub_maps[0].plot(axes=left_ax, clip_interval=[1, 99.9]*u.percent)
+imag_ax = reprojected_sub_maps[0].plot(
+    axes=left_ax, clip_interval=[1, 99.9] * u.percent
+)
 plt.colorbar(imag_ax, ax=left_ax)
 left_ax.plot_coord(line_coords)
 
-right_ax['repro'].imshow(
-    intensities_reproject, aspect='auto', interpolation='none',
-    extent=extent, cmap=imag_ax.get_cmap()
+right_ax["repro"].imshow(
+    intensities_reproject,
+    aspect="auto",
+    interpolation="none",
+    extent=extent,
+    cmap=imag_ax.get_cmap(),
 )
-plt.colorbar(right_ax['repro'].images[0], ax=right_ax['repro'])
-right_ax['trans'].imshow(
-    intensities_transform, aspect='auto', interpolation='none',
-    extent=extent, cmap=imag_ax.get_cmap()
+plt.colorbar(right_ax["repro"].images[0], ax=right_ax["repro"])
+right_ax["trans"].imshow(
+    intensities_transform,
+    aspect="auto",
+    interpolation="none",
+    extent=extent,
+    cmap=imag_ax.get_cmap(),
 )
-plt.colorbar(right_ax['trans'].images[0], ax=right_ax['trans'])
-right_ax['diff'].imshow(
-    intensities_reproject - intensities_transform, interpolation='none',
-    aspect='auto', extent=extent, cmap='bwr'
+plt.colorbar(right_ax["trans"].images[0], ax=right_ax["trans"])
+right_ax["diff"].imshow(
+    intensities_reproject - intensities_transform,
+    interpolation="none",
+    aspect="auto",
+    extent=extent,
+    cmap="bwr",
 )
-plt.colorbar(right_ax['diff'].images[0], ax=right_ax['diff'])
+plt.colorbar(right_ax["diff"].images[0], ax=right_ax["diff"])
 
 locator = mdates.AutoDateLocator(minticks=4)
 formatter = mdates.ConciseDateFormatter(locator)
-right_ax['diff'].xaxis.set_major_locator(locator)
-right_ax['diff'].xaxis.set_major_formatter(formatter)
-right_ax['diff'].xaxis.set_minor_locator(mdates.MinuteLocator())
+right_ax["diff"].xaxis.set_major_locator(locator)
+right_ax["diff"].xaxis.set_major_formatter(formatter)
+right_ax["diff"].xaxis.set_minor_locator(mdates.MinuteLocator())
 
-right_ax['repro'].set_title('Reproject approach')
-right_ax['trans'].set_title('Transform approach')
-right_ax['diff'].set_title('Difference between the approaches')
+right_ax["repro"].set_title("Reproject approach")
+right_ax["trans"].set_title("Transform approach")
+right_ax["diff"].set_title("Difference between the approaches")
 
-right_ax['diff'].set_xlabel('Time [UTC]')
-right_ax['trans'].set_ylabel('Distance [arcsec]')
+right_ax["diff"].set_xlabel("Time [UTC]")
+right_ax["trans"].set_ylabel("Distance [arcsec]")
 
 plt.show()
 

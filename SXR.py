@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 模块用途: 读取并绘制 GOES 软 X 射线 NetCDF 光变数据。
+# 主要输入: GOES SXR NetCDF 产品。
+# 主要输出/运行说明: 输出 SXR 光变曲线，用于耀斑等级和时间演化分析。
 """
 Created on Tue Mar  4 09:21:34 2025
 

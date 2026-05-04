@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 模块用途: 读取 ASO-S/HXI FITS 产品并绘制硬 X 射线图像。
+# 主要输入: HXI FITS 图像或 map 数据。
+# 主要输出/运行说明: 输出硬 X 射线图像/等值线图，用于高能源区定位。
 """
 Created on Mon Mar 17 10:48:46 2025
 
