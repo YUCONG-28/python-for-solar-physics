@@ -1,0 +1,128 @@
+# Copy this file to configs/paths.local.yaml and edit paths for your machine.
+# You can also set SOLAR_PHYSICS_CONFIG to point at another YAML file.
+
+scripts:
+  sdo_aia_euv_processor:
+    data_path: D:\spike_topping_type_III\2025\20250503\AIA
+    output_dir:
+
+  sdo_aia_base_difference:
+    data_dir: D:/Flare/JSOCdata/All/AIA_131_pro/
+    output_dir: D:/Flare/JSOCdata/All/AIA_131_pro/difference_two_plot_min/
+
+  sdo_aia_running_difference:
+    data_dir: D:/spike_topping_type_III/20250124/All/94/1/
+    output_dir: D:/spike_topping_type_III/20250124/All/94/1/differnce_plot/
+
+  sdo_aia_lightcurve_extraction:
+    data_dir: D:/Flare/JSOCdata/All/AIA_1600/
+    output_dir: D:/Flare/JSOCdata/All/Flux_data/
+    data_filename: aia_1600_the third region.csv
+
+  sdo_aia_lightcurve_plot:
+    input_dir: D:/Flare/JSOCdata/All/Flux_data/
+    output_dir: D:/Flare/JSOCdata/All/Flux_data/
+
+  sdo_aia_time_file_selector:
+    source_dir: D:\spike_topping_type_III\2025\20250124\All
+    output_base_dir: D:\spike_topping_type_III\2025\20250124\DEM
+    target_time: "2025-01-24T045710"
+    tolerance: 12
+
+  sdo_aia_hmi_overlay:
+    input_dir_AIA: D:/spike_topping_type_III/20250503/All/171
+    input_dir_HMI: D:/spike_topping_type_III/20250503/All/hmi
+    output_dir: D:/spike_topping_type_III/20250503/All/171_hmi
+
+  sdo_aia_asos_hxi_overlay:
+    input_dir_AIA: D:/Flare/JSOCdata/AIA_304/fits/44/
+    output_dir: D:/hxidata/HXI_CLEAN/25_4_24/plot/all_pro/304/
+    hxi_file_path: D:/hxidata/HXI_CLEAN/25_4_24/10-20.fits
+    hxi_file_path_pro: D:/hxidata/HXI_CLEAN/25_4_24/20-30.fits
+
+  sdo_aia_radio_hmi_overlay:
+    radio_base_dir: D:\spike_topping_type_III\2025\20250124\RS_0447-0450
+    aia_base_dir: D:\spike_topping_type_III\2025\20250124\AIA\171\1
+    hmi_base_dir: D:\spike_topping_type_III\2025\20250124\AIA\hmi\1
+    output_dir: D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\test
+
+  cso_radio_spectrogram_plot:
+    file_path: D:\spike_topping_type_III\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503071510_V01.01.fits
+    save_path: D:\spike_topping_type_III\2025\20250503\CSO_PLOT\3\1
+
+  cso_spectrogram_class:
+    file_path: D:\spike_topping_type_III\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503072013_V01.01.fits
+
+  radio_source_map_plot:
+    single_file_path: D:\spike_topping_type_III\2025\20250124\RS_0447-0450\149MHz\RR\149MHz_2025124_045710_093.fits
+    data_dir: D:\spike_topping_type_III\2025\20250124\RS_0447-0450\149MHz\RR
+    multi_band_root: D:\spike_topping_type_III\2025\20250503\20250503UT071600-072600
+    output_dir: D:\spike_topping_type_III\2025\20250503\RS_multi_band
+
+  sdo_aia_dem_inversion:
+    aia_fits_path: D:\spike_topping_type_III\2025\20250124\DEM\aia_data\aia.lev1_euv_12s.2025-01-24T044747Z.211.image_lev1.fits
+    tb_data_path: D:\spike_topping_type_III\2025\20250124\DEM\Tb_149000000.0.npy
+
+  dem_radio_source_overlay:
+    aia_fits_path: D:\spike_topping_type_III\2025\20250124\DEM\aia_data\aia.lev1_euv_12s.2025-01-24T044747Z.211.image_lev1.fits
+    tb_data_path: D:\spike_topping_type_III\2025\20250124\DEM\Tb_223000000.0.npy
+    radio_sources_dir: D:\spike_topping_type_III\2025\20250124\share\Data\UnPack\20250124UT0447-0450\ImageData_RRLL\223MHz\RR
+
+  flare_aia_sxr_hxr_summary_plot:
+    sxr: d:/Flare/dn_xrsf-l2-flx1s_g16_d20240808_v2-2-0.nc
+    hxi: D:/Flare/hxi_qld_levq1_20240808_19_hly_v03.fits
+    aia_dir: D:/Flare/JSOCdata/All/Flux_data/
+
+  goes_sxr_lightcurve_plot:
+    file_path: d:/Flare/dn_xrsf-l2-flx1s_g16_d20240808_v2-2-0.nc
+
+  neupert_sxr_derivative_hxr_comparison:
+    data_file_path: d:/Flare/dn_xrsf-l2-flx1s_g16_d20240808_v2-2-0.nc
+
+  neupert_timing_error_analysis:
+    file_path: d:/Flare/dn_xrsf-l2-flx1s_g16_d20240808_v2-2-0.nc
+
+  sdo_hmi_magnetogram_plot:
+    data_dir: D:/Flare/JSOCdata/HMI/
+    output_dir: D:/Flare/JSOCdata/HMI/plot_offset
+
+  asos_hxi_image_plot:
+    file_path: D:/hxidata/HXI_CLEAN/hxi_imgcube_04e09t_20240808_192000_HXI_CLEAN.fits
+
+  asos_hxi_goes_sxr_comparison:
+    file_path: D:/Flare/hxi_qld_levq1_20240808_19_hly_v03.fits
+
+  soho_lasco_data_download:
+    save_dir: D:/LASCO/data/
+
+  soho_lasco_image_plot:
+    input_dir: D:/LASCO/data/
+    output_dir: D:/LASCO/plot/
+
+  soho_lasco_running_difference:
+    input_dir: D:/LASCO/data/
+    output_dir: D:/LASCO/difference_plot/
+
+  image_sequence_to_video:
+    input_dir: D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\RR+LL
+    output_dir: D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\video
+    video_name: RR+LL.mp4
+
+  dev_aia_radio_hmi_overlay:
+    radio_base_dir: D:\spike_topping_type_III\2025\20250124\RS_0447-0450
+    aia_base_dir: D:\spike_topping_type_III\2025\20250124\AIA\171\1
+    hmi_base_dir: D:\spike_topping_type_III\2025\20250124\AIA\hmi\1
+    output_dir: D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\test
+
+  test_aia_radio_hmi_overlay_extended:
+    radio_base_dir: D:\spike_topping_type_III\2025\20250124\RS_0447-0450
+    aia_base_dir: D:\spike_topping_type_III\2025\20250124\AIA\171\1
+    hmi_base_dir: D:\spike_topping_type_III\2025\20250124\AIA\hmi\1
+    output_dir: D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\test
+
+  test_cso_spectrogram_processing:
+    file_path: D:\spike_topping_type_III\2025\20250124\OROCH_MWRS01_SRSP_L1_05M_20250124044743_V01.01.fits
+
+  test_fits_header_metadata:
+    file_path0: D:\spike_topping_type_III\2025\20250124\RS_0447-0450\149MHz\149MHz_DeclinationDegree.fits
+    file_path1: D:\spike_topping_type_III\2025\20250124\RS_0447-0450\149MHz\149MHz_RightAscensionDegree.fits
