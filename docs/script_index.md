@@ -9,7 +9,7 @@
 - `scripts/aia_hmi/sdo_aia_lightcurve_extraction.py`
 - `scripts/aia_hmi/sdo_aia_lightcurve_plot.py`
 - `scripts/aia_hmi/sdo_aia_time_distance_diagram.py`
-- `scripts/aia_hmi/sdo_aia_fits_rename.py`
+- `scripts/aia_hmi/sdo_aia_hmi_fits_rename.py`
 - `scripts/aia_hmi/sdo_aia_time_file_selector.py`
 - `scripts/aia_hmi/sdo_hmi_magnetogram_plot.py`
 - `scripts/aia_hmi/sdo_aia_hmi_overlay.py`

@@ -203,10 +203,16 @@ class Config:
     max_radio_per_band: int = 28
 
     # ── 等值线配置 ─────────────────────────────────────────────
+    show_radio_contours: bool = False
     contour_levels_peak: List[float] = field(default_factory=lambda: [0.90])
     contour_linewidths: List[float] = field(default_factory=lambda: [2.0])
     contour_alpha: float = 0.90
     contour_smooth_sigma: float = 0
+    mark_radio_center: bool = True
+    radio_center_marker: str = "x"
+    radio_center_size: float = 50
+    radio_center_linewidth: float = 1.8
+    label_radio_center: bool = False
 
     # ── 显示配置 ───────────────────────────────────────────────
     overlay_hmi: bool = True
@@ -260,6 +266,17 @@ class Config:
 
     def __post_init__(self):
         apply_config_to_object(self, "sdo_aia_radio_hmi_overlay")
+
+
+@dataclass
+class GaussianReprojectResult:
+    model: np.ndarray
+    center_pixel: Tuple[float, float]
+    center_arcsec: Tuple[float, float]
+    sigma_pixel: Tuple[float, float]
+    theta_rad: float
+    amplitude: float
+    covariance: np.ndarray
 
 
 # ============================================================
@@ -906,7 +923,7 @@ def reproject_radio_via_gaussian_fit(
     aia_cutout_map: sunpy.map.GenericMap,
     cfg: Config,
     radio_header: Optional[fits.Header] = None,
-) -> Optional[np.ndarray]:
+) -> Optional[GaussianReprojectResult]:
     ny_a, nx_a = aia_cutout_map.data.shape
     ny_r, nx_r = radio_data.shape
     x_pix = np.arange(nx_r, dtype=float)
@@ -914,7 +931,7 @@ def reproject_radio_via_gaussian_fit(
 
     # ---------- 1. 在射电域进行二维椭圆高斯拟合 ----------
     try:
-        popt, _ = fit_elliptical_gaussian(radio_data, x_pix, y_pix)
+        popt, pcov = fit_elliptical_gaussian(radio_data, x_pix, y_pix)
     except Exception as e:
         if cfg.debug_mode:
             print(f"    [高斯拟合] 失败: {e}")
@@ -1029,7 +1046,20 @@ def reproject_radio_via_gaussian_fit(
     )
 
     model = np.maximum(model, 0)
-    return model.astype(np.float32)
+    center_world = aia_cutout_map.pixel_to_world(c_aia_x * u.pixel, c_aia_y * u.pixel)
+
+    return GaussianReprojectResult(
+        model=model.astype(np.float32),
+        center_pixel=(float(c_aia_x), float(c_aia_y)),
+        center_arcsec=(
+            float(center_world.Tx.to_value(u.arcsec)),
+            float(center_world.Ty.to_value(u.arcsec)),
+        ),
+        sigma_pixel=(float(sigma_aia_x), float(sigma_aia_y)),
+        theta_rad=float(theta_aia),
+        amplitude=float(A_fit),
+        covariance=np.asarray(pcov),
+    )
 
 
 # ============================================================
@@ -1415,32 +1445,57 @@ def process_aia_group(
                     if radio_data is None:
                         continue
 
-                # 重新投影并平滑
-                model_data = reproject_radio_via_gaussian_fit(
+                # 重新投影
+                fit_result = reproject_radio_via_gaussian_fit(
                     radio_data, ra_map, dec_map, aia_cutout, cfg, radio_header2
                 )
-                if model_data is None:
+                if fit_result is None:
                     continue
+                model_data = fit_result.model
 
-                if cfg.contour_smooth_sigma > 0:
-                    model_data = smooth_for_contour(
-                        model_data, cfg.contour_smooth_sigma
+                if cfg.show_radio_contours:
+                    contour_data = model_data
+                    if cfg.contour_smooth_sigma > 0:
+                        contour_data = smooth_for_contour(
+                            contour_data, cfg.contour_smooth_sigma
+                        )
+
+                    levels = compute_contour_levels(contour_data, cfg)
+                    if not levels:
+                        continue
+
+                    # 绘制射电等值线
+                    ax.contour(
+                        contour_data,
+                        levels=levels,
+                        extent=extent_arcsec,
+                        colors=[color_main],
+                        linewidths=cfg.contour_linewidths,
+                        alpha=cfg.contour_alpha,
+                        origin="lower",
                     )
 
-                levels = compute_contour_levels(model_data, cfg)
-                if not levels:
-                    continue
-
-                # 绘制射电等值线
-                ax.contour(
-                    model_data,
-                    levels=levels,
-                    extent=extent_arcsec,
-                    colors=[color_main],
-                    linewidths=cfg.contour_linewidths,
-                    alpha=cfg.contour_alpha,
-                    origin="lower",
-                )
+                if cfg.mark_radio_center:
+                    center_x, center_y = fit_result.center_arcsec
+                    ax.scatter(
+                        [center_x],
+                        [center_y],
+                        marker=cfg.radio_center_marker,
+                        s=cfg.radio_center_size,
+                        color=color_main,
+                        linewidths=cfg.radio_center_linewidth,
+                    )
+                    if cfg.label_radio_center:
+                        ax.annotate(
+                            "Gaussian-fit center",
+                            xy=(center_x, center_y),
+                            xytext=(4, 0),
+                            textcoords="offset points",
+                            fontsize=8,
+                            color=color_main,
+                            va="center",
+                            ha="left",
+                        )
 
                 # 添加图例
                 disp_bl = band_label
