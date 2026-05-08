@@ -28,7 +28,7 @@
 | `AIA_Flux_data.py` | `scripts/aia_hmi/sdo_aia_lightcurve_extraction.py` | AIA 光变/流量数据提取。 |
 | `AIA_Flux_data_plot.py` | `scripts/aia_hmi/sdo_aia_lightcurve_plot.py` | AIA 光变曲线绘制。 |
 | `AIA_time_distance.py` | `scripts/aia_hmi/sdo_aia_time_distance_diagram.py` | AIA 时间-距离图分析。 |
-| `AIA_rename.py` | `scripts/aia_hmi/sdo_aia_fits_rename.py` | AIA FITS 文件批量规范命名。 |
+| `AIA_rename.py` | `scripts/aia_hmi/sdo_aia_hmi_fits_rename.py` | AIA/HMI FITS 文件批量规范命名。 |
 | `AIA_select_files.py` | `scripts/aia_hmi/sdo_aia_time_file_selector.py` | 按目标时间筛选 AIA 文件。 |
 | `HMI.py` | `scripts/aia_hmi/sdo_hmi_magnetogram_plot.py` | HMI 磁图读取和绘制。 |
 | `AIA_HMI.py` | `scripts/aia_hmi/sdo_aia_hmi_overlay.py` | AIA 与 HMI 共配准叠加图。 |

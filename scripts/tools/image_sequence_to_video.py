@@ -49,9 +49,9 @@ PATH_CONFIG = load_script_config(
     "image_sequence_to_video",
     {
         "fps": 7,
-        "input_dir": r"<PROJECT_ROOT>\2025\20250124\AIA_RS_HMI\RR+LL",
+        "input_dir": r"<PROJECT_ROOT>\2025\20250124\AIA_RS_HMI\test",
         "output_dir": r"<PROJECT_ROOT>\2025\20250124\AIA_RS_HMI\video",
-        "video_name": "RR+LL.mp4",
+        "video_name": "RR+LL_Gauss.mp4",
     },
 )
 

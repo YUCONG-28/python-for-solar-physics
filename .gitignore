@@ -36,6 +36,7 @@ MANIFEST
 # 备份文件和压缩包
 backup_*/
 *.bak
+*.bak_*
 *~
 \#*#
 .#*
