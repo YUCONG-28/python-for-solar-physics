@@ -24,10 +24,15 @@ from solar_toolkit.path_config import load_script_config
 # --------------------------
 PATH_CONFIG = load_script_config(
     "soho_lasco_running_difference",
-    {"input_dir": "<DATA_ROOT>/data/", "output_dir": "<DATA_ROOT>/difference_plot/"},
+    {
+        "input_dir": "<DATA_ROOT>/data/",
+        "output_dir": "<DATA_ROOT>/difference_plot/",
+        "show_plot": False,
+    },
 )
 input_dir = Path(PATH_CONFIG["input_dir"])  # 输入数据目录
 output_dir = Path(PATH_CONFIG["output_dir"])  # 输出图像目录
+show_plot = bool(PATH_CONFIG.get("show_plot", False))
 vmin = -49  # 颜色映射最小值
 vmax = 49  # 颜色映射最大值
 recursive = True  # 是否递归查找子目录中的.jp2文件
@@ -146,9 +151,10 @@ def main():
             curr_base = curr_file.stem
             output_path = output_dir / f"diff_bw_{curr_base}.png"
 
-            # 保存图像（先关闭plt.show()，避免弹窗阻塞；如需预览可保留）
-            plt.show()
+            # 保存图像；批处理默认不弹窗，避免阻塞长序列。
             plt.savefig(output_path, dpi=300, bbox_inches="tight")
+            if show_plot:
+                plt.show()
             print(f"成功保存：{output_path.name}")
 
             plt.close(fig)

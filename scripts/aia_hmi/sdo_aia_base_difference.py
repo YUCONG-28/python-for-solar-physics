@@ -30,11 +30,13 @@ PATH_CONFIG = load_script_config(
     {
         "data_dir": "<DATA_ROOT>/JSOCdata/All/AIA_131_pro/",
         "output_dir": "<DATA_ROOT>/JSOCdata/All/AIA_131_pro/difference_two_plot_min/",
+        "show_plot": False,
     },
 )
 data_dir = Path(PATH_CONFIG["data_dir"])
 output_dir = Path(PATH_CONFIG["output_dir"])
 output_dir.mkdir(parents=True, exist_ok=True)
+show_plot = bool(PATH_CONFIG.get("show_plot", False))
 
 start_idx = 99
 end_idx = 200  # 不包含
@@ -86,7 +88,9 @@ try:
     plt.title(f"{base_time_str}")
 
     # plt.savefig(str(output_path), dpi=300, bbox_inches='tight')
-    plt.show()
+    if show_plot:
+        plt.show()
+    plt.close(fig)
     # plt.close(fig)
 
     del base_map, base_normalized_data, base_normalized_map, base_cutout_map
@@ -135,7 +139,8 @@ for i in tqdm(range(1, total_files), desc="Processing", unit="File"):
         plt.title(f"{current_time_str}")
 
         plt.savefig(output_path, dpi=300, bbox_inches="tight")
-        plt.show()
+        if show_plot:
+            plt.show()
         plt.close(fig)
 
         del (

@@ -14,8 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # 用户配置区：直接运行本脚本时会使用这里的路径和 dry-run 设置。
-TARGET_FOLDER = r"<PROJECT_ROOT>\2025\20250803\SDO"
-DRY_RUN = False
+TARGET_FOLDER = r"<PROJECT_ROOT>\2026\20260326\SDO"
+DRY_RUN = True
 
 AIA_UV_PREFIX = "aia.lev1_uv_24s"
 AIA_EUV_PREFIX = "aia.lev1_euv_12s"
