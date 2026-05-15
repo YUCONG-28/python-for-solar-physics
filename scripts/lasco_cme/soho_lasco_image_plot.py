@@ -16,11 +16,16 @@ from solar_toolkit.path_config import load_script_config
 
 PATH_CONFIG = load_script_config(
     "soho_lasco_image_plot",
-    {"input_dir": "D:/LASCO/data/", "output_dir": "D:/LASCO/plot/"},
+    {
+        "input_dir": "D:/LASCO/data/",
+        "output_dir": "D:/LASCO/plot/",
+        "show_plot": False,
+    },
 )
 input_dir = Path(PATH_CONFIG["input_dir"])
 output_dir = Path(PATH_CONFIG["output_dir"])
 output_dir.mkdir(parents=True, exist_ok=True)
+show_plot = bool(PATH_CONFIG.get("show_plot", False))
 files = sorted(input_dir.glob("*.jp2"))
 
 for file_path in files:
@@ -33,4 +38,6 @@ for file_path in files:
     output_path = output_dir / f"{base_name}.png"
     plt.savefig(output_path, dpi=200, bbox_inches="tight")
 
-    plt.show()
+    if show_plot:
+        plt.show()
+    plt.close(fig)

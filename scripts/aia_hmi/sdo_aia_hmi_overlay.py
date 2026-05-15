@@ -37,12 +37,14 @@ PATH_CONFIG = load_script_config(
         "input_dir_AIA": "D:/spike_topping_type_III/20250503/All/171",
         "input_dir_HMI": "D:/spike_topping_type_III/20250503/All/hmi",
         "output_dir": "D:/spike_topping_type_III/20250503/All/171_hmi",
+        "show_plot": False,
     },
 )
 input_dir_AIA = Path(PATH_CONFIG["input_dir_AIA"])
 input_dir_HMI = Path(PATH_CONFIG["input_dir_HMI"])
 output_dir = Path(PATH_CONFIG["output_dir"])
 output_dir.mkdir(parents=True, exist_ok=True)
+show_plot = bool(PATH_CONFIG.get("show_plot", False))
 
 # 设置参数
 threshold = 0 * u.Gauss  # HMI数据阈值，设置最小值
@@ -201,7 +203,8 @@ for aia_path, aia_time in tqdm(aia_files, desc="处理进度", unit="文件"):
         file_time_str = utils.format_time_for_filename(aia_time)
         output_path = output_dir / f"{file_time_str}.png"
         plt.savefig(output_path, dpi=300, bbox_inches="tight")
-        plt.show()
+        if show_plot:
+            plt.show()
 
         # 关闭图像并清理内存
         plt.close(fig)

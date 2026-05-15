@@ -28,13 +28,15 @@ PATH_CONFIG = load_script_config(
     {
         "data_dir": "D:/Flare/JSOCdata/HMI/",
         "output_dir": "D:/Flare/JSOCdata/HMI/plot_offset",
+        "show_plot": False,
     },
 )
 data_dir = Path(PATH_CONFIG["data_dir"])
-file_paths = [p for p in data_dir.iterdir() if p.suffix == ".fits"]
+file_paths = sorted(p for p in data_dir.iterdir() if p.suffix.lower() == ".fits")
 aia_sequence = sunpy.map.Map(file_paths, sequence=True)
 output_dir = Path(PATH_CONFIG["output_dir"])
 output_dir.mkdir(parents=True, exist_ok=True)
+show_plot = bool(PATH_CONFIG.get("show_plot", False))
 
 my_map = sunpy.map.Map(aia_sequence[1])
 roi_bottom_left = SkyCoord(
@@ -51,7 +53,7 @@ cutout_map = my_map.submap(roi_bottom_left, top_right=roi_top_right)
 
 with propagate_with_solar_surface():
     aia_sequence_aligned = sunpy.map.Map(
-        [m.reqproject_to(cutout_map.wcs) for m in aia_sequence], sequence=True
+        [m.reproject_to(cutout_map.wcs) for m in aia_sequence], sequence=True
     )
 
 for i in range(1):  # 从 0 到 4
@@ -66,6 +68,8 @@ for i in range(1):  # 从 0 到 4
     time_str = parts[2]
     plt.title(time_str)
 
-    # plt.savefig(str(output_path), dpi=200, bbox_inches='tight')
+    plt.savefig(output_path, dpi=200, bbox_inches="tight")
 
-    plt.show()
+    if show_plot:
+        plt.show()
+    plt.close(fig)

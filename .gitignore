@@ -55,8 +55,13 @@ Desktop.ini
 logs/
 
 # 数据分析临时文件
+*.npy
+*.npz
 *.pickle
 *.pkl
+*.nc
+*.cdf
+*.jp2
 *.h5
 *.hdf5
 *.feather
@@ -88,6 +93,10 @@ observations/
 
 # 大型输出文件
 output/plots/
+outputs/generated/
+plots/
+video/
+videos/
 
 # ============================================================
 # 生成的可视化输出图片（可由脚本重新生成）
@@ -99,6 +108,10 @@ output/plots/
 *.bmp
 *.tiff
 *.tif
+*.mp4
+*.mov
+*.avi
+*.mkv
 
 # ============================================================
 # 数据/表格文件（非代码源文件）

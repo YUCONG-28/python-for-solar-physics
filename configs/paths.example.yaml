@@ -11,10 +11,12 @@ scripts:
   sdo_aia_base_difference:
     data_dir: D:/Flare/JSOCdata/All/AIA_131_pro/
     output_dir: D:/Flare/JSOCdata/All/AIA_131_pro/difference_two_plot_min/
+    show_plot: false
 
   sdo_aia_running_difference:
     data_dir: D:/spike_topping_type_III/20250124/All/94/1/
     output_dir: D:/spike_topping_type_III/20250124/All/94/1/differnce_plot/
+    show_plot: false
 
   sdo_aia_lightcurve_extraction:
     data_dir: D:/Flare/JSOCdata/All/AIA_1600/
@@ -35,6 +37,7 @@ scripts:
     input_dir_AIA: D:/spike_topping_type_III/20250503/All/171
     input_dir_HMI: D:/spike_topping_type_III/20250503/All/hmi
     output_dir: D:/spike_topping_type_III/20250503/All/171_hmi
+    show_plot: false
 
   sdo_aia_asos_hxi_overlay:
     input_dir_AIA: D:/Flare/JSOCdata/AIA_304/fits/44/
@@ -87,6 +90,7 @@ scripts:
   sdo_hmi_magnetogram_plot:
     data_dir: D:/Flare/JSOCdata/HMI/
     output_dir: D:/Flare/JSOCdata/HMI/plot_offset
+    show_plot: false
 
   asos_hxi_image_plot:
     file_path: D:/hxidata/HXI_CLEAN/hxi_imgcube_04e09t_20240808_192000_HXI_CLEAN.fits
@@ -100,10 +104,12 @@ scripts:
   soho_lasco_image_plot:
     input_dir: D:/LASCO/data/
     output_dir: D:/LASCO/plot/
+    show_plot: false
 
   soho_lasco_running_difference:
     input_dir: D:/LASCO/data/
     output_dir: D:/LASCO/difference_plot/
+    show_plot: false
 
   image_sequence_to_video:
     input_dir: D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\RR+LL

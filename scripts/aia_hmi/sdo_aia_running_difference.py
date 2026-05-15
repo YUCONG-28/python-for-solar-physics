@@ -29,11 +29,13 @@ PATH_CONFIG = load_script_config(
     {
         "data_dir": "D:/spike_topping_type_III/20250124/All/94/1/",
         "output_dir": "D:/spike_topping_type_III/20250124/All/94/1/differnce_plot/",
+        "show_plot": False,
     },
 )
 data_dir = Path(PATH_CONFIG["data_dir"])
 output_dir = Path(PATH_CONFIG["output_dir"])
 output_dir.mkdir(parents=True, exist_ok=True)
+show_plot = bool(PATH_CONFIG.get("show_plot", False))
 
 start_idx = 150
 end_idx = 450  # 不包含
@@ -87,7 +89,8 @@ try:
     plt.title(f"{time_str}")
 
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.show()
+    if show_plot:
+        plt.show()
     plt.close(fig)
 
     del first_map, first_normalized_data, first_normalized_map, first_cutout_map
@@ -147,8 +150,9 @@ for i in tqdm(range(1, total_files), desc="Processing", unit="File"):
         current_time_str = current_name.split(".")[2]
         plt.title(f"{current_time_str}")
 
-        # plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        plt.show()
+        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+        if show_plot:
+            plt.show()
         plt.close(fig)
 
         del prev_map, prev_normalized_data, prev_normalized_map, prev_cutout_map
