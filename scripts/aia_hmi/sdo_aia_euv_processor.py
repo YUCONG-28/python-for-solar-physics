@@ -44,17 +44,68 @@ Test mode examples:
 
 Difference image examples:
 
-    # Original single-band images, no difference images.
-    python sdo_aia_euv_processor.py --mode single --waves 171 193 304
+    # Original-image mosaic only, with global outer axis labels to avoid WCS tick overlap.
+    python sdo_aia_euv_processor.py --mode mosaic --waves 94 131 171 193 211 304 --draw-original --no-draw-difference --mosaic-ncols 3 --mosaic-global-outer-axes
 
-    # Original single-band images plus running differences for 171 and 304 only.
-    python sdo_aia_euv_processor.py --mode single --waves 94 131 171 193 304 --draw-difference --difference-method running --diff-waves 171 304 --difference-percentile 99.5
+    # Difference-only mosaic using each band's AIA colormap and user-defined limits.
+    python sdo_aia_euv_processor.py --mode mosaic --waves 94 131 171 193 211 304 --no-draw-original --draw-difference --diff-waves 94 131 171 193 211 304 --mosaic-difference-inline --difference-method running --difference-cmap-mode band --difference-norm-mode fixed --difference-vmin -200 --difference-vmax 200 --mosaic-ncols 3 --mosaic-global-outer-axes
 
-    # Original mosaic plus base differences for 193 only.
-    python sdo_aia_euv_processor.py --mode mosaic --waves 94 131 171 193 211 304 --draw-difference --difference-method base --diff-waves 193 --diff-base-index 99
+    # Original panels plus selected inline difference panels in the same mosaic.
+    python sdo_aia_euv_processor.py --mode mosaic --waves 94 131 171 193 211 304 --draw-original --draw-difference --diff-waves 94 171 304 --mosaic-difference-inline --difference-method running --difference-cmap-mode band --difference-norm-mode auto --mosaic-ncols 3 --mosaic-global-outer-axes
 
-    # Fixed difference color scale.
-    python sdo_aia_euv_processor.py --mode single --waves 193 --draw-difference --difference-method base --diff-waves 193 --difference-norm-mode fixed --difference-vmin -200 --difference-vmax 200 --difference-cmap Greys_r
+    # Single-band difference images only.
+    python sdo_aia_euv_processor.py --mode single --waves 171 193 --no-draw-original --draw-difference --diff-waves 171 193 --difference-method running --difference-cmap-mode band --difference-norm-mode fixed --difference-vmin -200 --difference-vmax 200
+
+    # Single-band original images only.
+    python sdo_aia_euv_processor.py --mode single --waves 171 193 --draw-original --no-draw-difference
+
+    # Single-band original images plus running differences.
+    python sdo_aia_euv_processor.py --mode single --waves 171 193 --draw-original --draw-difference --diff-waves 171 193 --difference-method running
+
+    # Single-band difference images only.
+    python sdo_aia_euv_processor.py --mode single --waves 171 193 --no-draw-original --draw-difference --diff-waves 171 193 --difference-method running
+
+    # Single-band difference with user-defined limits.
+    python sdo_aia_euv_processor.py --mode single --waves 193 --no-draw-original --draw-difference --diff-waves 193 --difference-method base --difference-vmin -200 --difference-vmax 200 --difference-cmap-mode band
+
+    # Mosaic with AIA 94 original plus AIA 94 difference.
+    python sdo_aia_euv_processor.py --mode mosaic --waves 94 --draw-original --draw-difference --diff-waves 94 --mosaic-difference-inline --mosaic-ncols 2
+
+    # Mosaic difference panels only.
+    python sdo_aia_euv_processor.py --mode mosaic --waves 94 131 171 193 --no-draw-original --draw-difference --diff-waves 94 131 171 193 --mosaic-difference-inline --mosaic-ncols 4
+
+    # Mosaic originals plus selected difference panels.
+    python sdo_aia_euv_processor.py --mode mosaic --waves 94 131 171 193 --draw-original --draw-difference --diff-waves 94 171 --mosaic-difference-inline --mosaic-ncols 3
+
+    # Difference-only mosaic with per-band symmetric limits and forced AIA band colormaps.
+    python sdo_aia_euv_processor.py --mode mosaic --waves 94 131 171 193 211 304 --no-draw-original --draw-difference --diff-waves 94 131 171 193 211 304 --mosaic-difference-inline --difference-method running --difference-cmap-mode band --difference-vlim-by-wave 94:80 131:120 171:200 193:250 211:220 304:300 --mosaic-ncols 3 --mosaic-global-outer-axes
+
+    # Difference-only mosaic with per-band asymmetric limits and forced AIA band colormaps.
+    python sdo_aia_euv_processor.py --mode mosaic --waves 94 131 171 193 211 304 --no-draw-original --draw-difference --diff-waves 94 131 171 193 211 304 --mosaic-difference-inline --difference-method running --difference-cmap-mode band --difference-vmin-by-wave 94:-60 131:-100 171:-180 193:-220 211:-200 304:-280 --difference-vmax-by-wave 94:90 131:150 171:240 193:300 211:260 304:360 --mosaic-ncols 3 --mosaic-global-outer-axes
+
+    # Single-band differences with per-band symmetric limits.
+    python sdo_aia_euv_processor.py --mode single --waves 171 193 304 --no-draw-original --draw-difference --diff-waves 171 193 304 --difference-method running --difference-cmap-mode band --difference-vlim-by-wave 171:200 193:250 304:300
+
+    # Mosaic difference images only; saved to multi_band_difference.
+    python sdo_aia_euv_processor.py --mode mosaic --waves 94 131 171 193 211 304 --no-draw-original --draw-difference --diff-waves 94 131 171 193 211 304 --difference-output-mode mosaic --difference-method running --difference-cmap-mode band --difference-vlim-by-wave 94:7 131:7 171:34 193:49 211:22 304:9 --mosaic-ncols 3 --mosaic-global-outer-axes
+
+    # Mosaic originals plus selected difference panels; saved to multi_band_original_plus_difference.
+    python sdo_aia_euv_processor.py --mode mosaic --waves 94 131 171 193 211 304 --draw-original --draw-difference --diff-waves 94 171 193 304 --difference-output-mode mosaic --difference-method running --difference-cmap-mode band --mosaic-ncols 3 --mosaic-global-outer-axes
+
+    # Mosaic difference images plus per-band single difference outputs.
+    python sdo_aia_euv_processor.py --mode mosaic --waves 94 131 171 193 211 304 --no-draw-original --draw-difference --diff-waves 94 131 171 193 211 304 --difference-output-mode both --difference-method running --difference-cmap-mode band --mosaic-ncols 3 --mosaic-global-outer-axes
+
+    # Recommended running-difference mosaic, no derotation for short-cadence AIA.
+    python sdo_aia_euv_processor.py --mode mosaic --waves 94 131 171 193 211 304 --no-draw-original --draw-difference --diff-waves 94 131 171 193 211 304 --difference-output-mode mosaic --difference-method running --no-difference-derotate --difference-cmap-mode band --difference-vlim-by-wave 94:7 131:7 171:34 193:49 211:22 304:9 --mosaic-ncols 3 --mosaic-global-outer-axes
+
+    # Base-difference mosaic, skipping the base reference frame by default.
+    python sdo_aia_euv_processor.py --mode mosaic --waves 94 131 171 193 211 304 --no-draw-original --draw-difference --diff-waves 94 131 171 193 211 304 --difference-output-mode mosaic --difference-method base --difference-base-index 0 --no-difference-derotate --difference-cmap-mode band --mosaic-ncols 3 --mosaic-global-outer-axes
+
+    # Long-duration derotated base difference; full-map reproject is applied before ROI cutout.
+    python sdo_aia_euv_processor.py --mode mosaic --waves 171 193 --no-draw-original --draw-difference --diff-waves 171 193 --difference-output-mode mosaic --difference-method base --difference-base-index 0 --difference-derotate --difference-cmap-mode diverging --difference-vmin -200 --difference-vmax 200 --mosaic-ncols 2 --mosaic-global-outer-axes
+
+    # Auto-scaled running-difference mosaic using percentile(abs(diff_data)).
+    python sdo_aia_euv_processor.py --mode mosaic --waves 94 131 171 193 211 304 --no-draw-original --draw-difference --diff-waves 94 131 171 193 211 304 --difference-output-mode mosaic --difference-method running --difference-cmap-mode diverging --difference-norm-mode auto --difference-percentile 99.5 --no-difference-derotate --mosaic-ncols 3 --mosaic-global-outer-axes
 
 Outputs:
 - Single-band PNGs are saved beside the source FITS files in each band's
@@ -83,7 +134,7 @@ import re
 import time
 import warnings
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
@@ -136,6 +187,31 @@ DIFF_CONFIG: dict = {
 }
 
 
+def _normalize_wave_float_dict(value, name: str) -> dict:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        normalized = {}
+        for k, v in value.items():
+            wave = int(k)
+            normalized[wave] = float(v)
+        return normalized
+    if isinstance(value, (list, tuple)):
+        normalized = {}
+        for item in value:
+            if isinstance(item, str):
+                if ":" not in item:
+                    raise ValueError(
+                        f"{name} item must use WAVE:VALUE format, got {item!r}"
+                    )
+                wave_str, val_str = item.split(":", 1)
+                normalized[int(wave_str)] = float(val_str)
+            else:
+                raise ValueError(f"{name} must be dict or list of WAVE:VALUE strings.")
+        return normalized
+    raise ValueError(f"{name} must be dict, list, tuple, or None.")
+
+
 @dataclass
 class AIAConfig:
     # ===== 用户最常修改区域 =====
@@ -144,7 +220,7 @@ class AIAConfig:
     date: str = "20260326"
 
     # mode 可选 single / mosaic / test；use_test_mode=True 时优先只预览一张图。
-    mode: str = "single"
+    mode: str = "mosaic"
     use_test_mode: bool = False
 
     # test_file 优先级最高；为空时从 data_path/test_wave 中按时间排序选第 test_index 个文件。
@@ -157,6 +233,10 @@ class AIAConfig:
     output_dir: Optional[str] = None
     single_band_output_subdir: str = "plot"
     mosaic_output_subdir: str = "multi_band"
+    mosaic_difference_output_subdir: str = "multi_band_difference"
+    mosaic_original_plus_difference_output_subdir: str = (
+        "multi_band_original_plus_difference"
+    )
 
     start_idx: int = 0
     end_idx: Optional[int] = None
@@ -182,8 +262,16 @@ class AIAConfig:
     use_band_subdirs: bool = True
     max_workers: Optional[int] = None
 
+    draw_original: bool = False
     multi_band_composite: bool = False
-    multi_band_wavelengths: Optional[Tuple[int, ...]] = (1600,)
+    multi_band_wavelengths: Optional[Tuple[int, ...]] = (
+        94,
+        131,
+        171,
+        193,
+        211,
+        304,
+    )
     multi_band_merge_axes: bool = True
     multi_band_also_save_single: bool = False
 
@@ -194,7 +282,7 @@ class AIAConfig:
     # 是否只在拼图外边缘显示坐标轴刻度与标签。
     mosaic_show_outer_axes: bool = True
     # 外边缘坐标字体大小。
-    mosaic_ticklabel_fontsize: int = 8
+    mosaic_ticklabel_fontsize: int = 7
     mosaic_axislabel_fontsize: int = 9
     # 内部子图通常隐藏坐标，避免无缝拼接时坐标重叠。
     mosaic_hide_inner_axes: bool = True
@@ -225,19 +313,28 @@ class AIAConfig:
     # 只保留整张图一次 X/Y axis label，避免边缘 panel 重复写标签。
     mosaic_outer_axislabel_once: bool = True
     # 兜底模式：隐藏所有 panel tick 数字，只在整张图外侧加坐标轴名称。
-    mosaic_global_outer_axes: bool = False
+    mosaic_global_outer_axes: bool = True
     # panel 左下角波段/时间文字位置。
     mosaic_panel_label_x: float = 0.02
     mosaic_panel_label_y: float = 0.035
     mosaic_panel_label_y_last_row: float = 0.08
     # mosaic 单任务会同时打开多波段 FITS，默认限制 worker 降低内存压力。
-    mosaic_max_workers: Optional[int] = 8
+    mosaic_max_workers: Optional[int] = 12
     mosaic_max_slots: Optional[int] = None
+    mosaic_difference_inline: bool = True
 
     # ===== Difference image options =====
-    draw_difference: bool = False
+    draw_difference: bool = True
     difference_method: str = "running"
-    difference_wavelengths: Optional[Tuple[int, ...]] = None
+    difference_output_mode: str = "auto"
+    difference_wavelengths: Optional[Tuple[int, ...]] = (
+        94,
+        131,
+        171,
+        193,
+        211,
+        304,
+    )
     difference_base_index: Optional[int] = None
     difference_output_subdir: str = "difference"
     difference_norm_mode: str = "auto"
@@ -245,9 +342,14 @@ class AIAConfig:
     difference_vmin: Optional[float] = None
     difference_vmax: Optional[float] = None
     difference_cmap: str = "RdBu_r"
+    difference_cmap_mode: str = "diverging"
+    warn_band_difference_cmap: bool = False
     difference_save_reference: bool = False
-    difference_show_colorbar: bool = True
-    difference_derotate: bool = True
+    difference_show_colorbar: bool = False
+    difference_derotate: bool = False
+    difference_vmin_by_wave: dict = field(default_factory=dict)
+    difference_vmax_by_wave: dict = field(default_factory=dict)
+    difference_vlim_by_wave: dict = field(default_factory=dict)
 
     multi_band_wspace: float = 0.06
     multi_band_hspace: float = 0.06
@@ -257,6 +359,15 @@ class AIAConfig:
 
     def __post_init__(self):
         apply_config_to_object(self, "sdo_aia_euv_processor")
+        self.difference_vmin_by_wave = _normalize_wave_float_dict(
+            self.difference_vmin_by_wave, "difference_vmin_by_wave"
+        )
+        self.difference_vmax_by_wave = _normalize_wave_float_dict(
+            self.difference_vmax_by_wave, "difference_vmax_by_wave"
+        )
+        self.difference_vlim_by_wave = _normalize_wave_float_dict(
+            self.difference_vlim_by_wave, "difference_vlim_by_wave"
+        )
         if self.mode not in ("single", "mosaic", "test"):
             raise ValueError(f"Invalid mode: {self.mode}")
         if self.data_path is None:
@@ -275,13 +386,26 @@ class AIAConfig:
             )
         if self.difference_method not in ("base", "running"):
             raise ValueError(f"Invalid difference_method: {self.difference_method}")
+        if self.difference_output_mode not in ("auto", "mosaic", "single", "both"):
+            raise ValueError(
+                f"Invalid difference_output_mode: {self.difference_output_mode}"
+            )
         if self.difference_norm_mode not in ("auto", "fixed", "config"):
             raise ValueError(
                 f"Invalid difference_norm_mode: {self.difference_norm_mode}"
             )
+        if self.difference_cmap_mode not in ("band", "diverging", "custom"):
+            raise ValueError(
+                f"Invalid difference_cmap_mode: {self.difference_cmap_mode}"
+            )
         if self.difference_wavelengths is not None:
             self.difference_wavelengths = tuple(
                 int(w) for w in self.difference_wavelengths
+            )
+        if not self.draw_original and not self.draw_difference:
+            raise ValueError(
+                "Nothing to draw: at least one of draw_original or "
+                "draw_difference must be True."
             )
         if self.draw_difference and self.difference_percentile <= 0:
             raise ValueError("difference_percentile must be positive.")
@@ -301,6 +425,9 @@ class PanelData:
     date_ymd: str
     cmap: str
     norm: mcolors.Normalize
+    panel_kind: str = "original"
+    panel_label: Optional[str] = None
+    is_difference: bool = False
 
 
 # ==============================================================================
@@ -502,32 +629,101 @@ def _diff_config_vlim(wave_val: int) -> float:
     return vlim if np.isfinite(vlim) and vlim > 0 else 200.0
 
 
+def _resolve_fixed_difference_limits_for_wave(
+    wave_val: int,
+    cfg: AIAConfig,
+) -> Optional[Tuple[float, float]]:
+    vmin_by_wave = cfg.difference_vmin_by_wave or {}
+    vmax_by_wave = cfg.difference_vmax_by_wave or {}
+    vlim_by_wave = cfg.difference_vlim_by_wave or {}
+
+    has_vmin = wave_val in vmin_by_wave
+    has_vmax = wave_val in vmax_by_wave
+    has_vlim = wave_val in vlim_by_wave
+
+    if has_vmin or has_vmax:
+        if has_vmin and has_vmax:
+            return float(vmin_by_wave[wave_val]), float(vmax_by_wave[wave_val])
+        if has_vmin:
+            vlim = abs(float(vmin_by_wave[wave_val]))
+            return -vlim, vlim
+        vlim = abs(float(vmax_by_wave[wave_val]))
+        return -vlim, vlim
+
+    if has_vlim:
+        vlim = abs(float(vlim_by_wave[wave_val]))
+        return -vlim, vlim
+
+    if cfg.difference_vmin is not None or cfg.difference_vmax is not None:
+        if cfg.difference_vmin is not None and cfg.difference_vmax is not None:
+            return float(cfg.difference_vmin), float(cfg.difference_vmax)
+        if cfg.difference_vmin is not None:
+            vlim = abs(float(cfg.difference_vmin))
+            return -vlim, vlim
+        vlim = abs(float(cfg.difference_vmax))
+        return -vlim, vlim
+
+    if cfg.difference_norm_mode == "fixed":
+        raise ValueError(
+            "difference_norm_mode='fixed' requires per-band limits, "
+            "difference_vlim_by_wave, or global difference_vmin/difference_vmax."
+        )
+
+    return None
+
+
 def _resolve_difference_params(
     diff_data: np.ndarray,
     wave_val: int,
     cfg: AIAConfig,
 ) -> Tuple[str, mcolors.Normalize]:
     diff_config = DIFF_CONFIG.get(wave_val, {})
-    cmap = cfg.difference_cmap or diff_config.get("cmap") or "RdBu_r"
+    if cfg.difference_cmap_mode == "band":
+        band_config = AIA_CONFIG.get(wave_val)
+        if band_config is None:
+            raise ValueError(
+                f"AIA {wave_val}: missing AIA_CONFIG entry; cannot force "
+                "band colormap."
+            )
+        if cfg.warn_band_difference_cmap:
+            warnings.warn(
+                "difference_cmap_mode='band' uses the AIA sequential band colormap. "
+                "For signed difference maps, difference_cmap_mode='diverging' with "
+                "RdBu_r is often clearer for positive/negative contrast.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        cmap = band_config["cmap"]
+    elif cfg.difference_cmap_mode == "diverging":
+        cmap = diff_config.get("cmap") or "RdBu_r"
+    elif cfg.difference_cmap_mode == "custom":
+        if not cfg.difference_cmap:
+            raise ValueError("difference_cmap_mode='custom' requires difference_cmap.")
+        cmap = cfg.difference_cmap
+    else:
+        raise ValueError(f"Invalid difference_cmap_mode: {cfg.difference_cmap_mode}")
 
-    if cfg.difference_norm_mode == "fixed":
-        if cfg.difference_vmin is None or cfg.difference_vmax is None:
-            raise ValueError(
-                "difference_norm_mode='fixed' requires both difference_vmin "
-                "and difference_vmax."
-            )
-        vmin = float(cfg.difference_vmin)
-        vmax = float(cfg.difference_vmax)
-        if not (vmin < 0 < vmax):
-            raise ValueError(
-                "Fixed difference limits must satisfy difference_vmin < 0 < "
-                "difference_vmax."
-            )
-        return cmap, mcolors.Normalize(vmin=vmin, vmax=vmax)
+    def _difference_norm(vmin: float, vmax: float) -> mcolors.Normalize:
+        if not vmin < vmax:
+            raise ValueError("difference_vmin must be smaller than difference_vmax.")
+        if vmin < 0 < vmax:
+            return mcolors.TwoSlopeNorm(vmin=vmin, vcenter=0.0, vmax=vmax)
+        warnings.warn(
+            "Difference limits do not span zero; using linear Normalize "
+            "instead of TwoSlopeNorm.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return mcolors.Normalize(vmin=vmin, vmax=vmax)
+
+    fixed_limits = _resolve_fixed_difference_limits_for_wave(wave_val, cfg)
+    if fixed_limits is not None:
+        vmin, vmax = fixed_limits
+        return cmap, _difference_norm(vmin, vmax)
 
     if cfg.difference_norm_mode == "config":
         vlim = _diff_config_vlim(wave_val)
-        return cmap, mcolors.Normalize(vmin=-vlim, vmax=vlim)
+        return cmap, _difference_norm(-vlim, vlim)
 
     finite = np.asarray(diff_data[np.isfinite(diff_data)])
     if finite.size:
@@ -537,36 +733,147 @@ def _resolve_difference_params(
         vlim = np.nan
     if not np.isfinite(vlim) or vlim <= 0:
         vlim = _diff_config_vlim(wave_val)
-    return cmap, mcolors.Normalize(vmin=-vlim, vmax=vlim)
+    if cfg.mosaic_debug_layout:
+        print(
+            f"AIA {wave_val} auto difference limits: "
+            f"percentile={cfg.difference_percentile}, "
+            f"vmin={-vlim:.3g}, vmax={vlim:.3g}"
+        )
+    return cmap, _difference_norm(-vlim, vlim)
 
 
-def _load_normalized_cutout(
-    path: Path,
-    cfg: AIAConfig,
-    target_wcs=None,
-    use_derotation: bool = True,
-) -> sunpy.map.GenericMap:
+def _load_exposure_normalized_map(path: Path) -> sunpy.map.GenericMap:
     current_map = sunpy.map.Map(path)
     exp_time = current_map.exposure_time.to_value(u.s)
     if exp_time <= 0:
         raise ValueError(f"{path.name}: abnormal exposure time ({exp_time}s)")
 
     normalized_data = current_map.data / exp_time
-    normalized_map = sunpy.map.Map(normalized_data, current_map.meta)
+    meta = current_map.meta.copy()
+    meta["bunit"] = "DN / s"
+    return sunpy.map.Map(normalized_data, meta)
 
+
+def _cutout_roi(
+    aia_map: sunpy.map.GenericMap,
+    cfg: AIAConfig,
+) -> sunpy.map.GenericMap:
     tx1, tx2, ty1, ty2 = cfg.roi_bounds
-    frame = normalized_map.coordinate_frame
+    frame = aia_map.coordinate_frame
     bl = SkyCoord(Tx=tx1 * u.arcsec, Ty=ty1 * u.arcsec, frame=frame)
     tr = SkyCoord(Tx=tx2 * u.arcsec, Ty=ty2 * u.arcsec, frame=frame)
-    cutout_map = normalized_map.submap(bl, top_right=tr)
+    return aia_map.submap(bl, top_right=tr)
 
-    if target_wcs is None:
-        return cutout_map
 
-    if use_derotation:
-        with propagate_with_solar_surface():
-            return cutout_map.reproject_to(target_wcs)
-    return cutout_map.reproject_to(target_wcs)
+def _load_normalized_cutout(
+    path: Path,
+    cfg: AIAConfig,
+) -> sunpy.map.GenericMap:
+    full_map = _load_exposure_normalized_map(path)
+    return _cutout_roi(full_map, cfg)
+
+
+def _make_difference_map(
+    current_map: sunpy.map.GenericMap,
+    reference_map: Optional[sunpy.map.GenericMap],
+    cfg: AIAConfig,
+    wave: Optional[int] = None,
+) -> sunpy.map.GenericMap:
+    meta = current_map.meta.copy()
+
+    if reference_map is None:
+        diff_quantity = current_map.quantity - current_map.quantity
+    else:
+        if reference_map.data.shape != current_map.data.shape:
+            raise ValueError(
+                f"shape mismatch current={current_map.data.shape}, "
+                f"reference={reference_map.data.shape}"
+            )
+        diff_quantity = current_map.quantity - reference_map.quantity
+
+    meta["bunit"] = diff_quantity.unit.to_string()
+    diff_data = diff_quantity.value
+    nan_fraction = np.count_nonzero(~np.isfinite(diff_data)) / diff_data.size
+    if nan_fraction > 0.05:
+        warnings.warn(
+            f"Difference map contains {nan_fraction:.1%} NaN pixels. "
+            "If this occurs in running difference, set difference_derotate=False; "
+            "if using derotation, reproject full map before ROI cutout.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    if cfg.mosaic_debug_layout:
+        finite = diff_data[np.isfinite(diff_data)]
+        if finite.size:
+            wave_label = f"AIA {wave}" if wave is not None else "AIA"
+            print(
+                f"{wave_label} diff stats: "
+                f"min={np.nanmin(diff_data):.3g}, "
+                f"max={np.nanmax(diff_data):.3g}, "
+                f"p1={np.nanpercentile(finite, 1):.3g}, "
+                f"p99={np.nanpercentile(finite, 99):.3g}, "
+                f"nan_fraction={nan_fraction:.3%}"
+            )
+
+    diff_data = np.nan_to_num(diff_data, nan=0.0, posinf=0.0, neginf=0.0)
+    return sunpy.map.Map(diff_data, meta)
+
+
+def _load_difference_map_from_paths(
+    current_path: Path,
+    reference_path: Optional[Path],
+    wave: int,
+    cfg: AIAConfig,
+) -> sunpy.map.GenericMap:
+    current_full = None
+    reference_full = None
+    reference_aligned_full = None
+
+    try:
+        current_full = _load_exposure_normalized_map(current_path)
+
+        wave_val = int(current_full.wavelength.value)
+        if wave_val != wave:
+            raise ValueError(
+                f"{current_path.name}: FITS wavelength {wave_val} does not "
+                f"match expected band {wave}"
+            )
+
+        current_cutout = _cutout_roi(current_full, cfg)
+
+        if reference_path is None:
+            reference_cutout = None
+        else:
+            reference_full = _load_exposure_normalized_map(reference_path)
+            ref_wave = int(reference_full.wavelength.value)
+            if ref_wave != wave:
+                raise ValueError(
+                    f"{reference_path.name}: FITS wavelength {ref_wave} does "
+                    f"not match expected band {wave}"
+                )
+
+            if cfg.difference_derotate:
+                # Reproject the full map first. Reprojecting an already-cut ROI
+                # can discard pixels that should rotate into the current ROI.
+                with propagate_with_solar_surface():
+                    reference_aligned_full = reference_full.reproject_to(
+                        current_full.wcs
+                    )
+                reference_cutout = _cutout_roi(reference_aligned_full, cfg)
+            else:
+                reference_cutout = _cutout_roi(reference_full, cfg)
+
+        return _make_difference_map(
+            current_cutout,
+            reference_cutout,
+            cfg,
+            wave=wave,
+        )
+
+    finally:
+        del current_full, reference_full, reference_aligned_full
+        gc.collect()
 
 
 def _plot_difference_map(
@@ -832,15 +1139,21 @@ def _hide_wcs_frame_for_seamless(ax) -> None:
 def _configure_mosaic_axes(
     ax, row: int, col: int, nrow: int, ncol: int, cfg: AIAConfig
 ) -> None:
-    if not cfg.mosaic_show_outer_axes:
+    if cfg.mosaic_global_outer_axes or not cfg.mosaic_show_outer_axes:
         _hide_wcs_frame_for_seamless(ax)
         return
 
     lon, lat = ax.coords
+    is_last_row = row == nrow - 1
+    is_first_col = col == 0
 
     try:
         lon.set_ticks(direction="in")
         lat.set_ticks(direction="in")
+        lon.set_ticks_position("b")
+        lon.set_ticklabel_position("b")
+        lat.set_ticks_position("l")
+        lat.set_ticklabel_position("l")
         lon.set_ticklabel(
             size=cfg.mosaic_ticklabel_fontsize,
             exclude_overlapping=True,
@@ -855,9 +1168,6 @@ def _configure_mosaic_axes(
             lat.set_ticklabel(size=cfg.mosaic_ticklabel_fontsize)
         except (TypeError, AttributeError):
             pass
-
-    is_last_row = row == nrow - 1
-    is_first_col = col == 0
 
     if cfg.mosaic_x_tick_strategy == "all_bottom":
         show_lon = is_last_row
@@ -895,43 +1205,8 @@ def _configure_mosaic_axes(
         except Exception:
             pass
 
-    if show_lon:
-        show_lon_label = True
-        if cfg.mosaic_outer_axislabel_once:
-            show_lon_label = row == nrow - 1 and col == ncol // 2
-        if show_lon_label:
-            lon.set_axislabel(
-                "Helioprojective Longitude (Solar-X)",
-                fontsize=cfg.mosaic_axislabel_fontsize,
-            )
-        else:
-            lon.set_axislabel("")
-        try:
-            lon.set_ticks_position("b")
-            lon.set_ticklabel_position("b")
-        except (TypeError, AttributeError):
-            pass
-    else:
-        lon.set_axislabel("")
-
-    if show_lat:
-        show_lat_label = True
-        if cfg.mosaic_outer_axislabel_once:
-            show_lat_label = col == 0 and row == nrow // 2
-        if show_lat_label:
-            lat.set_axislabel(
-                "Helioprojective Latitude (Solar-Y)",
-                fontsize=cfg.mosaic_axislabel_fontsize,
-            )
-        else:
-            lat.set_axislabel("")
-        try:
-            lat.set_ticks_position("l")
-            lat.set_ticklabel_position("l")
-        except (TypeError, AttributeError):
-            pass
-    else:
-        lat.set_axislabel("")
+    lon.set_axislabel("")
+    lat.set_axislabel("")
 
     ax.set_frame_on(True)
 
@@ -1137,10 +1412,67 @@ def _load_aia_cutout_panel(path: Path, expected_wave: int, cfg: AIAConfig) -> Pa
             date_ymd=_obs_date_ymd(current_map, path),
             cmap=final_cmap,
             norm=final_norm,
+            panel_kind="original",
+            panel_label=f"{_obs_time_isot_label(current_map, path)} AIA {wave_val} original",
+            is_difference=False,
         )
 
     finally:
         del current_map, raw_cutout, normalized_data
+        gc.collect()
+
+
+def _load_difference_cutout_panel(
+    current_path: Path,
+    reference_path: Optional[Path],
+    wave: int,
+    cfg: AIAConfig,
+    method_label: str,
+) -> PanelData:
+    diff_map = None
+
+    try:
+        diff_map = _load_difference_map_from_paths(
+            current_path,
+            reference_path,
+            wave,
+            cfg,
+        )
+        cmap, norm = _resolve_difference_params(diff_map.data, wave, cfg)
+        current_time = _obs_time_isot_label(diff_map, current_path)
+        if reference_path is None:
+            if method_label == "base":
+                relation = "reference frame, zero difference"
+            else:
+                relation = "reference frame, no previous frame"
+        elif method_label == "running":
+            relation = "current - previous"
+        else:
+            relation = "current - base"
+        panel_label = f"{current_time} AIA {wave} {method_label} diff\n{relation}"
+
+        return PanelData(
+            cutout_map=diff_map,
+            wave_val=wave,
+            iso_time=current_time,
+            date_ymd=_obs_date_ymd(diff_map, current_path),
+            cmap=cmap,
+            norm=norm,
+            panel_kind="difference",
+            panel_label=panel_label,
+            is_difference=True,
+        )
+
+    except Exception as exc:
+        reference_msg = str(reference_path) if reference_path is not None else "None"
+        raise RuntimeError(
+            f"AIA {wave} {method_label} difference failed; "
+            f"current file={current_path}; reference/base file={reference_msg}; "
+            f"{exc}"
+        ) from exc
+
+    finally:
+        del diff_map
         gc.collect()
 
 
@@ -1173,25 +1505,37 @@ def _draw_aia_panel(fig, ax, panel: PanelData, cfg: AIAConfig):
         _purge_stonyhurst_text_artists(ax)
 
     if cfg.show_colorbar:
-        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02).set_label("DN/s", fontsize=8)
+        cbar_label = "Difference intensity (DN/s)" if panel.is_difference else "DN/s"
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02).set_label(
+            cbar_label, fontsize=8
+        )
 
     return im
 
 
 def _add_panel_label(
-    ax, iso_time: str, wave_val: int, row: int, nrow: int, cfg: AIAConfig
+    ax,
+    iso_time: str,
+    wave_val: int,
+    row: int,
+    nrow: int,
+    cfg: AIAConfig,
+    panel_label: Optional[str] = None,
 ) -> None:
     label_y = (
         cfg.mosaic_panel_label_y_last_row
-        if (cfg.mosaic_show_outer_axes and row == nrow - 1)
+        if (
+            (cfg.mosaic_show_outer_axes or cfg.mosaic_global_outer_axes)
+            and row == nrow - 1
+        )
         else cfg.mosaic_panel_label_y
     )
     ax.text(
         cfg.mosaic_panel_label_x,
         label_y,
-        f"{iso_time} AIA {wave_val}",
+        panel_label or f"{iso_time} AIA {wave_val}",
         transform=ax.transAxes,
-        fontsize=13,
+        fontsize=11 if panel_label and "\n" in panel_label else 13,
         va="bottom",
         ha="left",
         color="white",
@@ -1222,11 +1566,73 @@ def _save_mosaic_figure(fig, save_path: Path, cfg: AIAConfig) -> None:
     )
 
 
+def _ordered_unique(values: Sequence[int]) -> Tuple[int, ...]:
+    seen = set()
+    ordered: List[int] = []
+    for value in values:
+        int_value = int(value)
+        if int_value not in seen:
+            seen.add(int_value)
+            ordered.append(int_value)
+    return tuple(ordered)
+
+
+def _mosaic_slot_wavelengths(cfg: AIAConfig) -> Tuple[int, ...]:
+    data_path = Path(cfg.data_path)
+    original_waves = cfg.multi_band_wavelengths
+    if original_waves is None:
+        original_waves = _discover_wavelength_dirs(data_path)
+
+    if cfg.mosaic_difference_inline and cfg.draw_difference:
+        diff_waves = cfg.difference_wavelengths or original_waves
+        if cfg.draw_original:
+            return _ordered_unique(tuple(original_waves) + tuple(diff_waves))
+        return _ordered_unique(diff_waves)
+
+    return tuple(original_waves)
+
+
+def _mosaic_save_prefix(cfg: AIAConfig) -> str:
+    if cfg.mosaic_difference_inline and cfg.draw_difference:
+        if cfg.draw_original:
+            return "multi_original_plus_diff"
+        return "multi_diff_only"
+    return "multi"
+
+
+def _mosaic_save_dir(cfg: AIAConfig) -> Path:
+    data_path = Path(cfg.data_path)
+
+    if cfg.draw_difference and cfg.mosaic_difference_inline and not cfg.draw_original:
+        return data_path / cfg.mosaic_difference_output_subdir
+
+    if cfg.draw_difference and cfg.mosaic_difference_inline and cfg.draw_original:
+        return data_path / cfg.mosaic_original_plus_difference_output_subdir
+
+    return data_path / cfg.mosaic_output_subdir
+
+
+def _base_difference_reference_path(wave: int, cfg: AIAConfig) -> Path:
+    files = _sorted_fits_for_band(Path(cfg.data_path), wave, cfg.use_band_subdirs)
+    if cfg.difference_base_index is None:
+        sliced_files = _slice_band_files(files, cfg.start_idx, cfg.end_idx)
+        if not sliced_files:
+            raise ValueError(f"AIA {wave}: no selected files for base difference.")
+        return sliced_files[0]
+    if cfg.difference_base_index < 0 or cfg.difference_base_index >= len(files):
+        raise ValueError(
+            f"AIA {wave}: difference_base_index={cfg.difference_base_index} "
+            f"is out of range for {len(files)} files."
+        )
+    return files[cfg.difference_base_index]
+
+
 def _process_multi_band_worker(
     slot_idx: int,
     paths: Tuple[Path, ...],
     wavelengths: Tuple[int, ...],
     cfg: AIAConfig,
+    previous_paths: Optional[Tuple[Path, ...]] = None,
 ) -> Tuple[bool, str]:
     fig = None
     panels: List[PanelData] = []
@@ -1245,8 +1651,77 @@ def _process_multi_band_worker(
         dy = abs(ty2 - ty1)
         aspect_ratio = dy / dx if dx != 0 else 1.0
 
-        for path, expected_wave in zip(paths, wavelengths):
-            panels.append(_load_aia_cutout_panel(path, expected_wave, cfg))
+        wave_to_current_path = dict(zip(wavelengths, paths))
+        wave_to_previous_path = (
+            dict(zip(wavelengths, previous_paths)) if previous_paths is not None else {}
+        )
+
+        if cfg.draw_original:
+            original_waves = cfg.multi_band_wavelengths or wavelengths
+            for expected_wave in original_waves:
+                path = wave_to_current_path.get(expected_wave)
+                if path is None:
+                    raise ValueError(
+                        f"Missing current slot path for AIA {expected_wave}."
+                    )
+                try:
+                    panels.append(_load_aia_cutout_panel(path, expected_wave, cfg))
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"wave={expected_wave}, slot_idx={slot_idx}, "
+                        f"current file={path}, previous/base file=None: {exc}"
+                    ) from exc
+
+        if cfg.draw_difference and cfg.mosaic_difference_inline:
+            diff_waves = (
+                cfg.difference_wavelengths or cfg.multi_band_wavelengths or wavelengths
+            )
+            for wave in diff_waves:
+                current_path = wave_to_current_path.get(wave)
+                if current_path is None:
+                    raise ValueError(f"Missing current slot path for AIA {wave}.")
+
+                if cfg.difference_method == "base":
+                    reference_path = _base_difference_reference_path(wave, cfg)
+                    if (
+                        current_path == reference_path
+                        and not cfg.difference_save_reference
+                    ):
+                        continue
+                    if current_path == reference_path:
+                        reference_path = None
+                else:
+                    reference_path = wave_to_previous_path.get(wave)
+                    if reference_path is None and not cfg.difference_save_reference:
+                        if slot_idx == 0:
+                            continue
+                        raise ValueError(f"Missing previous slot path for AIA {wave}.")
+
+                try:
+                    panels.append(
+                        _load_difference_cutout_panel(
+                            current_path,
+                            reference_path,
+                            wave,
+                            cfg,
+                            cfg.difference_method,
+                        )
+                    )
+                except Exception as exc:
+                    reference_msg = (
+                        str(reference_path) if reference_path is not None else "None"
+                    )
+                    raise RuntimeError(
+                        f"wave={wave}, slot_idx={slot_idx}, "
+                        f"current file={current_path}, "
+                        f"previous/base file={reference_msg}: {exc}"
+                    ) from exc
+
+        if not panels:
+            return (
+                True,
+                f"multi-band slot {slot_idx}: no panels selected; skipped.",
+            )
 
         n_panels = len(panels)
         nrow, ncol = _layout_mosaic_grid(n_panels, cfg.mosaic_ncols)
@@ -1317,7 +1792,15 @@ def _process_multi_band_worker(
             else:
                 _hide_wcs_frame_for_seamless(ax)
 
-            _add_panel_label(ax, panel.iso_time, panel.wave_val, row, nrow, cfg)
+            _add_panel_label(
+                ax,
+                panel.iso_time,
+                panel.wave_val,
+                row,
+                nrow,
+                cfg,
+                panel.panel_label,
+            )
 
         for idx in range(n_panels, nrow * ncol):
             row, col = divmod(idx, ncol)
@@ -1330,7 +1813,9 @@ def _process_multi_band_worker(
                 ax_empty.set_yticks([])
                 ax_empty.set_facecolor("white")
 
-        if cfg.mosaic_global_outer_axes:
+        if cfg.mosaic_global_outer_axes or (
+            cfg.mosaic_show_outer_axes and cfg.mosaic_outer_axislabel_once
+        ):
             _add_global_mosaic_axislabels(fig, cfg)
 
         if not cfg.mosaic_manual_layout:
@@ -1349,10 +1834,11 @@ def _process_multi_band_worker(
             )
 
         if cfg.save_image:
-            save_dir = Path(cfg.data_path) / cfg.mosaic_output_subdir
+            save_dir = _mosaic_save_dir(cfg)
             save_dir.mkdir(parents=True, exist_ok=True)
             first_time = _parse_timestr(paths[0])
-            save_path = save_dir / f"multi_{slot_idx + 1:04d}_{first_time}.png"
+            prefix = _mosaic_save_prefix(cfg)
+            save_path = save_dir / f"{prefix}_{slot_idx + 1:04d}_{first_time}.png"
             _save_mosaic_figure(fig, save_path, cfg)
 
         if cfg.show_image:
@@ -1423,77 +1909,56 @@ def _process_difference_band_worker(
                     )
                 base_path = files[cfg.difference_base_index]
 
-            base_cutout = _load_normalized_cutout(
-                base_path, cfg, target_wcs=None, use_derotation=False
-            )
-            target_wcs = base_cutout.wcs
-            base_aligned = _load_normalized_cutout(
-                base_path,
-                cfg,
-                target_wcs=target_wcs,
-                use_derotation=cfg.difference_derotate,
-            )
-            base_data = base_aligned.data
             base_time = _parse_timestr(base_path)
 
             for current_file in sliced_files:
                 if current_file == base_path and not cfg.difference_save_reference:
                     continue
-                current_aligned = None
                 diff_map = None
                 try:
-                    current_aligned = _load_normalized_cutout(
+                    reference_path = None if current_file == base_path else base_path
+                    diff_map = _load_difference_map_from_paths(
                         current_file,
+                        reference_path,
+                        wave,
                         cfg,
-                        target_wcs=target_wcs,
-                        use_derotation=cfg.difference_derotate,
                     )
-                    if current_aligned.data.shape != base_data.shape:
-                        raise ValueError(
-                            f"shape mismatch current={current_aligned.data.shape}, "
-                            f"base={base_data.shape}"
-                        )
-                    diff_data = current_aligned.data - base_data
-                    diff_map = sunpy.map.Map(diff_data, current_aligned.meta)
                     current_time = _parse_timestr(current_file)
                     save_path = save_dir / f"{current_time}_base_diff.png"
+                    label = (
+                        "reference frame, zero difference"
+                        if reference_path is None
+                        else f"{current_time} - base {base_time}"
+                    )
                     _plot_difference_map(
                         diff_map,
                         wave,
                         f"{current_time} AIA {wave} base difference",
                         save_path,
                         cfg,
-                        prev_or_base_label=f"{current_time} - base {base_time}",
+                        prev_or_base_label=label,
                     )
                     success_count += 1
                 except Exception as exc:
-                    error_messages.append(f"{current_file.name}: {exc}")
+                    error_messages.append(
+                        f"wave={wave}, current file={current_file}, "
+                        f"previous/base file={base_path}: {exc}"
+                    )
                     plt.close("all")
                 finally:
-                    del current_aligned, diff_map
+                    del diff_map
                     gc.collect()
 
-            del base_cutout, base_aligned, base_data
-
         else:
-            ref_cutout = _load_normalized_cutout(
-                sliced_files[0], cfg, target_wcs=None, use_derotation=False
-            )
-            target_wcs = ref_cutout.wcs
-
             if cfg.difference_save_reference:
-                first_aligned = None
-                first_data = None
                 diff_map = None
                 try:
-                    first_aligned = _load_normalized_cutout(
+                    diff_map = _load_difference_map_from_paths(
                         sliced_files[0],
+                        None,
+                        wave,
                         cfg,
-                        target_wcs=target_wcs,
-                        use_derotation=cfg.difference_derotate,
                     )
-                    first_data = np.zeros_like(first_aligned.data)
-                    diff_map = sunpy.map.Map(first_data, first_aligned.meta)
                     first_time = _parse_timestr(sliced_files[0])
                     save_path = save_dir / f"{first_time}_running_diff.png"
                     _plot_difference_map(
@@ -1506,38 +1971,26 @@ def _process_difference_band_worker(
                     )
                     success_count += 1
                 except Exception as exc:
-                    error_messages.append(f"{sliced_files[0].name}: {exc}")
+                    error_messages.append(
+                        f"wave={wave}, current file={sliced_files[0]}, "
+                        f"previous/base file=None: {exc}"
+                    )
                     plt.close("all")
                 finally:
-                    del first_aligned, first_data, diff_map
+                    del diff_map
                     gc.collect()
 
             for i in range(1, len(sliced_files)):
                 prev_file = sliced_files[i - 1]
                 current_file = sliced_files[i]
-                prev_aligned = None
-                current_aligned = None
                 diff_map = None
                 try:
-                    prev_aligned = _load_normalized_cutout(
-                        prev_file,
-                        cfg,
-                        target_wcs=target_wcs,
-                        use_derotation=cfg.difference_derotate,
-                    )
-                    current_aligned = _load_normalized_cutout(
+                    diff_map = _load_difference_map_from_paths(
                         current_file,
+                        prev_file,
+                        wave,
                         cfg,
-                        target_wcs=target_wcs,
-                        use_derotation=cfg.difference_derotate,
                     )
-                    if prev_aligned.data.shape != current_aligned.data.shape:
-                        raise ValueError(
-                            f"shape mismatch current={current_aligned.data.shape}, "
-                            f"previous={prev_aligned.data.shape}"
-                        )
-                    diff_data = current_aligned.data - prev_aligned.data
-                    diff_map = sunpy.map.Map(diff_data, current_aligned.meta)
                     current_time = _parse_timestr(current_file)
                     prev_time = _parse_timestr(prev_file)
                     save_path = save_dir / f"{current_time}_running_diff.png"
@@ -1552,14 +2005,13 @@ def _process_difference_band_worker(
                     success_count += 1
                 except Exception as exc:
                     error_messages.append(
-                        f"{prev_file.name} -> {current_file.name}: {exc}"
+                        f"wave={wave}, current file={current_file}, "
+                        f"previous/base file={prev_file}: {exc}"
                     )
                     plt.close("all")
                 finally:
-                    del prev_aligned, current_aligned, diff_map
+                    del diff_map
                     gc.collect()
-
-            del ref_cutout
 
     except Exception as exc:
         plt.close("all")
@@ -1639,9 +2091,7 @@ def _run_mosaic_batch(cfg: AIAConfig) -> None:
             "(use_band_subdirs=True)."
         )
 
-    waves = cfg.multi_band_wavelengths
-    if waves is None:
-        waves = _discover_wavelength_dirs(Path(cfg.data_path))
+    waves = _mosaic_slot_wavelengths(cfg)
 
     slots = _build_multi_band_slots(cfg, waves)
     if not slots:
@@ -1655,7 +2105,9 @@ def _run_mosaic_batch(cfg: AIAConfig) -> None:
     error_count = 0
     workers = _mosaic_worker_count(cfg)
 
-    print(f"Multi-band mosaic mode: wavelengths {waves}")
+    print(f"Multi-band mosaic mode: slot wavelengths {waves}")
+    if cfg.mosaic_difference_inline:
+        print("Mosaic inline difference panels: enabled")
     print(
         f"Total {len(slots)} time slots; each slot contains {len(waves)} "
         "time-sorted band files."
@@ -1665,7 +2117,12 @@ def _run_mosaic_batch(cfg: AIAConfig) -> None:
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = {
             executor.submit(
-                _process_multi_band_worker, idx, slots[idx], waves, cfg
+                _process_multi_band_worker,
+                idx,
+                slots[idx],
+                waves,
+                cfg,
+                slots[idx - 1] if idx > 0 else None,
             ): idx
             for idx in range(len(slots))
         }
@@ -1685,7 +2142,7 @@ def _run_mosaic_batch(cfg: AIAConfig) -> None:
         f"Failed: {error_count}, Total time: {elapsed:.2f} seconds"
     )
 
-    if cfg.multi_band_also_save_single:
+    if cfg.multi_band_also_save_single and cfg.draw_original:
         print("\n--- Exporting single-band images as requested ---")
         _run_single_batch(cfg)
 
@@ -1785,18 +2242,43 @@ def _actual_mode(cfg: AIAConfig) -> str:
 def process_aia_fits(cfg: AIAConfig):
     actual_mode = _actual_mode(cfg)
     _configure_matplotlib_backend(actual_mode)
+    if not cfg.draw_original and not cfg.draw_difference:
+        raise ValueError(
+            "Nothing to draw: at least one of draw_original or "
+            "draw_difference must be True."
+        )
+
     if actual_mode == "test":
         _run_test_mode(cfg)
-    elif actual_mode == "mosaic":
-        _run_mosaic_batch(cfg)
-    else:
-        _run_single_batch(cfg)
-    if cfg.draw_difference and actual_mode == "test":
-        print(
-            "Test mode: draw_difference=True detected; full difference batch skipped."
-        )
-    elif cfg.draw_difference:
-        _run_difference_batch(cfg)
+        if cfg.draw_difference:
+            print(
+                "Test mode: draw_difference=True detected; full difference batch skipped."
+            )
+        return
+
+    if actual_mode == "single":
+        if cfg.draw_original:
+            _run_single_batch(cfg)
+        if cfg.draw_difference:
+            _run_difference_batch(cfg)
+        return
+
+    if actual_mode == "mosaic":
+        output_mode = cfg.difference_output_mode
+        if output_mode == "auto":
+            output_mode = "mosaic" if cfg.draw_difference else "mosaic"
+
+        if cfg.draw_difference and output_mode in ("mosaic", "both"):
+            cfg.mosaic_difference_inline = True
+            _run_mosaic_batch(cfg)
+
+        elif not cfg.draw_difference and cfg.draw_original:
+            _run_mosaic_batch(cfg)
+
+        if cfg.draw_difference and output_mode in ("single", "both"):
+            _run_difference_batch(cfg)
+
+        return
 
 
 # ==============================================================================
@@ -1870,6 +2352,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--mosaic-max-workers", type=int, default=None)
     parser.add_argument("--mosaic-max-slots", type=int, default=None)
+    parser.add_argument("--mosaic-difference-output-subdir", default=None)
+    parser.add_argument(
+        "--mosaic-original-plus-difference-output-subdir",
+        default=None,
+    )
     parser.add_argument("--mosaic-left", type=float, default=None)
     parser.add_argument("--mosaic-right", type=float, default=None)
     parser.add_argument("--mosaic-bottom", type=float, default=None)
@@ -1931,15 +2418,57 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
     )
     parser.add_argument("--mosaic-global-outer-axes", action="store_true", default=None)
+    parser.add_argument(
+        "--no-mosaic-global-outer-axes",
+        dest="mosaic_global_outer_axes",
+        action="store_false",
+        default=None,
+    )
+    parser.add_argument("--draw-original", action="store_true", default=None)
+    parser.add_argument(
+        "--no-draw-original",
+        dest="draw_original",
+        action="store_false",
+        default=None,
+    )
+    parser.add_argument(
+        "--mosaic-difference-inline",
+        action="store_true",
+        default=None,
+    )
+    parser.add_argument(
+        "--no-mosaic-difference-inline",
+        dest="mosaic_difference_inline",
+        action="store_false",
+        default=None,
+    )
 
     parser.add_argument("--draw-difference", action="store_true", default=None)
+    parser.add_argument(
+        "--no-draw-difference",
+        dest="draw_difference",
+        action="store_false",
+        default=None,
+    )
     parser.add_argument(
         "--difference-method",
         choices=("base", "running"),
         default=None,
     )
     parser.add_argument(
+        "--difference-output-mode",
+        choices=("auto", "mosaic", "single", "both"),
+        default=None,
+        help=(
+            "Difference output target. auto: single mode saves per-band "
+            "differences, mosaic mode saves mosaic differences; mosaic: save "
+            "stitched mosaic; single: save per-band difference images; both: "
+            "save both."
+        ),
+    )
+    parser.add_argument(
         "--diff-waves",
+        "--difference-wavelengths",
         dest="difference_wavelengths",
         nargs="+",
         type=int,
@@ -1960,7 +2489,43 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--difference-percentile", type=float, default=None)
     parser.add_argument("--difference-vmin", type=float, default=None)
     parser.add_argument("--difference-vmax", type=float, default=None)
+    parser.add_argument(
+        "--difference-vmin-by-wave",
+        nargs="*",
+        default=None,
+        metavar="WAVE:VMIN",
+        help="Per-band difference vmin, e.g. 94:-80 131:-120 171:-200.",
+    )
+    parser.add_argument(
+        "--difference-vmax-by-wave",
+        nargs="*",
+        default=None,
+        metavar="WAVE:VMAX",
+        help="Per-band difference vmax, e.g. 94:80 131:120 171:200.",
+    )
+    parser.add_argument(
+        "--difference-vlim-by-wave",
+        nargs="*",
+        default=None,
+        metavar="WAVE:VLIM",
+        help="Per-band symmetric difference range, e.g. 94:80 131:120 171:200.",
+    )
     parser.add_argument("--difference-cmap", default=None)
+    parser.add_argument(
+        "--difference-cmap-mode",
+        choices=("band", "diverging", "custom"),
+        default=None,
+    )
+    parser.add_argument(
+        "--warn-band-difference-cmap",
+        action="store_true",
+        default=None,
+        help=(
+            "Print a warning when difference_cmap_mode='band'. By default "
+            "this warning is disabled because the user may intentionally force "
+            "each AIA difference panel to use its corresponding band colormap."
+        ),
+    )
     parser.add_argument(
         "--difference-save-reference",
         action="store_true",
@@ -2046,6 +2611,8 @@ def config_from_args(args: argparse.Namespace) -> AIAConfig:
         "mosaic_save_tight",
         "mosaic_max_workers",
         "mosaic_max_slots",
+        "mosaic_difference_output_subdir",
+        "mosaic_original_plus_difference_output_subdir",
         "mosaic_left",
         "mosaic_right",
         "mosaic_bottom",
@@ -2059,14 +2626,22 @@ def config_from_args(args: argparse.Namespace) -> AIAConfig:
         "mosaic_y_tick_strategy",
         "mosaic_outer_axislabel_once",
         "mosaic_global_outer_axes",
+        "draw_original",
+        "mosaic_difference_inline",
         "draw_difference",
         "difference_method",
+        "difference_output_mode",
         "difference_base_index",
         "difference_norm_mode",
         "difference_percentile",
         "difference_vmin",
         "difference_vmax",
+        "difference_vmin_by_wave",
+        "difference_vmax_by_wave",
+        "difference_vlim_by_wave",
         "difference_cmap",
+        "difference_cmap_mode",
+        "warn_band_difference_cmap",
         "difference_save_reference",
         "difference_show_colorbar",
         "difference_derotate",
@@ -2081,12 +2656,26 @@ def config_from_args(args: argparse.Namespace) -> AIAConfig:
     for name, value in provided.items():
         setattr(cfg, name, value)
 
+    cfg.difference_vmin_by_wave = _normalize_wave_float_dict(
+        cfg.difference_vmin_by_wave, "difference_vmin_by_wave"
+    )
+    cfg.difference_vmax_by_wave = _normalize_wave_float_dict(
+        cfg.difference_vmax_by_wave, "difference_vmax_by_wave"
+    )
+    cfg.difference_vlim_by_wave = _normalize_wave_float_dict(
+        cfg.difference_vlim_by_wave, "difference_vlim_by_wave"
+    )
+
     if args.roi is not None:
         cfg.roi_bounds = tuple(args.roi)
     if args.waves is not None:
         cfg.multi_band_wavelengths = tuple(args.waves)
+    else:
+        cfg.multi_band_wavelengths = None
     if args.difference_wavelengths is not None:
         cfg.difference_wavelengths = tuple(args.difference_wavelengths)
+    elif args.waves is not None:
+        cfg.difference_wavelengths = tuple(args.waves)
     if args.use_test_mode:
         cfg.use_test_mode = True
     if args.test_file is not None:
@@ -2109,12 +2698,35 @@ def config_from_args(args: argparse.Namespace) -> AIAConfig:
     if args.multi_band_also_save_single is not None:
         cfg.multi_band_also_save_single = args.multi_band_also_save_single
 
+    if args.difference_norm_mode is None and (
+        args.difference_vmin is not None or args.difference_vmax is not None
+    ):
+        cfg.difference_norm_mode = "fixed"
+
     if cfg.difference_method not in ("base", "running"):
         raise ValueError(f"Invalid difference_method: {cfg.difference_method}")
+    if cfg.difference_output_mode not in ("auto", "mosaic", "single", "both"):
+        raise ValueError(
+            f"Invalid difference_output_mode: {cfg.difference_output_mode}"
+        )
     if cfg.difference_norm_mode not in ("auto", "fixed", "config"):
         raise ValueError(f"Invalid difference_norm_mode: {cfg.difference_norm_mode}")
+    if cfg.difference_cmap_mode not in ("band", "diverging", "custom"):
+        raise ValueError(f"Invalid difference_cmap_mode: {cfg.difference_cmap_mode}")
     if cfg.difference_wavelengths is not None:
         cfg.difference_wavelengths = tuple(int(w) for w in cfg.difference_wavelengths)
+    if not cfg.draw_original and not cfg.draw_difference:
+        raise ValueError(
+            "Nothing to draw: at least one of draw_original or "
+            "draw_difference must be True."
+        )
+    if cfg.mosaic_difference_inline and not cfg.draw_difference:
+        warnings.warn(
+            "mosaic_difference_inline=True but draw_difference=False; no "
+            "difference panels will be added.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     if cfg.draw_difference and cfg.difference_percentile <= 0:
         raise ValueError("difference_percentile must be positive.")
 
