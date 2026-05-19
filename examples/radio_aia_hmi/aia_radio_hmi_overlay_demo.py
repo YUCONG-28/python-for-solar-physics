@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: AIA/射电/HMI 叠加流程的实验性开发脚本。
 # 主要输入: AIA、射电和 HMI 测试数据。
 # 主要输出/运行说明: 输出调试图像；该文件保留为开发脚本，不作为正式单元测试。
@@ -32,13 +31,9 @@ import gc
 import glob
 import os
 import re
-import time
 import warnings
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from functools import lru_cache, partial
-from typing import Dict, List, Optional, Tuple
 
 # ============================================================
 # 2. 科学计算和天文库导入
@@ -47,23 +42,18 @@ import astropy.units as u
 import matplotlib
 
 matplotlib.use("Agg")  # 非交互后端，子进程安全，节省内存
-import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import psutil
 import sunpy.coordinates
 import sunpy.map
-from astropy.constants import R_sun
-from astropy.convolution import Gaussian2DKernel
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-from astropy.wcs import WCS
 from matplotlib.lines import Line2D
 from matplotlib.patches import Ellipse
 from scipy.interpolate import RegularGridInterpolator  # 提前导入，避免函数内重复导入
 from scipy.ndimage import gaussian_filter
 from scipy.optimize import curve_fit
-from sunpy.coordinates import frames
 
 from solar_toolkit.path_config import apply_config_to_object
 
@@ -178,10 +168,10 @@ class Config:
     save_figure: bool = True
     dpi: int = 300
     aia_file_start_idx: int = 392
-    aia_file_end_idx: Optional[int] = 396
+    aia_file_end_idx: int | None = 396
 
     # ── 射电波段配置 ───────────────────────────────────────────
-    selected_bands: List[str] = field(
+    selected_bands: list[str] = field(
         default_factory=lambda: [
             "149MHz",
             "164MHz",
@@ -214,10 +204,10 @@ class Config:
 
     # ── 等值线配置 ─────────────────────────────────────────────
     normalization_mode: str = "peak"
-    contour_levels_peak: List[float] = field(default_factory=lambda: [0.75])
-    rms_sigma_levels: List[float] = field(default_factory=lambda: [20.0])
+    contour_levels_peak: list[float] = field(default_factory=lambda: [0.75])
+    rms_sigma_levels: list[float] = field(default_factory=lambda: [20.0])
     rms_box_fraction: float = 0.05
-    contour_linewidths: List[float] = field(default_factory=lambda: [2.0])
+    contour_linewidths: list[float] = field(default_factory=lambda: [2.0])
     contour_alpha: float = 0.90
     contour_smooth_sigma: float = 0
 
@@ -228,14 +218,14 @@ class Config:
     hmi_time_threshold: int = 24  # HMI 与 AIA 时间匹配阈值（小时）
     hmi_threshold_gauss: float = 0.0
     hmi_sigma: int = 2
-    hmi_levels_gauss: List[float] = field(default_factory=lambda: [100.0])
+    hmi_levels_gauss: list[float] = field(default_factory=lambda: [100.0])
 
     # ── AIA 图像配置 ───────────────────────────────────────────
     aia_vmin: float = 16
     aia_vmax: float = 6666
     aia_cmap: str = "sdoaia171"
-    roi_bottom_left: List[float] = field(default_factory=lambda: [600, -800])
-    roi_top_right: List[float] = field(default_factory=lambda: [1600, 200])
+    roi_bottom_left: list[float] = field(default_factory=lambda: [600, -800])
+    roi_top_right: list[float] = field(default_factory=lambda: [1600, 200])
 
     # ── 画布颜色配置 ───────────────────────────────────────────
     style: CanvasStyle = field(default_factory=CanvasStyle)
@@ -251,7 +241,7 @@ class Config:
             "238.0MHz": ("teal", "darkslategray"),  # 青绿偏暗（避开背景）
         }
     )
-    default_colors: List[Tuple] = field(
+    default_colors: list[tuple] = field(
         default_factory=lambda: [
             ("dodgerblue", "navy"),
             ("orange", "darkorange"),
@@ -295,7 +285,7 @@ class Config:
 # ============================================================
 
 
-def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
+def _parse_flexible_datetime(date_str: str) -> datetime | None:
     """灵活解析各种时间字符串格式，返回 datetime 或 None"""
     date_str = date_str.strip()
 
@@ -394,7 +384,7 @@ def _parse_flexible_datetime(date_str: str) -> Optional[datetime]:
     return None
 
 
-def parse_radio_time_from_filename(filename: str) -> Optional[datetime]:
+def parse_radio_time_from_filename(filename: str) -> datetime | None:
     """从射电文件名提取观测时间"""
     basename = os.path.basename(filename)
 
@@ -421,7 +411,7 @@ def parse_radio_time_from_filename(filename: str) -> Optional[datetime]:
     return None
 
 
-def parse_aia_time_from_filename(filename: str) -> Optional[datetime]:
+def parse_aia_time_from_filename(filename: str) -> datetime | None:
     """从 AIA 文件名或头文件提取观测时间"""
     basename = os.path.basename(filename)
 
@@ -457,7 +447,7 @@ def parse_aia_time_from_filename(filename: str) -> Optional[datetime]:
     return None
 
 
-def parse_hmi_time_from_filename(filename: str) -> Optional[datetime]:
+def parse_hmi_time_from_filename(filename: str) -> datetime | None:
     """从 HMI 文件名提取观测时间"""
     basename = os.path.basename(filename)
 
@@ -478,7 +468,7 @@ def parse_hmi_time_from_filename(filename: str) -> Optional[datetime]:
     return None
 
 
-def parse_radio_time_from_header(header: fits.Header) -> Optional[datetime]:
+def parse_radio_time_from_header(header: fits.Header) -> datetime | None:
     """从 FITS 头解析射电观测时间"""
     time_keys = [
         "DATE-OBS",
@@ -508,7 +498,7 @@ def parse_radio_time_from_header(header: fits.Header) -> Optional[datetime]:
     return None
 
 
-def _parse_time_from_filename(filename: str) -> Optional[Tuple[str, int]]:
+def _parse_time_from_filename(filename: str) -> tuple[str, int] | None:
     """
     从文件名中解析时间信息（精确到毫秒），用于时间对齐匹配。
 
@@ -555,7 +545,7 @@ def _parse_time_from_filename(filename: str) -> Optional[Tuple[str, int]]:
 
 def _match_rr_ll_by_time(
     rr_files: list, ll_files: list, tolerance_ms: float = 10.0
-) -> List[Tuple[str, str]]:
+) -> list[tuple[str, str]]:
     """
     根据文件名时间戳将RR与LL文件逐一配对（毫秒级精度）。
 
@@ -575,8 +565,8 @@ def _match_rr_ll_by_time(
     matched_pairs : list of (rr_path, ll_path)
     """
     # 构建LL时间索引: {(date, total_ms): ll_path}
-    ll_index: Dict[Tuple[str, int], str] = {}
-    ll_no_parse: List[str] = []
+    ll_index: dict[tuple[str, int], str] = {}
+    ll_no_parse: list[str] = []
     for ll_path in ll_files:
         parsed = _parse_time_from_filename(os.path.basename(ll_path))
         if parsed is None:
@@ -587,15 +577,18 @@ def _match_rr_ll_by_time(
                 ll_index[key] = ll_path
 
     if ll_no_parse:
-        warnings.warn(f"有 {len(ll_no_parse)} 个LL文件无法从文件名解析时间，将被跳过。")
+        warnings.warn(
+            f"有 {len(ll_no_parse)} 个LL文件无法从文件名解析时间，将被跳过。",
+            stacklevel=2,
+        )
 
-    matched_pairs: List[Tuple[str, str]] = []
-    unmatched_rr: List[str] = []
+    matched_pairs: list[tuple[str, str]] = []
+    unmatched_rr: list[str] = []
 
     # 将LL索引按日期分组，加速搜索
     from collections import defaultdict
 
-    ll_by_date: Dict[str, List[Tuple[int, str]]] = defaultdict(
+    ll_by_date: dict[str, list[tuple[int, str]]] = defaultdict(
         list
     )  # {date_str: [(total_ms, ll_path), ...]}
     for (date_str, total_ms), ll_path in ll_index.items():
@@ -608,7 +601,10 @@ def _match_rr_ll_by_time(
         parsed = _parse_time_from_filename(os.path.basename(rr_path))
         if parsed is None:
             unmatched_rr.append(rr_path)
-            warnings.warn(f"RR文件 {os.path.basename(rr_path)} 无法解析时间，跳过。")
+            warnings.warn(
+                f"RR文件 {os.path.basename(rr_path)} 无法解析时间，跳过。",
+                stacklevel=2,
+            )
             continue
 
         rr_date, rr_ms = parsed
@@ -635,11 +631,13 @@ def _match_rr_ll_by_time(
             if best_diff != float("inf"):
                 warnings.warn(
                     f"RR文件 {os.path.basename(rr_path)} 找不到时间匹配的LL文件 "
-                    f"(最近差值={best_diff:.1f}ms > 容差={tolerance_ms:.1f}ms)，跳过。"
+                    f"(最近差值={best_diff:.1f}ms > 容差={tolerance_ms:.1f}ms)，跳过。",
+                    stacklevel=2,
                 )
             else:
                 warnings.warn(
-                    f"RR文件 {os.path.basename(rr_path)} 在LL目录中找不到同日期文件，跳过。"
+                    f"RR文件 {os.path.basename(rr_path)} 在LL目录中找不到同日期文件，跳过。",
+                    stacklevel=2,
                 )
 
     if unmatched_rr:
@@ -669,7 +667,7 @@ def _combine_polarization_data(
 # ============================================================
 
 
-def get_sun_center_and_radius(header) -> Tuple:
+def get_sun_center_and_radius(header) -> tuple:
     """从 FITS 头获取太阳中心坐标和可视半径"""
     try:
         crpix1 = header.get("CRPIX1", 0)
@@ -705,7 +703,7 @@ def calculate_image_extent(data_shape, crpix1, crpix2, crval1, crval2, cdelt1, c
     return x_extent, y_extent
 
 
-def get_solar_position(obs_time: datetime) -> Tuple[float, float]:
+def get_solar_position(obs_time: datetime) -> tuple[float, float]:
     """计算观测时刻太阳中心在 ICRS 坐标系中的位置（RA, Dec，单位度）"""
     try:
         from astropy.coordinates import get_sun
@@ -723,12 +721,10 @@ def get_solar_position(obs_time: datetime) -> Tuple[float, float]:
 # ============================================================
 
 # 坐标文件缓存：key = (search_dir, freq_value, 'ra'/'dec')
-_radec_file_cache: Dict[Tuple[str, str, str], Optional[str]] = {}
+_radec_file_cache: dict[tuple[str, str, str], str | None] = {}
 
 
-def _find_radec_file(
-    search_dirs: List[str], freq_value: str, kind: str
-) -> Optional[str]:
+def _find_radec_file(search_dirs: list[str], freq_value: str, kind: str) -> str | None:
     """
     查找赤经（kind='ra'）或赤纬（kind='dec'）坐标文件，结果缓存避免重复搜索。
     """
@@ -777,7 +773,7 @@ def _find_radec_file(
     return None
 
 
-def _load_fits_2d(path: str, use_float32: bool) -> Optional[np.ndarray]:
+def _load_fits_2d(path: str, use_float32: bool) -> np.ndarray | None:
     """读取 FITS 并压缩到 2D，失败返回 None"""
     try:
         with fits.open(path) as hdu:
@@ -793,12 +789,12 @@ def _load_fits_2d(path: str, use_float32: bool) -> Optional[np.ndarray]:
 def extract_radio_2d_data(
     fits_path: str,
     use_float32: bool = True,
-    cfg: Optional[Config] = None,
-) -> Tuple[
-    Optional[np.ndarray],
-    Optional[np.ndarray],
-    Optional[np.ndarray],
-    Optional[fits.Header],
+    cfg: Config | None = None,
+) -> tuple[
+    np.ndarray | None,
+    np.ndarray | None,
+    np.ndarray | None,
+    fits.Header | None,
     None,
 ]:
     """
@@ -919,7 +915,7 @@ def estimate_rms_noise(data: np.ndarray, box_fraction: float = 0.15) -> float:
     return float(np.std(filtered)) if len(filtered) > 0 else float(std_est)
 
 
-def compute_contour_levels(data: np.ndarray, cfg: Config) -> List[float]:
+def compute_contour_levels(data: np.ndarray, cfg: Config) -> list[float]:
     """根据归一化模式计算等值线级别"""
     finite = data[np.isfinite(data)]
     if len(finite) == 0:
@@ -1037,12 +1033,12 @@ def fit_elliptical_gaussian(data, x, y, initial_guess=None):
 
 def reproject_radio_via_gaussian_fit(
     radio_data: np.ndarray,
-    ra_map: Optional[np.ndarray],
-    dec_map: Optional[np.ndarray],
+    ra_map: np.ndarray | None,
+    dec_map: np.ndarray | None,
     aia_cutout_map: sunpy.map.GenericMap,
     cfg: Config,
-    radio_header: Optional[fits.Header] = None,
-) -> Optional[np.ndarray]:
+    radio_header: fits.Header | None = None,
+) -> np.ndarray | None:
     ny_a, nx_a = aia_cutout_map.data.shape
     ny_r, nx_r = radio_data.shape
     x_pix = np.arange(nx_r, dtype=float)
@@ -1257,7 +1253,7 @@ def _get_padded_aia_map(
 # ============================================================
 
 
-def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
+def build_matched_pairs(cfg: Config) -> list[tuple[str, str | None, list]]:
     """
     构建任务列表：将 AIA 文件前后指定时间内的所有射电数据
     按时间顺序切分为一个个独立的“切片”（slice），用于生成序列帧。
@@ -1400,12 +1396,12 @@ def build_matched_pairs(cfg: Config) -> List[Tuple[str, Optional[str], List]]:
 
 def process_aia_group(
     aia_file: str,
-    hmi_file: Optional[str],
-    sub_tasks: List[Tuple[int, Dict]],
+    hmi_file: str | None,
+    sub_tasks: list[tuple[int, dict]],
     task_index: int,
     total_tasks: int,
     cfg: Config,
-    color_cache: List,
+    color_cache: list,
 ):
     print(f"\n处理 AIA 文件 [{task_index}/{total_tasks}]: {os.path.basename(aia_file)}")
 
@@ -1696,7 +1692,7 @@ def process_hmi_for_overlay(hmi_file: str, target_wcs, cfg: Config, ax):
 # ============================================================
 
 
-def get_beam_params_from_header(header: fits.Header) -> Optional[Dict]:
+def get_beam_params_from_header(header: fits.Header) -> dict | None:
     """从射电 FITS 头提取波束参数（BMAJ, BMIN, BPA）"""
     try:
         bmaj = header.get("BMAJ", None)  # 单位度
@@ -1704,13 +1700,13 @@ def get_beam_params_from_header(header: fits.Header) -> Optional[Dict]:
         bpa = header.get("BPA", 0.0)
         if bmaj is not None and bmin is not None:
             return {"bmaj": bmaj, "bmin": bmin, "bpa": bpa}
-    except:
+    except Exception:
         pass
     return None
 
 
 def draw_beam_ellipse_pixel(
-    ax, beam: Dict, aia_cutout_map: sunpy.map.GenericMap, color: str = "white"
+    ax, beam: dict, aia_cutout_map: sunpy.map.GenericMap, color: str = "white"
 ):
     """在图像上绘制波束椭圆（单位：弧秒）"""
     bmaj = beam["bmaj"] * 3600  # 度转弧秒
@@ -1737,8 +1733,8 @@ def draw_beam_ellipse_pixel(
 
 
 def get_band_color(
-    band_label: str, band_idx: int, cfg: Config, color_cache: Optional[List] = None
-) -> Tuple[str, str]:
+    band_label: str, band_idx: int, cfg: Config, color_cache: list | None = None
+) -> tuple[str, str]:
     """获取波段主颜色和填充颜色"""
     if cfg.band_colors_dict and band_label in cfg.band_colors_dict:
         return cfg.band_colors_dict[band_label]

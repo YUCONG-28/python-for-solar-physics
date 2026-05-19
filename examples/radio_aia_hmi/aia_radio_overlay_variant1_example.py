@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 测试 AIA 与射电源叠加流程的另一组参数变体。
 # 主要输入: AIA 和射电源测试数据。
 # 主要输出/运行说明: 输出叠加调试结果，用于比较不同配置。
@@ -140,7 +139,7 @@ def plot_aia_image_simple(ax, aia_data, extent, title="AIA 94Å Image"):
     try:
         plt.cm.get_cmap(aia_cmap)
         cmap_to_use = aia_cmap
-    except:
+    except Exception:
         cmap_to_use = "hot"
         print(f"  警告: 颜色映射 '{aia_cmap}' 不存在，使用 'hot' 替代")
 
@@ -302,7 +301,7 @@ def main():
         )
 
         # 完整的射电图像范围
-        radio_full_extent = [
+        _unused_radio_full_extent = [
             radio_x_extent[0],
             radio_x_extent[1],
             radio_y_extent[0],
@@ -367,7 +366,7 @@ def main():
         )
 
         # 显示完整的AIA图像作为背景
-        im = plot_aia_image_simple(
+        _unused_im = plot_aia_image_simple(
             ax, aia_map.data, aia_full_extent, "AIA + Radio Contours"
         )
 
@@ -434,8 +433,8 @@ def main():
                             # 为等高线添加标签（使用lambda函数避免格式字符串问题）
                             if i == 1:  # 只在50%等高线上添加标签
                                 # 创建标签格式函数
-                                def make_label(x):
-                                    return f"{contour_levels[i]*100:.0f}%"
+                                def make_label(x, level=contour_levels[i]):
+                                    return f"{level*100:.0f}%"
 
                                 ax.clabel(
                                     contour, inline=True, fontsize=9, fmt=make_label

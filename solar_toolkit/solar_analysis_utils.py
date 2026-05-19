@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 # 模块用途: 提供太阳物理数据处理的共享工具函数。
@@ -18,13 +17,13 @@ from __future__ import annotations
 创建时间: 2025-11-23
 """
 
-import datetime
-import gc
-import re
-import time
-import warnings
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+import datetime  # noqa: E402
+import gc  # noqa: E402
+import re  # noqa: E402
+import time  # noqa: E402
+import warnings  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import TYPE_CHECKING, Any  # noqa: E402
 
 if TYPE_CHECKING:
     import astropy.units as u
@@ -151,7 +150,7 @@ def format_time_for_filename(dt: datetime.datetime) -> str:
 
 def get_sorted_fits_files(
     input_dir: str, min_size_kb: int = 1
-) -> List[Tuple[Path, datetime.datetime]]:
+) -> list[tuple[Path, datetime.datetime]]:
     """
     获取目录下所有FITS文件并按时间排序
 
@@ -168,23 +167,23 @@ def get_sorted_fits_files(
         if f.suffix.lower() == ".fits":
             try:
                 if f.stat().st_size < min_size_kb * 1024:
-                    warnings.warn(f"跳过空/小文件：{f.name}")
+                    warnings.warn(f"跳过空/小文件：{f.name}", stacklevel=2)
                     continue
                 file_time = extract_time_from_filename(f.name)
                 files.append((f, file_time))
             except ValueError as e:
-                warnings.warn(f"跳过文件（时间提取失败：{e}）：{f.name}")
+                warnings.warn(f"跳过文件（时间提取失败：{e}）：{f.name}", stacklevel=2)
             except Exception as e:
-                warnings.warn(f"处理文件时出错：{f.name}，错误：{e}")
+                warnings.warn(f"处理文件时出错：{f.name}，错误：{e}", stacklevel=2)
 
     return sorted(files, key=lambda x: x[1])
 
 
 def find_closest_file_by_time(
     target_time: datetime.datetime,
-    file_list: List[Tuple[str, datetime.datetime]],
+    file_list: list[tuple[str, datetime.datetime]],
     max_diff_seconds: float = 3600,
-) -> Optional[Tuple[str, datetime.datetime]]:
+) -> tuple[str, datetime.datetime] | None:
     """
     在文件列表中找到时间最接近目标时间的文件
 
@@ -211,10 +210,10 @@ def find_closest_file_by_time(
 
 
 def filter_files_by_time_range(
-    file_list: List[Tuple[str, datetime.datetime]],
+    file_list: list[tuple[str, datetime.datetime]],
     start_time: datetime.datetime,
     end_time: datetime.datetime,
-) -> List[Tuple[str, datetime.datetime]]:
+) -> list[tuple[str, datetime.datetime]]:
     """
     按时间范围筛选文件
 
@@ -253,7 +252,7 @@ def optimized_gc_collect():
             gc.collect(0)
 
 
-def safe_delete(variable_names: List[str], locals_dict: dict):
+def safe_delete(variable_names: list[str], locals_dict: dict):
     """
     安全删除变量并立即回收内存
 
@@ -268,7 +267,7 @@ def safe_delete(variable_names: List[str], locals_dict: dict):
     optimized_gc_collect()
 
 
-def monitor_memory_usage(description: str = "") -> Dict[str, float]:
+def monitor_memory_usage(description: str = "") -> dict[str, float]:
     """
     监控内存使用情况
 
@@ -300,7 +299,7 @@ def monitor_memory_usage(description: str = "") -> Dict[str, float]:
 
         return result
     except ImportError:
-        warnings.warn("psutil未安装，无法监控内存使用")
+        warnings.warn("psutil未安装，无法监控内存使用", stacklevel=2)
         return {}
 
 
@@ -310,7 +309,7 @@ def monitor_memory_usage(description: str = "") -> Dict[str, float]:
 
 
 def create_aia_submap(
-    aia_map: sunpy.map.GenericMap, roi_bounds: Tuple[float, float, float, float]
+    aia_map: sunpy.map.GenericMap, roi_bounds: tuple[float, float, float, float]
 ) -> sunpy.map.GenericMap:
     """
     创建AIA数据的子图区域
@@ -328,7 +327,7 @@ def create_aia_submap(
 
     tx1, tx2, ty1, ty2 = roi_bounds
     roi_bl_tx, roi_bl_ty = tx1 * u.arcsec, ty1 * u.arcsec
-    roi_tr_tx, roi_tr_ty = tx2 * u.arcsec, ty2 * u.arcsec
+    roi_tr_tx, _unused_roi_tr_ty = tx2 * u.arcsec, ty2 * u.arcsec
 
     with propagate_with_solar_surface():
         frame = aia_map.coordinate_frame
@@ -356,11 +355,11 @@ def normalize_aia_exposure(aia_map: sunpy.map.GenericMap) -> sunpy.map.GenericMa
         normalized_data = aia_map.data / exp_time.value
         return sunpy.map.Map(normalized_data, aia_map.meta)
     else:
-        warnings.warn(f"曝光时间无效: {exp_time}，跳过归一化")
+        warnings.warn(f"曝光时间无效: {exp_time}，跳过归一化", stacklevel=2)
         return aia_map
 
 
-def get_aia_wavelength_config(wavelength: int) -> Dict[str, Any]:
+def get_aia_wavelength_config(wavelength: int) -> dict[str, Any]:
     """
     获取AIA波段的显示配置
 
@@ -480,7 +479,7 @@ def setup_chinese_font():
     plt.rcParams["axes.unicode_minus"] = False  # 解决负号显示问题
 
 
-def create_figure_with_white_background(figsize: Tuple[float, float] = (10, 8)):
+def create_figure_with_white_background(figsize: tuple[float, float] = (10, 8)):
     """
     创建白色背景的图形
 
@@ -501,9 +500,9 @@ def create_figure_with_white_background(figsize: Tuple[float, float] = (10, 8)):
 
 def add_frequency_highlight_lines(
     ax,
-    frequencies: List[float],
-    freq_range: Tuple[float, float],
-    time_range: Tuple[datetime.datetime, datetime.datetime],
+    frequencies: list[float],
+    freq_range: tuple[float, float],
+    time_range: tuple[datetime.datetime, datetime.datetime],
     color: str = "red",
 ):
     """
@@ -552,7 +551,6 @@ def timing_decorator(func):
     函数执行时间测量装饰器
     """
     import functools
-    import time
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -629,7 +627,7 @@ class SolarDataConfig:
     太阳数据处理的统一配置类
     """
 
-    def __init__(self, config_dict: Optional[Dict[str, Any]] = None):
+    def __init__(self, config_dict: dict[str, Any] | None = None):
         """
         初始化配置
 
@@ -658,7 +656,7 @@ class SolarDataConfig:
         for key, value in self.defaults.items():
             setattr(self, key, value)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """
         将配置转换为字典
 
@@ -690,7 +688,7 @@ class SolarDataConfig:
             raise ValueError(f"不支持的配置文件格式: {filepath}")
 
     @classmethod
-    def load_from_file(cls, filepath: str) -> "SolarDataConfig":
+    def load_from_file(cls, filepath: str) -> SolarDataConfig:
         """
         从文件加载配置
 
@@ -705,10 +703,10 @@ class SolarDataConfig:
         import yaml
 
         if filepath.endswith(".json"):
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(filepath, encoding="utf-8") as f:
                 config_dict = json.load(f)
         elif filepath.endswith(".yaml") or filepath.endswith(".yml"):
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(filepath, encoding="utf-8") as f:
                 config_dict = yaml.safe_load(f)
         else:
             raise ValueError(f"不支持的配置文件格式: {filepath}")
@@ -726,7 +724,7 @@ class SolarLogger:
     太阳数据处理日志记录器
     """
 
-    def __init__(self, log_file: Optional[str] = None, level: str = "INFO"):
+    def __init__(self, log_file: str | None = None, level: str = "INFO"):
         """
         初始化日志记录器
 
@@ -817,7 +815,7 @@ if __name__ == "__main__":
         }
     )
 
-    print(f"配置示例:")
+    print("配置示例:")
     print(f"  数据目录: {config.data_dir}")
     print(f"  输出目录: {config.output_dir}")
     print(f"  ROI边界: {config.roi_bounds}")

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for AIA/HMI FITS filename normalization."""
 
 from __future__ import annotations

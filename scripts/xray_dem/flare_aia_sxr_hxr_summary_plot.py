@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 绘制 AIA 图像、GOES SXR 光变和 HXR 光变组成的三面板耀斑诊断图。
 # 主要输入: AIA 图像、GOES 软 X 射线数据和硬 X 射线光变数据。
 # 主要输出/运行说明: 输出综合时空诊断图，用于事件论文配图或快速检查。
@@ -11,13 +10,11 @@ Created on Mon Oct 13 16:33:00 2025
 import argparse
 import csv
 import fnmatch  # 用于文件名匹配
-import math
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import numpy as np
 import xarray as xr
 from astropy.io import fits
@@ -89,7 +86,7 @@ def load_hxi_data(file_path, start_time, end_time):
 
     # 时间范围筛选
     mask = [(t >= start_time) and (t <= end_time) for t in utc_times]
-    filtered_times = [t for t, m in zip(utc_times, mask) if m]
+    filtered_times = [t for t, m in zip(utc_times, mask, strict=False) if m]
 
     filtered_data = {}
     for key, values in data.items():
@@ -364,7 +361,7 @@ def main():
 
     # 绘制综合图像，传入时间范围参数和竖线时间列表
     print("绘制综合图像...")
-    fig = plot_combined_data(
+    _unused_fig = plot_combined_data(
         sxr_data, hxi_data, aia_data_list, start_time, end_time, vline_times
     )
 

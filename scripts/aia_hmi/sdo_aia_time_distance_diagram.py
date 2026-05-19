@@ -12,6 +12,7 @@ time-distance diagram accounting for solar differential rotation using
 :func:`sunpy.coordinates.propagate_with_solar_surface` and dealing with off-disk
 pixels using :func:`sunpy.coordinates.screens.SphericalScreen`
 """
+
 import astropy.units as u
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt

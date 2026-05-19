@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for optional YAML path configuration loading."""
 
 import shutil

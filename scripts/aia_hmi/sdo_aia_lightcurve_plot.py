@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 绘制 AIA 光变/流量表格数据，支持多波段和时间范围配置。
 # 主要输入: AIA_Flux_data.py 生成的表格数据。
 # 主要输出/运行说明: 输出科研绘图风格的光变曲线图。
@@ -13,7 +12,6 @@ import csv
 import math
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Tuple
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
@@ -27,7 +25,7 @@ plt.rcParams["font.family"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False  # 解决负号显示问题
 
 
-def load_single_file(file_path: str) -> Tuple[List[datetime], List[float], str]:
+def load_single_file(file_path: str) -> tuple[list[datetime], list[float], str]:
     """加载单个CSV文件的数据，过滤非正值（对数坐标要求）"""
     p = Path(file_path)
     if not p.exists():
@@ -57,7 +55,7 @@ def load_single_file(file_path: str) -> Tuple[List[datetime], List[float], str]:
         return None, None, p.name
 
 
-def normalize_data(data: List[float]) -> List[float]:
+def normalize_data(data: list[float]) -> list[float]:
     """归一化数据到[0, 1]范围（当前未使用）"""
     if not data:
         return []
@@ -68,7 +66,7 @@ def normalize_data(data: List[float]) -> List[float]:
     return [(x - min_val) / (max_val - min_val) for x in data]
 
 
-def get_log10_bounds(data: List[float]) -> Tuple[float, float]:
+def get_log10_bounds(data: list[float]) -> tuple[float, float]:
     """计算数据的10的幂次边界，确保覆盖所有数据且为10的倍数"""
     if not data:
         return 1.0, 10.0  # 默认范围
@@ -88,10 +86,10 @@ def get_log10_bounds(data: List[float]) -> Tuple[float, float]:
 
 
 def plot_multi_data(
-    all_data: List[Tuple[List[datetime], List[float], str]],
+    all_data: list[tuple[list[datetime], list[float], str]],
     output_dir: str,
-    file_names: List[str],
-    mark_times: List[datetime] = None,
+    file_names: list[str],
+    mark_times: list[datetime] = None,
 ):
     """在同一张图上绘制多个文件的数据，标题包含所选文件名信息，支持标记特定时间点"""
     if not all_data:

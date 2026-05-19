@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 生成 SOHO/LASCO 运行差分图像以突出 CME 传播结构。
 # 主要输入: 时间排序的 LASCO FITS 图像序列。
 # 主要输出/运行说明: 输出差分日冕图，用于 CME 前沿追踪。
@@ -14,7 +13,6 @@ from pathlib import Path
 
 import matplotlib.colors as colors
 import matplotlib.pyplot as plt
-import numpy as np
 from sunpy.map import Map
 
 from solar_toolkit.path_config import load_script_config
@@ -45,7 +43,7 @@ def setup_chinese_font():
     # 若需中文显示，可手动指定系统存在的字体（如Windows的SimHei）
     try:
         plt.rcParams["font.family"] = ["SimHei"]
-    except:
+    except Exception:
         pass
 
 
@@ -62,7 +60,7 @@ def extract_timestamp_from_filename(filename):
         try:
             # 转换为datetime对象（用于正确排序）
             return datetime.strptime(time_str, "%Y%m%d_%H%M%S")
-        except:
+        except Exception:
             pass
     # 若提取失败，返回默认时间（避免排序错误）
     return datetime.min

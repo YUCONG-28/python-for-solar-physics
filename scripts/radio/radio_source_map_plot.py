@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 处理太阳射电 FITS 图像/频谱并绘制射电源图。
 # 主要输入: 射电图像、频谱数据和拟合/等值线参数。
 # 主要输出/运行说明: 输出单频或多频射电源图，可包含高斯拟合轮廓。
@@ -182,7 +181,8 @@ def _estimate_safe_workers(file_list: list, requested, memory_per_worker_mb) -> 
     except ImportError:
         warnings.warn(
             "psutil not found, cannot auto-estimate memory safety; please run `pip install psutil`. "
-            "This run will use a conservative max_workers=2."
+            "This run will use a conservative max_workers=2.",
+            stacklevel=2,
         )
         cpu_count = os.cpu_count() or 1
         return min(requested or 2, cpu_count)
@@ -205,7 +205,7 @@ def _estimate_safe_workers(file_list: list, requested, memory_per_worker_mb) -> 
                     try:
                         total_bytes += os.path.getsize(file_path)
                         count += 1
-                    except (OSError, TypeError) as e:
+                    except (OSError, TypeError):
                         # 如果文件不存在或路径有问题，跳过
                         continue
 
@@ -214,7 +214,7 @@ def _estimate_safe_workers(file_list: list, requested, memory_per_worker_mb) -> 
                     memory_per_worker_mb = avg_bytes * 20 / (1024**2)
                 else:
                     memory_per_worker_mb = 500.0
-            except (OSError, TypeError) as e:
+            except (OSError, TypeError):
                 memory_per_worker_mb = 500.0
         else:
             memory_per_worker_mb = 500.0
@@ -230,7 +230,8 @@ def _estimate_safe_workers(file_list: list, requested, memory_per_worker_mb) -> 
                 f"[Memory warning] You set max_workers={requested}, "
                 f"but according to available memory {available_mb:.0f} MB and per-worker estimate "
                 f"{memory_per_worker_mb:.0f} MB, the safe upper limit is about {mem_safe}. "
-                f"Automatically adjusted to {mem_safe}, please modify CONFIG['max_workers']."
+                f"Automatically adjusted to {mem_safe}, please modify CONFIG['max_workers'].",
+                stacklevel=2,
             )
             return mem_safe
         return requested
@@ -298,7 +299,8 @@ def calc_extent(header, img_shape):
         return [x_min, x_max, y_max, y_min]
     except KeyError:
         warnings.warn(
-            "Header lacks WCS coordinate keywords, using default extent [-1500,1500]"
+            "Header lacks WCS coordinate keywords, using default extent [-1500,1500]",
+            stacklevel=2,
         )
         return [-1500, 1500, 1500, -1500]
 
@@ -318,7 +320,7 @@ def _global_range_one(fp):
         data, _ = read_fits(file_path)
         return float(np.nanmin(data)), float(np.nanmax(data))
     except Exception as e:
-        warnings.warn(f"Skipping file {fp}: {e}")
+        warnings.warn(f"Skipping file {fp}: {e}", stacklevel=2)
         return None
 
 
@@ -664,7 +666,10 @@ def _match_rr_ll_by_time(
                 ll_index[key] = ll_path
 
     if ll_no_parse:
-        warnings.warn(f"有 {len(ll_no_parse)} 个LL文件无法从文件名解析时间，将被跳过。")
+        warnings.warn(
+            f"有 {len(ll_no_parse)} 个LL文件无法从文件名解析时间，将被跳过。",
+            stacklevel=2,
+        )
 
     matched_pairs: list = []
     unmatched_rr: list = []
@@ -683,7 +688,9 @@ def _match_rr_ll_by_time(
         parsed = parser.parse_time_from_filename(os.path.basename(rr_path))
         if parsed is None:
             unmatched_rr.append(rr_path)
-            warnings.warn(f"RR文件 {os.path.basename(rr_path)} 无法解析时间，跳过。")
+            warnings.warn(
+                f"RR文件 {os.path.basename(rr_path)} 无法解析时间，跳过。", stacklevel=2
+            )
             continue
 
         rr_date_key, rr_ms = parsed
@@ -710,11 +717,13 @@ def _match_rr_ll_by_time(
             if best_diff != float("inf"):
                 warnings.warn(
                     f"RR文件 {os.path.basename(rr_path)} 找不到时间匹配的LL文件 "
-                    f"(最近差值={best_diff:.1f}ms > 容差={tolerance_ms:.1f}ms)，跳过。"
+                    f"(最近差值={best_diff:.1f}ms > 容差={tolerance_ms:.1f}ms)，跳过。",
+                    stacklevel=2,
                 )
             else:
                 warnings.warn(
-                    f"RR文件 {os.path.basename(rr_path)} 在LL目录中找不到同日期文件，跳过。"
+                    f"RR文件 {os.path.basename(rr_path)} 在LL目录中找不到同日期文件，跳过。",
+                    stacklevel=2,
                 )
 
     if unmatched_rr:
@@ -790,7 +799,7 @@ def _build_multi_band_slots(cfg: dict) -> list:
         per_band = [f[:min_len] for f in per_band]
 
     # ★ 优化：zip 直接转置二维列表，替代双层 for 循环
-    slots = [list(band_files) for band_files in zip(*per_band)]
+    slots = [list(band_files) for band_files in zip(*per_band, strict=False)]
 
     print(f"Built {len(slots)} time slots, each slot contains {len(freqs)} bands")
     print(f"Polarization: {polarization}")
@@ -907,7 +916,9 @@ def _calculate_range(data: np.ndarray, cfg: dict, is_global: bool = False) -> tu
 
         # 如果范围太小，给出警告但保持用户设置
         if high - low < min_log_range:
-            warnings.warn(f"颜色范围过小 ({high - low:.3f})，考虑调整百分位数设置。")
+            warnings.warn(
+                f"颜色范围过小 ({high - low:.3f})，考虑调整百分位数设置。", stacklevel=2
+            )
 
     elif method == "minmax":
         # 使用最小最大值方法
@@ -916,7 +927,9 @@ def _calculate_range(data: np.ndarray, cfg: dict, is_global: bool = False) -> tu
 
         # 如果范围太小，给出警告
         if high - low < min_log_range:
-            warnings.warn(f"颜色范围过小 ({high - low:.3f})，考虑使用百分位数方法。")
+            warnings.warn(
+                f"颜色范围过小 ({high - low:.3f})，考虑使用百分位数方法。", stacklevel=2
+            )
     else:
         # 默认使用5%和95%分位数
         low = np.percentile(data, 5)
@@ -947,7 +960,7 @@ def _calculate_per_band_ranges(all_log_data: list, cfg: dict) -> tuple:
     band_vmins = []
     band_vmaxs = []
 
-    for idx, log_data in enumerate(all_log_data):
+    for _idx, log_data in enumerate(all_log_data):
         valid_data = log_data[~np.isnan(log_data)]
         if len(valid_data) > 0:
             # 使用配置的方法计算范围
@@ -990,7 +1003,7 @@ def _compute_fixed_band_ranges(cfg: dict) -> tuple:
 
     print("开始计算每个波段的固定颜色范围...")
 
-    for freq_idx, freq in enumerate(tqdm(freqs, desc="计算波段颜色范围", unit="波段")):
+    for _freq_idx, freq in enumerate(tqdm(freqs, desc="计算波段颜色范围", unit="波段")):
         all_band_data = []
 
         if combine_polarizations and polarization == "RR+LL":
@@ -1012,7 +1025,9 @@ def _compute_fixed_band_ranges(cfg: dict) -> tuple:
             matched_pairs = _match_rr_ll_by_time(rr_files, ll_files, tolerance_ms)
 
             if not matched_pairs:
-                warnings.warn(f"频率 {freq}MHz: RR和LL时间匹配失败，无有效数据")
+                warnings.warn(
+                    f"频率 {freq}MHz: RR和LL时间匹配失败，无有效数据", stacklevel=2
+                )
                 band_vmins.append(0)
                 band_vmaxs.append(1)
                 continue
@@ -1037,7 +1052,9 @@ def _compute_fixed_band_ranges(cfg: dict) -> tuple:
                         all_band_data.extend(valid_data)
 
                 except Exception as e:
-                    warnings.warn(f"读取文件时出错（频率 {freq}MHz）: {e}")
+                    warnings.warn(
+                        f"读取文件时出错（频率 {freq}MHz）: {e}", stacklevel=2
+                    )
                     continue
         else:
             # 普通模式：只读取指定偏振的文件
@@ -1060,7 +1077,9 @@ def _compute_fixed_band_ranges(cfg: dict) -> tuple:
                         all_band_data.extend(valid_data)
 
                 except Exception as e:
-                    warnings.warn(f"读取文件时出错（频率 {freq}MHz）: {e}")
+                    warnings.warn(
+                        f"读取文件时出错（频率 {freq}MHz）: {e}", stacklevel=2
+                    )
                     continue
 
         # 计算该波段的固定颜色范围
@@ -1116,8 +1135,6 @@ def plot_single_band(
 
     matplotlib.use("Agg")
     import matplotlib.patches as patches
-    import matplotlib.pyplot as plt
-    from matplotlib.lines import Line2D
 
     # 检查是否启用左右旋数据加和
     combine_polarizations = cfg.get("combine_polarizations", False)
@@ -1155,7 +1172,9 @@ def plot_single_band(
             if not _check_time_alignment(
                 rr_header, ll_header, rr_path, ll_path, time_tolerance
             ):
-                warnings.warn(f"RR和LL文件时间未对齐: {rr_path} vs {ll_path}")
+                warnings.warn(
+                    f"RR和LL文件时间未对齐: {rr_path} vs {ll_path}", stacklevel=2
+                )
 
             # 数据组合（加权平均或简单相加）
             img_data = _combine_polarization_data(rr_data, ll_data, cfg)
@@ -1191,7 +1210,7 @@ def plot_single_band(
                 )
 
         except FileNotFoundError as e:
-            warnings.warn(f"无法找到对应的偏振文件: {e}，使用单个文件")
+            warnings.warn(f"无法找到对应的偏振文件: {e}，使用单个文件", stacklevel=2)
             if current_pol == "RR" and rr_data is not None:
                 img_data, header = rr_data, rr_header
                 polar_display = "RR"
@@ -1378,7 +1397,6 @@ def _save_single_pol_image(
     img_data, header, output_dir, cfg, vmin, vmax, polar_display, base_filename
 ):
     """保存单独的偏振图像"""
-    import matplotlib.pyplot as plt
 
     extent = calc_extent(header, img_data.shape)
     rsun_obs = header.get("RSUN_OBS", 960.0)
@@ -1456,7 +1474,6 @@ def plot_multi_band_slot(
 
     matplotlib.use("Agg")
     import matplotlib.patches as patches
-    import matplotlib.pyplot as plt
 
     all_data = []
     all_headers = []
@@ -1492,7 +1509,9 @@ def plot_multi_band_slot(
             if not _check_time_alignment(
                 rr_header, ll_header, rr_path, ll_path, time_tolerance
             ):
-                warnings.warn(f"RR和LL文件时间未对齐: {rr_path} vs {ll_path}")
+                warnings.warn(
+                    f"RR和LL文件时间未对齐: {rr_path} vs {ll_path}", stacklevel=2
+                )
 
             # 数据组合（加权平均或简单相加）
             img_data = _combine_polarization_data(rr_data, ll_data, cfg)
@@ -1502,7 +1521,7 @@ def plot_multi_band_slot(
             # 如果需要保存单独的偏振图像
             if save_individual:
                 freq = get_freq_from_header(rr_header) or "Unknown"
-                time_str = get_time_from_header(rr_header)
+                _unused_time_str = get_time_from_header(rr_header)
                 base_filename = f"slot_{slot_idx:04d}_freq_{freq}MHz"
 
                 # 保存RR图像
@@ -1972,7 +1991,7 @@ def main():
                             all_band_data.extend(valid_data)
 
                     except Exception as e:
-                        warnings.warn(f"读取文件时出错 {file_path}: {e}")
+                        warnings.warn(f"读取文件时出错 {file_path}: {e}", stacklevel=2)
                         continue
 
                 if len(all_band_data) > 0:

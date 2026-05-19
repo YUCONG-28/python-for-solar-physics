@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 # 模块用途: 提供可复用的 CSO 频谱绘图类，支持重采样和时间-频率显示。
 # 主要输入: CSO 频谱数据文件和绘图参数。
 # 主要输出/运行说明: 输出动态频谱图，适合作为脚本或模块调用。
@@ -79,7 +78,7 @@ def readcso_spectrofits(fn):
                 polars = polars[0] + polars[8]
         try:
             unit = header["BUNIT"]
-        except:
+        except Exception:
             unit = header["QUANTITY"]
         if data.ndim == 2:
             arr_n = 1
@@ -111,9 +110,7 @@ def readcso_spectrofits(fn):
                         dt_base=datet0,
                     )
                 )
-                print(
-                    polar + " polarize data have been read {} in {} .".format(ii, arr_n)
-                )
+                print(polar + f" polarize data have been read {ii} in {arr_n} .")
 
         return dataout
 
@@ -179,8 +176,8 @@ def slice_data(Spec, t1, t2, f1, f2):
     #                   print('tt length is {}'.format(len(tt)) )
     freq = Spec.freq
     POLARIZA = Spec.polar
-    unit = Spec.unit
-    polss = POLARIZA[0]
+    _unused_unit = Spec.unit
+    _unused_polss = POLARIZA[0]
 
     # select time
     ttch = t1 - datet0

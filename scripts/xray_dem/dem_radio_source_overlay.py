@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 将 DEM 诊断结果与射电源形态叠加比较。
 # 主要输入: DEM 分析结果、AIA 图像和射电源数据。
 # 主要输出/运行说明: 输出热等离子体结构与射电辐射位置的对比图。
@@ -440,7 +439,7 @@ def make_tb_colormap() -> LinearSegmentedColormap:
     """构建 Tb 专用色图（黑→暗红→橙红→金黄→白）。"""
     return LinearSegmentedColormap.from_list(
         "tb_solar",
-        list(zip(CONFIG["cmap_positions"], CONFIG["cmap_colors"])),
+        list(zip(CONFIG["cmap_positions"], CONFIG["cmap_colors"], strict=False)),
         N=256,
     )
 
@@ -662,7 +661,7 @@ def main() -> None:
     print(f"  obs_time   : {aia_map.obs_time}")
 
     # ── Step 2：加载 Tb ──────────────────────────────────────
-    print(f"\nStep 2  加载 Tb 数据")
+    print("\nStep 2  加载 Tb 数据")
     tb_data = load_tb(CONFIG["tb_data_path"])
     ny_tb, nx_tb = tb_data.shape
     tb_ext = get_tb_extent()
@@ -678,7 +677,7 @@ def main() -> None:
     radio_time = ""
 
     if not CONFIG["overlay_radio"]:
-        print(f"\nStep 3  overlay_radio = False，跳过射电叠加")
+        print("\nStep 3  overlay_radio = False，跳过射电叠加")
 
     else:
         print(
@@ -718,7 +717,7 @@ def main() -> None:
             )
 
     # ── Step 4：绘图 ─────────────────────────────────────────
-    print(f"\nStep 4  绘图")
+    print("\nStep 4  绘图")
     fig, ax = plot_tb(
         tb_data,
         aia_map,

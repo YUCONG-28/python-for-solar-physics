@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 对比 ASO-S/HXI 硬 X 射线与 GOES SXR 时间演化。
 # 主要输入: HXI 光变数据和 GOES 软 X 射线数据。
 # 主要输出/运行说明: 输出多能段光变对比图，辅助耀斑能量释放分析。
@@ -14,7 +13,6 @@ from pathlib import Path
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
-import xarray as xr
 from astropy.io import fits
 
 from solar_toolkit.path_config import load_script_config
@@ -47,7 +45,7 @@ if __name__ == "__main__":
     plt.semilogy(utc_times, C1, label="HXI 20-50 keV")
     plt.semilogy(utc_times, C2, label="HXI 50-100 keV")
     plt.semilogy(utc_times, C3, label="HXI 100-300 keV")
-    plt.ylabel("Counts s\u207B\u00B9 detector\u207B\u00B9", fontsize=22, labelpad=12)
+    plt.ylabel("Counts s\u207b\u00b9 detector\u207b\u00b9", fontsize=22, labelpad=12)
     plt.legend(loc="upper left", ncol=1, fontsize=18)
 
     # ax2 = ax1.twinx()

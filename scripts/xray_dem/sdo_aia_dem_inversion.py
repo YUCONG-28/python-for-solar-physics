@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 基于 AIA 多波段观测执行差分辐射度 DEM 反演。
 # 主要输入: 多波段 AIA FITS 数据和温度响应/区域配置。
 # 主要输出/运行说明: 输出 DEM、温度或辐射度相关诊断结果。
@@ -208,7 +207,7 @@ def make_tb_colormap() -> LinearSegmentedColormap:
     """构建 Tb 专用色图（黑→暗红→橙红→金黄→白）。"""
     return LinearSegmentedColormap.from_list(
         "tb_solar",
-        list(zip(CONFIG["cmap_positions"], CONFIG["cmap_colors"])),
+        list(zip(CONFIG["cmap_positions"], CONFIG["cmap_colors"], strict=False)),
         N=256,
     )
 
@@ -394,7 +393,7 @@ def main() -> None:
     print(f"  obs_time   : {aia_map.obs_time}")
 
     # ── Step 2：加载 Tb 数据 ──────────────────────────────────
-    print(f"\nStep 2  加载 Tb 数据")
+    print("\nStep 2  加载 Tb 数据")
     tb_data = load_tb(CONFIG["tb_data_path"])
     ny_tb, nx_tb = tb_data.shape
     tb_extent = get_tb_extent()
@@ -405,7 +404,7 @@ def main() -> None:
     print(f"  extent Y : [{tb_extent[2]:.1f}, {tb_extent[3]:.1f}] arcsec")
 
     # ── Step 3：绘图 ──────────────────────────────────────────
-    print(f"\nStep 3  绘图")
+    print("\nStep 3  绘图")
     fig, ax = plot_tb(tb_data, aia_map)
 
     if CONFIG["save_figure"]:

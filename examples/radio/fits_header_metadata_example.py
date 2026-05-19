@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 测试 FITS 头信息解析和 SunPy map 元数据处理。
 # 主要输入: FITS 测试文件或头信息样例。
 # 主要输出/运行说明: 输出头信息检查结果，辅助定位元数据问题。
@@ -8,12 +7,7 @@ Created on Sun Nov 23 00:19:30 2025
 @author: Severus
 """
 
-import matplotlib.pyplot as plt
-import numpy as np
 from astropy.io import fits
-from astropy.wcs import WCS
-from matplotlib.colors import LogNorm
-from matplotlib.patches import Circle
 
 from solar_toolkit.path_config import load_script_config
 

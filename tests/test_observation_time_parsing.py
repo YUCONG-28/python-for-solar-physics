@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Lightweight tests for observation-time parsing examples."""
 
 from datetime import datetime

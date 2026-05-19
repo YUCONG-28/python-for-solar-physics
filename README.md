@@ -128,6 +128,23 @@ GUI and legacy radio-spectrum tools may require extra packages such as `PyQt5`,
 python -m pip install -e ".[gui]"
 ```
 
+## Code Style
+
+This project uses a consistent Python code style to keep the scientific pipeline
+maintainable.
+
+- Black is used as the main Python formatter.
+- Ruff is used for linting, import sorting, and safe automatic fixes.
+- Pylance is recommended for type analysis and code navigation in VSCode.
+- autopep8, yapf, flake8, and pylint are not used as default tools in this
+  project.
+
+Before committing changes, run:
+
+```bash
+pre-commit run --all-files
+```
+
 ## Local Path Configuration
 
 Most science workflows need local FITS, JP2, NetCDF, CSV, or NumPy data. Avoid

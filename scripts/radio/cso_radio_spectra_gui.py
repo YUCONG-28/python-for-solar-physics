@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 提供 CSO 射电频谱交互式 GUI，用于检查动态频谱、偏振和流量演化。
 # 主要输入: CSO 射电观测数据文件。
 # 主要输出/运行说明: 启动桌面 GUI；需要 PyQt/绘图库环境支持。
@@ -17,6 +16,7 @@ add polarization 2025-04-21
 
 
 """
+
 import datetime
 import os
 import sys
@@ -24,7 +24,6 @@ from fnmatch import fnmatch
 
 import astropy.constants as const
 import matplotlib.cm as mplcm
-import matplotlib.colors as mcolors
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
@@ -33,7 +32,7 @@ from astropy.io import fits
 
 # from PyQt5 import uic
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
-from matplotlib.ticker import AutoMinorLocator, MultipleLocator
+from matplotlib.ticker import AutoMinorLocator
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtCore import QDateTime, Qt
 from PyQt5.QtGui import QColor, QDoubleValidator, QIntValidator, QPalette
@@ -55,7 +54,7 @@ def file_search(fn, subdir=0):
         target_dir = "./"
     ## check dir
     walk_generator = os.walk(target_dir)
-    for root_path, dirs, files in walk_generator:
+    for root_path, _dirs, files in walk_generator:
         if allv == 1:
             if len(files) < 1:
                 continue
@@ -201,9 +200,9 @@ def creatFitsFile(ttx, frequency, dataRL, polssv, datet0, fitsname, BJT2UTC=0):
     headerm["QUAL_FLG"] = ("TBD", "data quality control information")
     headerm["POLARIZA"] = (polssv, "polarization types")
     headerm["FREQ"] = ("90~300 MHz", "frequency range of observation")
-    headerm["FREQBEG"] = ("{:.6f}".format(frequency[0]), "[MHz] begin of frequency")
-    headerm["FREQRESO"] = ("{:.6f}".format(df), "[MHz] frequency resolution")
-    headerm["ACCU_TM"] = ("{:.3f}".format(et * 1000), "[ms] accumulated time")
+    headerm["FREQBEG"] = (f"{frequency[0]:.6f}", "[MHz] begin of frequency")
+    headerm["FREQRESO"] = (f"{df:.6f}", "[MHz] frequency resolution")
+    headerm["ACCU_TM"] = (f"{et * 1000:.3f}", "[ms] accumulated time")
     headerm["CAL_TEMP"] = ("T", "whether calibrated by temperature")
     #### === end main head set ==========================================
 
@@ -227,7 +226,7 @@ def creatFitsFile(ttx, frequency, dataRL, polssv, datet0, fitsname, BJT2UTC=0):
         ###### write and close =====
         hdul.writeto(fitsname)
         hdul.close()
-    except:
+    except Exception:
         print("write fits file failed !")
         return 0
     # finfo = os.stat(fitsname)
@@ -500,7 +499,7 @@ class RadioTypeIIfit(QtWidgets.QWidget):
         ### 拟合频漂
         fA1, fB1 = optimize.curve_fit(fx_1, ttx, freqx)[0]
         # yy1 =  ttx * A1 + B1
-        ssfdrift = "Frequency drift: {:f} MHz/s".format(fA1)
+        ssfdrift = f"Frequency drift: {fA1:f} MHz/s"
         print(ssfdrift)
         self.textBrowser.append(ssfdrift)
         ### 拟合线性速度
@@ -554,21 +553,19 @@ class RadioTypeIIfit(QtWidgets.QWidget):
             dens_model
             + " model:  "
             + freqs
-            + " {:2d} fold model,1nd, shock speed {:6.1f} km/s".format(Nfoldset, v1)
+            + f" {Nfoldset:2d} fold model,1nd, shock speed {v1:6.1f} km/s"
         )
         ss2 = (
             dens_model
             + " model:  "
             + freqs
-            + " {:2d} fold model,2nd, shock speed {:6.1f} km/s, {:6.1} km/s2".format(
-                Nfoldset, v2, aa2
-            )
+            + f" {Nfoldset:2d} fold model,2nd, shock speed {v2:6.1f} km/s, {aa2:6.1} km/s2"
         )
         self.textBrowser.append(ss)
         self.textBrowser.append(ss2)
 
-        ss = "1nd, shock speed {:6.1f} km/s".format(v1)
-        ss2 = "2nd, shock speed {:6.1f} km/s".format(v2)
+        ss = f"1nd, shock speed {v1:6.1f} km/s"
+        ss2 = f"2nd, shock speed {v2:6.1f} km/s"
 
         self.ax.text(
             0.3,
@@ -609,19 +606,19 @@ class spectrogram:
         unit=None,
         obsdev=None,
     ):
-        if type(data) == np.ndarray:
+        if isinstance(data, np.ndarray):
             self.data = data
-        if type(time) == np.ndarray:
+        if isinstance(time, np.ndarray):
             self.time = time
-        if type(freq) == np.ndarray:
+        if isinstance(freq, np.ndarray):
             self.freq = freq
-        if type(polar) == str:
+        if isinstance(polar, str):
             self.polar = polar
-        if type(dateobs) == str:
+        if isinstance(dateobs, str):
             self.dateobs = dateobs
-        if type(unit) == str:
+        if isinstance(unit, str):
             self.unit = unit
-        if type(obsdev) == str:
+        if isinstance(obsdev, str):
             self.obsdev = obsdev
 
 
@@ -634,7 +631,7 @@ def readdsrt_spectrofits(fn):
     """
     try:
         hdu = fits.open(fn)
-    except:
+    except Exception:
         print("Cant open this file " + fn)
         raise
     #    hdu = fits.open( fn )
@@ -645,7 +642,7 @@ def readdsrt_spectrofits(fn):
     ### 注意子午规定的关键词
     try:
         dateobs = header["DATE_OBS"]
-    except:
+    except Exception:
         dateobs = header["DATE-OBS"]
 
     polars = header["POLARIZA"]
@@ -653,7 +650,7 @@ def readdsrt_spectrofits(fn):
     polars = polars[0] + polars[-1]
     try:
         unit = header["QUANTITY"]
-    except:
+    except Exception:
         unit = header["BUNIT"]
 
     if data.ndim == 2:
@@ -685,7 +682,7 @@ def readdsrt_spectrofits(fn):
                     unit=unit,
                 )
             )
-            print(polar + " polarize data have been read {} in {} .".format(ii, arr_n))
+            print(polar + f" polarize data have been read {ii} in {arr_n} .")
     hdu.close()
     return dataout
 
@@ -701,7 +698,7 @@ def readcso_spectrofits(fn):
     """
     try:
         hdu = fits.open(fn)
-    except:
+    except Exception:
         print("Cant open this file " + fn)
         raise
     #    hdu = fits.open( fn )
@@ -712,7 +709,7 @@ def readcso_spectrofits(fn):
     ### 注意子午规定的关键词
     try:
         dateobs = header["DATE-OBS"]
-    except:
+    except Exception:
         dateobs = header["DATE_OBS"]
 
     ####  注意跨天操作 ##########################
@@ -730,7 +727,7 @@ def readcso_spectrofits(fn):
             polars = polars[0] + polars[8]
     try:
         unit = header["BUNIT"]
-    except:
+    except Exception:
         unit = header["QUANTITY"]
 
     if data.ndim == 2:
@@ -762,7 +759,7 @@ def readcso_spectrofits(fn):
                     unit=unit,
                 )
             )
-            print(polar + " polarize data have been read {} in {} .".format(ii, arr_n))
+            print(polar + f" polarize data have been read {ii} in {arr_n} .")
     hdu.close()
     return dataout
 
@@ -817,8 +814,8 @@ class plotfluxGUI(QtWidgets.QWidget):
         self.leftw.setLayout(self.vlayout1)
         ##########
         # ## ´´½¨Ð£ÑéÆ÷
-        maxvValid = QDoubleValidator(self)
-        intValid = QIntValidator(self)
+        _unused_maxvValid = QDoubleValidator(self)
+        _unused_intValid = QIntValidator(self)
         ##### ÉèÖÃÆ«ÕñÐÅÏ¢ =====
         self.polarboxg = QtWidgets.QGroupBox("Polarization")
         self.polarLayout = QtWidgets.QHBoxLayout()
@@ -928,7 +925,7 @@ class plotfluxGUI(QtWidgets.QWidget):
         self.freqlineEdit1.setFixedWidth(200)
 
         # self.freqlineEdit1.setValidator( maxvValid )
-        self.freqlineEdit1.setText("[{:6.2f}]".format(self.freqobsx))
+        self.freqlineEdit1.setText(f"[{self.freqobsx:6.2f}]")
 
         self.freqLayout.addLayout(self.freqlayoutH)
         self.freqboxg.setLayout(self.freqLayout)
@@ -984,11 +981,11 @@ class dsrtSpectraData:
     def __init__(self, pathslist=None):
         self.filename = []  ### 文件路径列表
         self.nf = 0  ## 文件数目；
-        if pathslist != None:
+        if pathslist is not None:
             self.filename = pathslist
-            if type(pathslist) == str:
+            if isinstance(pathslist, str):
                 self.filename = [pathslist]
-            if type(self.filename) != list:
+            if not isinstance(self.filename, list):
                 print("filename is not a list")
                 raise NameError("filename is wrong")
             self.nf = len(self.filename)
@@ -996,7 +993,7 @@ class dsrtSpectraData:
                 print("readdata from " + self.filename[0])
                 self.data = readcso_spectrofits(self.filename[0])
                 print("read done")
-            except:
+            except Exception:
                 print("open file is wrong")
         else:
             self.data = []
@@ -1005,7 +1002,7 @@ class dsrtSpectraData:
         try:
             if self.data[0].data.dtype == "u1":
                 self.Bytedata = True
-        except:
+        except Exception:
             self.Bytedata = False
 
         self.figureID = None
@@ -1063,13 +1060,13 @@ class dsrtSpectraData:
         ## check data whether exist
         try:
             ndata = len(self.data)  ## original data number depend on polar
-        except:
+        except Exception:
             print("no data! please load data by readdata()")
             print("please first input radio spectral data fits file paths")
             return 0
 
         ##  设置图片分辨率
-        if dpi == None:
+        if dpi is None:
             dpi = 100
 
         if bartext == "":
@@ -1077,12 +1074,12 @@ class dsrtSpectraData:
         ## 默认设置的画图
         polar_list = [self.data[kk].polar for kk in range(ndata)]
 
-        if polar == None:
+        if polar is None:
             polar = ""
             for iz in range(ndata):
                 polar += polar_list[iz][0]
         else:
-            if type(polar) == str:
+            if isinstance(polar, str):
                 npolar = len(polar)
                 for iz in range(npolar):
                     if polar[iz] == "P" or polar[iz] == "I":
@@ -1090,7 +1087,7 @@ class dsrtSpectraData:
                         print("plot polarization ", polar[iz])
                     else:
                         polars = polar[iz] + polar[iz]
-                        if not (polars in polar_list):
+                        if polars not in polar_list:
                             print(polars + " not in data!!!")
                             print("please check in ")
                             print(polar_list)
@@ -1103,10 +1100,10 @@ class dsrtSpectraData:
         if npolar >= 1:
 
             self.plotconfig = [plotdata for ii in range(npolar)]
-            if figsize == None:
+            if figsize is None:
                 figsizes = (10.0, 4.0 * npolar)
 
-            if self.figureID == None:
+            if self.figureID is None:
                 self.figureID, axs = plt.subplots(npolar, 1, figsize=figsizes, dpi=dpi)
             else:
                 self.figureID.set_dpi(dpi)
@@ -1146,15 +1143,15 @@ class dsrtSpectraData:
                         dtime0 = datetime.datetime.fromisoformat(datess)
 
                         POLARIZA = self.data[ik].polar
-                        unit = self.data[ik].unit
+                        _unused_unit = self.data[ik].unit
                         ## 开启时间截取功能========================================
-                        if (begch != None) or (endch != None):
+                        if (begch is not None) or (endch is not None):
                             xtimev = 1
                         else:
                             xtimev = 0
 
                         if xtimev == 1:
-                            if begch != None:
+                            if begch is not None:
                                 if not isinstance(begch, str):
                                     ttch = begch - datet0
                                     ttch1 = ttch.total_seconds()
@@ -1165,7 +1162,7 @@ class dsrtSpectraData:
                                     ttch1 = ttch.total_seconds()
                             else:
                                 ttch1 = tt[0]
-                            if endch != None:
+                            if endch is not None:
                                 if not isinstance(endch, str):
                                     ttch = endch - datet0
                                     ttch2 = ttch.total_seconds()
@@ -1194,17 +1191,17 @@ class dsrtSpectraData:
                             ZL = ZL[:, tindex1 : tindex2 + 1]
                             self.plotconfig[iz].rangetn = [tindex1, tindex2]
                         ######### time select done ################################
-                        if (begff != None) or (endff != None):
+                        if (begff is not None) or (endff is not None):
                             freqv = 1
                         else:
                             freqv = 0
 
                         if freqv == 1:
-                            if begff != None:
+                            if begff is not None:
                                 ffch1 = begff
                             else:
                                 ffch1 = freq[0]
-                            if endff != None:
+                            if endff is not None:
                                 ffch2 = endff
                             else:
                                 ffch2 = freq[-1]
@@ -1229,8 +1226,8 @@ class dsrtSpectraData:
                         #                   print( 'after tt {}'.format(nt) )
                         #                   print( 'after tt data {}'.format(len( self.data[ik].time ) ) )
                         #                   nf = len(freq)
-                        print("tt length is {}".format(len(tt)))
-                        print("freq length is {}".format(len(freq)))
+                        print(f"tt length is {len(tt)}")
+                        print(f"freq length is {len(freq)}")
 
                         if self.rebinsw:
                             tbin = self.rebinTnum
@@ -1368,7 +1365,7 @@ class dsrtSpectraData:
                             # psm1 = ax1.pcolormesh(xx, yy, Z[:-1:,:-1:], vmin=minv, vmax=maxv,
                             #           shading='flat',   cmap = newcmp,zorder=4, rasterized=True)
 
-                            if self.dvalue2 == True:
+                            if self.dvalue2:
                                 index = np.where(Z >= self.dvalueset)
                                 Z[Z < self.dvalueset] = 0
                                 # Z[ Z>=self.dvalueset ] = 1
@@ -1461,10 +1458,10 @@ class dsrtSpectraData:
                         dtime0 = datetime.datetime.fromisoformat(datess)
 
                         POLARIZA = self.data[ik].polar
-                        unit = self.data[ik].unit
+                        _unused_unit = self.data[ik].unit
                         polss = POLARIZA[0]
                         ## 开启时间截取功能========================================
-                        if (begch != None) or (endch != None):
+                        if (begch is not None) or (endch is not None):
                             xtimev = 1
                         else:
                             xtimev = 0
@@ -1489,7 +1486,7 @@ class dsrtSpectraData:
                         #      else :
                         #          ttch2 = tt[-1]
                         if xtimev == 1:
-                            if begch != None:
+                            if begch is not None:
                                 if not isinstance(begch, str):
                                     ttch = begch - datet0
                                     ttch1 = ttch.total_seconds()
@@ -1500,7 +1497,7 @@ class dsrtSpectraData:
                                     ttch1 = ttch.total_seconds()
                             else:
                                 ttch1 = tt[0]
-                            if endch != None:
+                            if endch is not None:
                                 if not isinstance(endch, str):
                                     ttch = endch - datet0
                                     ttch2 = ttch.total_seconds()
@@ -1528,17 +1525,17 @@ class dsrtSpectraData:
                             Z = Z[:, tindex1 : tindex2 + 1]
                             self.plotconfig[iz].rangetn = [tindex1, tindex2]
                         ######### time select done ################################
-                        if (begff != None) or (endff != None):
+                        if (begff is not None) or (endff is not None):
                             freqv = 1
                         else:
                             freqv = 0
 
                         if freqv == 1:
-                            if begff != None:
+                            if begff is not None:
                                 ffch1 = begff
                             else:
                                 ffch1 = freq[0]
-                            if endff != None:
+                            if endff is not None:
                                 ffch2 = endff
                             else:
                                 ffch2 = freq[-1]
@@ -1562,8 +1559,8 @@ class dsrtSpectraData:
                         #                   print( 'after tt {}'.format(nt) )
                         #                   print( 'after tt data {}'.format(len( self.data[ik].time ) ) )
                         #                   nf = len(freq)
-                        print("tt length is {}".format(len(tt)))
-                        print("freq length is {}".format(len(freq)))
+                        print(f"tt length is {len(tt)}")
+                        print(f"freq length is {len(freq)}")
                         if self.subbackv:
                             Z = subtrBackgroundminv(Z)
 
@@ -1629,7 +1626,7 @@ class dsrtSpectraData:
                         # psm1 = ax1.pcolormesh(xx, yy, Z[:-1:,:-1:], vmin=minv, vmax=maxv,
                         #           shading='flat',   cmap = newcmp,zorder=4, rasterized=True)
 
-                        if self.dvalue2 == True:
+                        if self.dvalue2:
                             index = np.where(Z >= self.dvalueset)
                             Z[Z < self.dvalueset] = 0
                             # Z[ Z>=self.dvalueset ] = 1
@@ -1759,7 +1756,7 @@ class dsrtSpectraData:
                 findnames.sort()
                 self.filename = [os.path.join(dirpath, ss) for ss in findnames]
                 self.nf = len(self.filename)
-                print("have {} file fund.".format(self.nf))
+                print(f"have {self.nf} file fund.")
             else:
                 print("no find files")
         else:
@@ -1786,7 +1783,7 @@ class dsrtSpectraData:
                 nameTrue = [os.path.isfile(self.filename[ii]) for ii in range(self.nf)]
                 tf = 1
                 for ii in range(self.nf):
-                    if nameTrue[ii] == False:
+                    if not nameTrue[ii]:
                         # print( self.filename[ii] + ' this name is wrong ...' )
                         tf *= 0
                 if tf == 1:
@@ -1794,7 +1791,7 @@ class dsrtSpectraData:
                 else:
                     # print(' list of files is wrong, please check them...')
                     return 0
-        except:
+        except Exception:
             # print('check filename ,maybe no file')
             return 0
         if allread == 0:
@@ -1838,9 +1835,9 @@ class dsrtSpectraData:
         print("Begin time = ", self.beginTime.isoformat())
         print("end time = ", self.endTime.isoformat())
         print("temporal resolution(seconds) dt = ", self.resolveTime)
-        print("Begin Freq = {:5.1f} MHz".format(self.beginFreq))
-        print("end  Freq = {:5.1f} MHz".format(self.endFreq))
-        print("frequency resolution,  df= {:5.1f} MHz".format(self.resolveFreq))
+        print(f"Begin Freq = {self.beginFreq:5.1f} MHz")
+        print(f"end  Freq = {self.endFreq:5.1f} MHz")
+        print(f"frequency resolution,  df= {self.resolveFreq:5.1f} MHz")
         npol = len(self.data)
         print("polar data : ")
         for ii in range(npol):
@@ -1871,7 +1868,7 @@ class dsrtSpectraData:
         click for typeII for fit
 
         """
-        if (event.button == 1) and (event.dblclick == False):
+        if (event.button == 1) and (not event.dblclick):
             if event.inaxes is not None:
                 if self.RtypeIIfit.typeIItime == []:
                     self.clickAxs = event.inaxes
@@ -1913,7 +1910,7 @@ class dsrtSpectraData:
                     self.clickAxs.draw_artist(self.hline[0])
                     self.figureID.canvas.blit(self.figureID.bbox)
                     self.figureID.canvas.flush_events()
-        elif (event.button == 3) and (event.dblclick == False):
+        elif (event.button == 3) and (not event.dblclick):
             #### 重新选择 点点
             if event.inaxes is not None:
                 if event.inaxes == self.clickAxs:
@@ -1933,9 +1930,9 @@ class dsrtSpectraData:
                     self.figureID.canvas.flush_events()
                     # self.figureID.canvas.mpl_disconnect(self.cidpress )
 
-        elif (event.button == 3) and (event.dblclick == True):
+        elif (event.button == 3) and event.dblclick:
             ### 双击右键 退出 拟合状态
-            if self.cidpress != None:
+            if self.cidpress is not None:
                 self.figureID.canvas.mpl_disconnect(self.cidpress)
             self.Canvas2PlotSet.emit("tpyeIIfitClose")
             self.mainButton2.setText("TypeII Backbone")
@@ -1955,7 +1952,7 @@ class dsrtSpectraData:
             self.mainButton2.clicked.connect(self.mainBut2event)
 
     def mainBut2event(self):
-        if self.cidpress != None:
+        if self.cidpress is not None:
             self.figureID.canvas.mpl_disconnect(self.cidpress)
         self.cidpress = self.figureID.canvas.mpl_connect(
             "button_press_event", self.getDotClick
@@ -2120,11 +2117,11 @@ class dataPlotInfoWindow(QtWidgets.QWidget):
         self.freqlayoutH.addWidget(self.freqlineEdit1)
         self.freqlineEdit1.setFixedWidth(120)
         self.freqlineEdit1.setValidator(maxvValid)
-        self.freqlineEdit1.setText("{:6.2f}".format(self.freqobs1))
+        self.freqlineEdit1.setText(f"{self.freqobs1:6.2f}")
         self.freqlineEdit1.textChanged.connect(self.setFreqSlider1)
 
         self.freqlabelt11 = QtWidgets.QLabel()
-        self.freqlabelt11.setText(" MHz {:6.2f}".format(self.freqobs1))
+        self.freqlabelt11.setText(f" MHz {self.freqobs1:6.2f}")
         self.freqlayoutH.addWidget(self.freqlabelt11)
 
         self.freqSlider1 = QtWidgets.QSlider()
@@ -2136,7 +2133,7 @@ class dataPlotInfoWindow(QtWidgets.QWidget):
         self.freqSlider1.valueChanged.connect(self.setStartFreq)
 
         self.freqlabelt12 = QtWidgets.QLabel()
-        self.freqlabelt12.setText("{:6.2f} MHz".format(self.freqobs2))
+        self.freqlabelt12.setText(f"{self.freqobs2:6.2f} MHz")
         self.freqlayoutH.addWidget(self.freqlabelt12)
 
         self.freqlayoutH2 = QtWidgets.QHBoxLayout()
@@ -2149,11 +2146,11 @@ class dataPlotInfoWindow(QtWidgets.QWidget):
         self.freqlayoutH2.addWidget(self.freqlineEdit2)
         self.freqlineEdit2.setFixedWidth(120)
         self.freqlineEdit2.setValidator(maxvValid)
-        self.freqlineEdit2.setText("{:6.2f}".format(self.freqobs2))
+        self.freqlineEdit2.setText(f"{self.freqobs2:6.2f}")
         self.freqlineEdit2.textChanged.connect(self.setFreqSlider2)
 
         self.freqlabelt21 = QtWidgets.QLabel()
-        self.freqlabelt21.setText(" MHz {:6.2f}".format(self.freqobs1))
+        self.freqlabelt21.setText(f" MHz {self.freqobs1:6.2f}")
         self.freqlayoutH2.addWidget(self.freqlabelt21)
 
         self.freqSlider2 = QtWidgets.QSlider()
@@ -2165,7 +2162,7 @@ class dataPlotInfoWindow(QtWidgets.QWidget):
         self.freqSlider2.valueChanged.connect(self.setEndFreq)
 
         self.freqlabelt22 = QtWidgets.QLabel()
-        self.freqlabelt22.setText("{:6.2f} MHz".format(self.freqobs2))
+        self.freqlabelt22.setText(f"{self.freqobs2:6.2f} MHz")
         self.freqlayoutH2.addWidget(self.freqlabelt22)
 
         self.freqLayout.addLayout(self.freqlayoutH)
@@ -2250,7 +2247,7 @@ class dataPlotInfoWindow(QtWidgets.QWidget):
         self.scaleLayout2.addWidget(self.valueEdit1)
         self.valueEdit1.setFixedWidth(100)
         self.valueEdit1.setValidator(maxvValid)
-        self.valueEdit1.setText("{:6.2f}".format(100))
+        self.valueEdit1.setText(f"{100:6.2f}")
         ########
         self.checkBoxSB = QtWidgets.QCheckBox("subtract Background")
         self.scaleLayout2.addWidget(self.checkBoxSB)
@@ -2343,13 +2340,13 @@ class dataPlotInfoWindow(QtWidgets.QWidget):
 
     def setStartFreq(self):
         ffs = 1.0 * self.freqSlider1.value()
-        self.freqlineEdit1.setText("{:6.2f}".format(ffs))
+        self.freqlineEdit1.setText(f"{ffs:6.2f}")
         if self.freqSlider1.value() > self.freqSlider2.value():
             self.freqSlider2.setSliderPosition(self.freqSlider1.value())
 
     def setEndFreq(self):
         ffs = 1.0 * self.freqSlider2.value()
-        self.freqlineEdit2.setText("{:6.2f}".format(ffs))
+        self.freqlineEdit2.setText(f"{ffs:6.2f}")
         if self.freqSlider1.value() > self.freqSlider2.value():
             self.freqSlider1.setSliderPosition(self.freqSlider2.value())
 
@@ -2600,10 +2597,10 @@ class dsrtSpecWindow(QtWidgets.QWidget):
             [
                 "Start Time :" + self.specd.beginTime.isoformat(),
                 "End Time :" + self.specd.endTime.isoformat(),
-                "Time Resolution : {:f} seconds ".format(self.specd.resolveTime),
-                "Frequency Resolution : {:f} kHz".format(self.specd.resolveFreq * 1000),
-                "Time Length is {}".format(len(self.specd.data[0].time)),
-                "Frequency Length is {}".format(len(self.specd.data[0].freq)),
+                f"Time Resolution : {self.specd.resolveTime:f} seconds ",
+                f"Frequency Resolution : {self.specd.resolveFreq * 1000:f} kHz",
+                f"Time Length is {len(self.specd.data[0].time)}",
+                f"Frequency Length is {len(self.specd.data[0].freq)}",
             ]
         )
 
@@ -2669,12 +2666,8 @@ class dsrtSpecWindow(QtWidgets.QWidget):
         ########设置频率 =========
         self.dataPlotInfo.freqobs1 = self.specd.beginFreq
         self.dataPlotInfo.freqobs2 = self.specd.endFreq
-        self.dataPlotInfo.freqlineEdit1.setText(
-            "{:6.2f}".format(self.dataPlotInfo.freqobs1)
-        )
-        self.dataPlotInfo.freqlineEdit2.setText(
-            "{:6.2f}".format(self.dataPlotInfo.freqobs2)
-        )
+        self.dataPlotInfo.freqlineEdit1.setText(f"{self.dataPlotInfo.freqobs1:6.2f}")
+        self.dataPlotInfo.freqlineEdit2.setText(f"{self.dataPlotInfo.freqobs2:6.2f}")
         self.dataPlotInfo.freqSlider1.setRange(
             int(self.dataPlotInfo.freqobs1 - 1), int(self.dataPlotInfo.freqobs2 + 1)
         )
@@ -2685,16 +2678,16 @@ class dsrtSpecWindow(QtWidgets.QWidget):
         self.dataPlotInfo.freqSlider2.setSliderPosition(int(self.dataPlotInfo.freqobs2))
 
         self.dataPlotInfo.freqlabelt11.setText(
-            " MHz {:6.2f}".format(self.dataPlotInfo.freqobs1)
+            f" MHz {self.dataPlotInfo.freqobs1:6.2f}"
         )
         self.dataPlotInfo.freqlabelt21.setText(
-            " MHz {:6.2f}".format(self.dataPlotInfo.freqobs1)
+            f" MHz {self.dataPlotInfo.freqobs1:6.2f}"
         )
         self.dataPlotInfo.freqlabelt12.setText(
-            " MHz {:6.2f}".format(self.dataPlotInfo.freqobs2)
+            f" MHz {self.dataPlotInfo.freqobs2:6.2f}"
         )
         self.dataPlotInfo.freqlabelt22.setText(
-            " MHz {:6.2f}".format(self.dataPlotInfo.freqobs2)
+            f" MHz {self.dataPlotInfo.freqobs2:6.2f}"
         )
         #### 设置rebin
         self.specd.rebinsw = self.dataPlotInfo.checkBox.isChecked()
@@ -2711,12 +2704,8 @@ class dsrtSpecWindow(QtWidgets.QWidget):
                 self.specd.rebinTnum = 1
             if self.specd.rebinFnum == 0:
                 self.specd.rebinFnum = 1
-            self.dataPlotInfo.checklineEdit1.setText(
-                "{:d}".format(self.specd.rebinTnum)
-            )
-            self.dataPlotInfo.checklineEdit2.setText(
-                "{:d}".format(self.specd.rebinFnum)
-            )
+            self.dataPlotInfo.checklineEdit1.setText(f"{self.specd.rebinTnum:d}")
+            self.dataPlotInfo.checklineEdit2.setText(f"{self.specd.rebinFnum:d}")
 
         if self.numplot == 0:
             self.dataPlotInfo.button2.clicked.connect(self.plotimg)
@@ -2860,9 +2849,9 @@ class dsrtSpecWindow(QtWidgets.QWidget):
 
     def replotset(self, event):
         if event.button == 1:
-            if event.dblclick == True:
+            if event.dblclick:
                 if event.inaxes is not None:
-                    if self.replotv == False:
+                    if not self.replotv:
                         self.dataPlotInfo.button2.clicked.disconnect(self.plotimg)
                         self.dataPlotInfo.button2.clicked.connect(self.replotimg)
                     self.replotv = True
@@ -3144,7 +3133,7 @@ class dsrtSpecWindow(QtWidgets.QWidget):
                     freqx = [float(kk) for kk in sxx]
                 else:
                     freqx = [245]
-            except:
+            except Exception:
                 freqx = [245]
 
             self.plotflux.ax.clear()
@@ -3216,7 +3205,7 @@ class dsrtSpecWindow(QtWidgets.QWidget):
                         fline = self.plotflux.ax.plot(
                             ttaxd,
                             np.ravel(fluxdata[:, ii]),
-                            label=polar_list[ik] + " {:.2f} MHz".format(freqch[ii]),
+                            label=polar_list[ik] + f" {freqch[ii]:.2f} MHz",
                         )
                         self.plotflux.fluxline.append(fline)
 

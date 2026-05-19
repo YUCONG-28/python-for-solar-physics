@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Lightweight import checks for package metadata and utilities."""
 
 

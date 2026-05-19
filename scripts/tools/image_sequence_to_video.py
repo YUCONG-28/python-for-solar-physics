@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Video Generation from Image Sequences for Solar Data Visualization.
 
@@ -12,10 +11,10 @@ import os
 import re
 import subprocess
 from collections import Counter
+from collections.abc import Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Iterable, Iterator, Optional, Sequence, Tuple
 
 import imageio.v2 as imageio
 import numpy as np
@@ -40,10 +39,10 @@ except ImportError:  # pragma: no cover - depends on local environment
 PATH_CONFIG = load_script_config(
     "image_sequence_to_video",
     {
-        "fps": 10,
-        "input_dir": r"<PROJECT_ROOT>\2026\20260326\SDO\AIA\multi_band",
+        "fps": 18,
+        "input_dir": r"<PROJECT_ROOT>\2026\20260326\SDO\AIA\multi_band_difference_running",
         "output_dir": r"<PROJECT_ROOT>\2026\20260326\video",
-        "video_name": "AIA_multiband_all.mp4",
+        "video_name": "AIA_multiband_difference_running.mp4",
     },
 )
 
@@ -146,11 +145,11 @@ class FrameStats:
 
 @dataclass
 class FrameResult:
-    frame: Optional[np.ndarray]
-    original_size: Optional[Tuple[int, int]]
+    frame: np.ndarray | None
+    original_size: tuple[int, int] | None
     resized: bool = False
     path: str = ""
-    error: Optional[Exception] = None
+    error: Exception | None = None
 
 
 def normalize_channels(img: np.ndarray) -> np.ndarray:
@@ -210,7 +209,7 @@ def align_even(n: int) -> int:
 
 
 def process_single_frame(
-    file_path: str, target_size_tuple: Optional[Tuple[int, int]] = None
+    file_path: str, target_size_tuple: tuple[int, int] | None = None
 ) -> FrameResult:
     """Read, normalize, and resize one frame."""
     try:
@@ -230,11 +229,11 @@ def process_single_frame(
 
 def iter_processed_frames(
     paths: Sequence[str],
-    target_size_tuple: Optional[Tuple[int, int]],
-    stats: Optional[FrameStats] = None,
+    target_size_tuple: tuple[int, int] | None,
+    stats: FrameStats | None = None,
     workers: int = 1,
     batch_size: int = 8,
-) -> Iterator[Tuple[np.ndarray, Tuple[int, int]]]:
+) -> Iterator[tuple[np.ndarray, tuple[int, int]]]:
     """
     Yield processed RGB uint8 frames in path order without retaining all frames.
     Optional threaded prefetch processes only small ordered batches.
@@ -272,7 +271,7 @@ def iter_processed_frames(
                     yield item
 
 
-def sample_image_sizes(paths: Sequence[str], sample_size: int) -> list[Tuple[int, int]]:
+def sample_image_sizes(paths: Sequence[str], sample_size: int) -> list[tuple[int, int]]:
     """Read only image dimensions from a small sample."""
     sample_sizes = []
     for path in paths[:sample_size]:
@@ -284,7 +283,7 @@ def sample_image_sizes(paths: Sequence[str], sample_size: int) -> list[Tuple[int
     return sample_sizes
 
 
-def determine_target_size(paths: Sequence[str]) -> Tuple[int, int, int, int]:
+def determine_target_size(paths: Sequence[str]) -> tuple[int, int, int, int]:
     """Return target width/height and sample statistics."""
     sample_size = min(30, len(paths))
     sample_sizes = sample_image_sizes(paths, sample_size)
@@ -305,7 +304,7 @@ def determine_target_size(paths: Sequence[str]) -> Tuple[int, int, int, int]:
 # ============================================================================
 
 
-def get_quality_params(quality: str) -> Tuple[int, str, int]:
+def get_quality_params(quality: str) -> tuple[int, str, int]:
     """Return ffmpeg CRF, preset, and imageio quality for a quality label."""
     if quality == "high":
         return 18, "slow", 7
@@ -313,7 +312,7 @@ def get_quality_params(quality: str) -> Tuple[int, str, int]:
 
 
 def write_video_ffmpeg_stream(
-    frame_iter: Iterable[Tuple[np.ndarray, Tuple[int, int]]],
+    frame_iter: Iterable[tuple[np.ndarray, tuple[int, int]]],
     output_path: str,
     fps: int,
     width: int,
@@ -402,7 +401,7 @@ def write_video_ffmpeg_stream(
 
 
 def write_video_imageio_stream(
-    frame_iter: Iterable[Tuple[np.ndarray, Tuple[int, int]]],
+    frame_iter: Iterable[tuple[np.ndarray, tuple[int, int]]],
     output_path: str,
     fps: int,
     quality: str = "high",
@@ -426,7 +425,7 @@ def write_video_imageio_stream(
 
 
 def write_video_opencv_stream(
-    frame_iter: Iterable[Tuple[np.ndarray, Tuple[int, int]]],
+    frame_iter: Iterable[tuple[np.ndarray, tuple[int, int]]],
     output_path: str,
     fps: int,
     width: int,
@@ -499,7 +498,7 @@ def select_frame_range(entries):
     return entries[start - 1 : end], start, end
 
 
-def make_frame_iter(paths: Sequence[str], stats: FrameStats, size: Tuple[int, int]):
+def make_frame_iter(paths: Sequence[str], stats: FrameStats, size: tuple[int, int]):
     return iter_processed_frames(
         paths,
         size,
@@ -543,7 +542,7 @@ def main():
     print(f"  Sampled frames: {sample_size}")
     print(f"  Target size: {tw}x{th} ({native_count} sampled frames native)")
     print(f"  Quality: {video_quality} (crf={crf}, preset={preset})")
-    print(f"  Streaming FFmpeg: yes")
+    print("  Streaming FFmpeg: yes")
     print(f"  Prefetch workers: {prefetch_workers}, batch size: {prefetch_batch_size}")
 
     stats = FrameStats()
