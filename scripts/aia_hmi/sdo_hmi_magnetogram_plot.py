@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 读取并绘制 SDO/HMI 磁图数据。
 # 主要输入: HMI magnetogram FITS 文件。
 # 主要输出/运行说明: 输出磁场背景图，为耀斑/活动区分析提供磁场环境。
@@ -11,7 +10,6 @@ Created on Sat Apr  5 14:39:30 2025
 from pathlib import Path
 
 import astropy.units as u
-import matplotlib.colors as colors
 import matplotlib.pyplot as plt
 import sunpy.map
 from astropy.coordinates import SkyCoord

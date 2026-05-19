@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 比较 GOES SXR 导数与 HXR 辐射，用于 Neupert 效应时序分析。
 # 主要输入: GOES 软 X 射线光变和硬 X 射线光变数据。
 # 主要输出/运行说明: 输出 SXR 导数-HXR 对比图和相关时序诊断。
@@ -56,7 +55,7 @@ def get_available_fonts(candidates):
         try:
             findfont(FontProperties(family=font))
             available.append(font)
-        except:
+        except Exception:
             continue
     return available if available else ["sans-serif"]
 
@@ -75,9 +74,9 @@ class CustomLogFormatter(mticker.LogFormatter):
 
         # 格式化显示，使用mathtext确保负号正确渲染
         if abs(base - 1.0) < 1e-6:
-            return r"$10^{%d}$" % exp
+            return rf"$10^{{{exp}}}$"
         else:
-            return r"$%.1f \times 10^{%d}$" % (base, exp)
+            return rf"${base:.1f} \times 10^{{{exp}}}$"
 
 
 # --------------------------
@@ -118,7 +117,7 @@ def load_sxr_data(file_path, start_time, end_time):
             print("数据集信息:")
             print(ds.info())
     except Exception as e:
-        raise RuntimeError(f"读取数据失败: {str(e)}")
+        raise RuntimeError(f"读取数据失败: {str(e)}") from e
 
     try:
         ds_subset = ds.sel(time=slice(start_time, end_time))
@@ -126,7 +125,7 @@ def load_sxr_data(file_path, start_time, end_time):
             raise ValueError(f"时间范围内没有数据: {start_time} 至 {end_time}")
         print(f"\n成功截取数据，共 {len(ds_subset.time)} 个数据点")
     except Exception as e:
-        raise RuntimeError(f"截取时间范围失败: {str(e)}")
+        raise RuntimeError(f"截取时间范围失败: {str(e)}") from e
 
     return ds_subset
 

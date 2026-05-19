@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 读取多个 SDO/AIA 波段图像并绘制六联图概览。
 # 主要输入: 多波段 AIA FITS 文件。
 # 主要输出/运行说明: 输出统一视场和标注的多波段 EUV 面板图。
@@ -9,9 +8,8 @@ read and plot aia images in 6 panels
 Jan 31 2026
 @author: ningh
 """
-import glob
+
 import json
-import logging
 import re
 from pathlib import Path
 
@@ -136,7 +134,10 @@ def process_aia(
         return calculated_vmin, calculated_vmax
 
 
-def get_multi_wave_df(all_classified_files, target_waves=[94, 131, 171, 193, 211, 304]):
+def get_multi_wave_df(all_classified_files, target_waves=None):
+    if target_waves is None:
+        target_waves = [94, 131, 171, 193, 211, 304]
+
     wave_dfs = {}
     time_pattern = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{6})")
 
@@ -163,7 +164,7 @@ def get_multi_wave_df(all_classified_files, target_waves=[94, 131, 171, 193, 211
     base_df = wave_dfs[base_wave]
     synced_list = []
 
-    for idx, row in base_df.iterrows():
+    for _idx, row in base_df.iterrows():
         base_sec = row["abs_sec"]
         current_group = {base_wave: row["path"], "time_unix": row["abs_sec"]}
         match_success = True
@@ -213,9 +214,10 @@ def load_ranges(filename="aia_ranges.json"):
     return None
 
 
-def plot_synced_aia(
-    synced_data, outdir, wave_display_ranges, target_waves=[94, 131, 171, 193, 211, 304]
-):
+def plot_synced_aia(synced_data, outdir, wave_display_ranges, target_waves=None):
+    if target_waves is None:
+        target_waves = [94, 131, 171, 193, 211, 304]
+
     """
 
     参数:
@@ -232,7 +234,7 @@ def plot_synced_aia(
     """
     mk_dir(outdir)
 
-    for i, item in enumerate(synced_data):
+    for _i, item in enumerate(synced_data):
         try:
             obs_time = parse_time(item["time_unix"], format="unix")
             print(obs_time)
@@ -270,9 +272,9 @@ def plot_synced_aia(
                     plot_data = m_crop.data.copy()
                     plot_data[plot_data <= 0] = np.nan
 
-                    im = m_crop.plot(
+                    _unused_im = m_crop.plot(
                         axes=ax,
-                        title=f"",
+                        title="",
                         norm=colors.LogNorm(vmin=vmin_val, vmax=vmax_val),
                     )
                     precise_time = m_crop.date.strftime("%H:%M:%S")
@@ -328,7 +330,7 @@ def plot_synced_aia(
             # break
             plt.savefig(fout_path, dpi=200, bbox_inches="tight")
             plt.close(fig)
-        except Exception as e:
+        except Exception:
             plt.close(fig)
             continue
 

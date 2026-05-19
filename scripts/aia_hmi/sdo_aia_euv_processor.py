@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 SDO/AIA EUV FITS processor.
 
@@ -133,10 +132,10 @@ import multiprocessing
 import re
 import time
 import warnings
+from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
 
 import astropy.units as u
 import matplotlib
@@ -225,12 +224,12 @@ class AIAConfig:
 
     # test_file 优先级最高；为空时从 data_path/test_wave 中按时间排序选第 test_index 个文件。
     # Python 从 0 开始计数；若想选肉眼看到的第 100 个文件，可设置 test_index=99。
-    test_file: Optional[str] = None
+    test_file: str | None = None
     test_wave: int = 131
     test_index: int = 99
 
-    data_path: Optional[str] = None
-    output_dir: Optional[str] = None
+    data_path: str | None = None
+    output_dir: str | None = None
     single_band_output_subdir: str = "plot"
     mosaic_output_subdir: str = "multi_band"
     mosaic_difference_output_subdir: str = "multi_band_difference"
@@ -239,16 +238,16 @@ class AIAConfig:
     )
 
     start_idx: int = 0
-    end_idx: Optional[int] = None
+    end_idx: int | None = None
 
     # ROI 单位 arcsec，Helioprojective 坐标，格式 (xmin, xmax, ymin, ymax)。
     # test 模式最适合用来调 ROI。
-    roi_bounds: Tuple[float, float, float, float] = (-1100, -800, -550, -200)
+    roi_bounds: tuple[float, float, float, float] = (-1100, -800, -550, -200)
 
     # 默认 None 表示使用 AIA_CONFIG；仅临时调图时手动覆盖。
-    user_vmin: Optional[float] = None
-    user_vmax: Optional[float] = None
-    user_cmap: Optional[str] = None
+    user_vmin: float | None = None
+    user_vmax: float | None = None
+    user_cmap: str | None = None
 
     base_fig_width: float = 8.0
     dpi: int = 300
@@ -260,11 +259,11 @@ class AIAConfig:
     save_image: bool = True
     show_image: bool = False
     use_band_subdirs: bool = True
-    max_workers: Optional[int] = None
+    max_workers: int | None = None
 
     draw_original: bool = False
     multi_band_composite: bool = False
-    multi_band_wavelengths: Optional[Tuple[int, ...]] = (
+    multi_band_wavelengths: tuple[int, ...] | None = (
         94,
         131,
         171,
@@ -276,7 +275,7 @@ class AIAConfig:
     multi_band_also_save_single: bool = False
 
     # mosaic 每行多少张子图；None 表示自动接近方形布局，例如 3 表示每行 3 张。
-    mosaic_ncols: Optional[int] = 3
+    mosaic_ncols: int | None = 3
     # mosaic 子图之间是否无缝拼接；True 时强制 wspace/hspace=0。
     mosaic_seamless: bool = True
     # 是否只在拼图外边缘显示坐标轴刻度与标签。
@@ -319,15 +318,15 @@ class AIAConfig:
     mosaic_panel_label_y: float = 0.035
     mosaic_panel_label_y_last_row: float = 0.08
     # mosaic 单任务会同时打开多波段 FITS，默认限制 worker 降低内存压力。
-    mosaic_max_workers: Optional[int] = 12
-    mosaic_max_slots: Optional[int] = None
+    mosaic_max_workers: int | None = 12
+    mosaic_max_slots: int | None = None
     mosaic_difference_inline: bool = True
 
     # ===== Difference image options =====
     draw_difference: bool = True
     difference_method: str = "running"
     difference_output_mode: str = "auto"
-    difference_wavelengths: Optional[Tuple[int, ...]] = (
+    difference_wavelengths: tuple[int, ...] | None = (
         94,
         131,
         171,
@@ -335,12 +334,12 @@ class AIAConfig:
         211,
         304,
     )
-    difference_base_index: Optional[int] = None
+    difference_base_index: int | None = None
     difference_output_subdir: str = "difference"
     difference_norm_mode: str = "auto"
     difference_percentile: float = 99.5
-    difference_vmin: Optional[float] = None
-    difference_vmax: Optional[float] = None
+    difference_vmin: float | None = None
+    difference_vmax: float | None = None
     difference_cmap: str = "RdBu_r"
     difference_cmap_mode: str = "diverging"
     warn_band_difference_cmap: bool = False
@@ -426,7 +425,7 @@ class PanelData:
     cmap: str
     norm: mcolors.Normalize
     panel_kind: str = "original"
-    panel_label: Optional[str] = None
+    panel_label: str | None = None
     is_difference: bool = False
 
 
@@ -446,7 +445,7 @@ def _parse_timestr(file_path: Path) -> str:
     return file_path.stem
 
 
-def _resolve_files(input_path: Path, start_idx: int, end_idx: Optional[int]) -> list:
+def _resolve_files(input_path: Path, start_idx: int, end_idx: int | None) -> list:
     if input_path.is_file():
         file_list = [input_path]
     elif input_path.is_dir():
@@ -467,7 +466,7 @@ def _resolve_files(input_path: Path, start_idx: int, end_idx: Optional[int]) -> 
     return selected
 
 
-def _discover_wavelength_dirs(data_path: Path) -> Tuple[int, ...]:
+def _discover_wavelength_dirs(data_path: Path) -> tuple[int, ...]:
     if not data_path.is_dir():
         raise ValueError(f"AIA data directory does not exist: {data_path}")
     found = [
@@ -482,7 +481,7 @@ def _discover_wavelength_dirs(data_path: Path) -> Tuple[int, ...]:
 
 def _sorted_fits_for_band(
     data_path: Path, wave: int, use_band_subdirs: bool
-) -> List[Path]:
+) -> list[Path]:
     band_dir = (data_path / str(wave)) if use_band_subdirs else data_path
     if not band_dir.is_dir():
         raise ValueError(f"Missing AIA band directory for {wave} Å: {band_dir}")
@@ -493,14 +492,14 @@ def _sorted_fits_for_band(
 
 
 def _slice_band_files(
-    files: List[Path], start_idx: int, end_idx: Optional[int]
-) -> List[Path]:
+    files: list[Path], start_idx: int, end_idx: int | None
+) -> list[Path]:
     total = len(files)
     end = total if end_idx is None else min(end_idx, total)
     return files[start_idx:end]
 
 
-def _resolve_single_files(cfg: AIAConfig) -> List[Path]:
+def _resolve_single_files(cfg: AIAConfig) -> list[Path]:
     data_path = Path(cfg.data_path)
     waves = cfg.multi_band_wavelengths
 
@@ -509,7 +508,7 @@ def _resolve_single_files(cfg: AIAConfig) -> List[Path]:
     if not cfg.use_band_subdirs or waves is None:
         return _resolve_files(data_path, cfg.start_idx, cfg.end_idx)
 
-    selected_files: List[Path] = []
+    selected_files: list[Path] = []
     for wave in waves:
         files = _sorted_fits_for_band(data_path, wave, cfg.use_band_subdirs)
         sliced = _slice_band_files(files, cfg.start_idx, cfg.end_idx)
@@ -557,10 +556,10 @@ def _resolve_test_file(cfg: AIAConfig) -> Path:
 
 
 def _build_multi_band_slots(
-    cfg: AIAConfig, wavelengths: Tuple[int, ...]
-) -> List[Tuple[Path, ...]]:
+    cfg: AIAConfig, wavelengths: tuple[int, ...]
+) -> list[tuple[Path, ...]]:
     data_path = Path(cfg.data_path)
-    per_band: List[List[Path]] = []
+    per_band: list[list[Path]] = []
 
     for wave in wavelengths:
         all_files = _sorted_fits_for_band(data_path, wave, cfg.use_band_subdirs)
@@ -587,10 +586,10 @@ def _build_multi_band_slots(
 # ==============================================================================
 def _resolve_display_params(
     current_map: sunpy.map.GenericMap,
-    user_cmap: Optional[str],
-    user_vmin: Optional[float],
-    user_vmax: Optional[float],
-) -> Tuple[str, mcolors.Normalize]:
+    user_cmap: str | None,
+    user_vmin: float | None,
+    user_vmax: float | None,
+) -> tuple[str, mcolors.Normalize]:
     wave_val = int(current_map.wavelength.value)
     config = AIA_CONFIG.get(wave_val)
     sunpy_norm = current_map.plot_settings["norm"]
@@ -632,7 +631,7 @@ def _diff_config_vlim(wave_val: int) -> float:
 def _resolve_fixed_difference_limits_for_wave(
     wave_val: int,
     cfg: AIAConfig,
-) -> Optional[Tuple[float, float]]:
+) -> tuple[float, float] | None:
     vmin_by_wave = cfg.difference_vmin_by_wave or {}
     vmax_by_wave = cfg.difference_vmax_by_wave or {}
     vlim_by_wave = cfg.difference_vlim_by_wave or {}
@@ -676,7 +675,7 @@ def _resolve_difference_params(
     diff_data: np.ndarray,
     wave_val: int,
     cfg: AIAConfig,
-) -> Tuple[str, mcolors.Normalize]:
+) -> tuple[str, mcolors.Normalize]:
     diff_config = DIFF_CONFIG.get(wave_val, {})
     if cfg.difference_cmap_mode == "band":
         band_config = AIA_CONFIG.get(wave_val)
@@ -775,9 +774,9 @@ def _load_normalized_cutout(
 
 def _make_difference_map(
     current_map: sunpy.map.GenericMap,
-    reference_map: Optional[sunpy.map.GenericMap],
+    reference_map: sunpy.map.GenericMap | None,
     cfg: AIAConfig,
-    wave: Optional[int] = None,
+    wave: int | None = None,
 ) -> sunpy.map.GenericMap:
     meta = current_map.meta.copy()
 
@@ -822,7 +821,7 @@ def _make_difference_map(
 
 def _load_difference_map_from_paths(
     current_path: Path,
-    reference_path: Optional[Path],
+    reference_path: Path | None,
     wave: int,
     cfg: AIAConfig,
 ) -> sunpy.map.GenericMap:
@@ -882,7 +881,7 @@ def _plot_difference_map(
     title: str,
     save_path: Path,
     cfg: AIAConfig,
-    prev_or_base_label: Optional[str] = None,
+    prev_or_base_label: str | None = None,
 ) -> None:
     import matplotlib.pyplot as plt
 
@@ -951,7 +950,7 @@ def _plot_difference_map(
         gc.collect()
 
 
-def _layout_grid(n: int) -> Tuple[int, int]:
+def _layout_grid(n: int) -> tuple[int, int]:
     if n <= 0:
         return 1, 1
     ncol = max(1, math.ceil(math.sqrt(n)))
@@ -977,7 +976,7 @@ def _auto_mosaic_ncols(n: int) -> int:
     return math.ceil(math.sqrt(n))
 
 
-def _layout_mosaic_grid(n: int, mosaic_ncols: Optional[int] = None) -> Tuple[int, int]:
+def _layout_mosaic_grid(n: int, mosaic_ncols: int | None = None) -> tuple[int, int]:
     if n <= 0:
         return 1, 1
     if mosaic_ncols is not None:
@@ -996,7 +995,7 @@ def _compute_mosaic_axes_rects(
     ncol: int,
     cfg: AIAConfig,
     has_title: bool,
-) -> List[Tuple[float, float, float, float]]:
+) -> list[tuple[float, float, float, float]]:
     if cfg.mosaic_show_outer_axes:
         left = cfg.mosaic_left
         bottom = cfg.mosaic_bottom
@@ -1016,7 +1015,7 @@ def _compute_mosaic_axes_rects(
 
     panel_w = usable_w / ncol
     panel_h = usable_h / nrow
-    rects: List[Tuple[float, float, float, float]] = []
+    rects: list[tuple[float, float, float, float]] = []
     for idx in range(nrow * ncol):
         row, col = divmod(idx, ncol)
         x0 = left + col * panel_w
@@ -1031,7 +1030,7 @@ def _compute_mosaic_figure_size(
     aspect_ratio: float,
     cfg: AIAConfig,
     has_title: bool,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     fig_width = cfg.base_fig_width * ncol
 
     left = cfg.mosaic_left
@@ -1112,7 +1111,7 @@ def _obs_time_isot_label(aia_map: sunpy.map.GenericMap, fallback_path: Path) -> 
 
 
 def _obs_date_ymd(
-    aia_map: sunpy.map.GenericMap, fallback_path: Optional[Path] = None
+    aia_map: sunpy.map.GenericMap, fallback_path: Path | None = None
 ) -> str:
     try:
         dt = aia_map.date.to_datetime()
@@ -1271,7 +1270,7 @@ def _purge_stonyhurst_text_artists(ax) -> None:
             text.set_visible(False)
 
 
-def _process_single_worker(file_path: Path, cfg: AIAConfig) -> Tuple[bool, str]:
+def _process_single_worker(file_path: Path, cfg: AIAConfig) -> tuple[bool, str]:
     current_map = None
     raw_cutout = None
     cutout_map = None
@@ -1284,7 +1283,7 @@ def _process_single_worker(file_path: Path, cfg: AIAConfig) -> Tuple[bool, str]:
         import matplotlib.pyplot as plt
 
         current_map = sunpy.map.Map(file_path)
-        wave_val = int(current_map.wavelength.value)
+        _unused_wave_val = int(current_map.wavelength.value)
         exp_time = current_map.exposure_time.to_value(u.s)
 
         if exp_time <= 0:
@@ -1424,7 +1423,7 @@ def _load_aia_cutout_panel(path: Path, expected_wave: int, cfg: AIAConfig) -> Pa
 
 def _load_difference_cutout_panel(
     current_path: Path,
-    reference_path: Optional[Path],
+    reference_path: Path | None,
     wave: int,
     cfg: AIAConfig,
     method_label: str,
@@ -1520,7 +1519,7 @@ def _add_panel_label(
     row: int,
     nrow: int,
     cfg: AIAConfig,
-    panel_label: Optional[str] = None,
+    panel_label: str | None = None,
 ) -> None:
     label_y = (
         cfg.mosaic_panel_label_y_last_row
@@ -1566,9 +1565,9 @@ def _save_mosaic_figure(fig, save_path: Path, cfg: AIAConfig) -> None:
     )
 
 
-def _ordered_unique(values: Sequence[int]) -> Tuple[int, ...]:
+def _ordered_unique(values: Sequence[int]) -> tuple[int, ...]:
     seen = set()
-    ordered: List[int] = []
+    ordered: list[int] = []
     for value in values:
         int_value = int(value)
         if int_value not in seen:
@@ -1577,7 +1576,7 @@ def _ordered_unique(values: Sequence[int]) -> Tuple[int, ...]:
     return tuple(ordered)
 
 
-def _mosaic_slot_wavelengths(cfg: AIAConfig) -> Tuple[int, ...]:
+def _mosaic_slot_wavelengths(cfg: AIAConfig) -> tuple[int, ...]:
     data_path = Path(cfg.data_path)
     original_waves = cfg.multi_band_wavelengths
     if original_waves is None:
@@ -1629,13 +1628,13 @@ def _base_difference_reference_path(wave: int, cfg: AIAConfig) -> Path:
 
 def _process_multi_band_worker(
     slot_idx: int,
-    paths: Tuple[Path, ...],
-    wavelengths: Tuple[int, ...],
+    paths: tuple[Path, ...],
+    wavelengths: tuple[int, ...],
     cfg: AIAConfig,
-    previous_paths: Optional[Tuple[Path, ...]] = None,
-) -> Tuple[bool, str]:
+    previous_paths: tuple[Path, ...] | None = None,
+) -> tuple[bool, str]:
     fig = None
-    panels: List[PanelData] = []
+    panels: list[PanelData] = []
     plt = None
 
     try:
@@ -1651,9 +1650,11 @@ def _process_multi_band_worker(
         dy = abs(ty2 - ty1)
         aspect_ratio = dy / dx if dx != 0 else 1.0
 
-        wave_to_current_path = dict(zip(wavelengths, paths))
+        wave_to_current_path = dict(zip(wavelengths, paths, strict=False))
         wave_to_previous_path = (
-            dict(zip(wavelengths, previous_paths)) if previous_paths is not None else {}
+            dict(zip(wavelengths, previous_paths, strict=False))
+            if previous_paths is not None
+            else {}
         )
 
         if cfg.draw_original:
@@ -1874,14 +1875,14 @@ def _difference_save_dir(data_path: Path, wave: int, cfg: AIAConfig) -> Path:
 def _process_difference_band_worker(
     wave: int,
     cfg: AIAConfig,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     if not cfg.show_image:
         matplotlib.use("Agg", force=True)
     import matplotlib.pyplot as plt
 
     data_path = Path(cfg.data_path)
     success_count = 0
-    error_messages: List[str] = []
+    error_messages: list[str] = []
 
     try:
         files = _sorted_fits_for_band(data_path, wave, cfg.use_band_subdirs)
@@ -2733,7 +2734,7 @@ def config_from_args(args: argparse.Namespace) -> AIAConfig:
     return cfg
 
 
-def main(argv: Optional[Sequence[str]] = None) -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
 

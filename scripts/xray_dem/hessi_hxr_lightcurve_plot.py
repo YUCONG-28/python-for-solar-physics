@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 绘制 RHESSI/HESSI 风格硬 X 射线光变曲线。
 # 主要输入: 硬 X 射线事件或光变数据。
 # 主要输出/运行说明: 输出 HXR 时间序列图。
@@ -70,7 +69,7 @@ def process_hxi_fits(input_dir, output_dir):
 
                 # Set axis labels and title
                 plt.ylabel(
-                    "Counts s\u207B\u00B9 detector\u207B\u00B9",
+                    "Counts s\u207b\u00b9 detector\u207b\u00b9",
                     fontsize=22,
                     labelpad=12,
                 )

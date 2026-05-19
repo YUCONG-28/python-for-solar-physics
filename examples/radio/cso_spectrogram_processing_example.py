@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 测试 CSO 射电动态频谱处理和绘图行为。
 # 主要输入: CSO 测试频谱数据。
 # 主要输出/运行说明: 输出测试频谱图或控制台诊断信息。
@@ -85,7 +84,7 @@ def readcso_spectrofits(fn):
 
         try:
             unit = header["BUNIT"]
-        except:
+        except Exception:
             unit = header["QUANTITY"]
 
         dataout = []

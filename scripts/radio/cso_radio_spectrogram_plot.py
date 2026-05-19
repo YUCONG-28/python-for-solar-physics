@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 从 FITS 数据绘制 CSO 射电动态频谱。
 # 主要输入: CSO FITS 文件、偏振通道和降采样配置。
 # 主要输出/运行说明: 输出频率-时间谱图，包含内存友好的分块/降采样处理。
@@ -27,22 +26,21 @@ Key Features:
 - Flexible output options: display, save to file, or both
 """
 
-import datetime
-import os
-import time
-import warnings
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from functools import wraps
-from typing import List, Optional, Tuple
+import datetime  # noqa: E402
+import os  # noqa: E402
+import time  # noqa: E402
+import warnings  # noqa: E402
+from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: E402
+from dataclasses import dataclass, field  # noqa: E402
+from functools import wraps  # noqa: E402
 
-import matplotlib.dates as mdates
-import matplotlib.pyplot as plt
-import numpy as np
-from astropy.io import fits
-from tqdm import tqdm
+import matplotlib.dates as mdates  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+from astropy.io import fits  # noqa: E402
+from tqdm import tqdm  # noqa: E402
 
-from solar_toolkit.path_config import apply_config_to_object
+from solar_toolkit.path_config import apply_config_to_object  # noqa: E402
 
 
 # ============================================================
@@ -80,7 +78,7 @@ class PlotConfig:
     chunk_mem_mb: int = 28
 
     # Maximum number of CPU cores to use (None = auto-detect, 1 = single core)
-    max_workers: Optional[int] = None
+    max_workers: int | None = None
 
     # Plot toggles
     plot_ll: bool = False
@@ -102,19 +100,19 @@ class PlotConfig:
     # Method 2: Manual absolute limits (used when use_percentile_clipping = False)
     # Set these to specific values like 0.0 and 10.0
     # Individual polarization limits
-    manual_ll_vmin: Optional[float] = 1.8
-    manual_ll_vmax: Optional[float] = 5
-    manual_rr_vmin: Optional[float] = 1.8
-    manual_rr_vmax: Optional[float] = 5
+    manual_ll_vmin: float | None = 1.8
+    manual_ll_vmax: float | None = 5
+    manual_rr_vmin: float | None = 1.8
+    manual_rr_vmax: float | None = 5
     # Sum and ratio limits
-    manual_sum_vmin: Optional[float] = 1.8
-    manual_sum_vmax: Optional[float] = 3.2
-    manual_ratio_vmin: Optional[float] = -1.0
-    manual_ratio_vmax: Optional[float] = 1.0
+    manual_sum_vmin: float | None = 1.8
+    manual_sum_vmax: float | None = 3.2
+    manual_ratio_vmin: float | None = -1.0
+    manual_ratio_vmax: float | None = 1.0
 
     # Backward compatibility: if individual limits not set, use these
-    manual_vmin: Optional[float] = None
-    manual_vmax: Optional[float] = None
+    manual_vmin: float | None = None
+    manual_vmax: float | None = None
 
     # Figure dimensions
     fig_width: float = 12.0
@@ -129,14 +127,14 @@ class PlotConfig:
     dpi: int = 300
 
     # List of frequencies to highlight (MHz)
-    highlight_freqs: Optional[List[float]] = field(default_factory=lambda: None)
+    highlight_freqs: list[float] | None = field(default_factory=lambda: None)
     # [149, 164, 190, 205, 223, 238, 285, 300, 309, 324]
 
     # 坐标轴显示控制
     show_axis_labels: bool = True  # 是否显示坐标轴标签
     axis_label_rotation: float = 0.0  # 标签旋转角度（度）
-    xtick_interval: Optional[int] = None  # X轴刻度间隔（秒），None为自动
-    ytick_interval: Optional[float] = None  # Y轴刻度间隔（MHz），None为自动
+    xtick_interval: int | None = None  # X轴刻度间隔（秒），None为自动
+    ytick_interval: float | None = None  # Y轴刻度间隔（MHz），None为自动
     xtick_format: str = "%H:%M:%S"  # X轴时间格式
     show_minor_ticks: bool = True  # 是否显示次要刻度
 
@@ -171,7 +169,7 @@ def _find_range(arr: np.ndarray, lo: float, hi: float):
     return i0, max(i0, i1)
 
 
-def get_system_memory_info() -> Tuple[float, float, float]:
+def get_system_memory_info() -> tuple[float, float, float]:
     """
     Get system memory information.
 
@@ -187,7 +185,7 @@ def get_system_memory_info() -> Tuple[float, float, float]:
         usage_percent = memory.percent
         return total_gb, available_gb, usage_percent
     except ImportError:
-        warnings.warn("psutil not installed, cannot get memory info")
+        warnings.warn("psutil not installed, cannot get memory info", stacklevel=2)
         return 0.0, 0.0, 0.0
 
 
@@ -271,13 +269,15 @@ def validate_config(cfg: PlotConfig) -> None:
         and cfg.max_workers > 2
     ):
         warnings.warn(
-            f"max_workers={cfg.max_workers} is set, but only 2 workers are needed for polarization processing"
+            f"max_workers={cfg.max_workers} is set, but only 2 workers are needed for polarization processing",
+            stacklevel=2,
         )
 
     # Check memory configuration
     if cfg.chunk_mem_mb > 500:
         warnings.warn(
-            f"chunk_mem_mb={cfg.chunk_mem_mb} MB is quite high. Consider reducing for memory-constrained systems."
+            f"chunk_mem_mb={cfg.chunk_mem_mb} MB is quite high. Consider reducing for memory-constrained systems.",
+            stacklevel=2,
         )
 
     # 验证坐标轴配置
@@ -466,7 +466,8 @@ def validate_axis_config(cfg: PlotConfig) -> None:
 
     if not (-90 <= cfg.axis_label_rotation <= 90):
         warnings.warn(
-            f"axis_label_rotation should be between -90 and 90 degrees, got {cfg.axis_label_rotation}"
+            f"axis_label_rotation should be between -90 and 90 degrees, got {cfg.axis_label_rotation}",
+            stacklevel=2,
         )
         cfg.axis_label_rotation = np.clip(cfg.axis_label_rotation, -90, 90)
 
@@ -526,7 +527,7 @@ class AxisConfigManager:
 
     @staticmethod
     def configure_time_axis(
-        ax, cfg: PlotConfig, time_values: List[datetime.datetime]
+        ax, cfg: PlotConfig, time_values: list[datetime.datetime]
     ) -> None:
         """配置时间轴"""
         if not cfg.show_axis_labels:
@@ -658,7 +659,7 @@ def calc_polarization_ratio(Z_r: np.ndarray, Z_l: np.ndarray) -> np.ndarray:
     ratio = np.clip(ratio, -1.0, 1.0)
 
     # Debug information
-    print(f"  Polarization ratio (R-L)/(R+L) statistics:")
+    print("  Polarization ratio (R-L)/(R+L) statistics:")
     print(f"    Min: {np.nanmin(ratio):.4f}, Max: {np.nanmax(ratio):.4f}")
     print(f"    Mean: {np.nanmean(ratio):.4f}, Std: {np.nanstd(ratio):.4f}")
     print(
@@ -690,7 +691,7 @@ def _safe_log10(arr: np.ndarray) -> np.ndarray:
 
 def get_color_limits(
     data: np.ndarray, cfg: PlotConfig, plot_type: str = "ll"
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """
     Get color scale limits based on configuration.
 
@@ -776,7 +777,7 @@ def get_color_limits(
 
 def optimize_workers(
     cfg: PlotConfig, data_size_mb: float, chunk_mem_mb: int
-) -> Tuple[int, float]:
+) -> tuple[int, float]:
     """
     Optimize number of workers based on available memory, data size, and chunk memory.
 
@@ -828,7 +829,7 @@ def optimize_workers(
                 optimal_workers = 1
                 estimated_peak_memory = memory_for_1_worker
                 print(
-                    f"  Note: Insufficient memory for parallel processing. Switching to sequential."
+                    "  Note: Insufficient memory for parallel processing. Switching to sequential."
                 )
             else:
                 # Even sequential processing exceeds memory limits
@@ -842,11 +843,12 @@ def optimize_workers(
         if estimated_peak_memory > available_memory * 0.9:
             warnings.warn(
                 f"Estimated peak memory ({estimated_peak_memory:.1f} MB) exceeds 90% of "
-                f"available memory ({available_memory:.1f} MB). Consider reducing settings."
+                f"available memory ({available_memory:.1f} MB). Consider reducing settings.",
+                stacklevel=2,
             )
 
     except ImportError:
-        warnings.warn("psutil not installed, using conservative defaults")
+        warnings.warn("psutil not installed, using conservative defaults", stacklevel=2)
         # Conservative default: assume limited memory
         optimal_workers = 1
         estimated_peak_memory = chunk_mem_mb + data_size_mb
@@ -891,7 +893,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         cfg, estimated_data_size_mb, cfg.chunk_mem_mb
     )
 
-    print(f"Memory configuration:")
+    print("Memory configuration:")
     print(f"  - Chunk memory limit: {cfg.chunk_mem_mb} MB per worker")
     print(f"  - Estimated data size: {estimated_data_size_mb:.1f} MB")
     print(f"  - Optimal workers: {optimal_workers}")
@@ -902,7 +904,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         print(
             f"⚠️  Warning: Estimated peak memory ({estimated_peak_memory:.1f} MB) is high."
         )
-        print(f"   Consider reducing chunk_mem_mb or max_workers.")
+        print("   Consider reducing chunk_mem_mb or max_workers.")
 
     # Parallel reading with downsampling
     print("Block reading + downsampling...")
@@ -947,7 +949,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
             Z_r, _, _ = results_dict["RR"]
 
     # Debug: Check LL and RR data statistics
-    print(f"Data statistics before polarization calculation:")
+    print("Data statistics before polarization calculation:")
     print(
         f"  LL (L): Min={np.nanmin(Z_l):.2f}, Max={np.nanmax(Z_l):.2f}, Mean={np.nanmean(Z_l):.2f}"
     )
@@ -967,7 +969,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
             f"  Note: RR (R) is stronger on average (R={r_mean:.2f} vs L={l_mean:.2f})"
         )
     else:
-        print(f"  Note: LL and RR have equal average intensity")
+        print("  Note: LL and RR have equal average intensity")
 
     # Compute derived quantities
     Z_sum = Z_l + Z_r
@@ -1059,13 +1061,13 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         #     pol_direction = "(R ≈ L, Unpolarized)"
 
         # Verify color mapping
-        print(f"  Color mapping verification:")
+        print("  Color mapping verification:")
         print(f"    vmin={vmin:.3f} (blue), vmax={vmax:.3f} (red)")
 
         items.append(
             dict(
                 data=ratio,
-                title=f"CSO/CBSm Polarization Ratio (R-L)/(R+L)",
+                title="CSO/CBSm Polarization Ratio (R-L)/(R+L)",
                 cmap="bwr",  # Blue-White-Red colormap: blue for negative, white for 0, red for positive
                 vmin=vmin,
                 vmax=vmax,
@@ -1093,7 +1095,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         axs = [axs]
 
     # Plot each item
-    for idx, (ax, item) in enumerate(zip(axs, items)):
+    for idx, (ax, item) in enumerate(zip(axs, items, strict=False)):
         im = ax.pcolormesh(
             xx,
             yy,
@@ -1216,7 +1218,7 @@ class ConfigManager:
         return cfg
 
     @staticmethod
-    def validate_all(cfg: PlotConfig) -> Tuple[bool, List[str]]:
+    def validate_all(cfg: PlotConfig) -> tuple[bool, list[str]]:
         """验证所有配置，返回(是否有效, 错误信息列表)"""
         errors = []
 
@@ -1337,7 +1339,7 @@ if __name__ == "__main__":
         )
 
     # 显示坐标轴配置
-    print(f"坐标轴配置:")
+    print("坐标轴配置:")
     print(f"  - 显示标签: {cfg.show_axis_labels}")
     print(f"  - 标签旋转: {cfg.axis_label_rotation} 度")
     print(
@@ -1356,7 +1358,7 @@ if __name__ == "__main__":
             f"System memory: {total_gb:.1f} GB total, {available_gb:.1f} GB available ({usage_percent:.1f}% used)"
         )
 
-    print(f"Memory configuration:")
+    print("Memory configuration:")
     print(f"  - Chunk memory: {cfg.chunk_mem_mb} MB")
     # Check if max_workers attribute exists (for backward compatibility)
     if hasattr(cfg, "max_workers"):

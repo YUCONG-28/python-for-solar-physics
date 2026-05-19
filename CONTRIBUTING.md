@@ -21,6 +21,17 @@ $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"; D:\miniforge3\envs\solarphysics_env\pyt
 pre-commit run --all-files
 ```
 
+`pre-commit` runs the same Black and Ruff checks used by the project, so style
+problems are caught before code reaches shared branches.
+
+## Code Style
+
+- Use Black as the Python formatter.
+- Use Ruff for linting, import sorting, and safe automatic fixes.
+- Use Pylance in VSCode for type analysis, navigation, and completions.
+- Keep autopep8, yapf, flake8, and pylint as manual fallback tools only; do not
+  configure them as the default formatter or linter for this project.
+
 ## Data and Paths
 
 - Do not commit FITS, NetCDF, generated plots, videos, Excel files, caches, or local data products.

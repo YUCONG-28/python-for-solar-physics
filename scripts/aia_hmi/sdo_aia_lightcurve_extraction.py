@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # 模块用途: 从 AIA EUV FITS 图像序列中提取光变/流量数据。
 # 主要输入: AIA FITS 序列、目标区域和波段配置。
 # 主要输出/运行说明: 输出表格化光变数据，供后续绘图和多波段时间分析使用。
@@ -70,7 +69,7 @@ def save_processed_data(time_list, sum_data_list):
         with data_file.open("w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["time", "flux"])  # 表头
-            for dt, flux in zip(time_list, sum_data_list):
+            for dt, flux in zip(time_list, sum_data_list, strict=False):
                 # 保存为字符串格式的时间
                 writer.writerow([dt.strftime("%Y-%m-%d %H:%M:%S"), flux])
         print(f"数据已保存至: {data_file}")
