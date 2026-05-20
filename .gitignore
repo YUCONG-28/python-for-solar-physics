@@ -4,6 +4,7 @@
 
 # 环境变量和配置文件
 .env
+*.env
 .env.*
 !.env.example
 config.json
@@ -13,6 +14,9 @@ configs/paths.local.yaml
 # Python 缓存和编译文件
 __pycache__/
 *.py[cod]
+*.pyc
+*.pyo
+*.pyd
 *$py.class
 *.so
 .Python
@@ -83,6 +87,8 @@ tmp/
 
 # FITS 文件（通常很大）
 *.fits
+*.fit
+*.fts
 *.fits.gz
 *.fits.fz
 
@@ -92,8 +98,12 @@ data/processed/
 observations/
 
 # 大型输出文件
+output/
+outputs/
 output/plots/
 outputs/generated/
+output_images/
+figures/
 plots/
 video/
 videos/
@@ -143,6 +153,7 @@ ENV/
 .pytest_cache/
 .pytest_tmp/
 pytest-cache-files-*/
+.ruff_cache/
 .mypy_cache/
 .coverage
 htmlcov/
