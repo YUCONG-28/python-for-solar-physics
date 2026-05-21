@@ -1,63 +1,63 @@
-# 模块用途: AIA/射电/HMI 叠加流程的实验性开发脚本。
-# 主要输入: AIA、射电和 HMI 测试数据。
-# 主要输出/运行说明: 输出调试图像；该文件保留为开发脚本，不作为正式单元测试。
+"""背景扣除实验版：在原 AIA/Radio/HMI 叠加基础上，增加射电背景扣除、SNR 源区掩膜、带背景项的椭圆高斯拟合与中心诊断输出。"""
+
+# 模块用途: 生成 AIA、射电源和可选 HMI 的多仪器叠加图。
+# 主要输入: AIA/HMI FITS 图像、射电源数据、偏振信息和配准参数。
+# 主要输出/运行说明: 输出带等值线和偏振标记的综合诊断图，适合耀斑源区对比。
 """
-AIA_RS_HMI.py  –  AIA、射电和 HMI 数据叠加绘图脚本
-======================================================
-功能：将射电等值线叠加到 AIA 171Å 图像上，可选叠加 HMI 磁图等值线。
+Created on Sat Apr 25 19:57:54 2026
 
-赤经赤纬坐标图文件说明
------------------------
-每个射电频率目录下配套两个辅助 FITS 文件：
-    <freq>MHz_RightAscensionDegree.fits   -- 赤经坐标图（度）
-    <freq>MHz_DeclinationDegree.fits      -- 赤纬坐标图（度）
+@author: Lee
+"""
 
-它们与射电图像像素一一对应，记录每个像素在天球 ICRS 坐标系中的赤经/赤纬值，
-是精确坐标转换（ICRS → HPC）的核心依据，使射电等值线能正确叠加到太阳图像上。
-若未找到这两个文件，程序将自动回退到基于太阳半径缩放的简化投影法。
+"""
+AIA_RS.py – 射电、AIA 与 HMI 数据叠加绘图模块
 
-新增功能: 左右旋数据加和（可配置加权平均）
-==========================================
-支持三种偏振模式：
-1. "RR": 仅使用右旋圆偏振数据
-2. "LL": 仅使用左旋圆偏振数据
-3. "RR+LL": 右旋和左旋数据合并（加权平均或简单相加）
+功能：
+- 根据配置文件处理 AIA、射电（含偏振组合）、HMI 数据
+- 通过椭圆高斯拟合将射电数据重投影到 AIA 坐标系
+- 生成带等值线叠加的最终图像并保存
 """
 
 # ============================================================
 # 1. 基础库导入
 # ============================================================
-import gc
-import glob
-import os
-import re
-import warnings
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+import csv  # noqa: E402
+import glob  # noqa: E402
+import os  # noqa: E402
+import re  # noqa: E402
+import warnings  # noqa: E402
+from dataclasses import dataclass, field  # noqa: E402
+from datetime import datetime, timedelta  # noqa: E402
 
 # ============================================================
 # 2. 科学计算和天文库导入
 # ============================================================
-import astropy.units as u
-import matplotlib
+import astropy.units as u  # noqa: E402
+import matplotlib  # noqa: E402
 
 matplotlib.use("Agg")  # 非交互后端，子进程安全，节省内存
-import matplotlib.pyplot as plt
-import numpy as np
-import psutil
-import sunpy.coordinates
-import sunpy.map
-from astropy.coordinates import SkyCoord
-from astropy.io import fits
-from matplotlib.lines import Line2D
-from matplotlib.patches import Ellipse
-from numpy.typing import NDArray
-from scipy.interpolate import RegularGridInterpolator  # 提前导入，避免函数内重复导入
-from scipy.ndimage import gaussian_filter
-from scipy.optimize import curve_fit
+import matplotlib.colors as mcolors  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+import sunpy.coordinates  # noqa: E402
+import sunpy.map  # noqa: E402
+from astropy.coordinates import SkyCoord  # noqa: E402
+from astropy.io import fits  # noqa: E402
+from matplotlib.lines import Line2D  # noqa: E402
+from numpy.typing import NDArray  # noqa: E402
+from scipy.interpolate import RegularGridInterpolator  # noqa: E402
+from scipy.ndimage import (  # noqa: E402
+    binary_dilation,
+    gaussian_filter,
+    label,
+    median_filter,
+)
+from scipy.optimize import curve_fit  # noqa: E402
 
-from solar_toolkit.path_config import apply_config_to_object
+from solar_toolkit.path_config import apply_config_to_object  # noqa: E402
 
+BoolArray = NDArray[np.bool_]
+FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.intp]
 
 warnings.filterwarnings("ignore")
@@ -71,8 +71,6 @@ plt.rcParams["font.family"] = ["SimHei", "Microsoft YaHei", "sans-serif"]
 plt.rcParams["axes.unicode_minus"] = False
 
 # 正则表达式常量（全部预编译，避免运行时重复编译）
-_RE_MHZ = re.compile(r"(\d+\.?\d*)\s*MHz", re.IGNORECASE)
-_RE_BAND_SORTED = re.compile(r"(\d+\.?\d*)MHz")
 _RE_AIA_PATS = [
     re.compile(r"aia\.lev1_euv_12s\.(\d{4}-\d{2}-\d{2}T\d{6}Z)\.\d+\.image_lev1\.fits"),
     re.compile(r"aia\.lev1_euv_12s\.(\d{4}-\d{2}-\d{2}T\d{6}Z)"),
@@ -165,7 +163,9 @@ class Config:
     radio_base_dir: str = r"D:\spike_topping_type_III\2025\20250124\RS_0447-0450"
     aia_base_dir: str = r"D:\spike_topping_type_III\2025\20250124\AIA\171\1"
     hmi_base_dir: str = r"D:\spike_topping_type_III\2025\20250124\AIA\hmi\1"
-    output_dir: str = r"D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\test"
+    output_dir: str = (
+        r"D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\test_bgcorrected"
+    )
 
     # ── 文件处理配置 ───────────────────────────────────────────
     save_figure: bool = True
@@ -206,17 +206,18 @@ class Config:
     max_radio_per_band: int = 28
 
     # ── 等值线配置 ─────────────────────────────────────────────
-    normalization_mode: str = "peak"
-    contour_levels_peak: list[float] = field(default_factory=lambda: [0.75])
-    rms_sigma_levels: list[float] = field(default_factory=lambda: [20.0])
-    rms_box_fraction: float = 0.05
+    show_radio_contours: bool = False
+    contour_levels_peak: list[float] = field(default_factory=lambda: [0.90])
     contour_linewidths: list[float] = field(default_factory=lambda: [2.0])
     contour_alpha: float = 0.90
     contour_smooth_sigma: float = 0
+    mark_radio_center: bool = True
+    radio_center_marker: str = "x"
+    radio_center_size: float = 50
+    radio_center_linewidth: float = 1.8
+    label_radio_center: bool = False
 
     # ── 显示配置 ───────────────────────────────────────────────
-    show_beam: bool = True
-    beam_inset_fraction: float = 0.12
     overlay_hmi: bool = True
     hmi_time_threshold: int = 24  # HMI 与 AIA 时间匹配阈值（小时）
     hmi_threshold_gauss: float = 0.0
@@ -258,29 +259,51 @@ class Config:
     )
 
     # ── 性能配置 ───────────────────────────────────────────────
-    num_workers: int = 8
-    memory_limit_pct: float = 90
     radio_use_float32: bool = True
 
     # ── 处理选项 ───────────────────────────────────────────────
-    apply_background_subtraction: bool = False
     debug_mode: bool = True
-
-    # ── 坐标处理配置 ───────────────────────────────────────────
-    coordinate_search_radius: float = 3.0
-    quick_test: bool = False
-    test_file_limit: int = 5
 
     # ── 坐标图配置 ─────────────────────────────────────────────
     use_radec_maps: bool = True  # 是否使用赤经赤纬坐标
 
-    def __post_init__(self):
-        apply_config_to_object(self, "dev_aia_radio_hmi_overlay")
+    radio_background_mode: str = "pre_event_median"
+    background_pre_event_seconds: float = 60.0
+    background_min_frames: int = 5
+    background_local_median_size: int = 31
+    background_scale_mode: str = "offsource_median"
+    clip_negative_after_background: bool = True
 
-    radio_to_solar_scale_factor: float = 0.05
-    auto_adjust_scale_factor: bool = True
-    min_pixels_in_view: int = 100
-    max_scale_factor_adjustments: int = 3
+    fit_use_source_mask: bool = True
+    fit_snr_threshold: float = 5.0
+    fit_peak_fraction_threshold: float = 0.30
+    fit_min_mask_pixels: int = 20
+    fit_mask_dilation_pixels: int = 3
+    fit_background_model: str = "plane"
+
+    save_fit_diagnostics: bool = True
+    draw_raw_vs_bg_center_shift: bool = False
+
+    def __post_init__(self):
+        apply_config_to_object(self, "sdo_aia_radio_hmi_overlay_bgcorrected")
+
+
+@dataclass
+class GaussianReprojectResult:
+    model: np.ndarray
+    center_pixel: tuple[float, float]
+    center_pixel_raw: tuple[float, float] | None
+    center_pixel_bgsub: tuple[float, float] | None
+    center_arcsec: tuple[float, float]
+    sigma_pixel: tuple[float, float]
+    theta_rad: float
+    amplitude: float
+    covariance: np.ndarray
+    noise_sigma: float | None
+    snr: float | None
+    background_level: float | None
+    residual_rms: float | None
+    quality_flag: str
 
 
 # ============================================================
@@ -471,36 +494,6 @@ def parse_hmi_time_from_filename(filename: str) -> datetime | None:
     return None
 
 
-def parse_radio_time_from_header(header: fits.Header) -> datetime | None:
-    """从 FITS 头解析射电观测时间"""
-    time_keys = [
-        "DATE-OBS",
-        "DATE_OBS",
-        "DATEOBS",
-        "DATE-BEG",
-        "DATE_BEG",
-        "DATEBEG",
-        "TIME-OBS",
-        "DATE",
-    ]
-    for key in time_keys:
-        if key not in header:
-            continue
-        date_str = str(header[key]).strip()
-        if not date_str:
-            continue
-        if "  " in date_str:
-            date_str = " ".join(date_str.split())
-        if " " in date_str:
-            parts = date_str.split(" ")
-            if len(parts) == 2:
-                date_str = f"{parts[0]}.{parts[1].ljust(3, '0')[:3]}"
-        t = _parse_flexible_datetime(date_str.rstrip("Z"))
-        if t:
-            return t
-    return None
-
-
 def _parse_time_from_filename(filename: str) -> tuple[str, int] | None:
     """
     从文件名中解析时间信息（精确到毫秒），用于时间对齐匹配。
@@ -605,8 +598,7 @@ def _match_rr_ll_by_time(
         if parsed is None:
             unmatched_rr.append(rr_path)
             warnings.warn(
-                f"RR文件 {os.path.basename(rr_path)} 无法解析时间，跳过。",
-                stacklevel=2,
+                f"RR文件 {os.path.basename(rr_path)} 无法解析时间，跳过。", stacklevel=2
             )
             continue
 
@@ -665,45 +657,137 @@ def _combine_polarization_data(
     return combined_data
 
 
+def find_background_files_for_current_radio(
+    current_radio_file: str,
+    band: str | None,
+    polarization: str | None,
+    cfg: Config,
+) -> list[str]:
+    """Find pre-event FITS frames in the same directory for the same band/polarization."""
+    if cfg.radio_background_mode != "pre_event_median":
+        return []
+    current_time = parse_radio_time_from_filename(current_radio_file)
+    if current_time is None:
+        return []
+
+    directory = os.path.dirname(current_radio_file)
+    current_abs = os.path.abspath(current_radio_file)
+    band_key = (band or "").replace(".0MHz", "MHz")
+    candidates = sorted(glob.glob(os.path.join(directory, "*.fits")))
+    out: list[str] = []
+    for path in candidates:
+        if os.path.abspath(path) == current_abs:
+            continue
+        name = os.path.basename(path)
+        if (
+            band_key
+            and band_key not in name
+            and band_key.replace("MHz", ".0MHz") not in name
+        ):
+            continue
+        if polarization and polarization not in {"RR+LL", ""}:
+            parent = os.path.basename(os.path.dirname(path)).upper()
+            if (
+                polarization.upper() not in parent
+                and polarization.upper() not in name.upper()
+            ):
+                continue
+        t = parse_radio_time_from_filename(path)
+        if t is None:
+            continue
+        dt = (current_time - t).total_seconds()
+        if 0 < dt <= cfg.background_pre_event_seconds:
+            out.append(path)
+    return out
+
+
+def build_radio_background_map(
+    background_files: list[str], cfg: Config
+) -> np.ndarray | None:
+    """Build a median background map from compatible pre-event frames."""
+    frames = []
+    target_shape = None
+    for path in background_files:
+        data = _load_fits_2d(path, cfg.radio_use_float32)
+        if data is None:
+            continue
+        if target_shape is None:
+            target_shape = data.shape
+        if data.shape != target_shape:
+            continue
+        frames.append(np.asarray(data, dtype=np.float64))
+    if len(frames) < cfg.background_min_frames:
+        return None
+    return np.nanmedian(np.stack(frames, axis=0), axis=0)
+
+
+def _estimate_local_background(data: np.ndarray, cfg: Config) -> np.ndarray | None:
+    size = int(cfg.background_local_median_size)
+    if size < 3:
+        return None
+    if size % 2 == 0:
+        size += 1
+    try:
+        return median_filter(
+            np.asarray(data, dtype=np.float64), size=size, mode="nearest"
+        )
+    except Exception:
+        return None
+
+
+def subtract_radio_background(
+    radio_data: np.ndarray, background_map: np.ndarray | None, cfg: Config
+) -> tuple[np.ndarray, dict]:
+    """Subtract radio background with fallbacks and keep diagnostics."""
+    diagnostics = {
+        "background_mode_used": cfg.radio_background_mode,
+        "background_scale": 1.0,
+        "background_level": None,
+        "warning": None,
+    }
+    raw = np.asarray(radio_data, dtype=np.float64)
+    bg = background_map
+
+    if cfg.radio_background_mode == "none":
+        diagnostics["background_mode_used"] = "none"
+        return raw.copy(), diagnostics
+    if bg is None and cfg.radio_background_mode in {"pre_event_median", "local_median"}:
+        bg = _estimate_local_background(raw, cfg)
+        diagnostics["background_mode_used"] = (
+            "local_median" if bg is not None else "plane_only"
+        )
+        if bg is None:
+            diagnostics["warning"] = (
+                "background fallback: local_median failed; using fit background only"
+            )
+            return raw.copy(), diagnostics
+    if bg is None:
+        diagnostics["background_mode_used"] = "plane_only"
+        return raw.copy(), diagnostics
+
+    bg = np.asarray(bg, dtype=np.float64)
+    if bg.shape != raw.shape:
+        diagnostics["background_mode_used"] = "plane_only"
+        diagnostics["warning"] = "background shape mismatch; using fit background only"
+        return raw.copy(), diagnostics
+
+    scale = 1.0
+    if cfg.background_scale_mode == "offsource_median":
+        raw_level, _ = estimate_background_noise(raw)
+        bg_level, _ = estimate_background_noise(bg)
+        if np.isfinite(raw_level) and np.isfinite(bg_level) and abs(bg_level) > 1e-12:
+            scale = raw_level / bg_level
+    diagnostics["background_scale"] = float(scale)
+    diagnostics["background_level"] = float(np.nanmedian(bg * scale))
+    sub = raw - scale * bg
+    if cfg.clip_negative_after_background:
+        sub = np.where(sub < 0, 0.0, sub)
+    return sub, diagnostics
+
+
 # ============================================================
 # 6. 工具函数 – 坐标处理
 # ============================================================
-
-
-def get_sun_center_and_radius(header) -> tuple:
-    """从 FITS 头获取太阳中心坐标和可视半径"""
-    try:
-        crpix1 = header.get("CRPIX1", 0)
-        crpix2 = header.get("CRPIX2", 0)
-        crval1 = header.get("CRVAL1", 0)
-        crval2 = header.get("CRVAL2", 0)
-        cdelt1 = header.get("CDELT1", 1)
-        cdelt2 = header.get("CDELT2", 1)
-
-        if "RSUN_OBS" in header:
-            rsun_obs = header["RSUN_OBS"]
-        elif "R_SUN" in header and "CDELT1" in header:
-            rsun_obs = abs(header["R_SUN"] * header["CDELT1"])
-        else:
-            rsun_obs = 960.0
-
-        return crpix1, crpix2, crval1, crval2, cdelt1, cdelt2, rsun_obs
-    except Exception as e:
-        print(f"获取太阳信息时出错: {e}")
-        return 0, 0, 0, 0, 1, 1, 960.0
-
-
-def calculate_image_extent(data_shape, crpix1, crpix2, crval1, crval2, cdelt1, cdelt2):
-    """计算图像完整空间范围（角秒）"""
-    nx, ny = data_shape[1], data_shape[0]
-    x_min = crval1 + (1 - crpix1) * cdelt1
-    x_max = crval1 + (nx - crpix1) * cdelt1
-    y_min = crval2 + (1 - crpix2) * cdelt2
-    y_max = crval2 + (ny - crpix2) * cdelt2
-
-    x_extent = [x_min, x_max] if cdelt1 > 0 else [x_max, x_min]
-    y_extent = [y_min, y_max] if cdelt2 > 0 else [y_max, y_min]
-    return x_extent, y_extent
 
 
 def get_solar_position(obs_time: datetime) -> tuple[float, float]:
@@ -884,56 +968,14 @@ def extract_radio_2d_data(
         return None, None, None, None, None
 
 
-def estimate_rms_noise(data: np.ndarray, box_fraction: float = 0.15) -> float:
-    """通过图像四角估算背景 RMS 噪声"""
-    ny, nx = data.shape
-    bx = max(int(nx * box_fraction), 5)
-    by = max(int(ny * box_fraction), 5)
-
-    corners = [data[:by, :bx], data[:by, -bx:], data[-by:, :bx], data[-by:, -bx:]]
-    pixels = np.concatenate([c.ravel() for c in corners])
-    pixels = pixels[np.isfinite(pixels)]
-
-    if len(pixels) < 10:
-        edges = np.concatenate(
-            [
-                data[:by].ravel(),
-                data[-by:].ravel(),
-                data[:, :bx].ravel(),
-                data[:, -bx:].ravel(),
-            ]
-        )
-        pixels = edges[np.isfinite(edges)]
-
-    if len(pixels) == 0:
-        val = np.nanstd(data)
-        if not np.isfinite(val):
-            return 0.0  # ✅ 不要返回 None
-        return float(val * 0.1)
-
-    median = np.median(pixels)
-    mad = np.median(np.abs(pixels - median))
-    std_est = mad * 1.4826
-    filtered = pixels[np.abs(pixels - median) < 3 * std_est]
-    return float(np.std(filtered)) if len(filtered) > 0 else float(std_est)
-
-
 def compute_contour_levels(data: np.ndarray, cfg: Config) -> list[float]:
-    """根据归一化模式计算等值线级别"""
+    """直接基于高斯模型的峰值计算等值线级别"""
     finite = data[np.isfinite(data)]
     if len(finite) == 0:
         return []
     peak = float(np.nanmax(finite))
-
-    if cfg.normalization_mode == "rms":
-        rms = estimate_rms_noise(data, cfg.rms_box_fraction)
-        if rms is None or not np.isfinite(rms) or rms <= 0:
-            return []
-        levels = [s * rms for s in cfg.rms_sigma_levels if 0 < s * rms < peak]
-    else:
-        levels = [f * peak for f in cfg.contour_levels_peak]
-
-    return levels
+    # 直接返回峰值的百分比（例如 90%）
+    return [f * peak for f in cfg.contour_levels_peak]
 
 
 # ============================================================
@@ -958,18 +1000,6 @@ def elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta):
     y_rot = -(x - x0) * sin_t + (y - y0) * cos_t
     exponent = (x_rot**2) / (2 * sigma_x**2) + (y_rot**2) / (2 * sigma_y**2)
     return A * np.exp(-exponent)
-
-
-def _unravel_2d_index(
-    flat_index: int | np.integer, shape: tuple[int, ...]
-) -> tuple[int, int]:
-    coords = np.asarray(np.unravel_index(int(flat_index), shape), dtype=np.intp)
-    return int(coords[0]), int(coords[1])
-
-
-def _true_indices(mask: np.ndarray) -> IntArray:
-    mask_bool = np.asarray(mask, dtype=np.bool_)
-    return np.asarray(np.nonzero(mask_bool)[0], dtype=np.intp)
 
 
 def fit_elliptical_gaussian(data, x, y, initial_guess=None):
@@ -1041,6 +1071,246 @@ def fit_elliptical_gaussian(data, x, y, initial_guess=None):
     return popt, pcov
 
 
+def elliptical_gaussian_2d_with_constant_bg(xy, A, x0, y0, sigma_x, sigma_y, theta, b0):
+    """Elliptical Gaussian plus a constant background."""
+    return elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta) + b0
+
+
+def elliptical_gaussian_2d_with_plane_bg(
+    xy, A, x0, y0, sigma_x, sigma_y, theta, b0, bx, by
+):
+    """Elliptical Gaussian plus a tilted plane background."""
+    x, y = xy
+    return (
+        elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta)
+        + b0
+        + bx * x
+        + by * y
+    )
+
+
+def _unravel_2d_index(
+    flat_index: int | np.integer, shape: tuple[int, ...]
+) -> tuple[int, int]:
+    coords = np.asarray(np.unravel_index(int(flat_index), shape), dtype=np.intp)
+    return int(coords[0]), int(coords[1])
+
+
+def _true_indices(mask: np.ndarray) -> IntArray:
+    mask_bool = np.asarray(mask, dtype=np.bool_)
+    return np.asarray(np.nonzero(mask_bool)[0], dtype=np.intp)
+
+
+def estimate_background_noise(
+    data: np.ndarray, source_exclusion_mask: np.ndarray | None = None
+) -> tuple[float, float]:
+    """Estimate background level and sigma via median and MAD."""
+    values = np.asarray(data, dtype=np.float64)
+    finite = np.isfinite(values)
+    if source_exclusion_mask is not None:
+        finite &= ~source_exclusion_mask
+    sample = values[finite]
+    if sample.size == 0:
+        sample = values[np.isfinite(values)]
+    if sample.size == 0:
+        return 0.0, 0.0
+    med = float(np.nanmedian(sample))
+    mad = float(np.nanmedian(np.abs(sample - med)))
+    sigma = 1.4826 * mad
+    if not np.isfinite(sigma) or sigma <= 0:
+        sigma = float(np.nanstd(sample))
+    if not np.isfinite(sigma):
+        sigma = 0.0
+    return med, sigma
+
+
+def create_source_mask(
+    data: FloatArray | np.ndarray, cfg: Config
+) -> tuple[BoolArray | None, dict]:
+    """Create an SNR/peak-fraction mask, keeping only the peak-connected source."""
+    work = np.asarray(data, dtype=np.float64)
+    finite = np.isfinite(work)
+    diagnostics = {
+        "noise_sigma": None,
+        "snr": None,
+        "background_level": None,
+        "mask_pixel_count": 0,
+        "quality_flag": "ok",
+    }
+    if not np.any(finite):
+        diagnostics["quality_flag"] = "fit_failed"
+        return None, diagnostics
+
+    peak = float(np.nanmax(work))
+    peak_y, peak_x = _unravel_2d_index(int(np.nanargmax(work)), work.shape)
+    initial_source: BoolArray = np.asarray(
+        work > max(float(np.nanmedian(work)), cfg.fit_peak_fraction_threshold * peak),
+        dtype=np.bool_,
+    )
+    background_level, noise_sigma = estimate_background_noise(work, initial_source)
+    snr = (peak - background_level) / noise_sigma if noise_sigma > 0 else np.inf
+    threshold = max(
+        cfg.fit_snr_threshold * noise_sigma,
+        cfg.fit_peak_fraction_threshold * peak,
+    )
+    source_mask_bool: BoolArray = np.asarray(
+        finite & (work > threshold), dtype=np.bool_
+    )
+
+    labeled, n_labels = label(source_mask_bool)
+    peak_label = int(labeled[peak_y, peak_x])
+    if n_labels == 0 or peak_label == 0:
+        diagnostics.update(
+            {
+                "noise_sigma": noise_sigma,
+                "snr": snr,
+                "background_level": background_level,
+                "quality_flag": "mask_too_small",
+            }
+        )
+        return None, diagnostics
+
+    main_mask: BoolArray = np.asarray(labeled == peak_label, dtype=np.bool_)
+    if cfg.fit_mask_dilation_pixels > 0:
+        main_mask = np.asarray(
+            binary_dilation(main_mask, iterations=cfg.fit_mask_dilation_pixels),
+            dtype=np.bool_,
+        )
+        main_mask &= finite
+
+    mask_count = int(np.sum(main_mask))
+    quality_flag = "ok"
+    if mask_count < cfg.fit_min_mask_pixels:
+        quality_flag = "mask_too_small"
+    elif np.isfinite(snr) and snr < cfg.fit_snr_threshold:
+        quality_flag = "low_snr"
+
+    diagnostics.update(
+        {
+            "noise_sigma": noise_sigma,
+            "snr": snr,
+            "background_level": background_level,
+            "mask_pixel_count": mask_count,
+            "quality_flag": quality_flag,
+        }
+    )
+    if quality_flag == "mask_too_small":
+        return None, diagnostics
+    return np.asarray(main_mask, dtype=np.bool_), diagnostics
+
+
+def _initial_gaussian_guess(data: np.ndarray, x: np.ndarray, y: np.ndarray):
+    clean = np.asarray(data, dtype=np.float64)
+    background_level, _ = estimate_background_noise(clean)
+    peak_y, peak_x = _unravel_2d_index(int(np.nanargmax(clean)), clean.shape)
+    peak = float(clean[peak_y, peak_x])
+    amp = max(peak - background_level, peak, 1e-6)
+    return (
+        amp,
+        float(x[peak_x]),
+        float(y[peak_y]),
+        max((x[-1] - x[0]) / 10.0, 1.0),
+        max((y[-1] - y[0]) / 10.0, 1.0),
+        0.0,
+    )
+
+
+def fit_elliptical_gaussian_robust(
+    data: np.ndarray, x: np.ndarray, y: np.ndarray, cfg: Config
+) -> tuple[np.ndarray | None, np.ndarray | None, dict]:
+    """Fit an elliptical Gaussian with optional mask and background terms."""
+    diagnostics = {
+        "noise_sigma": None,
+        "snr": None,
+        "background_level": None,
+        "residual_rms": None,
+        "quality_flag": "ok",
+        "mask_pixel_count": int(np.isfinite(data).sum()),
+    }
+    fit_data = np.asarray(data, dtype=np.float64)
+    finite = np.isfinite(fit_data)
+    source_mask: BoolArray | None = None
+
+    if cfg.fit_use_source_mask:
+        source_mask, mask_diag = create_source_mask(fit_data, cfg)
+        diagnostics.update(mask_diag)
+        if mask_diag["quality_flag"] == "mask_too_small":
+            return None, None, diagnostics
+        fit_mask = np.asarray(source_mask, dtype=np.bool_)
+    else:
+        background_level, noise_sigma = estimate_background_noise(fit_data)
+        peak = float(np.nanmax(fit_data)) if np.any(finite) else 0.0
+        snr = (peak - background_level) / noise_sigma if noise_sigma > 0 else np.inf
+        diagnostics.update(
+            {
+                "noise_sigma": noise_sigma,
+                "snr": snr,
+                "background_level": background_level,
+                "quality_flag": "low_snr" if snr < cfg.fit_snr_threshold else "ok",
+            }
+        )
+        fit_mask = finite
+
+    X, Y = np.meshgrid(x, y)
+    fit_mask = np.asarray(fit_mask, dtype=np.bool_) & finite
+    if int(np.sum(fit_mask)) < cfg.fit_min_mask_pixels:
+        diagnostics["quality_flag"] = "mask_too_small"
+        diagnostics["mask_pixel_count"] = int(np.sum(fit_mask))
+        return None, None, diagnostics
+
+    x_flat = X[fit_mask].ravel()
+    y_flat = Y[fit_mask].ravel()
+    data_flat = fit_data[fit_mask].ravel()
+    p0_base = _initial_gaussian_guess(np.where(finite, fit_data, np.nan), x, y)
+    ny, nx = fit_data.shape
+    common_bounds = (
+        [0, 0, 0, 1e-3, 1e-3, -np.pi / 2],
+        [np.inf, nx - 1, ny - 1, nx, ny, np.pi / 2],
+    )
+
+    model_name = cfg.fit_background_model.lower()
+    if model_name == "constant":
+        model_func = elliptical_gaussian_2d_with_constant_bg
+        p0 = (*p0_base, diagnostics.get("background_level") or 0.0)
+        bounds = ((*common_bounds[0], -np.inf), (*common_bounds[1], np.inf))
+    elif model_name == "plane":
+        model_func = elliptical_gaussian_2d_with_plane_bg
+        p0 = (*p0_base, diagnostics.get("background_level") or 0.0, 0.0, 0.0)
+        bounds = (
+            (*common_bounds[0], -np.inf, -np.inf, -np.inf),
+            (*common_bounds[1], np.inf, np.inf, np.inf),
+        )
+    else:
+        model_func = elliptical_gaussian_2d
+        p0 = p0_base
+        bounds = common_bounds
+
+    try:
+        popt, pcov = curve_fit(
+            model_func,
+            (x_flat, y_flat),
+            data_flat,
+            p0=p0,
+            bounds=bounds,
+            maxfev=10000,
+        )
+    except Exception as exc:
+        diagnostics["quality_flag"] = "fit_failed"
+        diagnostics["fit_error"] = str(exc)
+        return None, None, diagnostics
+
+    model_values = model_func((x_flat, y_flat), *popt)
+    residual = data_flat - model_values
+    diagnostics["residual_rms"] = float(np.sqrt(np.nanmean(residual**2)))
+    diagnostics["mask_pixel_count"] = int(np.sum(fit_mask))
+    sx, sy = float(popt[3]), float(popt[4])
+    if sx > nx / 2 or sy > ny / 2:
+        diagnostics["quality_flag"] = "unphysical_size"
+    elif diagnostics.get("quality_flag") not in {"low_snr"}:
+        diagnostics["quality_flag"] = "ok"
+    return np.asarray(popt), np.asarray(pcov), diagnostics
+
+
 # ============================================================
 # 9. 主投影函数（基于椭圆高斯拟合与关键点映射）
 # ============================================================
@@ -1053,21 +1323,37 @@ def reproject_radio_via_gaussian_fit(
     aia_cutout_map: sunpy.map.GenericMap,
     cfg: Config,
     radio_header: fits.Header | None = None,
-) -> np.ndarray | None:
+    radio_fit_data: np.ndarray | None = None,
+    fit_label: str | None = None,
+) -> GaussianReprojectResult | None:
     ny_a, nx_a = aia_cutout_map.data.shape
     ny_r, nx_r = radio_data.shape
     x_pix = np.arange(nx_r, dtype=float)
     y_pix = np.arange(ny_r, dtype=float)
+    fit_data = radio_fit_data if radio_fit_data is not None else radio_data
 
     # ---------- 1. 在射电域进行二维椭圆高斯拟合 ----------
-    try:
-        popt, _ = fit_elliptical_gaussian(radio_data, x_pix, y_pix)
-    except Exception as e:
+    popt, pcov, diagnostics = fit_elliptical_gaussian_robust(
+        fit_data, x_pix, y_pix, cfg
+    )
+    if popt is None or pcov is None:
         if cfg.debug_mode:
-            print(f"    [高斯拟合] 失败: {e}")
+            label_text = f" ({fit_label})" if fit_label else ""
+            print(
+                f"    [鲁棒高斯拟合{label_text}] 跳过: "
+                f"{diagnostics.get('quality_flag', 'fit_failed')}"
+            )
         return None
 
-    A_fit, x0_pix, y0_pix, sigma_x_pix, sigma_y_pix, theta_pix = popt
+    A_fit, x0_pix, y0_pix, sigma_x_pix, sigma_y_pix, theta_pix = popt[:6]
+    raw_center_radio: tuple[float, float] | None = None
+    if cfg.draw_raw_vs_bg_center_shift and radio_fit_data is not None:
+        try:
+            raw_popt, _ = fit_elliptical_gaussian(radio_data, x_pix, y_pix)
+            raw_center_radio = (float(raw_popt[1]), float(raw_popt[2]))
+        except Exception as e:
+            if cfg.debug_mode:
+                print(f"    [原始高斯拟合] 失败: {e}")
     use_radec = cfg.use_radec_maps and (ra_map is not None) and (dec_map is not None)
 
     if use_radec:
@@ -1139,6 +1425,11 @@ def reproject_radio_via_gaussian_fit(
         c_aia_x, c_aia_y = radio_pix_to_aia_pix(x0_pix, y0_pix)
         if np.isnan(c_aia_x) or np.isnan(c_aia_y):
             return None
+        raw_center_aia = None
+        if raw_center_radio is not None:
+            raw_aia_x, raw_aia_y = radio_pix_to_aia_pix(*raw_center_radio)
+            if np.isfinite(raw_aia_x) and np.isfinite(raw_aia_y):
+                raw_center_aia = (float(raw_aia_x), float(raw_aia_y))
 
         p_maj_x = x0_pix + sigma_x_pix * np.cos(theta_pix)
         p_maj_y = y0_pix + sigma_x_pix * np.sin(theta_pix)
@@ -1176,7 +1467,27 @@ def reproject_radio_via_gaussian_fit(
     )
 
     model = np.maximum(model, 0)
-    return model.astype(np.float32)
+    center_world = aia_cutout_map.pixel_to_world(c_aia_x * u.pixel, c_aia_y * u.pixel)
+
+    return GaussianReprojectResult(
+        model=model.astype(np.float32),
+        center_pixel=(float(c_aia_x), float(c_aia_y)),
+        center_pixel_raw=raw_center_aia,
+        center_pixel_bgsub=(float(c_aia_x), float(c_aia_y)),
+        center_arcsec=(
+            float(center_world.Tx.to_value(u.arcsec)),
+            float(center_world.Ty.to_value(u.arcsec)),
+        ),
+        sigma_pixel=(float(sigma_aia_x), float(sigma_aia_y)),
+        theta_rad=float(theta_aia),
+        amplitude=float(A_fit),
+        covariance=np.asarray(pcov),
+        noise_sigma=diagnostics.get("noise_sigma"),
+        snr=diagnostics.get("snr"),
+        background_level=diagnostics.get("background_level"),
+        residual_rms=diagnostics.get("residual_rms"),
+        quality_flag=str(diagnostics.get("quality_flag", "ok")),
+    )
 
 
 # ============================================================
@@ -1195,6 +1506,109 @@ def smooth_for_contour(data: np.ndarray, sigma: float) -> np.ndarray:
     sm_w = gaussian_filter(weights, sigma=sigma)
     with np.errstate(invalid="ignore", divide="ignore"):
         return np.where(sm_w > 1e-6, sm_d / sm_w, np.nan)
+
+
+def _world_arcsec_from_pixel(
+    aia_map: sunpy.map.GenericMap, pixel_xy: tuple[float, float] | None
+) -> tuple[float | None, float | None]:
+    if pixel_xy is None:
+        return None, None
+    try:
+        world = aia_map.pixel_to_world(pixel_xy[0] * u.pixel, pixel_xy[1] * u.pixel)
+        return float(world.Tx.to_value(u.arcsec)), float(world.Ty.to_value(u.arcsec))
+    except Exception:
+        return None, None
+
+
+def _diagnostic_row_from_fit(
+    fit_result: GaussianReprojectResult,
+    aia_map: sunpy.map.GenericMap,
+    radio_time: datetime | None,
+    band: str,
+    polarization: str,
+    source_file,
+    cfg: Config,
+) -> dict:
+    raw_arcsec = _world_arcsec_from_pixel(aia_map, fit_result.center_pixel_raw)
+    shift_pixel = None
+    shift_arcsec = None
+    if (
+        fit_result.center_pixel_raw is not None
+        and fit_result.center_pixel_bgsub is not None
+    ):
+        dxp = fit_result.center_pixel_bgsub[0] - fit_result.center_pixel_raw[0]
+        dyp = fit_result.center_pixel_bgsub[1] - fit_result.center_pixel_raw[1]
+        shift_pixel = float(np.hypot(dxp, dyp))
+        if raw_arcsec[0] is not None and raw_arcsec[1] is not None:
+            dxa = fit_result.center_arcsec[0] - raw_arcsec[0]
+            dya = fit_result.center_arcsec[1] - raw_arcsec[1]
+            shift_arcsec = float(np.hypot(dxa, dya))
+
+    return {
+        "time": radio_time.isoformat() if radio_time else "",
+        "band": band,
+        "polarization": polarization,
+        "source_file": (
+            ";".join(source_file)
+            if isinstance(source_file, tuple)
+            else str(source_file)
+        ),
+        "center_x_arcsec": fit_result.center_arcsec[0],
+        "center_y_arcsec": fit_result.center_arcsec[1],
+        "center_x_pixel": (
+            fit_result.center_pixel_bgsub[0] if fit_result.center_pixel_bgsub else ""
+        ),
+        "center_y_pixel": (
+            fit_result.center_pixel_bgsub[1] if fit_result.center_pixel_bgsub else ""
+        ),
+        "sigma_x_pixel": fit_result.sigma_pixel[0],
+        "sigma_y_pixel": fit_result.sigma_pixel[1],
+        "theta_rad": fit_result.theta_rad,
+        "amplitude": fit_result.amplitude,
+        "background_level": fit_result.background_level,
+        "noise_sigma": fit_result.noise_sigma,
+        "snr": fit_result.snr,
+        "residual_rms": fit_result.residual_rms,
+        "quality_flag": fit_result.quality_flag,
+        "background_mode": cfg.radio_background_mode,
+        "fit_background_model": cfg.fit_background_model,
+        "center_shift_pixel": shift_pixel if shift_pixel is not None else "",
+        "center_shift_arcsec": shift_arcsec if shift_arcsec is not None else "",
+    }
+
+
+def write_fit_diagnostics_csv(rows: list[dict], cfg: Config) -> str | None:
+    if not cfg.save_fit_diagnostics or not rows:
+        return None
+    out_path = os.path.join(cfg.output_dir, "radio_fit_centers_bgcorrected.csv")
+    fieldnames = [
+        "time",
+        "band",
+        "polarization",
+        "source_file",
+        "center_x_arcsec",
+        "center_y_arcsec",
+        "center_x_pixel",
+        "center_y_pixel",
+        "sigma_x_pixel",
+        "sigma_y_pixel",
+        "theta_rad",
+        "amplitude",
+        "background_level",
+        "noise_sigma",
+        "snr",
+        "residual_rms",
+        "quality_flag",
+        "background_mode",
+        "fit_background_model",
+        "center_shift_pixel",
+        "center_shift_arcsec",
+    ]
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    return out_path
 
 
 def _get_padded_aia_map(
@@ -1417,7 +1831,35 @@ def process_aia_group(
     total_tasks: int,
     cfg: Config,
     color_cache: list,
+    fit_diagnostics_rows: list[dict] | None = None,
 ):
+    """
+    处理单个 AIA 文件及其对应的所有时间切片绘图任务。
+
+    参数
+    ----------
+    aia_file   : str
+        AIA FITS 文件完整路径。
+    hmi_file   : Optional[str]
+        HMI FITS 文件完整路径，若无则传入 None。
+    sub_tasks  : List[Tuple[int, Dict]]
+        时间切片列表，每个元素为 (索引, {波段: [(文件路径, 偏振, 时间), ...]}).
+    task_index : int
+        当前任务序号（从 1 开始，用于打印进度）。
+    total_tasks: int
+        任务总数。
+    cfg        : Config
+        全局配置对象。
+    color_cache: List
+        颜色缓存列表，用于图例颜色一致性。
+
+    功能描述
+    ----------
+    - 加载 AIA 图像并裁剪/扩充到用户设定 ROI。
+    - 遍历每个时间切片，对各个射电波段执行：数据提取、高斯拟合、坐标重投影、平滑及等值线绘制。
+    - 若启用 HMI，将其重投影到 AIA 坐标系并绘制磁图等值线。
+    - 添加图例、标题，保存图像到输出目录。
+    """
     print(f"\n处理 AIA 文件 [{task_index}/{total_tasks}]: {os.path.basename(aia_file)}")
 
     try:
@@ -1446,11 +1888,11 @@ def process_aia_group(
         my_cmap = plt.get_cmap(cfg.aia_cmap).copy()
         my_cmap.set_bad(color="black")
 
+        # 【核心修复】：加入 norm=mcolors.LogNorm(...)，使用对数缩放！
         ax.imshow(
             aia_data,
             cmap=my_cmap,
-            vmin=cfg.aia_vmin,
-            vmax=cfg.aia_vmax,
+            norm=mcolors.LogNorm(vmin=cfg.aia_vmin, vmax=cfg.aia_vmax),
             origin="lower",
             extent=extent_arcsec,
         )
@@ -1525,8 +1967,24 @@ def process_aia_group(
                     )
                     if rr_data is None or ll_data is None:
                         continue
+                    rr_bg_files = find_background_files_for_current_radio(
+                        rr_path, band_label, "RR", cfg
+                    )
+                    ll_bg_files = find_background_files_for_current_radio(
+                        ll_path, band_label, "LL", cfg
+                    )
+                    rr_bg = build_radio_background_map(rr_bg_files, cfg)
+                    ll_bg = build_radio_background_map(ll_bg_files, cfg)
+                    rr_sub, rr_bg_diag = subtract_radio_background(rr_data, rr_bg, cfg)
+                    ll_sub, ll_bg_diag = subtract_radio_background(ll_data, ll_bg, cfg)
+                    if cfg.debug_mode:
+                        for bg_diag in (rr_bg_diag, ll_bg_diag):
+                            if bg_diag.get("warning"):
+                                print(f"    [背景扣除] {bg_diag['warning']}")
                     radio_data = _combine_polarization_data(rr_data, ll_data, cfg)
+                    radio_fit_data = _combine_polarization_data(rr_sub, ll_sub, cfg)
                     radio_header2 = rr_header
+                    source_file = (rr_path, ll_path)
                 else:
                     # 单偏振模式时，file_item 就是单文件的路径（字符串）
                     radio_data, ra_map, dec_map, radio_header2, _ = (
@@ -1534,33 +1992,125 @@ def process_aia_group(
                     )
                     if radio_data is None:
                         continue
+                    bg_files = find_background_files_for_current_radio(
+                        file_item, band_label, polarization, cfg
+                    )
+                    bg_map = build_radio_background_map(bg_files, cfg)
+                    radio_fit_data, bg_diag = subtract_radio_background(
+                        radio_data, bg_map, cfg
+                    )
+                    if cfg.debug_mode and bg_diag.get("warning"):
+                        print(f"    [背景扣除] {bg_diag['warning']}")
+                    source_file = file_item
 
-                # 重新投影并平滑
-                model_data = reproject_radio_via_gaussian_fit(
-                    radio_data, ra_map, dec_map, aia_cutout, cfg, radio_header2
+                # 重新投影
+                fit_result = reproject_radio_via_gaussian_fit(
+                    radio_data,
+                    ra_map,
+                    dec_map,
+                    aia_cutout,
+                    cfg,
+                    radio_header2,
+                    radio_fit_data=radio_fit_data,
+                    fit_label=f"{band_label} {polarization}",
                 )
-                if model_data is None:
+                if fit_result is None:
                     continue
-
-                if cfg.contour_smooth_sigma > 0:
-                    model_data = smooth_for_contour(
-                        model_data, cfg.contour_smooth_sigma
+                model_data = fit_result.model
+                if fit_diagnostics_rows is not None:
+                    fit_diagnostics_rows.append(
+                        _diagnostic_row_from_fit(
+                            fit_result,
+                            aia_cutout,
+                            radio_time,
+                            band_label,
+                            polarization,
+                            source_file,
+                            cfg,
+                        )
                     )
 
-                levels = compute_contour_levels(model_data, cfg)
-                if not levels:
-                    continue
+                if cfg.show_radio_contours:
+                    contour_data = model_data
+                    if cfg.contour_smooth_sigma > 0:
+                        contour_data = smooth_for_contour(
+                            contour_data, cfg.contour_smooth_sigma
+                        )
 
-                # 绘制射电等值线
-                ax.contour(
-                    model_data,
-                    levels=levels,
-                    extent=extent_arcsec,
-                    colors=[color_main],
-                    linewidths=cfg.contour_linewidths,
-                    alpha=cfg.contour_alpha,
-                    origin="lower",
-                )
+                    levels = compute_contour_levels(contour_data, cfg)
+                    if not levels:
+                        continue
+
+                    # 绘制射电等值线
+                    ax.contour(
+                        contour_data,
+                        levels=levels,
+                        extent=extent_arcsec,
+                        colors=[color_main],
+                        linewidths=cfg.contour_linewidths,
+                        alpha=cfg.contour_alpha,
+                        origin="lower",
+                    )
+
+                can_draw_center = fit_result.quality_flag not in {
+                    "low_snr",
+                    "unphysical_size",
+                    "mask_too_small",
+                    "fit_failed",
+                }
+                if cfg.mark_radio_center and can_draw_center:
+                    center_x, center_y = fit_result.center_arcsec
+                    if (
+                        cfg.draw_raw_vs_bg_center_shift
+                        and fit_result.center_pixel_raw is not None
+                    ):
+                        raw_x, raw_y = _world_arcsec_from_pixel(
+                            aia_cutout, fit_result.center_pixel_raw
+                        )
+                        if raw_x is not None and raw_y is not None:
+                            ax.scatter(
+                                [raw_x],
+                                [raw_y],
+                                marker=".",
+                                s=20,
+                                color="lightgray",
+                                alpha=0.8,
+                            )
+                            ax.annotate(
+                                "",
+                                xy=(center_x, center_y),
+                                xytext=(raw_x, raw_y),
+                                arrowprops={
+                                    "arrowstyle": "->",
+                                    "color": "lightgray",
+                                    "lw": 0.8,
+                                    "alpha": 0.8,
+                                },
+                            )
+                    ax.scatter(
+                        [center_x],
+                        [center_y],
+                        marker=cfg.radio_center_marker,
+                        s=cfg.radio_center_size,
+                        color=color_main,
+                        linewidths=cfg.radio_center_linewidth,
+                    )
+                    if cfg.label_radio_center:
+                        ax.annotate(
+                            "Gaussian-fit center",
+                            xy=(center_x, center_y),
+                            xytext=(4, 0),
+                            textcoords="offset points",
+                            fontsize=8,
+                            color=color_main,
+                            va="center",
+                            ha="left",
+                        )
+                elif cfg.debug_mode and fit_result.quality_flag != "ok":
+                    print(
+                        f"    [质量控制] {band_label} {polarization}: "
+                        f"{fit_result.quality_flag}，跳过中心绘制"
+                    )
 
                 # 添加图例
                 disp_bl = band_label
@@ -1703,47 +2253,7 @@ def process_hmi_for_overlay(hmi_file: str, target_wcs, cfg: Config, ax):
 
 
 # ============================================================
-# 14. 新增函数：波束绘制相关
-# ============================================================
-
-
-def get_beam_params_from_header(header: fits.Header) -> dict | None:
-    """从射电 FITS 头提取波束参数（BMAJ, BMIN, BPA）"""
-    try:
-        bmaj = header.get("BMAJ", None)  # 单位度
-        bmin = header.get("BMIN", None)
-        bpa = header.get("BPA", 0.0)
-        if bmaj is not None and bmin is not None:
-            return {"bmaj": bmaj, "bmin": bmin, "bpa": bpa}
-    except Exception:
-        pass
-    return None
-
-
-def draw_beam_ellipse_pixel(
-    ax, beam: dict, aia_cutout_map: sunpy.map.GenericMap, color: str = "white"
-):
-    """在图像上绘制波束椭圆（单位：弧秒）"""
-    bmaj = beam["bmaj"] * 3600  # 度转弧秒
-    bmin = beam["bmin"] * 3600
-    bpa = beam["bpa"]
-    # 放在左下角
-    x_lo = aia_cutout_map.bottom_left_coord.Tx.value + bmaj * 0.1
-    y_lo = aia_cutout_map.bottom_left_coord.Ty.value + bmin * 0.1
-    ellipse = Ellipse(
-        (x_lo, y_lo),
-        width=bmaj,
-        height=bmin,
-        angle=90 - bpa,  # matplotlib 角度定义
-        fill=False,
-        edgecolor=color,
-        lw=1.5,
-    )
-    ax.add_patch(ellipse)
-
-
-# ============================================================
-# 15. 新增函数：波段颜色
+# 14. 新增函数：波段颜色
 # ============================================================
 
 
@@ -1758,27 +2268,15 @@ def get_band_color(
 
 
 # ============================================================
-# 16. 新增函数：内存检查（可选）
+# 15. 主程序入口
 # ============================================================
 
-
-def check_memory_usage(limit: float = 90.0):
-    """检查内存使用率，超过限制则释放缓存"""
-    mem = psutil.virtual_memory()
-    if mem.percent > limit:
-        print(f"  内存使用率 {mem.percent:.1f}%，触发 GC")
-        gc.collect()
-
-
-# ============================================================
-# 17. 主程序入口
-# ============================================================
-
-
+# ---- 主流程：创建配置、构建匹配任务、串行处理所有 AIA 文件 ----
 if __name__ == "__main__":
     cfg = Config()
     os.makedirs(cfg.output_dir, exist_ok=True)
     color_cache = []
+    fit_diagnostics_rows: list[dict] = []
 
     # 构建匹配对
     matched = build_matched_pairs(cfg)
@@ -1794,4 +2292,8 @@ if __name__ == "__main__":
             len(matched),
             cfg,
             color_cache,
+            fit_diagnostics_rows,
         )
+    diagnostics_path = write_fit_diagnostics_csv(fit_diagnostics_rows, cfg)
+    if diagnostics_path:
+        print(f"保存拟合诊断 CSV: {diagnostics_path}")

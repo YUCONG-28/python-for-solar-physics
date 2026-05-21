@@ -1,8 +1,4 @@
-# ============================================================
-# Python 标准忽略规则
-# ============================================================
-
-# 环境变量和配置文件
+# Environment and local configuration
 .env
 *.env
 .env.*
@@ -11,10 +7,9 @@ config.json
 secrets.json
 configs/paths.local.yaml
 
-# Python 缓存和编译文件
+# Python cache and build artifacts
 __pycache__/
 *.py[cod]
-*.pyc
 *.pyo
 *.pyd
 *$py.class
@@ -37,7 +32,7 @@ wheels/
 *.egg
 MANIFEST
 
-# 备份文件和压缩包
+# Backup files and archives
 backup_*/
 *.bak
 *.bak_*
@@ -45,7 +40,7 @@ backup_*/
 \#*#
 .#*
 
-# IDE 和编辑器文件
+# IDE and editor files
 .vscode/
 .idea/
 *.swp
@@ -54,11 +49,11 @@ backup_*/
 Thumbs.db
 Desktop.ini
 
-# 日志文件
+# Logs
 *.log
 logs/
 
-# 数据分析临时文件
+# Analysis cache and intermediate data
 *.npy
 *.npz
 *.pickle
@@ -71,33 +66,29 @@ logs/
 *.feather
 *.parquet
 
-# Streamlit 缓存
+# Streamlit cache
 .static/
 .streamlit/
 
-# 临时文件
+# Temporary files and AI tool caches
 temp/
 tmp/
 .aider*
+.aider.tags.cache.v4
 .aider.chat.history.md
+.aider.input.history
 
-# ============================================================
-# 太阳物理项目特定忽略规则
-# ============================================================
-
-# FITS 文件（通常很大）
+# Solar physics data products
 *.fits
-*.fit
 *.fts
+*.fit
 *.fits.gz
 *.fits.fz
-
-# 天文数据目录
 data/raw/
 data/processed/
 observations/
 
-# 大型输出文件
+# Generated outputs
 output/
 outputs/
 output/plots/
@@ -108,24 +99,22 @@ plots/
 video/
 videos/
 
-# ============================================================
-# 生成的可视化输出图片（可由脚本重新生成）
-# ============================================================
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.bmp
-*.tiff
-*.tif
+# Generated media
 *.mp4
-*.mov
 *.avi
+*.mov
+*.gif
 *.mkv
 
-# ============================================================
-# 数据/表格文件（非代码源文件）
-# ============================================================
+# Temporary/debug images
+*_debug.png
+*_debug.jpg
+*_debug.jpeg
+*_tmp.png
+*_tmp.jpg
+*_tmp.jpeg
+
+# Data/table files that are usually local products
 *.xlsx
 *.xls
 *.csv
@@ -133,22 +122,16 @@ videos/
 *.sqlite
 *.sqlite3
 
-# ============================================================
-# Jupyter 笔记本检查点
-# ============================================================
+# Jupyter checkpoints
 .ipynb_checkpoints/
 
-# ============================================================
-# Python 虚拟环境
-# ============================================================
+# Virtual environments
 venv/
 env/
 .venv/
 ENV/
 
-# ============================================================
-# 缓存和测试目录
-# ============================================================
+# Test and lint caches
 .cache/
 .pytest_cache/
 .pytest_tmp/
@@ -158,7 +141,14 @@ pytest-cache-files-*/
 .coverage
 htmlcov/
 
-# ============================================================
-# PDF 文档（非源文件）
-# ============================================================
+# PDF exports
 *.pdf
+
+# Keep README display asset placeholders trackable.
+!docs/assets/
+!docs/assets/images/
+!docs/assets/videos/
+!docs/assets/images/.gitkeep
+!docs/assets/videos/.gitkeep
+!examples/output/
+!examples/output/.gitkeep

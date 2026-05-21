@@ -406,13 +406,16 @@ def main():
         if len(contour_values) > 0:
             # 检查contour_values中是否有大于0的值
             contour_values_array = np.array(contour_values)
-            valid_contour_indices = np.where(contour_values_array > 0)[0]
+            valid_contour_indices = np.asarray(
+                np.nonzero(np.asarray(contour_values_array > 0, dtype=np.bool_))[0],
+                dtype=np.intp,
+            )
 
             if len(valid_contour_indices) > 0:
                 has_valid_contours = True
 
                 # 绘制等高线
-                for i in valid_contour_indices:
+                for i in valid_contour_indices.tolist():
                     level = contour_values[i]
                     color = contour_colors[i]
                     lw = contour_linewidths[i]
