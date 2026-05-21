@@ -40,9 +40,9 @@ PATH_CONFIG = load_script_config(
     "image_sequence_to_video",
     {
         "fps": 18,
-        "input_dir": r"<PROJECT_ROOT>\2026\20260326\SDO\AIA\multi_band_difference_running",
-        "output_dir": r"<PROJECT_ROOT>\2026\20260326\video",
-        "video_name": "AIA_multiband_difference_running.mp4",
+        "input_dir": "outputs/images",
+        "output_dir": "outputs/videos",
+        "video_name": "image_sequence.mp4",
     },
 )
 

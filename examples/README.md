@@ -9,3 +9,10 @@ Use `configs/paths.example.yaml` as a starting point for local path configuratio
 - `aia_hmi/`: solar-limb and AIA/HMI related examples.
 - `radio/`: CSO spectra and FITS metadata examples.
 - `radio_aia_hmi/`: AIA, radio source, and HMI overlay development workflows.
+
+## Input and Output
+
+- `input/`: place small example input files here.
+- `output/`: place example run products here.
+- Large FITS data should not be committed directly to GitHub.
+- README display media can be stored under `docs/assets/images/` and `docs/assets/videos/`.

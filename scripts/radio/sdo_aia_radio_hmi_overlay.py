@@ -41,11 +41,14 @@ import sunpy.map  # noqa: E402
 from astropy.coordinates import SkyCoord  # noqa: E402
 from astropy.io import fits  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
+from numpy.typing import NDArray  # noqa: E402
 from scipy.interpolate import RegularGridInterpolator  # noqa: E402
 from scipy.ndimage import gaussian_filter  # noqa: E402
 from scipy.optimize import curve_fit  # noqa: E402
 
 from solar_toolkit.path_config import apply_config_to_object  # noqa: E402
+
+IntArray = NDArray[np.intp]
 
 warnings.filterwarnings("ignore")
 
@@ -835,6 +838,18 @@ def elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta):
     return A * np.exp(-exponent)
 
 
+def _unravel_2d_index(
+    flat_index: int | np.integer, shape: tuple[int, ...]
+) -> tuple[int, int]:
+    coords = np.asarray(np.unravel_index(int(flat_index), shape), dtype=np.intp)
+    return int(coords[0]), int(coords[1])
+
+
+def _true_indices(mask: np.ndarray) -> IntArray:
+    mask_bool = np.asarray(mask, dtype=np.bool_)
+    return np.asarray(np.nonzero(mask_bool)[0], dtype=np.intp)
+
+
 def fit_elliptical_gaussian(data, x, y, initial_guess=None):
     """
     拟合二维椭圆高斯到图像数据
@@ -856,23 +871,23 @@ def fit_elliptical_gaussian(data, x, y, initial_guess=None):
 
     # 如果没有提供初始猜测，自动估计
     if initial_guess is None:
-        max_idx = np.unravel_index(np.argmax(data), data.shape)
-        init_x0 = x[max_idx[1]]
-        init_y0 = y[max_idx[0]]
+        max_y, max_x = _unravel_2d_index(int(np.argmax(data)), data.shape)
+        init_x0 = x[max_x]
+        init_y0 = y[max_y]
         init_A = np.max(data)
 
         # 粗略估计 sigma（通过半高宽）
         half_max = init_A / 2.0
         # x方向
-        row_max = data[max_idx[0], :]
-        indices = np.where(row_max >= half_max)[0]
+        row_max = data[max_y, :]
+        indices = _true_indices(row_max >= half_max)
         if len(indices) > 1:
             init_sigma_x = (x[indices[-1]] - x[indices[0]]) / (2.355)  # FWHM -> sigma
         else:
             init_sigma_x = (x[-1] - x[0]) / 10.0
         # y方向
-        col_max = data[:, max_idx[1]]
-        indices_y = np.where(col_max >= half_max)[0]
+        col_max = data[:, max_x]
+        indices_y = _true_indices(col_max >= half_max)
         if len(indices_y) > 1:
             init_sigma_y = (y[indices_y[-1]] - y[indices_y[0]]) / (2.355)
         else:
