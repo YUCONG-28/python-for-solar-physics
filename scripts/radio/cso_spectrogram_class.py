@@ -16,6 +16,7 @@ import numpy as np
 import rebin
 from astropy.io import fits
 
+from solar_toolkit.cso import read_cso_spectrogram
 from solar_toolkit.path_config import load_script_config
 
 # %%
@@ -52,7 +53,7 @@ class spectrogram:
                 setattr(self, name, None)
 
 
-def readcso_spectrofits(fn):
+def _readcso_spectrofits_legacy_unused(fn):
     hdu = None  # 1. 初始化 hdu 为 None
     try:
         # --- 2. 尝试打开文件 ---
@@ -129,6 +130,25 @@ def readcso_spectrofits(fn):
         if hdu is not None:
             hdu.close()
             # print(f"文件句柄已通过 finally 块保证关闭。") # 可选，用于调试
+
+
+def readcso_spectrofits(fn):
+    """Read CSO FITS data through the shared minimal CSO reader."""
+
+    shared_spectra = read_cso_spectrogram(fn)
+    return [
+        spectrogram(
+            data=item.data,
+            time=item.time,
+            freq=item.freq,
+            polar=item.polar,
+            dateobs=item.dateobs,
+            unit=item.unit,
+            obsdev=item.obsdev,
+            dt_base=item.dt_base,
+        )
+        for item in shared_spectra
+    ]
 
 
 def findindex(tx, t1, t2):

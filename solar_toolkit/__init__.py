@@ -16,6 +16,9 @@ __all__ = [
     "__version__",
     "__author__",
     "__email__",
+    "coordinates",
+    "cso",
+    "gaussian",
     "path_config",
     "solar_analysis_utils",
 ]
