@@ -1,0 +1,36 @@
+# Example CSO dynamic spectrogram configuration.
+# This template is for planning and documentation; current scripts do not have
+# to read it yet. Do not commit real observation paths.
+
+cso:
+  fits_path: D:/path/to/cso_spectrogram.fits
+  output_dir: D:/path/to/output/cso
+
+  time_range:
+    start: "YYYY-MM-DDTHH:MM:SS"
+    end: "YYYY-MM-DDTHH:MM:SS"
+
+  frequency_range:
+    start_mhz: 80.0
+    end_mhz: 340.0
+
+  intensity_clip:
+    method: percentile
+    vmin_percentile: 0.1
+    vmax_percentile: 99.9
+    manual_vmin: null
+    manual_vmax: null
+
+  downsample_factor:
+    time: 1
+    frequency: 1
+    target_time_bins: 1000
+    target_frequency_bins: 1000
+
+  drift_rate:
+    enable_drift_selection: false
+    selection_json: D:/path/to/output/cso/drift_selection.json
+
+  output:
+    save_png: true
+    output_dir: D:/path/to/output/cso

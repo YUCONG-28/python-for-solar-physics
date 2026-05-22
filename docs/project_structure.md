@@ -21,8 +21,13 @@ python-for-solar-physics/
 │   ├── radio/
 │   └── radio_aia_hmi/
 ├── configs/
-│   └── paths.example.yaml
+│   ├── paths.example.yaml
+│   ├── aia.example.yaml
+│   ├── radio.example.yaml
+│   ├── cso.example.yaml
+│   └── overlay.example.yaml
 ├── docs/
+│   └── assets/
 ├── tests/
 ├── outputs/
 ├── README.md
@@ -41,13 +46,19 @@ python-for-solar-physics/
   are useful references but usually require observation data that is not tracked
   in Git.
 - `configs/`: configuration templates. Copy `paths.example.yaml` to
-  `paths.local.yaml` for machine-specific paths.
+  `paths.local.yaml` for machine-specific paths. The module-specific
+  `*.example.yaml` files document planned AIA, radio, CSO, and overlay
+  parameters for later config consolidation.
 - `docs/`: project documentation, including this structure guide and the script
   index.
+- `docs/assets/`: GitHub/README display assets. Put only compressed, documented
+  example images or short videos here; do not store raw observation data or bulk
+  processing outputs.
 - `tests/`: lightweight pytest tests that do not depend on FITS, NetCDF, JP2, or
   other local science data.
-- `outputs/`: documentation placeholder for generated products. Actual figures,
-  videos, and intermediate data products should remain local and ignored.
+- `outputs/`: documentation placeholder for generated products. Keep only notes
+  such as `outputs/README.md` in Git; actual figures, videos, and intermediate
+  data products should remain local and ignored.
 
 ## Script Groups
 
@@ -77,3 +88,8 @@ Do not commit raw FITS/JP2/NetCDF data, generated PNG/JPG/TIFF figures, MP4
 videos, `.npy` intermediate arrays, Excel/CSV products, cache folders, or local
 path configs. Keep the repository focused on reproducible code, documentation,
 configuration templates, and data-independent tests.
+
+Root-level images such as `HXR.png`, `SXR.png`, `SXR to HXR.png`, and
+`SXR to HXR enhance.png` need manual review before any future move into
+`docs/assets/images/`. They may be README assets, paper figures, or historical
+outputs, so this cleanup phase leaves them untouched.

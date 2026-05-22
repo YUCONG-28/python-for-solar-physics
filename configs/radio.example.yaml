@@ -1,0 +1,35 @@
+# Example radio source map configuration.
+# This template is for planning and documentation; current scripts do not have
+# to read it yet. Do not commit real observation paths.
+
+radio:
+  radio_root: D:/path/to/radio_data
+  output_dir: D:/path/to/output/radio
+
+  selected_bands:
+    - 149MHz
+    - 164MHz
+    - 190MHz
+    - 205MHz
+    - 223MHz
+    - 238MHz
+
+  polarization: RR+LL
+  radio_cmap: hot
+
+  contours:
+    contour_levels:
+      - 0.9
+    rms_threshold: 5.0
+    peak_threshold: 0.3
+
+  gaussian:
+    gaussian_overlay: true
+    draw_center: true
+    draw_fwhm: true
+    max_fwhm_arcsec: 1800
+
+  output:
+    save_png: true
+    save_diagnostics_csv: true
+    output_dir: D:/path/to/output/radio
