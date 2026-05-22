@@ -288,6 +288,12 @@ def calc_extent(header, img_shape):
     Calculate pixel coordinate extent (arcsec) from FITS header, in the format required by imshow:
     [x_min, x_max, y_max, y_min].
     If the header lacks WCS keywords, return default value [-1500, 1500, 1500, -1500].
+
+    TODO: Compare against solar_toolkit.coordinates.calculate_fits_extent_from_header
+    before replacing this legacy basic-script mapping. The advanced radio
+    workflow preserves FITS WCS orientation with origin="lower"; this basic
+    script intentionally keeps its historical origin="upper" display behavior
+    until a real-coordinate parity review confirms the migration is safe.
     """
     try:
         crval1, crpix1, cdelt1 = header["CRVAL1"], header["CRPIX1"], header["CDELT1"]
@@ -403,6 +409,9 @@ def _sorted_fits_for_band(band_dir: str, start_idx: int, end_idx) -> list:
 
 
 class TimeParser:
+    # TODO: This parser is duplicated in the advanced radio source-map script.
+    # Keep it local for now so the basic entry point remains standalone; extract
+    # only after filename-format parity tests cover both workflows.
     """时间解析器，支持多种日期格式"""
 
     def __init__(self, cfg):
