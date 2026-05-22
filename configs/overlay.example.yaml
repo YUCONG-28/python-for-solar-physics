@@ -1,0 +1,41 @@
+# Example AIA/radio/HMI overlay configuration.
+# This template is for planning and documentation; current scripts do not have
+# to read it yet. Do not commit real observation paths.
+
+overlay:
+  aia_root: D:/path/to/aia_data
+  hmi_root: D:/path/to/hmi_data
+  radio_root: D:/path/to/radio_data
+  output_dir: D:/path/to/output/overlay
+
+  selected_aia_wavelength: 171
+  selected_radio_bands:
+    - 149MHz
+    - 164MHz
+    - 190MHz
+    - 205MHz
+    - 223MHz
+    - 238MHz
+
+  hmi:
+    enabled: true
+    hmi_contour_levels:
+      - -100
+      - 100
+
+  radio:
+    enabled: true
+    radio_contour_levels:
+      - 0.9
+    polarization: RR+LL
+
+  matching:
+    time_tolerance_seconds: 6
+
+  coordinates:
+    preserve_fits_wcs_orientation: true
+    radio_image_origin_mode: auto
+
+  output:
+    save_png: true
+    output_dir: D:/path/to/output/overlay

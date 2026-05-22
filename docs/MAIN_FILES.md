@@ -7,6 +7,19 @@
   - `path_config.py` 提供本地路径配置读取与脚本参数覆盖。
   - `solar_analysis_utils.py` 提供太阳物理数据处理共享工具，包括文件时间解析、FITS 文件排序、内存管理、坐标转换和可视化辅助函数。
 
+## Recommended Core Workflow Scripts
+
+- `scripts/aia_hmi/sdo_aia_euv_processor.py`
+  - AIA 图像、拼图、base difference 和 running difference 的推荐主入口。
+- `scripts/radio/radio_source_map_plot_gaussian_overlay.py`
+  - 射电源图、多频拼图、高斯拟合、CSO 频谱面板和频漂率叠加的推荐主入口。
+- `scripts/radio/sdo_aia_radio_hmi_overlay.py`
+  - AIA + radio + HMI 多仪器叠加的推荐主入口。
+- `scripts/radio/cso_radio_spectrogram_plot.py`
+  - CSO 动态频谱绘制的推荐主入口。
+- `scripts/tools/gaussian_source_fitting.py`
+  - 二维椭圆高斯拟合工具，后续建议作为公共拟合核心。
+
 ## Scripts
 
 - `scripts/aia_hmi/`
@@ -35,6 +48,11 @@
 - `configs/paths.example.yaml`
   - 用户可复制为 `configs/paths.local.yaml` 的本地配置模板。
   - 用于配置本地观测数据路径、输出路径和脚本参数。
+- `configs/aia.example.yaml`
+- `configs/radio.example.yaml`
+- `configs/cso.example.yaml`
+- `configs/overlay.example.yaml`
+  - 第一阶段新增的模块化配置模板，仅作为后续重构参考；现有脚本不强制读取这些文件。
 
 ## Examples
 
@@ -54,6 +72,12 @@
   - 本地路径配置说明。
 - `docs/PROJECT_CLEANUP_REPORT.md`
   - 发布前清理审计报告。
+- `docs/PROJECT_OPTIMIZATION_PLAN.md`
+  - 第一阶段整理优化计划。
+- `docs/LEGACY_AND_REVIEW_FILES.md`
+  - 可合并、可保留、暂不移动文件的人工确认清单。
+- `docs/assets/README.md`
+  - README 展示图片和视频资产规范。
 
 ## Output Directories
 

@@ -2,6 +2,29 @@
 
 生成时间：2026-05-22
 
+## 2026-05-22 第一阶段整理补充
+
+本轮整理仅补充文档、配置模板和 GitHub 展示规范，不删除、不移动、不重命名任何已有文件，也不修改科研算法。
+
+新增或更新的整理资料：
+
+- `docs/PROJECT_OPTIMIZATION_PLAN.md`：第一阶段目标、边界、入口脚本、legacy 文件和后续重构路线。
+- `docs/LEGACY_AND_REVIEW_FILES.md`：需要人工确认的 legacy、实验、结果和展示资产清单。
+- `docs/assets/README.md`：README 展示图和视频资产规范。
+- `configs/aia.example.yaml`、`configs/radio.example.yaml`、`configs/cso.example.yaml`、`configs/overlay.example.yaml`：后续配置集中化模板。
+
+本轮仍不处理以下高风险文件：
+
+- `scripts/radio/sdo_aia_radio_hmi_overlay_bgcorrected.py`
+- `scripts/radio/spectrogram_drift_rate_manual_selection.json`
+- `HXR.png`
+- `SXR.png`
+- `SXR to HXR.png`
+- `SXR to HXR enhance.png`
+- `AIA.xlsx`
+- `CSO.xlsx`
+- `examples/radio_aia_hmi/*`
+
 ## 当前目录结构概览
 
 项目根目录是一个太阳物理科研 Python 项目，当前主结构如下：

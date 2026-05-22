@@ -28,6 +28,18 @@ GitHub: <https://github.com/YUCONG-28/python-for-solar-physics>
 - GOES SXR, HXR/HXI, DEM/Tb, and LASCO CME support for event context
 - Local YAML path configuration without committing personal data paths
 
+## Recommended Entry Points
+
+Use these scripts as the main public workflows. Other scripts are still useful,
+but some are legacy, experimental, or specialized helpers.
+
+| Workflow | Recommended script |
+| --- | --- |
+| AIA images and AIA difference maps | `scripts/aia_hmi/sdo_aia_euv_processor.py` |
+| Radio source maps, Gaussian fitting, and drift-rate overlays | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` |
+| AIA + radio + HMI overlays | `scripts/radio/sdo_aia_radio_hmi_overlay.py` |
+| CSO dynamic spectra | `scripts/radio/cso_radio_spectrogram_plot.py` |
+
 ## Scientific Workflows
 
 The toolkit supports these common analysis products:
@@ -171,6 +183,30 @@ $env:SOLAR_PHYSICS_CONFIG="D:\my_project\solar_paths.yaml"
 
 Missing config sections leave each script's built-in defaults unchanged.
 
+Additional module-level templates are provided for future cleanup and refactoring:
+
+- `configs/aia.example.yaml`
+- `configs/radio.example.yaml`
+- `configs/cso.example.yaml`
+- `configs/overlay.example.yaml`
+
+These templates are documentation aids for now. Existing scripts are not
+required to read them yet.
+
+## Recommended Run Order
+
+For a typical local event-analysis session:
+
+1. Configure local paths in `configs/paths.local.yaml`.
+2. Run an AIA single-image preview or AIA mosaic with `sdo_aia_euv_processor.py`.
+3. Run AIA base/running difference products from the same AIA processor.
+4. Run radio source maps with `radio_source_map_plot_gaussian_overlay.py`.
+5. Enable Gaussian fitting and inspect the fitted centers, FWHM, and diagnostics.
+6. Run the AIA/radio/HMI overlay workflow.
+7. Run the CSO dynamic spectrogram workflow.
+8. Optionally run manual drift-rate endpoint selection.
+9. Optionally convert a vetted image sequence to video.
+
 ## Quick Start
 
 ```powershell
@@ -292,6 +328,21 @@ Do not commit raw observation data, generated figures, videos, local path
 configs, cache folders, Excel/CSV products, or machine-specific temporary files.
 Keep reproducible code, configuration templates, documentation, and lightweight
 tests in Git.
+
+In particular, do not upload real science data or bulk outputs such as:
+
+- FITS products: `*.fits`, `*.fts`, `*.fit`, `*.fits.gz`, `*.fits.fz`
+- SOHO/LASCO JP2 products: `*.jp2`
+- NetCDF/CDF products: `*.nc`, `*.cdf`
+- NumPy arrays: `*.npy`, `*.npz`
+- HDF5 products: `*.h5`, `*.hdf5`
+- Batch PNG/JPG plot folders
+- Videos: `*.mp4`, `*.avi`, `*.mov`, `*.gif`, `*.mkv`
+- Local path files such as `configs/paths.local.yaml`
+
+README display assets should be compressed, source-documented examples placed
+under `docs/assets/images/` or `docs/assets/videos/`, not full research
+processing outputs.
 
 ## Citation
 
