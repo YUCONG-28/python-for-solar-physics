@@ -38,6 +38,7 @@ import matplotlib.dates as mdates  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from astropy.io import fits  # noqa: E402
+from matplotlib.colors import TwoSlopeNorm  # noqa: E402
 from tqdm import tqdm  # noqa: E402
 
 from solar_toolkit.path_config import apply_config_to_object  # noqa: E402
@@ -51,17 +52,25 @@ class PlotConfig:
     """Configuration class for CSO spectrogram plotting parameters."""
 
     # File path
+    # Single-file mode: keep using file_path.
+    # Multi-file mode: set file_paths to a list of FITS files ordered or unordered.
+    # The program will automatically select the portions overlapping t_start~t_end
+    # and concatenate them along the time axis.
     file_path: str = (
-        r"D:\spike_topping_type_III\2025\20250503"
-        r"\OROCH_MWRS01_SRSP_L1_05M_20250503071510_V01.01.fits"
+        r"D:\spike_topping_type_III\2025\20250124"
+        r"\OROCH_MWRS01_SRSP_L1_05M_20250124041219_V01.01.fits"
     )
+    # file_paths: list[str] | None = field(default_factory=lambda: [
+    #     r"D:\spike_topping_type_III\2026\20260326\OROCH_MWRS01_SRSP_L1_05M_20260326065020_V01.01.fits",
+    #     r"D:\spike_topping_type_III\2026\20260326\OROCH_MWRS01_SRSP_L1_05M_20260326065509_V01.01.fits"
+    #     ])
 
     # Time range (UTC)
     t_start: datetime.datetime = field(
-        default_factory=lambda: datetime.datetime(2025, 5, 3, 7, 14, 0)
+        default_factory=lambda: datetime.datetime(2025, 1, 24, 4, 14, 10)
     )
     t_end: datetime.datetime = field(
-        default_factory=lambda: datetime.datetime(2025, 5, 3, 7, 21, 0)
+        default_factory=lambda: datetime.datetime(2025, 1, 24, 4, 15, 20)
     )
 
     # Frequency range (MHz)
@@ -70,8 +79,8 @@ class PlotConfig:
 
     # Target number of grid points after downsampling (time / frequency axes)
     # Larger values produce finer plots but are slower; None = no downsampling
-    rebin_t_target: int = 1000
-    rebin_f_target: int = 1000
+    rebin_t_target: int = 10000
+    rebin_f_target: int = 10000
 
     # Peak memory limit per chunk during block reading (MB)
     # Lower values reduce memory pressure further
@@ -105,10 +114,14 @@ class PlotConfig:
     manual_rr_vmin: float | None = 1.8
     manual_rr_vmax: float | None = 5
     # Sum and ratio limits
-    manual_sum_vmin: float | None = 1.8
-    manual_sum_vmax: float | None = 3.2
+    manual_sum_vmin: float | None = 2.2
+    manual_sum_vmax: float | None = 5.6
     manual_ratio_vmin: float | None = -1.0
     manual_ratio_vmax: float | None = 1.0
+    ratio_auto_symmetric_scale: bool = True
+    ratio_abs_percentile: float = 99.5
+    ratio_min_abs_limit: float = 0.03
+    ratio_max_abs_limit: float = 1.0
 
     # Backward compatibility: if individual limits not set, use these
     manual_vmin: float | None = None
@@ -123,11 +136,15 @@ class PlotConfig:
     minor_tick_interval: int = 2
 
     # Save path (empty for display only)
-    save_path: str = r"D:\spike_topping_type_III\2025\20250503\CSO_PLOT\3\1"
+    save_path: str = r"D:\spike_topping_type_III\2025\20250124\CSO_PLOT"
     dpi: int = 300
+    show_plot: bool = False
+    close_after_save: bool = True
 
     # List of frequencies to highlight (MHz)
-    highlight_freqs: list[float] | None = field(default_factory=lambda: None)
+    highlight_freqs: list[float] | None = field(
+        default_factory=lambda: [149, 164, 190, 205, 223, 238, 285, 300, 309, 324]
+    )
     # [149, 164, 190, 205, 223, 238, 285, 300, 309, 324]
 
     # 坐标轴显示控制
@@ -164,9 +181,180 @@ def _find_range(arr: np.ndarray, lo: float, hi: float):
     """Fast range index lookup using searchsorted with boundary protection."""
     if lo > hi:
         lo, hi = hi, lo
-    i0 = int(np.clip(np.searchsorted(arr, lo, side="left"), 0, len(arr) - 1))
-    i1 = int(np.clip(np.searchsorted(arr, hi, side="right") - 1, 0, len(arr) - 1))
+    if len(arr) == 0:
+        raise ValueError("Cannot search an empty axis")
+
+    if len(arr) > 1 and arr[0] > arr[-1]:
+        arr_rev = arr[::-1]
+        r0 = int(np.clip(np.searchsorted(arr_rev, lo, side="left"), 0, len(arr) - 1))
+        r1 = int(
+            np.clip(np.searchsorted(arr_rev, hi, side="right") - 1, 0, len(arr) - 1)
+        )
+        i0 = len(arr) - 1 - r1
+        i1 = len(arr) - 1 - r0
+    else:
+        i0 = int(np.clip(np.searchsorted(arr, lo, side="left"), 0, len(arr) - 1))
+        i1 = int(np.clip(np.searchsorted(arr, hi, side="right") - 1, 0, len(arr) - 1))
     return i0, max(i0, i1)
+
+
+def _as_datetime(value, name: str) -> datetime.datetime:
+    """Accept datetime objects or ISO datetime strings in PlotConfig."""
+    if isinstance(value, datetime.datetime):
+        return value
+    if isinstance(value, str):
+        return datetime.datetime.fromisoformat(value)
+    raise TypeError(f"{name} must be datetime.datetime or ISO datetime string")
+
+
+def _array_stats(name: str, data: np.ndarray) -> None:
+    """Print finite-count and basic statistics for diagnostics."""
+    finite = data[np.isfinite(data)]
+    if finite.size == 0:
+        print(f"  {name}: finite_count=0, min=nan, max=nan, mean=nan, std=nan")
+        return
+    print(
+        f"  {name}: finite_count={finite.size}, min={np.nanmin(finite):.6g}, "
+        f"max={np.nanmax(finite):.6g}, mean={np.nanmean(finite):.6g}, "
+        f"std={np.nanstd(finite):.6g}"
+    )
+
+
+def get_config_file_paths(cfg: PlotConfig) -> list[str]:
+    """Return FITS paths from cfg.file_paths, with cfg.file_path kept as fallback."""
+    file_paths = getattr(cfg, "file_paths", None)
+    if file_paths:
+        if isinstance(file_paths, (str, os.PathLike)):
+            paths = [str(file_paths)]
+        else:
+            paths = [str(path) for path in file_paths if str(path).strip()]
+    else:
+        paths = [str(cfg.file_path)] if str(cfg.file_path).strip() else []
+
+    if not paths:
+        raise ValueError(
+            "No FITS file path is configured. Set cfg.file_path or cfg.file_paths."
+        )
+
+    missing = [path for path in paths if not os.path.exists(path)]
+    if missing:
+        raise FileNotFoundError("FITS file(s) not found:\n" + "\n".join(missing))
+
+    return paths
+
+
+def _spec_time_bounds(
+    spec: "LazySpectrogram",
+) -> tuple[datetime.datetime, datetime.datetime]:
+    """Return absolute datetime coverage of one LazySpectrogram."""
+    finite_time = spec.time[np.isfinite(spec.time)]
+    if finite_time.size == 0:
+        raise ValueError(f"{spec.polar} has no finite time samples: {spec.source_path}")
+    t_min = float(np.nanmin(finite_time))
+    t_max = float(np.nanmax(finite_time))
+    return (
+        spec.dt_base + datetime.timedelta(seconds=t_min),
+        spec.dt_base + datetime.timedelta(seconds=t_max),
+    )
+
+
+def _spec_overlaps_time_range(
+    spec: "LazySpectrogram",
+    t_start: datetime.datetime,
+    t_end: datetime.datetime,
+) -> bool:
+    """Whether one file has any samples within the requested absolute time range."""
+    spec_start, spec_end = _spec_time_bounds(spec)
+    return spec_start <= t_end and spec_end >= t_start
+
+
+def _select_overlapping_specs(
+    data_list: list,
+    polar_key: str,
+    t_start: datetime.datetime,
+    t_end: datetime.datetime,
+) -> list:
+    """Select and time-sort LL/RR spectra that overlap the requested time range."""
+    specs = [
+        spec
+        for spec in data_list
+        if polar_key in spec.polar and _spec_overlaps_time_range(spec, t_start, t_end)
+    ]
+    return sorted(specs, key=lambda spec: _spec_time_bounds(spec)[0])
+
+
+def _overlap_window(
+    spec: "LazySpectrogram",
+    t_start: datetime.datetime,
+    t_end: datetime.datetime,
+) -> tuple[datetime.datetime, datetime.datetime] | None:
+    """Return the part of the requested range covered by one file."""
+    spec_start, spec_end = _spec_time_bounds(spec)
+    overlap_start = max(t_start, spec_start)
+    overlap_end = min(t_end, spec_end)
+    if overlap_start >= overlap_end:
+        return None
+    return overlap_start, overlap_end
+
+
+def _validate_contiguous_time_coverage(
+    specs: list,
+    t_start: datetime.datetime,
+    t_end: datetime.datetime,
+    polar_label: str,
+    tolerance_seconds: float = 1.0,
+) -> None:
+    """Raise an explicit error if the requested range is not covered by the files."""
+    intervals = []
+    for spec in specs:
+        window = _overlap_window(spec, t_start, t_end)
+        if window is not None:
+            intervals.append((*window, spec.source_path))
+
+    if not intervals:
+        raise ValueError(f"No {polar_label} file overlaps the requested time range.")
+
+    intervals.sort(key=lambda item: item[0])
+    current_end = t_start
+    tol = datetime.timedelta(seconds=float(tolerance_seconds))
+
+    for seg_start, seg_end, source_path in intervals:
+        if seg_start > current_end + tol:
+            raise ValueError(
+                f"{polar_label} files do not fully cover the requested time range. "
+                f"Gap: {current_end.isoformat()} -> {seg_start.isoformat()}. "
+                f"Next file: {source_path}"
+            )
+        if seg_end > current_end:
+            current_end = seg_end
+        if current_end >= t_end - tol:
+            return
+
+    raise ValueError(
+        f"{polar_label} files end before the requested t_end. "
+        f"Covered until {current_end.isoformat()}, requested until {t_end.isoformat()}."
+    )
+
+
+def _estimate_raw_selection_mb(
+    specs: list,
+    cfg: PlotConfig,
+    t_start: datetime.datetime,
+    t_end: datetime.datetime,
+) -> float:
+    """Estimate total selected raw data size for one polarization across files."""
+    total_points = 0
+    for spec in specs:
+        window = _overlap_window(spec, t_start, t_end)
+        if window is None:
+            continue
+        t0, t1 = window
+        t0s = (t0 - spec.dt_base).total_seconds()
+        t1s = (t1 - spec.dt_base).total_seconds()
+        ti0, ti1 = _find_range(spec.time, t0s, t1s)
+        fi0, fi1 = _find_range(spec.freq, cfg.f_start, cfg.f_end)
+        total_points += max(0, ti1 - ti0 + 1) * max(0, fi1 - fi0 + 1)
+    return total_points * 4 / (1024 * 1024)
 
 
 def get_system_memory_info() -> tuple[float, float, float]:
@@ -191,7 +379,9 @@ def get_system_memory_info() -> tuple[float, float, float]:
 
 def validate_config(cfg: PlotConfig) -> None:
     """Validate configuration parameters."""
-    if cfg.t_start >= cfg.t_end:
+    t_start = _as_datetime(cfg.t_start, "t_start")
+    t_end = _as_datetime(cfg.t_end, "t_end")
+    if t_start >= t_end:
         raise ValueError(
             f"t_start ({cfg.t_start}) must be earlier than t_end ({cfg.t_end})"
         )
@@ -296,9 +486,28 @@ class LazySpectrogram:
     on-the-fly downsampling with minimal peak memory usage.
     """
 
-    __slots__ = ("_raw", "time", "freq", "polar", "dateobs", "unit", "dt_base")
+    __slots__ = (
+        "_raw",
+        "time",
+        "freq",
+        "polar",
+        "dateobs",
+        "unit",
+        "dt_base",
+        "source_path",
+    )
 
-    def __init__(self, raw_memmap, time_arr, freq_arr, polar, dateobs, unit, dt_base):
+    def __init__(
+        self,
+        raw_memmap,
+        time_arr,
+        freq_arr,
+        polar,
+        dateobs,
+        unit,
+        dt_base,
+        source_path="",
+    ):
         self._raw = raw_memmap
         self.time = time_arr.astype(np.float64)
         self.freq = freq_arr.astype(np.float32)
@@ -306,6 +515,7 @@ class LazySpectrogram:
         self.dateobs = dateobs
         self.unit = unit
         self.dt_base = dt_base
+        self.source_path = source_path
 
     def read_slice_rebinned(
         self,
@@ -340,6 +550,13 @@ class LazySpectrogram:
         n_time_trim = (n_time_raw // t_bin) * t_bin
         n_freq_out = n_freq_trim // f_bin
         n_time_out = n_time_trim // t_bin
+
+        if n_freq_out <= 0 or n_time_out <= 0:
+            raise ValueError(
+                f"Selected range is too short after binning for {self.polar}: "
+                f"raw={n_freq_raw}×{n_time_raw}, bin={f_bin}×{t_bin}, "
+                f"file={self.source_path}"
+            )
 
         raw_mb = n_freq_raw * n_time_raw * 4 / 1e6
         out_mb = n_freq_out * n_time_out * 4 / 1e6
@@ -426,7 +643,7 @@ def read_cso_fits(fn: str):
         results = []
         if raw.ndim == 2:
             results.append(
-                LazySpectrogram(raw, time_, freq_, polars, dateobs, unit, dt_base)
+                LazySpectrogram(raw, time_, freq_, polars, dateobs, unit, dt_base, fn)
             )
             print(
                 f"  Single polarization: {polars}  Size: {raw.shape}  "
@@ -437,7 +654,7 @@ def read_cso_fits(fn: str):
                 polar = polars[ii] * 2
                 results.append(
                     LazySpectrogram(
-                        raw[ii], time_, freq_, polar, dateobs, unit, dt_base
+                        raw[ii], time_, freq_, polar, dateobs, unit, dt_base, fn
                     )
                 )
             print(
@@ -571,6 +788,9 @@ class AxisConfigManager:
     @staticmethod
     def configure_frequency_axis(ax, cfg: PlotConfig, freq_values: np.ndarray) -> None:
         """配置频率轴"""
+        f_min = float(np.nanmin(freq_values))
+        f_max = float(np.nanmax(freq_values))
+        ax.set_ylim(f_min, f_max)
         if not cfg.show_axis_labels:
             ax.set_yticklabels([])
             ax.set_ylabel("")
@@ -578,27 +798,29 @@ class AxisConfigManager:
             # 设置主要刻度
             if cfg.ytick_interval is not None:
                 yticks = np.arange(
-                    np.ceil(freq_values[0] / cfg.ytick_interval) * cfg.ytick_interval,
-                    freq_values[-1],
+                    np.ceil(f_min / cfg.ytick_interval) * cfg.ytick_interval,
+                    f_max,
                     cfg.ytick_interval,
                 )
                 ax.set_yticks(yticks)
             else:
                 # 自动计算刻度
-                freq_range = freq_values[-1] - freq_values[0]
+                freq_range = f_max - f_min
                 optimal_interval = AxisConfigManager.calculate_optimal_ticks(
                     freq_range, len(freq_values), max_ticks=10
                 )
                 yticks = np.arange(
-                    np.ceil(freq_values[0] / optimal_interval) * optimal_interval,
-                    freq_values[-1],
+                    np.ceil(f_min / optimal_interval) * optimal_interval,
+                    f_max,
                     optimal_interval,
                 )
                 ax.set_yticks(yticks)
 
             # 设置次要刻度
             if cfg.show_minor_ticks:
-                ax.yaxis.set_minor_locator(plt.AutoMinorLocator(5))
+                from matplotlib.ticker import AutoMinorLocator
+
+                ax.yaxis.set_minor_locator(AutoMinorLocator(5))
 
             # 设置标签旋转
             if cfg.axis_label_rotation != 0:
@@ -614,8 +836,10 @@ class AxisConfigManager:
 
 def calc_bin_sizes(spec: LazySpectrogram, cfg: PlotConfig):
     """Calculate t_bin / f_bin based on actual slice range and target point count."""
-    t1s = (cfg.t_start - spec.dt_base).total_seconds()
-    t2s = (cfg.t_end - spec.dt_base).total_seconds()
+    t_start = _as_datetime(cfg.t_start, "t_start")
+    t_end = _as_datetime(cfg.t_end, "t_end")
+    t1s = (t_start - spec.dt_base).total_seconds()
+    t2s = (t_end - spec.dt_base).total_seconds()
     ti0, ti1 = _find_range(spec.time, t1s, t2s)
     fi0, fi1 = _find_range(spec.freq, cfg.f_start, cfg.f_end)
     n_t = ti1 - ti0 + 1
@@ -625,7 +849,140 @@ def calc_bin_sizes(spec: LazySpectrogram, cfg: PlotConfig):
     return t_bin, f_bin
 
 
-def calc_polarization_ratio(Z_r: np.ndarray, Z_l: np.ndarray) -> np.ndarray:
+def calc_bin_sizes_for_specs(
+    specs: list,
+    cfg: PlotConfig,
+    t_start: datetime.datetime,
+    t_end: datetime.datetime,
+) -> tuple[int, int]:
+    """Calculate common t_bin/f_bin for a requested range spanning one or more files."""
+    total_t = 0
+    min_t = None
+    min_f = None
+
+    for spec in specs:
+        window = _overlap_window(spec, t_start, t_end)
+        if window is None:
+            continue
+        t0, t1 = window
+        t0s = (t0 - spec.dt_base).total_seconds()
+        t1s = (t1 - spec.dt_base).total_seconds()
+        ti0, ti1 = _find_range(spec.time, t0s, t1s)
+        fi0, fi1 = _find_range(spec.freq, cfg.f_start, cfg.f_end)
+        n_t = ti1 - ti0 + 1
+        n_f = fi1 - fi0 + 1
+        total_t += n_t
+        min_t = n_t if min_t is None else min(min_t, n_t)
+        min_f = n_f if min_f is None else min(min_f, n_f)
+
+    if total_t <= 0 or min_t is None or min_f is None or min_f <= 0:
+        raise ValueError(
+            "Requested time/frequency range has no valid samples in the selected files."
+        )
+
+    t_bin = max(1, total_t // cfg.rebin_t_target) if cfg.rebin_t_target else 1
+    f_bin = max(1, min_f // cfg.rebin_f_target) if cfg.rebin_f_target else 1
+
+    # A short edge segment must not be fully trimmed away by a larger global bin.
+    t_bin = min(t_bin, max(1, min_t))
+    f_bin = min(f_bin, max(1, min_f))
+    return t_bin, f_bin
+
+
+def _read_polarization_segments_rebinned(
+    specs: list,
+    cfg: PlotConfig,
+    t_start: datetime.datetime,
+    t_end: datetime.datetime,
+    t_bin: int,
+    f_bin: int,
+    common_base: datetime.datetime,
+    polar_label: str,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Read all overlapping file segments for one polarization and concatenate in time."""
+    z_parts: list[np.ndarray] = []
+    t_parts: list[np.ndarray] = []
+    freq_ref: np.ndarray | None = None
+    last_time = -np.inf
+
+    for spec in specs:
+        window = _overlap_window(spec, t_start, t_end)
+        if window is None:
+            continue
+        seg_start, seg_end = window
+        print(
+            f"  [{polar_label}] using {os.path.basename(spec.source_path)}: "
+            f"{seg_start.isoformat()} -> {seg_end.isoformat()}"
+        )
+        z_seg, tt_seg, freq_seg = spec.read_slice_rebinned(
+            t1=seg_start,
+            t2=seg_end,
+            f1=cfg.f_start,
+            f2=cfg.f_end,
+            t_bin=t_bin,
+            f_bin=f_bin,
+            chunk_mem_mb=cfg.chunk_mem_mb,
+        )
+
+        # Convert each file's time seconds to seconds relative to one common base.
+        base_offset = (spec.dt_base - common_base).total_seconds()
+        tt_common = tt_seg.astype(np.float64) + base_offset
+
+        # If two FITS files overlap, keep the earlier file and remove duplicate/backward columns.
+        keep = tt_common > last_time
+        if not np.any(keep):
+            print(
+                f"  [{polar_label}] skipped fully overlapping segment: {spec.source_path}"
+            )
+            continue
+        if not np.all(keep):
+            removed = int(np.count_nonzero(~keep))
+            print(f"  [{polar_label}] removed {removed} overlapping time column(s).")
+            z_seg = z_seg[:, keep]
+            tt_common = tt_common[keep]
+
+        if freq_ref is None:
+            freq_ref = freq_seg
+        elif freq_ref.shape != freq_seg.shape or not np.allclose(
+            freq_ref, freq_seg, rtol=0.0, atol=1e-3
+        ):
+            raise ValueError(
+                "Frequency axes are inconsistent between FITS files. "
+                "Please regrid/interpolate frequency first or use files from the same CSO mode.\n"
+                f"Reference: {freq_ref[0]:.6f}~{freq_ref[-1]:.6f} MHz, "
+                f"current: {freq_seg[0]:.6f}~{freq_seg[-1]:.6f} MHz, "
+                f"file={spec.source_path}"
+            )
+
+        z_parts.append(z_seg)
+        t_parts.append(tt_common)
+        last_time = float(tt_common[-1])
+
+    if not z_parts or freq_ref is None:
+        raise ValueError(
+            f"No usable {polar_label} segment found in the requested range."
+        )
+
+    z_all = np.concatenate(z_parts, axis=1)
+    t_all = np.concatenate(t_parts)
+
+    if t_all.size >= 3:
+        dt = np.diff(t_all)
+        median_dt = float(np.nanmedian(dt))
+        if median_dt > 0 and float(np.nanmax(dt)) > 2.5 * median_dt:
+            warnings.warn(
+                f"Detected a possible time gap in merged {polar_label} data: "
+                f"median dt={median_dt:.6g}s, max dt={float(np.nanmax(dt)):.6g}s. "
+                "imshow uses a continuous time extent, so inspect the file boundary if the plot looks stretched.",
+                stacklevel=2,
+            )
+
+    return z_all, t_all, freq_ref
+
+
+def calc_polarization_ratio(
+    Z_r: np.ndarray, Z_l: np.ndarray, eps: float = 1e-30
+) -> np.ndarray:
     """
     Calculate polarization ratio (R-L)/(R+L) with safe division.
 
@@ -639,47 +996,16 @@ def calc_polarization_ratio(Z_r: np.ndarray, Z_l: np.ndarray) -> np.ndarray:
         - 'bwr' colormap: blue for negative, white for 0, red for positive
         - This ensures correct visual representation of polarization direction
     """
-    # Ensure we're working with float32 for consistency
-    Z_r = Z_r.astype(np.float32)
-    Z_l = Z_l.astype(np.float32)
-
-    # Calculate denominator
     denom = Z_r + Z_l
-
-    # Handle zero denominator
-    zero_mask = denom == 0
-    if np.any(zero_mask):
-        denom = denom.copy()  # Make a copy to avoid modifying original
-        denom[zero_mask] = np.float32(1e-10)
-
-    # Calculate ratio (R-L)/(R+L)
-    ratio = (Z_r - Z_l) / denom
-
-    # Ensure ratio is within [-1, 1] range (numerical stability)
-    ratio = np.clip(ratio, -1.0, 1.0)
-
-    # Debug information
-    print("  Polarization ratio (R-L)/(R+L) statistics:")
-    print(f"    Min: {np.nanmin(ratio):.4f}, Max: {np.nanmax(ratio):.4f}")
-    print(f"    Mean: {np.nanmean(ratio):.4f}, Std: {np.nanstd(ratio):.4f}")
-    print(
-        f"    Positive (R>L): {np.sum(ratio > 0.01) / np.sum(np.isfinite(ratio)):.2%}"
+    valid = (
+        np.isfinite(Z_r) & np.isfinite(Z_l) & np.isfinite(denom) & (np.abs(denom) > eps)
     )
-    print(
-        f"    Negative (L>R): {np.sum(ratio < -0.01) / np.sum(np.isfinite(ratio)):.2%}"
-    )
-    print(
-        f"    Near zero (|ratio|<0.01): {np.sum(np.abs(ratio) < 0.01) / np.sum(np.isfinite(ratio)):.2%}"
-    )
-
-    # Test with simple values to verify formula
-    test_r = np.float32(10.0)
-    test_l = np.float32(5.0)
-    test_ratio = (test_r - test_l) / (test_r + test_l)
-    print(
-        f"  Formula test: R={test_r}, L={test_l} => (R-L)/(R+L)={test_ratio:.3f} (should be {(10-5)/(10+5):.3f})"
-    )
-
+    ratio = np.full_like(Z_r, np.nan, dtype=np.float32)
+    ratio[valid] = np.clip(
+        (Z_r[valid] - Z_l[valid]) / denom[valid],
+        -1.0,
+        1.0,
+    ).astype(np.float32)
     return ratio
 
 
@@ -775,6 +1101,106 @@ def get_color_limits(
         return float(vmin), float(vmax)
 
 
+def _datetime_list_from_seconds(
+    dt_base: datetime.datetime, seconds_array: np.ndarray
+) -> list[datetime.datetime]:
+    return [
+        dt_base + datetime.timedelta(seconds=float(seconds))
+        for seconds in seconds_array
+    ]
+
+
+def _prepare_imshow_extent(
+    data: np.ndarray,
+    time_seconds: np.ndarray,
+    freq: np.ndarray,
+    dt_base: datetime.datetime,
+) -> tuple[np.ndarray, list[float], list[datetime.datetime], np.ndarray, bool]:
+    """Prepare image data, datetime x extent, and ascending y extent for imshow."""
+    freq_flipped = False
+    if freq.size >= 2 and float(freq[0]) > float(freq[-1]):
+        data = data[::-1, :].copy()
+        freq = freq[::-1].copy()
+        freq_flipped = True
+
+    f_min = float(np.nanmin(freq))
+    f_max = float(np.nanmax(freq))
+    dt_list = _datetime_list_from_seconds(dt_base, time_seconds)
+    x_start_num = mdates.date2num(dt_list[0])
+    x_end_num = mdates.date2num(dt_list[-1])
+    extent = [x_start_num, x_end_num, f_min, f_max]
+    return data, extent, dt_list, freq, freq_flipped
+
+
+def _configure_datetime_axis(
+    ax, cfg: PlotConfig, x_start_num: float, x_end_num: float
+) -> None:
+    ax.xaxis_date()
+    if cfg.xtick_interval is not None:
+        ax.xaxis.set_major_locator(mdates.SecondLocator(interval=cfg.xtick_interval))
+    else:
+        span_seconds = max((x_end_num - x_start_num) * 86400.0, 1.0)
+        interval = AxisConfigManager.calculate_optimal_ticks(span_seconds, max_ticks=15)
+        ax.xaxis.set_major_locator(mdates.SecondLocator(interval=max(1, int(interval))))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter(cfg.xtick_format))
+    ax.set_xlim(x_start_num, x_end_num)
+
+
+def _get_ratio_norm_and_limits(ratio: np.ndarray, cfg: PlotConfig):
+    finite = ratio[np.isfinite(ratio)]
+    if finite.size == 0:
+        raise ValueError("Polarization ratio contains no finite values")
+
+    if cfg.ratio_auto_symmetric_scale:
+        raw_abs = float(np.nanpercentile(np.abs(finite), cfg.ratio_abs_percentile))
+        vmax_abs = float(
+            np.clip(raw_abs, cfg.ratio_min_abs_limit, cfg.ratio_max_abs_limit)
+        )
+        if raw_abs < cfg.ratio_min_abs_limit:
+            print(
+                "  Ratio is physically close to zero; using enhanced symmetric "
+                f"display range +/-{vmax_abs:.4f}."
+            )
+    else:
+        vmin, vmax = get_color_limits(ratio, cfg, "ratio")
+        vmax_abs = max(abs(vmin), abs(vmax))
+
+    vmin = -vmax_abs
+    vmax = vmax_abs
+    return TwoSlopeNorm(vmin=vmin, vcenter=0.0, vmax=vmax), vmin, vmax
+
+
+def _resolve_output_path(
+    cfg: PlotConfig,
+    t_start_dt: datetime.datetime,
+    t_end_dt: datetime.datetime,
+    items: list[dict],
+) -> str:
+    raw = (cfg.save_path or "").strip()
+    if not raw:
+        return ""
+
+    tags = [item.get("plot_type", "") for item in items if item.get("plot_type")]
+    plot_tags = "_".join(tags) if tags else "spectrogram"
+    scale_tag = "auto" if cfg.use_percentile_clipping else "manual"
+    auto_name = (
+        f"CSO_spectrogram_{t_start_dt:%Y%m%d}_{t_start_dt:%H%M%S}_"
+        f"{t_end_dt:%H%M%S}_{int(cfg.f_start)}-{int(cfg.f_end)}MHz_"
+        f"{plot_tags}_{scale_tag}.png"
+    )
+
+    img_exts = {".png", ".jpg", ".jpeg", ".pdf", ".svg", ".tif", ".tiff"}
+    ext = os.path.splitext(raw)[1].lower()
+    if ext in img_exts:
+        os.makedirs(os.path.dirname(raw) or ".", exist_ok=True)
+        return raw
+    if os.path.isdir(raw):
+        return os.path.join(raw, auto_name)
+
+    os.makedirs(raw, exist_ok=True)
+    return os.path.join(raw, auto_name)
+
+
 def optimize_workers(
     cfg: PlotConfig, data_size_mb: float, chunk_mem_mb: int
 ) -> tuple[int, float]:
@@ -867,31 +1293,47 @@ def optimize_workers(
 @timing_decorator
 def process_and_plot(cfg: PlotConfig, data_list: list):
     """Main processing pipeline: read data, compute derived quantities, and generate plots."""
-    # Validate configuration (includes color scale limits validation)
     validate_config(cfg)
+    t_start_dt = _as_datetime(cfg.t_start, "t_start")
+    t_end_dt = _as_datetime(cfg.t_end, "t_end")
 
-    # Extract LL and RR polarization data
-    cso_l = next((d for d in data_list if "LL" in d.polar), None)
-    cso_r = next((d for d in data_list if "RR" in d.polar), None)
-    if cso_l is None or cso_r is None:
-        raise ValueError("Complete LL and RR data not found")
+    cso_l_specs = _select_overlapping_specs(data_list, "LL", t_start_dt, t_end_dt)
+    cso_r_specs = _select_overlapping_specs(data_list, "RR", t_start_dt, t_end_dt)
+    if not cso_l_specs or not cso_r_specs:
+        available = []
+        for spec in data_list:
+            spec_start, spec_end = _spec_time_bounds(spec)
+            available.append(
+                f"{spec.polar}: {spec_start.isoformat()} -> {spec_end.isoformat()}  "
+                f"{spec.source_path}"
+            )
+        raise ValueError(
+            "Complete LL and RR data not found for the requested time range.\n"
+            "Available file coverage:\n" + "\n".join(available)
+        )
 
-    # Pre-calculate bin sizes based on actual slice range
-    t_bin, f_bin = calc_bin_sizes(cso_l, cfg)
+    _validate_contiguous_time_coverage(cso_l_specs, t_start_dt, t_end_dt, "LL")
+    _validate_contiguous_time_coverage(cso_r_specs, t_start_dt, t_end_dt, "RR")
 
-    # Estimate data size for worker optimization
-    t1s = (cfg.t_start - cso_l.dt_base).total_seconds()
-    t2s = (cfg.t_end - cso_l.dt_base).total_seconds()
-    ti0, ti1 = _find_range(cso_l.time, t1s, t2s)
-    fi0, fi1 = _find_range(cso_l.freq, cfg.f_start, cfg.f_end)
-    n_t = ti1 - ti0 + 1
-    n_f = fi1 - fi0 + 1
-    estimated_data_size_mb = (n_t * n_f * 4) / (1024 * 1024)  # 4 bytes per float32
+    common_base = min(spec.dt_base for spec in [*cso_l_specs, *cso_r_specs])
+    t_bin, f_bin = calc_bin_sizes_for_specs(cso_l_specs, cfg, t_start_dt, t_end_dt)
 
-    # Optimize number of workers considering memory constraints
+    estimated_data_size_mb = _estimate_raw_selection_mb(
+        cso_l_specs, cfg, t_start_dt, t_end_dt
+    )
     optimal_workers, estimated_peak_memory = optimize_workers(
         cfg, estimated_data_size_mb, cfg.chunk_mem_mb
     )
+
+    print("Selected FITS coverage:")
+    for spec in [*cso_l_specs, *cso_r_specs]:
+        spec_start, spec_end = _spec_time_bounds(spec)
+        print(
+            f"  - {spec.polar}: {spec_start.isoformat()} -> {spec_end.isoformat()} | "
+            f"{os.path.basename(spec.source_path)}"
+        )
+    print(f"Common time base: {common_base.isoformat()}")
+    print(f"Common bin size: t_bin={t_bin}, f_bin={f_bin}")
 
     print("Memory configuration:")
     print(f"  - Chunk memory limit: {cfg.chunk_mem_mb} MB per worker")
@@ -899,46 +1341,68 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
     print(f"  - Optimal workers: {optimal_workers}")
     print(f"  - Estimated peak memory: {estimated_peak_memory:.1f} MB")
 
-    # Warn if memory usage might be high
-    if estimated_peak_memory > 2000:  # 2GB threshold
+    if estimated_peak_memory > 2000:
         print(
-            f"⚠️  Warning: Estimated peak memory ({estimated_peak_memory:.1f} MB) is high."
+            f"Warning: Estimated peak memory ({estimated_peak_memory:.1f} MB) is high."
         )
         print("   Consider reducing chunk_mem_mb or max_workers.")
 
-    # Parallel reading with downsampling
-    print("Block reading + downsampling...")
-    kwargs = dict(
-        t1=cfg.t_start,
-        t2=cfg.t_end,
-        f1=cfg.f_start,
-        f2=cfg.f_end,
-        t_bin=t_bin,
-        f_bin=f_bin,
-        chunk_mem_mb=cfg.chunk_mem_mb,
-    )
+    print("Block reading + downsampling + multi-file time concatenation...")
 
-    # Use optimized number of workers
     if optimal_workers == 1:
         print("Processing sequentially with 1 worker for memory control...")
-        # Process LL first, then RR
         print("  Processing LL polarization...")
-        Z_l, tt, freq = cso_l.read_slice_rebinned(**kwargs)
-        # Explicitly delete any intermediate variables if needed
+        Z_l, tt, freq = _read_polarization_segments_rebinned(
+            cso_l_specs,
+            cfg,
+            t_start_dt,
+            t_end_dt,
+            t_bin,
+            f_bin,
+            common_base,
+            "LL",
+        )
         import gc
 
         gc.collect()
 
         print("  Processing RR polarization...")
-        Z_r, _, _ = cso_r.read_slice_rebinned(**kwargs)
+        Z_r, tt_r, freq_r = _read_polarization_segments_rebinned(
+            cso_r_specs,
+            cfg,
+            t_start_dt,
+            t_end_dt,
+            t_bin,
+            f_bin,
+            common_base,
+            "RR",
+        )
     else:
         print(f"Processing in parallel with {optimal_workers} workers...")
         with ThreadPoolExecutor(max_workers=optimal_workers) as exe:
-            # ✅ FIX: Tag each future with its polarization key so results
-            # can be correctly identified regardless of completion order.
             future_to_polar = {
-                exe.submit(cso_l.read_slice_rebinned, **kwargs): "LL",
-                exe.submit(cso_r.read_slice_rebinned, **kwargs): "RR",
+                exe.submit(
+                    _read_polarization_segments_rebinned,
+                    cso_l_specs,
+                    cfg,
+                    t_start_dt,
+                    t_end_dt,
+                    t_bin,
+                    f_bin,
+                    common_base,
+                    "LL",
+                ): "LL",
+                exe.submit(
+                    _read_polarization_segments_rebinned,
+                    cso_r_specs,
+                    cfg,
+                    t_start_dt,
+                    t_end_dt,
+                    t_bin,
+                    f_bin,
+                    common_base,
+                    "RR",
+                ): "RR",
             }
             results_dict = {}
             for future in as_completed(future_to_polar):
@@ -946,50 +1410,39 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
                 results_dict[polar_key] = future.result()
 
             Z_l, tt, freq = results_dict["LL"]
-            Z_r, _, _ = results_dict["RR"]
+            Z_r, tt_r, freq_r = results_dict["RR"]
 
-    # Debug: Check LL and RR data statistics
-    print("Data statistics before polarization calculation:")
-    print(
-        f"  LL (L): Min={np.nanmin(Z_l):.2f}, Max={np.nanmax(Z_l):.2f}, Mean={np.nanmean(Z_l):.2f}"
-    )
-    print(
-        f"  RR (R): Min={np.nanmin(Z_r):.2f}, Max={np.nanmax(Z_r):.2f}, Mean={np.nanmean(Z_r):.2f}"
-    )
-
-    # Check which polarization is stronger
-    l_mean = np.nanmean(Z_l)
-    r_mean = np.nanmean(Z_r)
-    if l_mean > r_mean:
-        print(
-            f"  Note: LL (L) is stronger on average (L={l_mean:.2f} vs R={r_mean:.2f})"
+    if Z_l.shape != Z_r.shape:
+        raise ValueError(
+            f"LL/RR shape mismatch after merge: LL={Z_l.shape}, RR={Z_r.shape}"
         )
-    elif r_mean > l_mean:
-        print(
-            f"  Note: RR (R) is stronger on average (R={r_mean:.2f} vs L={l_mean:.2f})"
+    if tt.shape != tt_r.shape or not np.allclose(tt, tt_r, rtol=0.0, atol=1e-6):
+        raise ValueError("LL/RR time axes are inconsistent after multi-file merging.")
+    if freq.shape != freq_r.shape or not np.allclose(freq, freq_r, rtol=0.0, atol=1e-3):
+        raise ValueError(
+            "LL/RR frequency axes are inconsistent after multi-file merging."
         )
-    else:
-        print("  Note: LL and RR have equal average intensity")
 
-    # Compute derived quantities
     Z_sum = Z_l + Z_r
-    # Calculate polarization ratio (R-L)/(R+L)
     ratio = calc_polarization_ratio(Z_r, Z_l)
 
-    # Prepare time axis for plotting (optimized)
-    epoch = np.datetime64(cso_l.dt_base)
-    # Vectorized time conversion
-    datetime_tt = epoch + (tt * 1e6).astype("timedelta64[us]")
-    dt_list = datetime_tt.astype("datetime64[ms]").astype(datetime.datetime)
+    dt_list = _datetime_list_from_seconds(common_base, tt)
+    print("Axis diagnostics:")
+    print(f"  common dt_base: {common_base.isoformat()}")
+    print(f"  tt[0], tt[-1]: {float(tt[0]):.6f}, {float(tt[-1]):.6f}")
+    print(f"  first displayed datetime: {dt_list[0].isoformat()}")
+    print(f"  last displayed datetime: {dt_list[-1].isoformat()}")
+    print(f"  freq[0], freq[-1]: {float(freq[0]):.6f}, {float(freq[-1]):.6f}")
 
-    # Create meshgrid for plotting
-    xx, yy = np.meshgrid(mdates.date2num(dt_list), freq)
+    print("Data diagnostics:")
+    _array_stats("LL", Z_l)
+    _array_stats("RR", Z_r)
+    _array_stats("Z_sum", Z_sum)
+    _array_stats("ratio", ratio)
 
-    # Assemble plot items based on configuration
     items = []
-    date_str = cso_l.dateobs[:10]
+    date_str = t_start_dt.strftime("%Y-%m-%d")
 
-    # Helper function to create plot item
     def create_plot_item(data, title, cmap, cbar_label, plot_type="ll"):
         vmin, vmax = get_color_limits(data, cfg, plot_type)
         return dict(
@@ -999,6 +1452,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
             vmin=vmin,
             vmax=vmax,
             cbar_label=cbar_label,
+            plot_type=plot_type,
         )
 
     if cfg.plot_ll:
@@ -1006,7 +1460,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         items.append(
             create_plot_item(
                 Z_log,
-                f"CSO/CBSm {cso_l.polar} {date_str}",
+                f"CSO/CBSm LL {date_str}",
                 "jet",
                 r"log$_{10}$ Brightness Temp (K)",
                 plot_type="ll",
@@ -1018,7 +1472,7 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         items.append(
             create_plot_item(
                 Z_log,
-                f"CSO/CBSm {cso_r.polar} {date_str}",
+                f"CSO/CBSm RR {date_str}",
                 "jet",
                 r"log$_{10}$ Brightness Temp (K)",
                 plot_type="rr",
@@ -1038,40 +1492,15 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         )
 
     if cfg.plot_ratio:
-        # Use get_color_limits for both manual and percentile modes
-        vmin, vmax = get_color_limits(ratio, cfg, "ratio")
-
-        # Ensure symmetric color scale for better visualization
-        if cfg.use_percentile_clipping:
-            # For percentile mode, ensure symmetric range
-            max_abs = max(abs(vmin), abs(vmax))
-            vmin = -max_abs
-            vmax = max_abs
-            print(
-                f"  Adjusted polarization ratio color scale to symmetric: [{vmin:.3f}, {vmax:.3f}]"
-            )
-
-        # Add title indicating polarization direction
-        # mean_ratio = np.nanmean(ratio)
-        # if mean_ratio > 0.01:
-        #     pol_direction = "(R > L, Right-handed, positive values)"
-        # elif mean_ratio < -0.01:
-        #     pol_direction = "(L > R, Left-handed, negative values)"
-        # else:
-        #     pol_direction = "(R ≈ L, Unpolarized)"
-
-        # Verify color mapping
-        print("  Color mapping verification:")
-        print(f"    vmin={vmin:.3f} (blue), vmax={vmax:.3f} (red)")
-
         items.append(
             dict(
                 data=ratio,
                 title="CSO/CBSm Polarization Ratio (R-L)/(R+L)",
-                cmap="bwr",  # Blue-White-Red colormap: blue for negative, white for 0, red for positive
-                vmin=vmin,
-                vmax=vmax,
+                cmap="bwr",
+                vmin=cfg.manual_ratio_vmin,
+                vmax=cfg.manual_ratio_vmax,
                 cbar_label="Polarization Ratio (R-L)/(R+L)",
+                plot_type="ratio",
             )
         )
 
@@ -1079,7 +1508,27 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         print("No plot items selected, exiting")
         return
 
-    # Create figure and subplots
+    display_data_list = []
+    extent_list = []
+    freq_out = None
+    freq_flipped = False
+    for item in items:
+        data_out, extent, dt_list_i, freq_out_i, flipped = _prepare_imshow_extent(
+            item["data"], tt, freq, common_base
+        )
+        display_data_list.append(data_out)
+        extent_list.append(extent)
+        dt_list = dt_list_i
+        freq_out = freq_out_i
+        freq_flipped = freq_flipped or flipped
+
+    x_start_num, x_end_num = extent_list[0][0], extent_list[0][1]
+    f_min, f_max = extent_list[0][2], extent_list[0][3]
+    print(f"  frequency flipped: {freq_flipped}")
+
+    if not cfg.show_plot:
+        plt.switch_backend("Agg")
+
     n = len(items)
     fig, axs = plt.subplots(
         n,
@@ -1094,38 +1543,51 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
     if n == 1:
         axs = [axs]
 
-    # Plot each item
-    for idx, (ax, item) in enumerate(zip(axs, items, strict=False)):
-        im = ax.pcolormesh(
-            xx,
-            yy,
-            item["data"][:-1, :-1],
-            shading="flat",
-            cmap=item["cmap"],
-            vmin=item["vmin"],
-            vmax=item["vmax"],
-        )
+    for idx, (ax, item, display_data, extent) in enumerate(
+        zip(axs, items, display_data_list, extent_list, strict=False)
+    ):
+        if item["plot_type"] == "ratio":
+            norm, vmin, vmax = _get_ratio_norm_and_limits(item["data"], cfg)
+            print(f"  ratio display limits: vmin={vmin:.6f}, vmax={vmax:.6f}")
+            im = ax.imshow(
+                display_data,
+                extent=extent,
+                origin="lower",
+                aspect="auto",
+                cmap=item["cmap"],
+                norm=norm,
+            )
+        else:
+            im = ax.imshow(
+                display_data,
+                extent=extent,
+                origin="lower",
+                aspect="auto",
+                cmap=item["cmap"],
+                vmin=item["vmin"],
+                vmax=item["vmax"],
+            )
         ax.set_title(item["title"], fontsize=12)
 
-        # 配置Y轴（频率）
-        AxisConfigManager.configure_frequency_axis(ax, cfg, freq)
+        ax.set_ylim(f_min, f_max)
+        AxisConfigManager.configure_frequency_axis(ax, cfg, freq_out)
 
-        # 配置X轴（时间）- 只在最后一个子图设置标签
         if idx == len(items) - 1:
-            AxisConfigManager.configure_time_axis(ax, cfg, dt_list)
+            _configure_datetime_axis(ax, cfg, x_start_num, x_end_num)
             if cfg.show_axis_labels:
                 ax.set_xlabel("Time (UT)", fontsize=10)
         else:
-            ax.set_xticklabels([])  # 非最后一个子图不显示x轴标签
+            ax.xaxis_date()
+            ax.xaxis.set_major_formatter(mdates.DateFormatter(cfg.xtick_format))
+            ax.set_xlim(x_start_num, x_end_num)
+            ax.tick_params(labelbottom=False)
 
-        # 颜色条
         cbar = fig.colorbar(im, ax=ax, pad=0.01)
         cbar.set_label(item["cbar_label"], fontsize=9)
 
-        # 添加频率高亮线
         if cfg.highlight_freqs is not None:
             for freq_val in cfg.highlight_freqs:
-                if cfg.f_start <= freq_val <= cfg.f_end:
+                if f_min <= freq_val <= f_max:
                     ax.axhline(
                         y=freq_val,
                         color="red",
@@ -1151,24 +1613,19 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
                             ),
                         )
 
-    # Save or display the figure
-    if cfg.save_path:
-        save_path = cfg.save_path
-        if os.path.isdir(save_path):
-            date_str = cso_l.dateobs[:10].replace("-", "")
-            f_start_str = int(cfg.f_start)
-            f_end_str = int(cfg.f_end)
-            # Include color scale method in filename
-            scale_method = "manual" if not cfg.use_percentile_clipping else "auto"
-            filename = f"CSO_spectrogram_{date_str}_{f_start_str}_{f_end_str}_{scale_method}.png"
-            save_path = os.path.join(save_path, filename)
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    save_path = _resolve_output_path(cfg, t_start_dt, t_end_dt, items)
+    if save_path:
         fig.savefig(save_path, dpi=cfg.dpi, bbox_inches="tight")
-        print(f"Image saved: {save_path}")
-    else:
-        print("No save path specified, only displaying graph")
+        if not os.path.exists(save_path):
+            raise RuntimeError(f"Save failed: file not found at {save_path}")
+        if os.path.getsize(save_path) == 0:
+            raise RuntimeError(f"Save failed: file is empty at {save_path}")
+        print(f"Final save path: {os.path.abspath(save_path)}")
 
-    plt.show()
+    if cfg.show_plot:
+        plt.show()
+    if cfg.close_after_save:
+        plt.close(fig)
 
 
 # ============================================================
@@ -1294,7 +1751,10 @@ if __name__ == "__main__":
     print("=" * 60)
     print("CSO Spectrogram Plotting Tool")
     print("=" * 60)
-    print(f"File: {os.path.basename(cfg.file_path)}")
+    file_paths = get_config_file_paths(cfg)
+    print("Files:")
+    for file_path in file_paths:
+        print(f"  - {os.path.basename(file_path)}")
     print(f"Time range: {cfg.t_start} to {cfg.t_end}")
     print(f"Frequency range: {cfg.f_start} to {cfg.f_end} MHz")
     print(
@@ -1372,8 +1832,13 @@ if __name__ == "__main__":
 
     # Execute processing pipeline
     t0 = time.perf_counter()
-    data_list, hdu = read_cso_fits(cfg.file_path)
+    hdus = []
+    data_list = []
     try:
+        for file_path in file_paths:
+            data_part, hdu = read_cso_fits(file_path)
+            data_list.extend(data_part)
+            hdus.append(hdu)
         process_and_plot(cfg, data_list)
     except Exception as e:
         print(f"Error during processing: {e}")
@@ -1381,6 +1846,7 @@ if __name__ == "__main__":
 
         traceback.print_exc()
     finally:
-        hdu.close()
+        for hdu in hdus:
+            hdu.close()
 
     print(f"\nTotal execution time: {time.perf_counter() - t0:.2f} s")

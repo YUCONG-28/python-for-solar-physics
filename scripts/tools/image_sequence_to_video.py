@@ -39,10 +39,10 @@ except ImportError:  # pragma: no cover - depends on local environment
 PATH_CONFIG = load_script_config(
     "image_sequence_to_video",
     {
-        "fps": 18,
-        "input_dir": "outputs/images",
-        "output_dir": "outputs/videos",
-        "video_name": "image_sequence.mp4",
+        "fps": 10,
+        "input_dir": r"D:\spike_topping_type_III\2025\20250124\RS_test\gaussian_spectrogram_overlay\multi_band_RR+LL",
+        "output_dir": r"D:\spike_topping_type_III\2025\20250124\video",
+        "video_name": "gaussian_spectrogram_overlay.mp4",
     },
 )
 

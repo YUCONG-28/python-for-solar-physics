@@ -103,6 +103,12 @@ USER_CONFIG = {
         "apply_before_polarization_combine": False,
     },
     "spectrogram": {
+        # file_paths is used for continuous multi-file dynamic spectra.
+        "file_paths": [
+            r"D:\spike_topping_type_III\2026\20260326\OROCH_MWRS01_SRSP_L1_05M_20260326065200_V01.01.fits",
+            r"D:\spike_topping_type_III\2026\20260326\OROCH_MWRS01_SRSP_L1_05M_20260326065509_V01.01.fits",
+        ],
+        # file_path is kept as the single-file compatibility entry point.
         "file_path": r"D:\spike_topping_type_III\2025\20250124\OROCH_MWRS01_SRSP_L1_05M_20250124044743_V01.01.fits",
         "time_display_mode": "user",
         "time_start": "2025-01-24T04:48:30",
@@ -136,9 +142,7 @@ USER_CONFIG = {
                 "white",
                 "cyan",
                 "lime",
-                "yellow",
                 "magenta",
-                "orange",
             ],
         },
         "selection_json": "spectrogram_drift_rate_manual_selection.json",
@@ -284,8 +288,8 @@ DEFAULT_CONFIG = {
     "fixed_vmax": 4 * 1e9,
     # ---------- Image display limits ----------
     "use_custom_lim": True,
-    "custom_xlim": (-3000, 3000),
-    "custom_ylim": (-3000, 3000),
+    "custom_xlim": (400, 2000),
+    "custom_ylim": (-1000, 600),
     # ---------- Image appearance ----------
     "fig_size": (18, 16),
     "multi_band_fig_size": (24, 16),
@@ -378,10 +382,10 @@ DEFAULT_CONFIG = {
     "radio_background_mode": "local_median",
     "fit_use_source_mask": True,
     "fit_snr_threshold": 5.0,
-    "fit_grow_snr_threshold": 3.0,
-    "fit_peak_fraction_threshold": 0.30,
+    "fit_grow_snr_threshold": 5.0,
+    "fit_peak_fraction_threshold": 0.50,
     "fit_min_mask_pixels": 20,
-    "fit_mask_dilation_pixels": 3,
+    "fit_mask_dilation_pixels": 1,
     "fit_background_model": "constant",
     "gaussian_fit_maxfev": 8000,
     "gaussian_fit_use_roi": True,
@@ -397,6 +401,7 @@ DEFAULT_CONFIG = {
     # ---------- Spectrogram panel / video-style composite ----------
     # 上半部分为射电源图像，下半部分为动态频谱；频谱数据只缓存一次，逐帧只更新当前时间虚线。
     "enable_spectrogram_panel": True,
+    "spectrogram_file_paths": [],
     "spectrogram_file_path": r"D:\spike_topping_type_III\2025\20250124\OROCH_MWRS01_SRSP_L1_05M_20250124044743_V01.01.fits",
     "spectrogram_time_display_mode": "user",
     "spectrogram_time_start": "2025-01-24T04:48:30",  # 例如 "2025-05-03T07:16:00"；None 表示自动从射电图像时间范围推断
@@ -535,6 +540,7 @@ def build_config(user_config, default_config):
 
     spectrogram = user_config.get("spectrogram", {})
     spectrogram_map = {
+        "file_paths": "spectrogram_file_paths",
         "file_path": "spectrogram_file_path",
         "time_display_mode": "spectrogram_time_display_mode",
         "time_start": "spectrogram_time_start",
@@ -656,6 +662,7 @@ class SpectrogramCache:
     vmax: float | None
     cbar_label: str
     source_file: str
+    source_files: list[str] | None = None
 
 
 @dataclass
@@ -1212,6 +1219,175 @@ def resolve_spectrogram_time_window(cfg, radio_time_range, dt_base, time_arr):
     return t_start, t_end, mode
 
 
+def _normalize_spectrogram_paths(cfg: dict) -> list[str]:
+    """
+    Return spectrogram FITS paths.
+
+    Priority:
+    1. cfg["spectrogram_file_paths"] if non-empty
+    2. cfg["spectrogram_file_path"] as single-file fallback
+    """
+    raw_paths = cfg.get("spectrogram_file_paths")
+    if isinstance(raw_paths, str):
+        candidates = [raw_paths]
+    elif isinstance(raw_paths, (list, tuple)):
+        candidates = list(raw_paths)
+    else:
+        candidates = []
+
+    candidates = [str(path).strip() for path in candidates if str(path).strip()]
+    if not candidates:
+        fallback = str(cfg.get("spectrogram_file_path") or "").strip()
+        candidates = [fallback] if fallback else []
+
+    paths = []
+    for path in candidates:
+        if os.path.isfile(path):
+            paths.append(path)
+        else:
+            warnings.warn(
+                f"Spectrogram FITS file does not exist and will be skipped: {path}",
+                stacklevel=2,
+            )
+    return paths
+
+
+def _read_spectrogram_file_metadata(path: str) -> dict:
+    """
+    Read only header/time/frequency metadata from one CSO spectrogram FITS.
+    """
+    with fits.open(path, memmap=True) as hdul:
+        header = hdul[0].header
+        time_arr = np.ravel(hdul[1].data["time"]).astype(np.float64)
+        freq_arr = np.ravel(hdul[1].data["frequency"]).astype(np.float32)
+        dateobs = header.get("DATE-OBS") or header.get("DATE_OBS")
+        if not dateobs:
+            raise ValueError(f"Spectrogram FITS header lacks DATE-OBS/DATE_OBS: {path}")
+        dt_base = datetime.datetime.fromisoformat(str(dateobs)[:10])
+        if time_arr.size and time_arr[0] < 0:
+            dt_base += datetime.timedelta(days=1)
+
+    finite_time = time_arr[np.isfinite(time_arr)]
+    if finite_time.size == 0:
+        raise ValueError(f"Spectrogram FITS time axis has no finite values: {path}")
+    file_start = dt_base + datetime.timedelta(seconds=float(np.nanmin(finite_time)))
+    file_end = dt_base + datetime.timedelta(seconds=float(np.nanmax(finite_time)))
+    print(f"  - {path}")
+    print(f"    file_start / file_end: {file_start} / {file_end}")
+    return {
+        "path": path,
+        "dt_base": dt_base,
+        "time_arr": time_arr,
+        "freq_arr": freq_arr,
+        "file_start": file_start,
+        "file_end": file_end,
+    }
+
+
+def resolve_spectrogram_time_window_multi(cfg, radio_time_range, file_metas):
+    """
+    Resolve requested spectrogram time window for one or multiple FITS files.
+    """
+    global_file_start = min(meta["file_start"] for meta in file_metas)
+    global_file_end = max(meta["file_end"] for meta in file_metas)
+    mode = str(cfg.get("spectrogram_time_display_mode", "user") or "user").lower()
+    if mode not in {"user", "auto_radio", "full"}:
+        mode = "user"
+
+    if mode == "full":
+        t_start, t_end = global_file_start, global_file_end
+    elif mode == "auto_radio":
+        if radio_time_range is not None:
+            margin = datetime.timedelta(
+                seconds=float(cfg.get("spectrogram_time_margin_seconds", 30.0))
+            )
+            t_start = radio_time_range[0] - margin
+            t_end = radio_time_range[1] + margin
+        else:
+            t_start, t_end = global_file_start, global_file_end
+    else:
+        t_start = (
+            _parse_datetime_value(cfg.get("spectrogram_time_start"))
+            or global_file_start
+        )
+        t_end = (
+            _parse_datetime_value(cfg.get("spectrogram_time_end")) or global_file_end
+        )
+
+    if t_start > t_end:
+        t_start, t_end = t_end, t_start
+    print(f"[Spectrogram time window] mode={mode}, start={t_start}, end={t_end}")
+    return t_start, t_end, mode
+
+
+def _spectrogram_overlap_segments(cfg, t_start, t_end, metas):
+    segments = []
+    for meta in metas:
+        overlap_start = max(t_start, meta["file_start"])
+        overlap_end = min(t_end, meta["file_end"])
+        if overlap_start <= overlap_end:
+            t1s = (overlap_start - meta["dt_base"]).total_seconds()
+            t2s = (overlap_end - meta["dt_base"]).total_seconds()
+            time_range = _index_range_from_time_values(meta["time_arr"], t1s, t2s)
+            if time_range is None:
+                continue
+            ti0, ti1 = time_range
+            actual_start = meta["dt_base"] + datetime.timedelta(
+                seconds=float(meta["time_arr"][ti0])
+            )
+            actual_end = meta["dt_base"] + datetime.timedelta(
+                seconds=float(meta["time_arr"][ti1])
+            )
+            print("  selected spectrogram segment:")
+            print(f"    path: {meta['path']}")
+            print(f"    overlap_start / overlap_end: {overlap_start} / {overlap_end}")
+            print(f"    ti0 / ti1: {ti0} / {ti1}")
+            print(
+                "    actual selected datetime range: " f"{actual_start} / {actual_end}"
+            )
+            segments.append(
+                {
+                    "meta": meta,
+                    "overlap_start": overlap_start,
+                    "overlap_end": overlap_end,
+                    "ti0": ti0,
+                    "ti1": ti1,
+                }
+            )
+
+    segments.sort(key=lambda item: item["overlap_start"])
+    gaps = []
+    tolerance = datetime.timedelta(seconds=1.0)
+    cursor = t_start
+    for segment in segments:
+        if segment["overlap_start"] > cursor + tolerance:
+            gaps.append((cursor, segment["overlap_start"]))
+        if segment["overlap_end"] > cursor:
+            cursor = segment["overlap_end"]
+    if cursor < t_end - tolerance:
+        gaps.append((cursor, t_end))
+
+    if gaps:
+        msg = "Spectrogram files do not fully cover requested time window; gaps: " + (
+            "; ".join(f"{start} -- {end}" for start, end in gaps)
+        )
+        warnings.warn(msg, stacklevel=2)
+        if cfg.get("spectrogram_disable_on_time_mismatch", True):
+            return []
+    return segments
+
+
+def _rebinned_axis_values(
+    arr: np.ndarray, i0: int, i1: int, bin_size: int
+) -> np.ndarray:
+    n_raw = i1 - i0 + 1
+    bin_eff = max(1, min(int(bin_size), n_raw))
+    n_trim = (n_raw // bin_eff) * bin_eff
+    if n_trim <= 0:
+        raise ValueError("Cannot rebin an empty spectrogram axis slice")
+    return arr[i0 : i0 + n_trim].reshape(-1, bin_eff).mean(axis=1)
+
+
 def _read_rebinned_plane(
     plane,
     fi0: int,
@@ -1225,29 +1401,39 @@ def _read_rebinned_plane(
     """Read a frequency-time slice from FITS memmap and downsample immediately."""
     n_freq_raw = fi1 - fi0 + 1
     n_time_raw = ti1 - ti0 + 1
-    n_freq_trim = max(f_bin, (n_freq_raw // f_bin) * f_bin)
-    n_time_trim = max(t_bin, (n_time_raw // t_bin) * t_bin)
-    n_freq_trim = min(n_freq_trim, n_freq_raw)
-    n_time_trim = min(n_time_trim, n_time_raw)
-    n_freq_out = max(1, n_freq_trim // f_bin)
-    n_time_out = max(1, n_time_trim // t_bin)
+    if n_freq_raw <= 0 or n_time_raw <= 0:
+        raise ValueError(
+            f"Invalid spectrogram slice shape: n_freq={n_freq_raw}, n_time={n_time_raw}"
+        )
+    f_bin_eff = max(1, min(int(f_bin), n_freq_raw))
+    t_bin_eff = max(1, min(int(t_bin), n_time_raw))
+    n_freq_trim = (n_freq_raw // f_bin_eff) * f_bin_eff
+    n_time_trim = (n_time_raw // t_bin_eff) * t_bin_eff
+    if n_freq_trim <= 0 or n_time_trim <= 0:
+        raise ValueError(
+            f"Cannot rebin empty spectrogram slice: n_freq_trim={n_freq_trim}, "
+            f"n_time_trim={n_time_trim}"
+        )
+    n_freq_out = n_freq_trim // f_bin_eff
+    n_time_out = n_time_trim // t_bin_eff
     bytes_per_col = max(n_freq_trim * 4, 1)
     cols_per_chunk = max(
-        t_bin, (int(chunk_mem_mb * 1e6 / bytes_per_col) // t_bin) * t_bin
+        t_bin_eff,
+        (int(chunk_mem_mb * 1e6 / bytes_per_col) // t_bin_eff) * t_bin_eff,
     )
     out = np.empty((n_freq_out, n_time_out), dtype=np.float32)
     out_col = 0
     for col0 in range(0, n_time_trim, cols_per_chunk):
         col1 = min(col0 + cols_per_chunk, n_time_trim)
-        n_cols = ((col1 - col0) // t_bin) * t_bin
+        n_cols = ((col1 - col0) // t_bin_eff) * t_bin_eff
         if n_cols <= 0:
             continue
         chunk = np.array(
             plane[fi0 : fi0 + n_freq_trim, ti0 + col0 : ti0 + col0 + n_cols],
             dtype=np.float32,
         )
-        n_t_chunk = n_cols // t_bin
-        rb = chunk.reshape(n_freq_out, f_bin, n_t_chunk, t_bin).mean(
+        n_t_chunk = n_cols // t_bin_eff
+        rb = chunk.reshape(n_freq_out, f_bin_eff, n_t_chunk, t_bin_eff).mean(
             axis=(1, 3), dtype=np.float32
         )
         out[:, out_col : out_col + n_t_chunk] = rb
@@ -1259,175 +1445,189 @@ def build_spectrogram_cache(
     cfg: dict, radio_time_range=None
 ) -> SpectrogramCache | None:
     """Load and downsample the large CSO dynamic spectrum once per script run."""
-    path = cfg.get("spectrogram_file_path")
-    if not path or not os.path.isfile(path):
+    paths = _normalize_spectrogram_paths(cfg)
+    if not paths:
         warnings.warn(
-            f"Spectrogram panel enabled but spectrogram_file_path does not exist: {path}",
+            "Spectrogram panel enabled but no valid spectrogram FITS files were found.",
             stacklevel=2,
         )
         return None
 
     print("=" * 60)
     print("Loading dynamic spectrum once for all frames")
-    print(f"  File: {path}")
+    print("Spectrogram files:")
+    metas = [_read_spectrogram_file_metadata(path) for path in paths]
+    metas.sort(key=lambda item: item["file_start"])
+    paths = [meta["path"] for meta in metas]
 
-    with fits.open(path, memmap=True) as hdul:
-        header = hdul[0].header
-        raw = hdul[0].data
-        time_arr = np.ravel(hdul[1].data["time"]).astype(np.float64)
-        freq_arr = np.ravel(hdul[1].data["frequency"]).astype(np.float32)
-        dateobs = header.get("DATE-OBS") or header.get("DATE_OBS")
-        if not dateobs:
-            raise ValueError("Spectrogram FITS header lacks DATE-OBS/DATE_OBS")
-        dt_base = datetime.datetime.fromisoformat(str(dateobs)[:10])
-        if time_arr.size and time_arr[0] < 0:
-            dt_base += datetime.timedelta(days=1)
-        t_start, t_end, mode_used = resolve_spectrogram_time_window(
-            cfg, radio_time_range, dt_base, time_arr
+    t_start, t_end, mode_used = resolve_spectrogram_time_window_multi(
+        cfg, radio_time_range, metas
+    )
+    if t_start is None or t_end is None:
+        return None
+    if t_start >= t_end:
+        raise ValueError(f"Invalid spectrogram time range: {t_start} >= {t_end}")
+    print(f"  radio_time_range: {radio_time_range}")
+    print(f"  requested t_start / t_end: {t_start} / {t_end}")
+
+    segments = _spectrogram_overlap_segments(cfg, t_start, t_end, metas)
+    if not segments:
+        warnings.warn(
+            "No spectrogram FITS file overlaps the requested time window; "
+            "spectrogram panel disabled.",
+            stacklevel=2,
         )
-        if t_start is None or t_end is None:
-            return None
-        if t_start >= t_end:
-            raise ValueError(f"Invalid spectrogram time range: {t_start} >= {t_end}")
+        return None
 
-        t1s = (t_start - dt_base).total_seconds()
-        t2s = (t_end - dt_base).total_seconds()
-        print(f"  radio_time_range: {radio_time_range}")
-        print(f"  spectrogram dt_base: {dt_base}")
-        print(f"  requested t_start / t_end: {t_start} / {t_end}")
-        print(f"  t1s / t2s: {t1s:.3f} / {t2s:.3f}")
-        time_range = _index_range_from_time_values(time_arr, t1s, t2s)
-        if time_range is None:
-            finite_time = time_arr[np.isfinite(time_arr)]
-            spec_start = (
-                dt_base + datetime.timedelta(seconds=float(np.nanmin(finite_time)))
-                if finite_time.size
-                else None
-            )
-            spec_end = (
-                dt_base + datetime.timedelta(seconds=float(np.nanmax(finite_time)))
-                if finite_time.size
-                else None
-            )
-            warnings.warn(
-                "Spectrogram time range mismatch: requested radio/spectrogram window "
-                f"{t_start} -- {t_end} does not overlap spectrogram range "
-                f"{spec_start} -- {spec_end}; spectrogram panel disabled.",
-                stacklevel=2,
-            )
-            if cfg.get("spectrogram_disable_on_time_mismatch", True):
-                return None
-            if finite_time.size == 0:
-                return None
-            target_mid = 0.5 * (t1s + t2s)
-            nearest = int(np.nanargmin(np.abs(time_arr - target_mid)))
-            max_points = min(
-                len(time_arr), int(cfg.get("spectrogram_rebin_t_target", 1000) or 1000)
-            )
-            half = max(1, max_points // 2)
-            ti0 = max(0, nearest - half)
-            ti1 = min(len(time_arr) - 1, ti0 + max_points - 1)
-            ti0 = max(0, ti1 - max_points + 1)
-        else:
-            ti0, ti1 = time_range
-        fi0, fi1 = _index_range_from_values(
-            freq_arr,
-            float(cfg.get("spectrogram_f_start", 80.0)),
-            float(cfg.get("spectrogram_f_end", 340.0)),
+    f_lo = float(cfg.get("spectrogram_f_start", 80.0))
+    f_hi = float(cfg.get("spectrogram_f_end", 340.0))
+    first_freq_range = _index_range_from_values(
+        segments[0]["meta"]["freq_arr"], f_lo, f_hi
+    )
+    if first_freq_range is None:
+        warnings.warn(
+            f"No spectrogram frequency data in requested range {f_lo} -- {f_hi} MHz.",
+            stacklevel=2,
         )
-        print(f"  selected ti0 / ti1: {ti0} / {ti1}")
-        print(
-            "  selected actual datetime range: "
-            f"{dt_base + datetime.timedelta(seconds=float(time_arr[ti0]))} / "
-            f"{dt_base + datetime.timedelta(seconds=float(time_arr[ti1]))}"
-        )
-        print(
-            "[Spectrogram time window] selected actual range="
-            f"{dt_base + datetime.timedelta(seconds=float(time_arr[ti0]))} -- "
-            f"{dt_base + datetime.timedelta(seconds=float(time_arr[ti1]))}"
-        )
-        n_t = ti1 - ti0 + 1
-        n_f = fi1 - fi0 + 1
-        t_target = int(cfg.get("spectrogram_rebin_t_target", 1000) or n_t)
-        f_target = int(cfg.get("spectrogram_rebin_f_target", 700) or n_f)
-        t_bin = max(1, n_t // max(t_target, 1))
-        f_bin = max(1, n_f // max(f_target, 1))
-        n_t_trim = (n_t // t_bin) * t_bin
-        n_f_trim = (n_f // f_bin) * f_bin
-        chunk_mem_mb = int(cfg.get("spectrogram_chunk_mem_mb", 64))
+        return None
+    fi0_ref, fi1_ref = first_freq_range
+    n_f = fi1_ref - fi0_ref + 1
+    n_t_total = sum(segment["ti1"] - segment["ti0"] + 1 for segment in segments)
+    t_target = int(cfg.get("spectrogram_rebin_t_target", 1000) or n_t_total)
+    f_target = int(cfg.get("spectrogram_rebin_f_target", 700) or n_f)
+    t_bin = max(1, n_t_total // max(t_target, 1))
+    f_bin = max(1, n_f // max(f_target, 1))
+    chunk_mem_mb = int(cfg.get("spectrogram_chunk_mem_mb", 64))
+    requested_pol = str(cfg.get("spectrogram_polarization", "LL")).lower()
 
-        print(f"  Time: {t_start} -- {t_end}")
-        print(f"  Frequency: {freq_arr[fi0]:.1f} -- {freq_arr[fi1]:.1f} MHz")
-        print(f"  Raw slice: {n_f} x {n_t}; rebin f={f_bin}, t={t_bin}")
+    print(f"  Frequency request: {f_lo:.1f} -- {f_hi:.1f} MHz")
+    print(f"  Estimated raw slice: {n_f} x {n_t_total}; rebin f={f_bin}, t={t_bin}")
 
-        if raw.ndim == 2:
-            planes = {"single": raw}
-        elif raw.ndim == 3:
-            polars = str(header.get("POLARIZA", "RL"))
-            if polars == "RCP and LCP":
-                polars = "RL"
-            planes = {}
-            for i in range(raw.shape[0]):
-                key = polars[i].upper() * 2 if i < len(polars) else f"P{i}"
-                planes[key] = raw[i]
-        else:
-            raise ValueError(f"Unsupported spectrogram raw ndim={raw.ndim}")
+    data_parts = []
+    time_num_parts = []
+    time_datetime_parts = []
+    freq_ref = None
+    plot_kind = None
 
-        requested_pol = str(cfg.get("spectrogram_polarization", "LL")).lower()
-        if requested_pol in {"ll", "lcp"}:
-            plane = planes["LL"] if "LL" in planes else next(iter(planes.values()))
-            data = _read_rebinned_plane(
-                plane, fi0, fi1, ti0, ti1, f_bin, t_bin, chunk_mem_mb
+    for segment in segments:
+        meta = segment["meta"]
+        path = meta["path"]
+        time_arr = meta["time_arr"]
+        freq_arr = meta["freq_arr"]
+        fi_range = _index_range_from_values(freq_arr, f_lo, f_hi)
+        if fi_range is None:
+            raise ValueError(
+                f"Spectrogram file has no frequency data in requested range: {path}"
             )
-            plot_kind = "LL"
-        elif requested_pol in {"rr", "rcp"}:
-            plane = planes["RR"] if "RR" in planes else next(iter(planes.values()))
-            data = _read_rebinned_plane(
-                plane, fi0, fi1, ti0, ti1, f_bin, t_bin, chunk_mem_mb
-            )
-            plot_kind = "RR"
-        elif (
-            requested_pol in {"sum", "rr+ll", "ll+rr"}
-            and "RR" in planes
-            and "LL" in planes
-        ):
-            rr = _read_rebinned_plane(
-                planes["RR"], fi0, fi1, ti0, ti1, f_bin, t_bin, chunk_mem_mb
-            )
-            ll = _read_rebinned_plane(
-                planes["LL"], fi0, fi1, ti0, ti1, f_bin, t_bin, chunk_mem_mb
-            )
-            data = rr + ll
-            plot_kind = "RR+LL"
-        elif (
-            requested_pol in {"ratio", "polarization_ratio"}
-            and "RR" in planes
-            and "LL" in planes
-        ):
-            rr = _read_rebinned_plane(
-                planes["RR"], fi0, fi1, ti0, ti1, f_bin, t_bin, chunk_mem_mb
-            )
-            ll = _read_rebinned_plane(
-                planes["LL"], fi0, fi1, ti0, ti1, f_bin, t_bin, chunk_mem_mb
-            )
-            denom = np.where(rr + ll == 0, np.nan, rr + ll)
-            data = np.clip((rr - ll) / denom, -1.0, 1.0).astype(np.float32)
-            plot_kind = "(RR-LL)/(RR+LL)"
-        else:
-            plane = next(iter(planes.values()))
-            data = _read_rebinned_plane(
-                plane, fi0, fi1, ti0, ti1, f_bin, t_bin, chunk_mem_mb
-            )
-            plot_kind = next(iter(planes.keys()))
+        fi0, fi1 = fi_range
+        ti0, ti1 = segment["ti0"], segment["ti1"]
 
-    freq_trim = freq_arr[fi0 : fi0 + n_f_trim]
-    time_trim = time_arr[ti0 : ti0 + n_t_trim]
-    freq_out = freq_trim.reshape(-1, f_bin).mean(axis=1)
-    time_out = time_trim.reshape(-1, t_bin).mean(axis=1)
+        with fits.open(path, memmap=True) as hdul:
+            header = hdul[0].header
+            raw = hdul[0].data
+            if raw.ndim == 2:
+                planes = {"single": raw}
+            elif raw.ndim == 3:
+                polars = str(header.get("POLARIZA", "RL"))
+                if polars == "RCP and LCP":
+                    polars = "RL"
+                planes = {}
+                for i in range(raw.shape[0]):
+                    key = polars[i].upper() * 2 if i < len(polars) else f"P{i}"
+                    planes[key] = raw[i]
+            else:
+                raise ValueError(f"Unsupported spectrogram raw ndim={raw.ndim}")
+
+            if requested_pol in {"ll", "lcp"}:
+                plane = planes["LL"] if "LL" in planes else next(iter(planes.values()))
+                data_i = _read_rebinned_plane(
+                    plane, fi0, fi1, ti0, ti1, f_bin, t_bin, chunk_mem_mb
+                )
+                plot_kind = "LL"
+            elif requested_pol in {"rr", "rcp"}:
+                plane = planes["RR"] if "RR" in planes else next(iter(planes.values()))
+                data_i = _read_rebinned_plane(
+                    plane, fi0, fi1, ti0, ti1, f_bin, t_bin, chunk_mem_mb
+                )
+                plot_kind = "RR"
+            elif (
+                requested_pol in {"sum", "rr+ll", "ll+rr"}
+                and "RR" in planes
+                and "LL" in planes
+            ):
+                rr = _read_rebinned_plane(
+                    planes["RR"], fi0, fi1, ti0, ti1, f_bin, t_bin, chunk_mem_mb
+                )
+                ll = _read_rebinned_plane(
+                    planes["LL"], fi0, fi1, ti0, ti1, f_bin, t_bin, chunk_mem_mb
+                )
+                data_i = rr + ll
+                plot_kind = "RR+LL"
+            elif (
+                requested_pol in {"ratio", "polarization_ratio"}
+                and "RR" in planes
+                and "LL" in planes
+            ):
+                rr = _read_rebinned_plane(
+                    planes["RR"], fi0, fi1, ti0, ti1, f_bin, t_bin, chunk_mem_mb
+                )
+                ll = _read_rebinned_plane(
+                    planes["LL"], fi0, fi1, ti0, ti1, f_bin, t_bin, chunk_mem_mb
+                )
+                denom = np.where(rr + ll == 0, np.nan, rr + ll)
+                data_i = np.clip((rr - ll) / denom, -1.0, 1.0).astype(np.float32)
+                plot_kind = "(RR-LL)/(RR+LL)"
+            else:
+                plane = next(iter(planes.values()))
+                data_i = _read_rebinned_plane(
+                    plane, fi0, fi1, ti0, ti1, f_bin, t_bin, chunk_mem_mb
+                )
+                plot_kind = next(iter(planes.keys()))
+
+        freq_out_i = _rebinned_axis_values(freq_arr, fi0, fi1, f_bin).astype(np.float32)
+        time_out_i = _rebinned_axis_values(time_arr, ti0, ti1, t_bin)
+        time_datetimes_i = [
+            meta["dt_base"] + datetime.timedelta(seconds=float(sec))
+            for sec in time_out_i
+        ]
+        time_nums_i = mdates.date2num(time_datetimes_i)
+
+        if freq_ref is None:
+            freq_ref = freq_out_i
+        elif not np.allclose(freq_out_i, freq_ref, rtol=0, atol=1e-3):
+            raise ValueError(
+                "Spectrogram frequency axes mismatch between files "
+                f"{segments[0]['meta']['path']} and {path}"
+            )
+
+        data_parts.append(data_i)
+        time_num_parts.append(np.asarray(time_nums_i, dtype=np.float64))
+        time_datetime_parts.extend(time_datetimes_i)
+
+    data = np.concatenate(data_parts, axis=1)
+    time_nums = np.concatenate(time_num_parts)
+    order = np.argsort(time_nums)
+    data = data[:, order]
+    time_nums = time_nums[order]
+    time_datetimes = [time_datetime_parts[int(idx)] for idx in order]
+
+    keep = np.concatenate([[True], np.diff(time_nums) > 1e-10])
+    keep_idx = np.flatnonzero(keep)
+    data = data[:, keep]
+    time_nums = time_nums[keep]
+    time_datetimes = [time_datetimes[int(idx)] for idx in keep_idx]
+    freq_out = np.asarray(freq_ref, dtype=np.float32)
 
     if freq_out[0] > freq_out[-1]:
         freq_out = freq_out[::-1]
         data = data[::-1, :]
+
+    print(f"  final concatenated shape: {data.shape}")
+    print(
+        "  final concatenated time range: "
+        f"{time_datetimes[0]} / {time_datetimes[-1]}"
+    )
+    print(f"  final frequency range: {freq_out[0]:.3f} / {freq_out[-1]:.3f} MHz")
 
     use_log = bool(cfg.get("spectrogram_use_log10", True)) and requested_pol not in {
         "ratio",
@@ -1437,10 +1637,6 @@ def build_spectrogram_cache(
         with np.errstate(divide="ignore", invalid="ignore"):
             data = np.log10(np.where(data > 0, data, np.nan))
 
-    time_datetimes = [
-        dt_base + datetime.timedelta(seconds=float(sec)) for sec in time_out
-    ]
-    time_nums = mdates.date2num(time_datetimes)
     finite = data[np.isfinite(data)]
     vmin = cfg.get("spectrogram_vmin")
     vmax = cfg.get("spectrogram_vmax")
@@ -1466,7 +1662,8 @@ def build_spectrogram_cache(
         vmin=vmin,
         vmax=vmax,
         cbar_label=cbar_label,
-        source_file=path,
+        source_file=" | ".join(paths),
+        source_files=paths,
     )
 
 
@@ -1618,6 +1815,7 @@ def save_drift_selection_json(path, lines, cache, cfg):
     payload = {
         "schema_version": 1,
         "source_file": cache.source_file,
+        "source_files": cache.source_files or [cache.source_file],
         "created_at": _datetime_iso_ms(datetime.datetime.now()),
         "spectrogram_time_start": _datetime_iso_ms(
             _date_num_to_datetime(cache.display_time_nums[0])
