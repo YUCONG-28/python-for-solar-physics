@@ -89,12 +89,92 @@ USER_CONFIG = {
         "overlay_display_mode": "fwhm_only",
         "fit_use_source_mask": True,
         "fit_snr_threshold": 5.0,
-        "fit_peak_fraction_threshold": 0.30,
+        "fit_peak_fraction_threshold": 0.40,
+        "fit_grow_peak_fraction_threshold": 0.22,
+        "fit_mask_target_min_pixels": 18,
+        "fit_mask_target_max_pixels": 260,
+        "fit_peak_fraction_threshold_min": 0.25,
+        "fit_peak_fraction_threshold_max": 0.62,
+        "fit_peak_fraction_threshold_step": 0.03,
+        "gaussian_per_band_params": {
+            149: {
+                "fit_peak_fraction_threshold": 0.38,
+                "fit_peak_fraction_threshold_min": 0.25,
+                "fit_peak_fraction_threshold_max": 0.55,
+                "fit_mask_target_min_pixels": 18,
+                "fit_mask_target_max_pixels": 180,
+                "gaussian_fit_roi_padding_pixels": 4,
+                "gaussian_fit_max_pixels": 350,
+                "max_sigma_fraction": 0.17,
+                "fit_background_model": "constant",
+                "fit_mask_dilation_pixels": 1,
+            },
+            164: {
+                "fit_peak_fraction_threshold": 0.38,
+                "fit_peak_fraction_threshold_min": 0.25,
+                "fit_peak_fraction_threshold_max": 0.55,
+                "fit_mask_target_min_pixels": 18,
+                "fit_mask_target_max_pixels": 180,
+                "gaussian_fit_roi_padding_pixels": 4,
+                "gaussian_fit_max_pixels": 350,
+                "max_sigma_fraction": 0.17,
+                "fit_background_model": "constant",
+                "fit_mask_dilation_pixels": 1,
+            },
+            190: {
+                "fit_peak_fraction_threshold": 0.40,
+                "fit_peak_fraction_threshold_min": 0.25,
+                "fit_peak_fraction_threshold_max": 0.60,
+                "fit_mask_target_min_pixels": 18,
+                "fit_mask_target_max_pixels": 220,
+                "gaussian_fit_roi_padding_pixels": 4,
+                "gaussian_fit_max_pixels": 400,
+                "max_sigma_fraction": 0.18,
+                "fit_background_model": "constant",
+                "fit_mask_dilation_pixels": 1,
+            },
+            205: {
+                "fit_peak_fraction_threshold": 0.40,
+                "fit_peak_fraction_threshold_min": 0.25,
+                "fit_peak_fraction_threshold_max": 0.60,
+                "fit_mask_target_min_pixels": 18,
+                "fit_mask_target_max_pixels": 240,
+                "gaussian_fit_roi_padding_pixels": 4,
+                "gaussian_fit_max_pixels": 400,
+                "max_sigma_fraction": 0.18,
+                "fit_background_model": "constant",
+                "fit_mask_dilation_pixels": 1,
+            },
+            223: {
+                "fit_peak_fraction_threshold": 0.42,
+                "fit_peak_fraction_threshold_min": 0.25,
+                "fit_peak_fraction_threshold_max": 0.65,
+                "fit_mask_target_min_pixels": 16,
+                "fit_mask_target_max_pixels": 180,
+                "gaussian_fit_roi_padding_pixels": 3,
+                "gaussian_fit_max_pixels": 320,
+                "max_sigma_fraction": 0.16,
+                "fit_background_model": "plane",
+                "fit_mask_dilation_pixels": 1,
+            },
+            238: {
+                "fit_peak_fraction_threshold": 0.42,
+                "fit_peak_fraction_threshold_min": 0.25,
+                "fit_peak_fraction_threshold_max": 0.65,
+                "fit_mask_target_min_pixels": 16,
+                "fit_mask_target_max_pixels": 180,
+                "gaussian_fit_roi_padding_pixels": 3,
+                "gaussian_fit_max_pixels": 320,
+                "max_sigma_fraction": 0.16,
+                "fit_background_model": "plane",
+                "fit_mask_dilation_pixels": 1,
+            },
+        },
         "max_fwhm_arcsec": 1800.0,
-        "max_center_peak_distance_arcsec": 600.0,
+        "max_center_peak_distance_arcsec": 300.0,
         "draw_raw_peak_marker": True,
-        "draw_fit_peak_distance": False,
-        "draw_coordinate_debug": False,
+        "draw_fit_peak_distance": True,
+        "draw_coordinate_debug": True,
     },
     "background": {
         "mode": "off",
@@ -353,18 +433,18 @@ DEFAULT_CONFIG = {
     "draw_gaussian_fwhm_ellipse": True,
     "gaussian_overlay_display_mode": "fwhm_only",
     "draw_raw_vs_bg_center_shift": False,
-    "draw_fit_residual_panel": False,
+    "draw_fit_residual_panel": True,
     "gaussian_contour_levels": [0.5],
     "draw_low_quality_gaussian_contours": False,
     "max_fwhm_arcsec": 1800.0,
-    "max_center_peak_distance_arcsec": 600.0,
+    "max_center_peak_distance_arcsec": 300.0,
     "gaussian_hide_center_when_fwhm_too_large": True,
     "gaussian_hide_label_when_fwhm_too_large": True,
     "gaussian_hide_all_when_fit_invalid": True,
     "gaussian_quality_requirements": {
         "require_quality_ok": True,
         "max_fwhm_arcsec": 1800.0,
-        "max_center_peak_distance_arcsec": 600.0,
+        "max_center_peak_distance_arcsec": 300.0,
         "min_snr": 5.0,
         "max_residual_rms_fraction": 0.8,
     },
@@ -382,19 +462,26 @@ DEFAULT_CONFIG = {
     "radio_background_mode": "local_median",
     "fit_use_source_mask": True,
     "fit_snr_threshold": 5.0,
-    "fit_grow_snr_threshold": 5.0,
-    "fit_peak_fraction_threshold": 0.50,
-    "fit_min_mask_pixels": 20,
+    "fit_grow_snr_threshold": 3.0,
+    "fit_peak_fraction_threshold": 0.40,
+    "fit_grow_peak_fraction_threshold": 0.22,
+    "fit_mask_target_min_pixels": 18,
+    "fit_mask_target_max_pixels": 260,
+    "fit_peak_fraction_threshold_min": 0.25,
+    "fit_peak_fraction_threshold_max": 0.62,
+    "fit_peak_fraction_threshold_step": 0.03,
+    "fit_min_mask_pixels": 12,
     "fit_mask_dilation_pixels": 1,
     "fit_background_model": "constant",
     "gaussian_fit_maxfev": 8000,
     "gaussian_fit_use_roi": True,
-    "gaussian_fit_roi_padding_pixels": 10,
-    "gaussian_fit_max_pixels": 5000,
+    "gaussian_fit_roi_padding_pixels": 4,
+    "gaussian_fit_max_pixels": 400,
     "gaussian_fit_normalize_data": True,
     "gaussian_fit_fallback_to_moment": True,
     "gaussian_fit_verbose": False,
-    "max_sigma_fraction": 0.5,
+    "max_sigma_fraction": 0.18,
+    "gaussian_per_band_params": {},
     "skip_low_quality_fit": True,
     "save_gaussian_diagnostics": True,
     "gaussian_diagnostics_csv": "radio_gaussian_fit_diagnostics.csv",
@@ -487,7 +574,19 @@ def build_config(user_config, default_config):
         "overlay_display_mode": "gaussian_overlay_display_mode",
         "fit_use_source_mask": "fit_use_source_mask",
         "fit_snr_threshold": "fit_snr_threshold",
+        "fit_grow_snr_threshold": "fit_grow_snr_threshold",
         "fit_peak_fraction_threshold": "fit_peak_fraction_threshold",
+        "fit_grow_peak_fraction_threshold": "fit_grow_peak_fraction_threshold",
+        "fit_mask_target_min_pixels": "fit_mask_target_min_pixels",
+        "fit_mask_target_max_pixels": "fit_mask_target_max_pixels",
+        "fit_peak_fraction_threshold_min": "fit_peak_fraction_threshold_min",
+        "fit_peak_fraction_threshold_max": "fit_peak_fraction_threshold_max",
+        "fit_peak_fraction_threshold_step": "fit_peak_fraction_threshold_step",
+        "gaussian_per_band_params": "gaussian_per_band_params",
+        "gaussian_fit_roi_padding_pixels": "gaussian_fit_roi_padding_pixels",
+        "gaussian_fit_max_pixels": "gaussian_fit_max_pixels",
+        "max_sigma_fraction": "max_sigma_fraction",
+        "fit_background_model": "fit_background_model",
         "max_fwhm_arcsec": "max_fwhm_arcsec",
         "max_center_peak_distance_arcsec": "max_center_peak_distance_arcsec",
         "draw_raw_peak_marker": "draw_raw_peak_marker",
@@ -621,6 +720,36 @@ def build_config(user_config, default_config):
     return cfg
 
 
+def _gaussian_band_key(freq):
+    try:
+        freq_float = float(freq)
+    except (TypeError, ValueError):
+        return str(freq)
+    if np.isfinite(freq_float) and abs(freq_float - round(freq_float)) < 1e-6:
+        return str(int(round(freq_float)))
+    return f"{freq_float:g}"
+
+
+def config_for_gaussian_band(cfg: dict, freq) -> dict:
+    band_cfg = dict(cfg)
+    per_band = cfg.get("gaussian_per_band_params", {}) or {}
+    if not isinstance(per_band, dict):
+        return band_cfg
+    candidates = [freq, _gaussian_band_key(freq)]
+    try:
+        freq_float = float(freq)
+        if np.isfinite(freq_float) and abs(freq_float - round(freq_float)) < 1e-6:
+            candidates.append(int(round(freq_float)))
+    except (TypeError, ValueError):
+        pass
+    for candidate in candidates:
+        if candidate in per_band and isinstance(per_band[candidate], dict):
+            band_cfg.update(per_band[candidate])
+            break
+    band_cfg["_gaussian_band_freq"] = freq
+    return band_cfg
+
+
 CONFIG = load_script_config(
     "radio_source_map_plot_gaussian_overlay",
     build_config(USER_CONFIG, DEFAULT_CONFIG),
@@ -738,6 +867,8 @@ GAUSSIAN_DIAGNOSTIC_FIELDS = [
     "source_snr_peak",
     "source_snr_mean",
     "mask_method",
+    "fit_peak_fraction_threshold_used",
+    "fit_peak_fraction_candidate_counts",
     "background_enabled",
     "background_mode_requested",
     "background_mode_used",
@@ -3322,107 +3453,15 @@ def _true_indices(mask: np.ndarray) -> IntArray:
     return np.asarray(np.nonzero(mask_bool)[0], dtype=np.intp)
 
 
-def create_source_mask(
-    data: FloatArray | np.ndarray,
-    cfg: dict,
-    background_map=None,
-    rms_map=None,
-) -> tuple[BoolArray | None, dict]:
-    work = np.asarray(data, dtype=np.float64)
-    finite_data = work[np.isfinite(work)]
-    diagnostics = {
-        "quality_flag": "ok",
-        "background_level": np.nan,
-        "noise_sigma": np.nan,
-        "threshold": np.nan,
-        "peak": np.nan,
-        "mask_pixel_count": 0,
-        "source_snr_peak": np.nan,
-        "source_snr_mean": np.nan,
-        "background_rms_median": np.nan,
-        "background_level_median": np.nan,
-        "mask_method": "raw_threshold",
-    }
-    if finite_data.size == 0:
-        diagnostics["quality_flag"] = "non_finite_data"
-        return None, diagnostics
-
-    peak = float(np.max(finite_data))
-    if not np.isfinite(peak):
-        diagnostics["quality_flag"] = "non_finite_data"
-        return None, diagnostics
-
-    use_snr = False
-    snr_map = None
-    bg = None
-    rms = None
-    if (
-        cfg.get("background_use_for_mask", True)
-        and background_map is not None
-        and rms_map is not None
-    ):
-        bg = np.asarray(background_map, dtype=np.float64)
-        rms = _safe_rms_map(rms_map)
-        use_snr = bg.shape == work.shape and rms.shape == work.shape
-
-    if use_snr:
-        snr_map = (work - bg) / rms
-        fit_threshold = float(cfg.get("fit_snr_threshold", 5.0))
-        grow_threshold = float(cfg.get("fit_grow_snr_threshold", 3.0))
-        core_mask = np.asarray(
-            np.isfinite(snr_map) & (snr_map >= fit_threshold), dtype=np.bool_
-        )
-        grow_mask = np.asarray(
-            np.isfinite(snr_map) & (snr_map >= grow_threshold), dtype=np.bool_
-        )
-        source_mask_bool = core_mask
-        diagnostics.update(
-            {
-                "background_level": float(np.nanmedian(bg[np.isfinite(bg)])),
-                "noise_sigma": float(np.nanmedian(rms[np.isfinite(rms) & (rms > 0)])),
-                "threshold": fit_threshold,
-                "background_rms_median": float(
-                    np.nanmedian(rms[np.isfinite(rms) & (rms > 0)])
-                ),
-                "background_level_median": float(np.nanmedian(bg[np.isfinite(bg)])),
-                "mask_method": "snr_mesh",
-            }
-        )
-    else:
-        background_level, noise_sigma = estimate_background_noise(work)
-        if not np.isfinite(noise_sigma) or noise_sigma <= 0:
-            noise_sigma = max(float(np.std(finite_data)), 1e-12)
-
-        threshold = max(
-            cfg.get("fit_snr_threshold", 5.0) * noise_sigma,
-            cfg.get("fit_peak_fraction_threshold", 0.30) * peak,
-        )
-        source_mask_bool = np.asarray(
-            np.isfinite(work) & (work > threshold), dtype=np.bool_
-        )
-        grow_mask = source_mask_bool
-        diagnostics.update(
-            {
-                "background_level": background_level,
-                "noise_sigma": noise_sigma,
-                "threshold": threshold,
-                "background_rms_median": noise_sigma,
-                "background_level_median": background_level,
-                "mask_method": "raw_threshold",
-            }
-        )
-
-    if not np.any(source_mask_bool):
-        diagnostics.update(
-            {
-                "quality_flag": "mask_too_small",
-                "peak": peak,
-            }
-        )
-        return None, diagnostics
-
-    finite_peak_work = np.where(np.isfinite(work), work, -np.inf)
-    peak_y, peak_x = _unravel_2d_index(int(np.argmax(finite_peak_work)), work.shape)
+def _select_peak_connected_mask(
+    source_mask_bool,
+    grow_mask,
+    peak_y,
+    peak_x,
+    use_snr=False,
+    snr_map=None,
+    work=None,
+):
     labeled, _ = label(source_mask_bool)
     peak_label = labeled[peak_y, peak_x]
     if peak_label == 0:
@@ -3456,14 +3495,252 @@ def create_source_mask(
                 grow_label = int(np.bincount(overlap).argmax())
         if grow_label > 0:
             main_mask = np.asarray(grown_labels == grow_label, dtype=np.bool_)
+    return np.asarray(main_mask, dtype=np.bool_)
 
-    dilation_pixels = int(cfg.get("fit_mask_dilation_pixels", 3))
-    if dilation_pixels > 0:
-        main_mask = np.asarray(
-            binary_dilation(main_mask, iterations=dilation_pixels), dtype=np.bool_
+
+def create_source_mask(
+    data: FloatArray | np.ndarray,
+    cfg: dict,
+    background_map=None,
+    rms_map=None,
+) -> tuple[BoolArray | None, dict]:
+    work = np.asarray(data, dtype=np.float64)
+    finite_data = work[np.isfinite(work)]
+    diagnostics = {
+        "quality_flag": "ok",
+        "background_level": np.nan,
+        "noise_sigma": np.nan,
+        "threshold": np.nan,
+        "peak": np.nan,
+        "mask_pixel_count": 0,
+        "source_snr_peak": np.nan,
+        "source_snr_mean": np.nan,
+        "background_rms_median": np.nan,
+        "background_level_median": np.nan,
+        "mask_method": "raw_threshold",
+        "fit_peak_fraction_threshold_used": np.nan,
+        "fit_peak_fraction_candidate_counts": "",
+    }
+    if finite_data.size == 0:
+        diagnostics["quality_flag"] = "non_finite_data"
+        return None, diagnostics
+
+    peak = float(np.max(finite_data))
+    if not np.isfinite(peak):
+        diagnostics["quality_flag"] = "non_finite_data"
+        return None, diagnostics
+
+    use_snr = False
+    snr_map = None
+    bg = None
+    rms = None
+    if (
+        cfg.get("background_use_for_mask", True)
+        and background_map is not None
+        and rms_map is not None
+    ):
+        bg = np.asarray(background_map, dtype=np.float64)
+        rms = _safe_rms_map(rms_map)
+        use_snr = bg.shape == work.shape and rms.shape == work.shape
+
+    finite_peak_work = np.where(np.isfinite(work), work, -np.inf)
+    peak_y, peak_x = _unravel_2d_index(int(np.argmax(finite_peak_work)), work.shape)
+
+    base_peak_fraction = float(cfg.get("fit_peak_fraction_threshold", 0.60))
+    grow_peak_fraction = float(cfg.get("fit_grow_peak_fraction_threshold", 0.25))
+    min_peak_fraction = float(
+        cfg.get("fit_peak_fraction_threshold_min", base_peak_fraction)
+    )
+    max_peak_fraction = float(
+        cfg.get("fit_peak_fraction_threshold_max", base_peak_fraction)
+    )
+    step_peak_fraction = abs(float(cfg.get("fit_peak_fraction_threshold_step", 0.05)))
+    min_peak_fraction, max_peak_fraction = sorted(
+        (min_peak_fraction, max_peak_fraction)
+    )
+    base_peak_fraction = min(
+        max(base_peak_fraction, min_peak_fraction), max_peak_fraction
+    )
+    grow_peak_fraction = min(max(grow_peak_fraction, 0.0), base_peak_fraction)
+    target_min_pixels = int(cfg.get("fit_mask_target_min_pixels", 30))
+    target_max_pixels = int(cfg.get("fit_mask_target_max_pixels", 300))
+    if target_max_pixels < target_min_pixels:
+        target_min_pixels, target_max_pixels = target_max_pixels, target_min_pixels
+
+    if use_snr:
+        snr_map = (work - bg) / rms
+        fit_threshold = float(cfg.get("fit_snr_threshold", 5.0))
+        grow_threshold = float(cfg.get("fit_grow_snr_threshold", 3.0))
+        diagnostics.update(
+            {
+                "background_level": float(np.nanmedian(bg[np.isfinite(bg)])),
+                "noise_sigma": float(np.nanmedian(rms[np.isfinite(rms) & (rms > 0)])),
+                "threshold": fit_threshold,
+                "background_rms_median": float(
+                    np.nanmedian(rms[np.isfinite(rms) & (rms > 0)])
+                ),
+                "background_level_median": float(np.nanmedian(bg[np.isfinite(bg)])),
+                "mask_method": "snr_mesh",
+            }
+        )
+    else:
+        background_level, noise_sigma = estimate_background_noise(work)
+        if not np.isfinite(noise_sigma) or noise_sigma <= 0:
+            noise_sigma = max(float(np.std(finite_data)), 1e-12)
+        diagnostics.update(
+            {
+                "background_level": background_level,
+                "noise_sigma": noise_sigma,
+                "threshold": np.nan,
+                "background_rms_median": noise_sigma,
+                "background_level_median": background_level,
+                "mask_method": "raw_threshold",
+            }
         )
 
-    mask_pixel_count = int(np.count_nonzero(main_mask))
+    def build_mask_for_peak_fraction(peak_fraction):
+        intensity_threshold = float(peak_fraction * peak)
+        grow_intensity_threshold = float(grow_peak_fraction * peak)
+        if use_snr:
+            core_intensity_mask = np.isfinite(work) & (work > intensity_threshold)
+            grow_intensity_mask = np.isfinite(work) & (work > grow_intensity_threshold)
+            core_mask = np.asarray(
+                np.isfinite(snr_map) & (snr_map >= fit_threshold) & core_intensity_mask,
+                dtype=np.bool_,
+            )
+            grow_mask_local = np.asarray(
+                np.isfinite(snr_map)
+                & (snr_map >= grow_threshold)
+                & grow_intensity_mask,
+                dtype=np.bool_,
+            )
+            threshold_used = fit_threshold
+        else:
+            threshold_used = max(
+                float(cfg.get("fit_snr_threshold", 5.0)) * noise_sigma,
+                intensity_threshold,
+            )
+            core_mask = np.asarray(
+                np.isfinite(work) & (work > threshold_used), dtype=np.bool_
+            )
+            grow_threshold_used = max(
+                float(cfg.get("fit_grow_snr_threshold", 3.0)) * noise_sigma,
+                grow_intensity_threshold,
+            )
+            grow_mask_local = np.asarray(
+                np.isfinite(work) & (work > grow_threshold_used), dtype=np.bool_
+            )
+
+        if not np.any(core_mask):
+            return None, 0, threshold_used
+
+        candidate_mask = _select_peak_connected_mask(
+            core_mask,
+            grow_mask_local,
+            peak_y,
+            peak_x,
+            use_snr=use_snr,
+            snr_map=snr_map,
+            work=work,
+        )
+        dilation_pixels_local = int(cfg.get("fit_mask_dilation_pixels", 3))
+        if dilation_pixels_local > 0:
+            candidate_mask = np.asarray(
+                binary_dilation(candidate_mask, iterations=dilation_pixels_local),
+                dtype=np.bool_,
+            )
+        return candidate_mask, int(np.count_nonzero(candidate_mask)), threshold_used
+
+    candidate_fractions = []
+    if step_peak_fraction <= 0:
+        candidate_fractions = [base_peak_fraction]
+    else:
+        frac = min_peak_fraction
+        while frac <= max_peak_fraction + 1e-12:
+            candidate_fractions.append(round(frac, 10))
+            frac += step_peak_fraction
+        if candidate_fractions[-1] < max_peak_fraction - 1e-12:
+            candidate_fractions.append(max_peak_fraction)
+    candidate_fractions = sorted(set(candidate_fractions))
+
+    candidates = []
+    for candidate_fraction in candidate_fractions:
+        candidate_mask, candidate_count, candidate_threshold = (
+            build_mask_for_peak_fraction(candidate_fraction)
+        )
+        candidates.append(
+            {
+                "fraction": float(candidate_fraction),
+                "mask": candidate_mask,
+                "count": int(candidate_count),
+                "threshold": float(candidate_threshold),
+            }
+        )
+
+    target_mid_pixels = 0.5 * (target_min_pixels + target_max_pixels)
+    in_target_candidates = [
+        item
+        for item in candidates
+        if item["mask"] is not None
+        and target_min_pixels <= item["count"] <= target_max_pixels
+    ]
+    usable_candidates = [
+        item
+        for item in candidates
+        if item["mask"] is not None
+        and item["count"] >= int(cfg.get("fit_min_mask_pixels", 20))
+    ]
+    nonempty_candidates = [
+        item for item in candidates if item["mask"] is not None and item["count"] > 0
+    ]
+
+    if in_target_candidates:
+        selected = min(
+            in_target_candidates,
+            key=lambda item: (
+                abs(item["count"] - target_mid_pixels),
+                abs(item["fraction"] - base_peak_fraction),
+            ),
+        )
+    elif usable_candidates:
+        selected = min(
+            usable_candidates,
+            key=lambda item: (
+                abs(item["count"] - target_min_pixels),
+                abs(item["fraction"] - base_peak_fraction),
+            ),
+        )
+    elif nonempty_candidates:
+        selected = max(nonempty_candidates, key=lambda item: item["count"])
+    else:
+        selected = {
+            "fraction": base_peak_fraction,
+            "mask": None,
+            "count": 0,
+            "threshold": np.nan,
+        }
+
+    main_mask = selected["mask"]
+    mask_pixel_count = int(selected["count"])
+    threshold = selected["threshold"]
+    peak_fraction_used = float(selected["fraction"])
+    candidate_count_text = ";".join(
+        f"{item['fraction']:.3f}:{item['count']}" for item in candidates
+    )
+
+    diagnostics["fit_peak_fraction_threshold_used"] = float(peak_fraction_used)
+    diagnostics["fit_peak_fraction_candidate_counts"] = candidate_count_text
+    diagnostics["threshold"] = threshold
+
+    if main_mask is None or not np.any(main_mask):
+        diagnostics.update(
+            {
+                "quality_flag": "mask_too_small",
+                "peak": peak,
+            }
+        )
+        return None, diagnostics
+
     diagnostics.update(
         {
             "peak": peak,
@@ -3480,7 +3757,6 @@ def create_source_mask(
         )
     if mask_pixel_count < int(cfg.get("fit_min_mask_pixels", 20)):
         diagnostics["quality_flag"] = "mask_too_small"
-        return None, diagnostics
 
     return np.asarray(main_mask, dtype=np.bool_), diagnostics
 
@@ -3583,7 +3859,14 @@ def _attach_gaussian_fit_metadata(result, cfg, mask_diag, fit_input_type, fit_me
     result.background_rms_median = mask_diag.get("background_rms_median", np.nan)
     result.background_level_median = mask_diag.get("background_level_median", np.nan)
     result.mask_method = mask_diag.get("mask_method", "")
+    result.peak = mask_diag.get("peak", np.nan)
     result.threshold = mask_diag.get("threshold", np.nan)
+    result.fit_peak_fraction_threshold_used = mask_diag.get(
+        "fit_peak_fraction_threshold_used", np.nan
+    )
+    result.fit_peak_fraction_candidate_counts = mask_diag.get(
+        "fit_peak_fraction_candidate_counts", ""
+    )
     for key, value in fit_meta.items():
         setattr(result, key, value)
     return result
@@ -3615,7 +3898,7 @@ def _gaussian_quality_config(cfg):
     quality_cfg.setdefault("max_fwhm_arcsec", cfg.get("max_fwhm_arcsec", 1800.0))
     quality_cfg.setdefault(
         "max_center_peak_distance_arcsec",
-        cfg.get("max_center_peak_distance_arcsec", 600.0),
+        cfg.get("max_center_peak_distance_arcsec", 300.0),
     )
     quality_cfg.setdefault("min_snr", cfg.get("fit_snr_threshold", 5.0))
     quality_cfg.setdefault("max_residual_rms_fraction", 0.8)
@@ -3643,7 +3926,7 @@ def _update_gaussian_quality(fit_result, extent, img_shape, cfg):
         fit_result.overlay_valid = False
         fit_result.trajectory_valid = False
         return False
-    max_dist = float(quality_cfg.get("max_center_peak_distance_arcsec", 600.0))
+    max_dist = float(quality_cfg.get("max_center_peak_distance_arcsec", 300.0))
     max_dist = min(
         max_dist,
         float(cfg.get("gaussian_max_center_peak_distance_fraction_of_fwhm", 0.5))
@@ -3755,6 +4038,14 @@ def _set_gaussian_failure_diag(
         "background_rms_median": mask_diag.get("background_rms_median", np.nan),
         "background_level_median": mask_diag.get("background_level_median", np.nan),
         "mask_method": mask_diag.get("mask_method", ""),
+        "fit_peak_fraction_threshold_used": mask_diag.get(
+            "fit_peak_fraction_threshold_used",
+            extra.get("fit_peak_fraction_threshold_used", np.nan),
+        ),
+        "fit_peak_fraction_candidate_counts": mask_diag.get(
+            "fit_peak_fraction_candidate_counts",
+            extra.get("fit_peak_fraction_candidate_counts", ""),
+        ),
         "gaussian_fit_method": extra.get("gaussian_fit_method", "skipped"),
         "roi_used": extra.get("roi_used", False),
         "roi_shape": extra.get("roi_shape", ""),
@@ -4377,6 +4668,39 @@ def overlay_gaussian_fit_on_axis(ax, fit_result, extent, img_shape, cfg):
         )
 
 
+def _acquire_csv_lock(lock_path, timeout_seconds=60.0, stale_seconds=300.0):
+    deadline = time.time() + float(timeout_seconds)
+    fd = None
+    while True:
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode("ascii", errors="ignore"))
+            return fd
+        except FileExistsError:
+            try:
+                if time.time() - os.path.getmtime(lock_path) > float(stale_seconds):
+                    os.remove(lock_path)
+                    continue
+            except OSError:
+                pass
+            if time.time() >= deadline:
+                raise TimeoutError(
+                    f"Timed out waiting for diagnostics lock: {lock_path}"
+                ) from None
+            time.sleep(0.05)
+
+
+def _release_csv_lock(lock_path, fd):
+    try:
+        if fd is not None:
+            os.close(fd)
+    finally:
+        try:
+            os.remove(lock_path)
+        except FileNotFoundError:
+            pass
+
+
 def save_gaussian_diagnostics_row(row, output_dir, cfg):
     diagnostics_dir = os.path.join(output_dir, _plot_output_subdir(cfg))
     os.makedirs(diagnostics_dir, exist_ok=True)
@@ -4385,22 +4709,29 @@ def save_gaussian_diagnostics_row(row, output_dir, cfg):
         cfg.get("gaussian_diagnostics_csv", "radio_gaussian_fit_diagnostics.csv"),
     )
     fieldnames = GAUSSIAN_DIAGNOSTIC_FIELDS
-    if os.path.exists(csv_path):
-        try:
-            with open(csv_path, newline="", encoding="utf-8") as handle:
-                existing_header = next(csv.reader(handle), [])
-        except OSError:
-            existing_header = []
-        if existing_header and existing_header != fieldnames:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            root, ext = os.path.splitext(csv_path)
-            csv_path = f"{root}_{timestamp}{ext}"
-    write_header = not os.path.exists(csv_path)
-    with open(csv_path, "a", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
-        if write_header:
-            writer.writeheader()
-        writer.writerow({name: row.get(name, "") for name in fieldnames})
+    lock_path = f"{csv_path}.lock"
+    lock_fd = _acquire_csv_lock(lock_path)
+    try:
+        if os.path.exists(csv_path):
+            try:
+                with open(csv_path, newline="", encoding="utf-8") as handle:
+                    existing_header = next(csv.reader(handle), [])
+            except OSError:
+                existing_header = []
+            if existing_header and existing_header != fieldnames:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                root, ext = os.path.splitext(csv_path)
+                csv_path = f"{root}_{timestamp}{ext}"
+        write_header = not os.path.exists(csv_path)
+        with open(csv_path, "a", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(
+                handle, fieldnames=fieldnames, extrasaction="ignore"
+            )
+            if write_header:
+                writer.writeheader()
+            writer.writerow({name: row.get(name, "") for name in fieldnames})
+    finally:
+        _release_csv_lock(lock_path, lock_fd)
 
 
 def _gaussian_diagnostics_row(
@@ -4455,6 +4786,12 @@ def _gaussian_diagnostics_row(
             "source_snr_peak": fail.get("source_snr_peak", ""),
             "source_snr_mean": fail.get("source_snr_mean", ""),
             "mask_method": fail.get("mask_method", ""),
+            "fit_peak_fraction_threshold_used": fail.get(
+                "fit_peak_fraction_threshold_used", ""
+            ),
+            "fit_peak_fraction_candidate_counts": fail.get(
+                "fit_peak_fraction_candidate_counts", ""
+            ),
             "background_enabled": bg_diag.get("background_enabled", False),
             "background_mode_requested": bg_diag.get("background_mode_requested", ""),
             "background_mode_used": bg_diag.get("background_mode_used", ""),
@@ -4557,6 +4894,12 @@ def _gaussian_diagnostics_row(
         "source_snr_peak": getattr(fit_result, "source_snr_peak", ""),
         "source_snr_mean": getattr(fit_result, "source_snr_mean", ""),
         "mask_method": getattr(fit_result, "mask_method", ""),
+        "fit_peak_fraction_threshold_used": getattr(
+            fit_result, "fit_peak_fraction_threshold_used", ""
+        ),
+        "fit_peak_fraction_candidate_counts": getattr(
+            fit_result, "fit_peak_fraction_candidate_counts", ""
+        ),
         "background_enabled": bg_diag.get("background_enabled", False),
         "background_mode_requested": bg_diag.get("background_mode_requested", ""),
         "background_mode_used": bg_diag.get("background_mode_used", ""),
@@ -4581,8 +4924,8 @@ def _gaussian_diagnostics_row(
         "initial_sigma_x_pixel": getattr(fit_result, "initial_sigma_x_pixel", ""),
         "initial_sigma_y_pixel": getattr(fit_result, "initial_sigma_y_pixel", ""),
         "normalization_scale": getattr(fit_result, "normalization_scale", ""),
-        "peak": "",
-        "threshold": "",
+        "peak": getattr(fit_result, "peak", ""),
+        "threshold": getattr(fit_result, "threshold", ""),
     }
 
 
@@ -6020,6 +6363,8 @@ def plot_single_band(
     rsun_obs = header.get("RSUN_OBS", 960.0)
     freq = get_freq_from_header(header) or "Unknown"
     time_str = get_time_from_header(header)
+    gaussian_cfg = config_for_gaussian_band(cfg, freq)
+    gaussian_cfg["_current_radio_image_origin"] = image_origin
     file_name = os.path.basename(file_path)
     current_frame_time = radio_datetime_from_header_or_path(header, file_path, cfg)
     bg_sub_data = img_data
@@ -6132,24 +6477,26 @@ def plot_single_band(
     fit_result = None
     radio_fit_data = None
     if cfg.get("enable_gaussian_overlay", False):
-        if cfg.get("gaussian_fit_verbose", False):
+        if gaussian_cfg.get("gaussian_fit_verbose", False):
             print(
                 "[Gaussian input] using "
-                f"{'background-subtracted radio image' if cfg.get('background_use_for_fit', False) else 'raw radio image'} "
+                f"{'background-subtracted radio image' if gaussian_cfg.get('background_use_for_fit', False) else 'raw radio image'} "
                 "with local baseline model"
             )
         radio_fit_data = fit_base_data
         fit_result = fit_elliptical_gaussian_on_radio_image(
             radio_fit_data,
             extent=extent,
-            cfg=cfg,
+            cfg=gaussian_cfg,
             source_file=file_path,
             background_map=background_map_for_mask,
             rms_map=rms_map_for_mask,
             fit_input_type=fit_input_type,
             image_origin=image_origin,
         )
-        _attach_raw_peak_center(fit_result, img_data, extent, cfg, image_origin)
+        _attach_raw_peak_center(
+            fit_result, img_data, extent, gaussian_cfg, image_origin
+        )
 
     # 将偏振显示名称
     if polar_display == "RR":
@@ -6205,13 +6552,15 @@ def plot_single_band(
     im = ax.imshow(display_data, **im_kwargs)
     add_radio_coordinate_corner_debug(ax, extent, img_data.shape, image_origin, cfg)
     if fit_result is not None:
-        overlay_gaussian_fit_on_axis(ax, fit_result, extent, img_data.shape, cfg)
+        overlay_gaussian_fit_on_axis(
+            ax, fit_result, extent, img_data.shape, gaussian_cfg
+        )
     if cfg.get("enable_gaussian_overlay", False) and cfg.get(
         "save_gaussian_diagnostics", True
     ):
         save_gaussian_diagnostics_row(
             _gaussian_diagnostics_row(
-                fit_result, cfg, freq, time_str, polar_display, bg_diag
+                fit_result, gaussian_cfg, freq, time_str, polar_display, bg_diag
             ),
             output_dir,
             cfg,
@@ -6434,7 +6783,7 @@ def plot_single_band(
             and radio_fit_data is not None
         ):
             _save_gaussian_residual_panel(
-                radio_fit_data, fit_result, extent, out_path, cfg
+                radio_fit_data, fit_result, extent, out_path, gaussian_cfg
             )
 
     if cfg["show_plot"] and cfg.get("_interactive", False):
@@ -6843,6 +7192,8 @@ def plot_multi_band_slot(
         ax = axes[row, col]
 
         freq, polar, band_time = band_info[idx]
+        gaussian_cfg = config_for_gaussian_band(cfg, freq)
+        gaussian_cfg["_current_radio_image_origin"] = all_origins[idx]
         rsun_obs = all_headers[idx].get("RSUN_OBS", 960.0)
 
         # 使用对数化数据
@@ -6911,22 +7262,22 @@ def plot_multi_band_slot(
                 all_origins[idx],
             )
         if cfg.get("enable_gaussian_overlay", False):
-            if cfg.get("background_use_for_fit", False):
+            if gaussian_cfg.get("background_use_for_fit", False):
                 fit_base_data = all_bg_sub_data[idx]
                 fit_input_type = "background_subtracted"
             else:
                 fit_base_data = all_data[idx]
                 fit_input_type = "raw"
-            if cfg.get("gaussian_fit_verbose", False):
+            if gaussian_cfg.get("gaussian_fit_verbose", False):
                 print(
                     "[Gaussian input] using "
-                    f"{'background-subtracted radio image' if cfg.get('background_use_for_fit', False) else 'raw radio image'} "
+                    f"{'background-subtracted radio image' if gaussian_cfg.get('background_use_for_fit', False) else 'raw radio image'} "
                     "with local baseline model"
                 )
             fit_result = fit_elliptical_gaussian_on_radio_image(
                 fit_base_data,
                 extent=all_extents[idx],
-                cfg=cfg,
+                cfg=gaussian_cfg,
                 source_file=all_source_files[idx],
                 background_map=all_background_mask_maps[idx],
                 rms_map=all_rms_mask_maps[idx],
@@ -6934,16 +7285,25 @@ def plot_multi_band_slot(
                 image_origin=all_origins[idx],
             )
             _attach_raw_peak_center(
-                fit_result, all_data[idx], all_extents[idx], cfg, all_origins[idx]
+                fit_result,
+                all_data[idx],
+                all_extents[idx],
+                gaussian_cfg,
+                all_origins[idx],
             )
             if fit_result is not None:
                 overlay_gaussian_fit_on_axis(
-                    ax, fit_result, all_extents[idx], fit_base_data.shape, cfg
+                    ax, fit_result, all_extents[idx], fit_base_data.shape, gaussian_cfg
                 )
             if cfg.get("save_gaussian_diagnostics", True):
                 save_gaussian_diagnostics_row(
                     _gaussian_diagnostics_row(
-                        fit_result, cfg, freq, band_time, polar, all_bg_diags[idx]
+                        fit_result,
+                        gaussian_cfg,
+                        freq,
+                        band_time,
+                        polar,
+                        all_bg_diags[idx],
                     ),
                     output_dir,
                     cfg,
