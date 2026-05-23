@@ -1,348 +1,394 @@
-# Solar Physics Data Visualization and Analysis Toolkit
+# Solar Radio and SDO/AIA-HMI Analysis Toolkit
 
-A research-oriented Python toolkit for multi-wavelength solar event analysis. The
-repository focuses on practical, script-based workflows for SDO/AIA, SDO/HMI,
-radio source imaging, CSO dynamic spectra, GOES soft X-rays, HXR/HXI diagnostics,
-DEM/Tb visualization, and SOHO/LASCO CME context.
-
-The code is designed for flare, jet, CME, and radio-burst studies where local
-observation data must be turned into publication-quality figures, overlay maps,
-light curves, source-center diagnostics, and time-evolution products.
+[English](#english-version) | [中文](#中文版本)
 
 GitHub: <https://github.com/YUCONG-28/python-for-solar-physics>
 
-## Features
+## English Version
 
-- Publication-quality SDO/AIA visualization
-- HMI magnetic field overlay
-- Radio source contour overlay
-- Multi-frequency radio imaging support
-- Difference imaging for dynamic solar events
-- Gaussian fitting and source-center tracking
-- Interactive manual drift-rate measurement on CSO dynamic spectra
-- Drift-rate overlays on radio-map and spectrogram composite figures
-- Coordinate-consistent radio image overlays that preserve FITS WCS orientation
-- Flexible plotting layout for single-band and multi-panel figures
-- Configurable colormap, contour levels, intensity scaling, and ROI selection
-- CSO dynamic spectrogram plotting with memory-aware downsampling
-- GOES SXR, HXR/HXI, DEM/Tb, and LASCO CME support for event context
-- Local YAML path configuration without committing personal data paths
+### Project Overview
 
-## Recommended Entry Points
+This repository is a research-oriented Python toolkit for multi-wavelength solar
+event analysis. It focuses on script-based workflows for SDO/AIA and SDO/HMI
+visualization, CSO radio spectrogram plotting, radio source image overlays,
+Gaussian source fitting and center diagnostics, JSOC/STEREO/SUVI data download
+helpers, and publication-quality figure output.
 
-Use these scripts as the main public workflows. Other scripts are still useful,
-but some are legacy, experimental, or specialized helpers.
+The project is designed for flare, jet, CME, and radio-burst studies where local
+observational data need to be turned into figures, overlay maps, light curves,
+source-center diagnostics, and time-evolution products.
 
-| Workflow | Recommended script |
-| --- | --- |
-| AIA images and AIA difference maps | `scripts/aia_hmi/sdo_aia_euv_processor.py` |
-| Radio source maps, Gaussian fitting, and drift-rate overlays | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` |
-| AIA + radio + HMI overlays | `scripts/radio/sdo_aia_radio_hmi_overlay.py` |
-| CSO dynamic spectra | `scripts/radio/cso_radio_spectrogram_plot.py` |
+### Main Features
 
-## Scientific Workflows
+- SDO/AIA EUV image visualization, mosaics, previews, and difference products.
+- SDO/HMI magnetogram plotting and magnetic-field contour overlays.
+- CSO radio dynamic spectrogram plotting with memory-aware downsampling.
+- Radio source image plotting, contour overlays, Gaussian fitting, and
+  source-center diagnostics.
+- Manual drift-rate selection and reuse of saved drift-rate JSON selections.
+- AIA/radio/HMI overlay workflows for source-region comparison.
+- Event-specific JSOC/AIA, STEREO-A/EUVI, GOES/SUVI, and Solar Orbiter/EUI data
+  acquisition helpers.
+- Image-sequence to MP4 conversion for time-evolution products.
+- Local path configuration without committing machine-specific data paths.
 
-The toolkit supports these common analysis products:
+### Recommended Entry Points
 
-- SDO/AIA single-band EUV/UV images, mosaics, base differences, and running
-  differences.
-- SDO/HMI magnetograms and magnetic-field contours over AIA images.
-- Radio source maps from FITS images, including RR/LL polarization handling,
-  multi-frequency contours, Gaussian source fitting, source masks, diagnostic
-  CSV output, and WCS-aware overlay coordinates.
-- AIA, radio source, and optional HMI overlays for source-region comparisons.
-- CSO radio dynamic spectra with LL/RR, total intensity, and polarization ratio
-  views.
-- Interactive CSO drift-rate endpoint selection with reusable JSON selections
-  and MHz/s diagnostics.
-- AIA light-curve extraction, CSV light-curve plotting, and time-distance
-  diagrams.
-- GOES SXR and HXR/HXI light curves, Neupert-effect comparisons, and combined
-  flare diagnostic panels.
-- DEM/Tb and radio-source overlay figures.
-- SOHO/LASCO JP2 image plotting and running-difference CME products.
-- Image-sequence to MP4 video generation for time-evolution products.
+| Purpose | Recommended Script | Notes |
+|---|---|---|
+| SDO/AIA and HMI visualization | `scripts/aia_hmi/sdo_aia_euv_processor.py` | Main AIA processor for single-band views, mosaics, previews, and difference products. Use `scripts/radio/sdo_aia_radio_hmi_overlay.py` for AIA/radio/HMI overlays. |
+| JSOC / AIA / HMI data download and preparation | `scripts/aia_hmi/sdo_aia_jsoc_download_20250124.py` | Event-specific AIA JSOC downloader. Use `scripts/aia_hmi/sdo_aia_hmi_fits_rename.py` for local FITS filename normalization. |
+| STEREO / SUVI data download | `scripts/data_download/stereo_a_euvi_download_20250124.py`; `scripts/data_download/goes_suvi_download_20250124.py` | Event-specific download helpers for the 2025-01-24 context data. |
+| Radio spectrogram plotting | `scripts/radio/cso_radio_spectrogram_plot.py` | Main CSO dynamic spectrum plotting workflow. |
+| Radio source image overlay | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` | Main radio source map workflow with multi-frequency panels and optional CSO spectrogram panel. |
+| Gaussian fitting and diagnostics | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` | Produces fitted centers, FWHM overlays, quality diagnostics, and CSV outputs. |
+| AIA/radio/HMI overlays | `scripts/radio/sdo_aia_radio_hmi_overlay.py` | Main context overlay workflow for AIA, radio contours, and optional HMI contours. |
+| Image to video | `scripts/tools/image_sequence_to_video.py` | General utility for converting vetted PNG/JPG frame sequences to MP4. |
+| Path configuration and shared helpers | `solar_toolkit/path_config.py` | Use `configs/paths.example.yaml` as the template for local path configuration. |
 
-## Input Data
+### Quick Start
 
-Typical inputs are local science data products, not stored in this repository:
+1. Clone the repository:
 
-- SDO/AIA FITS files, usually grouped by wavelength such as `94`, `131`, `171`,
-  `193`, `211`, `304`, `335`, or `1600`.
-- SDO/HMI magnetogram FITS files.
-- CSO spectrogram FITS files.
-- Radio source FITS images organized by frequency and polarization.
-- GOES SXR NetCDF files.
-- ASO-S/HXI or HESSI/RHESSI-style HXR FITS files.
-- DEM or brightness-temperature arrays such as `.npy` products.
-- SOHO/LASCO JP2 images.
-- CSV tables produced by the light-curve extraction scripts.
+   ```powershell
+   git clone https://github.com/YUCONG-28/python-for-solar-physics.git
+   cd python-for-solar-physics
+   ```
 
-## Output Products
+2. Create environment:
 
-Generated products are usually written beside local data or into configured
-output folders:
+   ```powershell
+   conda create -n solarphysics_env python=3.11
+   conda activate solarphysics_env
+   python -m pip install --upgrade pip
+   ```
 
-- AIA PNG figures and multi-band mosaics
-- AIA base/running difference maps
-- AIA-HMI, AIA-HXI, AIA-radio, and AIA-radio-HMI overlay figures
-- Radio source maps, contours, fitted centers, and multi-frequency panels
-- CSO dynamic spectra and polarization diagnostics
-- Drift-rate selection JSON files, preview PNGs, endpoint overlays, and
-  drift-rate diagnostics CSV files
-- AIA/GOES/HXR light-curve and summary figures
-- DEM/Tb diagnostic images and radio overlays
-- LASCO CME running-difference images
-- MP4 videos made from image sequences
+3. Install dependencies:
 
-Large generated images, videos, FITS files, local data tables, and cache files
-are intentionally ignored by Git.
+   ```powershell
+   python -m pip install -r requirements.txt
+   python -m pip install -e ".[dev,full]"
+   ```
 
-## Project Structure
+   Optional GUI tools may also need:
+
+   ```powershell
+   python -m pip install -e ".[gui]"
+   ```
+
+4. Run smoke tests:
+
+   ```powershell
+   ruff check .
+   python -m compileall scripts tests
+   pytest tests/test_path_config.py tests/test_imports.py
+   ```
+
+   Full pytest is not currently used as the release criterion because the local
+   Windows environment may trigger a NumPy BLAS-related fatal exception during
+   import.
+
+5. Run selected scripts:
+
+   ```powershell
+   # AIA single-band or mosaic processing
+   python scripts\aia_hmi\sdo_aia_euv_processor.py --mode single --waves 171 193 304
+
+   # Normalize AIA/HMI FITS filenames without modifying files
+   python scripts\aia_hmi\sdo_aia_hmi_fits_rename.py D:\solar_data\SDO --dry-run
+
+   # Download event-specific AIA JSOC data
+   python scripts\aia_hmi\sdo_aia_jsoc_download_20250124.py
+
+   # Download STEREO-A/EUVI and GOES/SUVI event context data
+   python scripts\data_download\stereo_a_euvi_download_20250124.py
+   python scripts\data_download\goes_suvi_download_20250124.py
+
+   # CSO dynamic spectrum plotting
+   python scripts\radio\cso_radio_spectrogram_plot.py
+
+   # Radio source maps with Gaussian diagnostics
+   python scripts\radio\radio_source_map_plot_gaussian_overlay.py
+
+   # AIA, radio source, and HMI overlay workflow
+   python scripts\radio\sdo_aia_radio_hmi_overlay.py
+
+   # Convert generated PNG sequence to MP4
+   python scripts\tools\image_sequence_to_video.py
+   ```
+
+### Data Policy
+
+- Raw observational data are not tracked by Git.
+- Generated products are not tracked by Git.
+- ZIP archives are ignored.
+- Local legacy folders such as `data dowload/` are ignored.
+- Users should place large data products under ignored data directories such as
+  `data/raw/`, `data/products/`, `outputs/`, or other local-only folders.
+- Local path files such as `configs/paths.local.yaml` should not be committed.
+
+Typical ignored products include FITS/FTS files, JP2 files, NetCDF/CDF files,
+NumPy arrays, HDF5 files, batch plot folders, videos, CSV/XLSX products, cache
+folders, and local archives.
+
+### Project Structure
 
 ```text
-python-for-solar-physics/
-├── solar_toolkit/              # Shared helpers and package metadata
-├── scripts/                    # Runnable research workflows
-│   ├── aia_hmi/                # SDO/AIA and SDO/HMI processing
-│   ├── radio/                  # CSO spectra and radio-source imaging
-│   ├── xray_dem/               # GOES, HXR/HXI, Neupert, DEM/Tb workflows
-│   ├── lasco_cme/              # SOHO/LASCO download and CME plotting
-│   └── tools/                  # General utilities
-├── examples/                   # Local-data examples and historical workflows
-├── configs/                    # Path configuration templates
-├── docs/                       # Project and script documentation
-├── tests/                      # Lightweight tests without observation data
-├── outputs/                    # Notes for generated local products
-├── pyproject.toml              # Package metadata and optional extras
-├── requirements.txt            # Convenient pip dependency list
-└── README.md
+Python/
+  README.md
+  requirements.txt
+  pyproject.toml
+  scripts/         # runnable research workflows
+  solar_toolkit/   # shared helper package
+  docs/            # project documentation
+  configs/         # example configuration templates
+  examples/        # small examples; larger outputs stay local
+  tests/           # lightweight data-independent tests
+  legacy/          # high-risk historical scripts kept for review
+  archive/         # ignored local archive area, not public GitHub content
+  data/products/   # ignored generated products
 ```
 
-See `docs/project_structure.md` and `docs/script_index.md` for more detail.
+### Example Outputs
 
-## Installation
+Example output placeholders live under `docs/assets/`, `examples/images/`, and
+`examples/videos/`.
+`examples/images/` and `examples/videos/` currently only contain `.gitkeep`
+placeholders.
+Curated example images or videos can be added later after size reduction and
+source documentation.
+The current repository does not fabricate example outputs, and full research
+products should remain local.
+
+### Documentation
+
+- `docs/script_index.md`: current script index with `main`, `utility`,
+  `archived`, and `deprecated` labels.
+- `docs/project_structure.md`: repository layout and data policy details.
+- `docs/data_download/event_20250124_inventory.md`: 2025-01-24 event download
+  and visualization workflow.
+
+### Environment and Dependencies
 
 The project is developed with Miniforge/conda on Windows, but the core package
-can be installed with any Python 3.10+ environment that supports SunPy and
-AstroPy.
+can be installed in any Python 3.10+ environment that supports SunPy and
+AstroPy. The canonical package metadata lives in `pyproject.toml`; the
+`requirements.txt` file is provided as a convenient environment checklist.
+
+Core dependencies include NumPy, SciPy, AstroPy, SunPy, Matplotlib, Reproject,
+Scikit-image, PyYAML, Pandas, and tqdm. Optional workflows may require DRMS,
+Requests, OpenCV, ImageIO, PyQt5, pyqtgraph, Helioviewer-related packages, or
+other archive-specific libraries.
+
+### Validation Status
+
+Current release-check commands:
 
 ```powershell
-conda create -n solarphysics_env python=3.11
-conda activate solarphysics_env
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+ruff check .
+python -m compileall scripts tests
+pytest tests/test_path_config.py tests/test_imports.py
 ```
 
-For a broader local analysis environment:
+These checks passed during the third cleanup round. Full science workflows still
+require local observation data and are not expected to run from a fresh clone
+without user data paths.
 
-```powershell
-python -m pip install -r requirements.txt
-python -m pip install -e ".[dev,full]"
-```
+### Notes and Limitations
 
-GUI and legacy radio-spectrum tools may require extra packages such as `PyQt5`,
-`pyqtgraph`, and a local or pip-installable `rebin` module:
+- The repository is a research toolkit, not a turnkey data portal.
+- Most scripts expect local FITS, FTS, JP2, NetCDF, CSV, or NumPy products.
+- Some scripts are event-specific and currently target the 2025-01-24 event.
+- GUI and download scripts may require optional dependencies and network access.
+- High-risk scientific scripts are kept for review rather than deleted.
+- Full pytest is not treated as a release gate in this local Windows setup due
+  to the known NumPy BLAS-related fatal exception during import.
 
-```powershell
-python -m pip install -e ".[gui]"
-```
+## 中文版本
 
-## Code Style
+### 项目简介
 
-This project uses a consistent Python code style to keep the scientific pipeline
-maintainable.
+本仓库是一个面向太阳物理多波段事件分析的 Python 研究工具箱。项目以脚本式工作流为主，
+覆盖 SDO/AIA 与 SDO/HMI 可视化、CSO 射电动态频谱图绘制、射电源图像叠加、
+高斯拟合与源中心诊断、JSOC/STEREO/SUVI 数据下载辅助脚本，以及论文级图像输出。
 
-- Black is used as the main Python formatter.
-- Ruff is used for linting, import sorting, and safe automatic fixes.
-- Pylance is recommended for type analysis and code navigation in VSCode.
-- autopep8, yapf, flake8, and pylint are not used as default tools in this
-  project.
+该项目主要服务于耀斑、喷流、CME 和射电暴研究场景，用于把本地观测数据转换为图像、
+叠加图、光变曲线、源中心诊断和时间演化产品。
 
-Before committing changes, run:
+### 主要功能
 
-```bash
-pre-commit run --all-files
-```
+- SDO/AIA EUV 图像可视化、多波段拼图、预览图和差分产品。
+- SDO/HMI 磁图绘制与磁场等值线叠加。
+- CSO 射电动态频谱图绘制，并支持内存友好的下采样。
+- 射电源图像绘制、等值线叠加、高斯拟合和源中心诊断。
+- 手动频漂率选点，并复用已保存的频漂率 JSON 结果。
+- AIA/radio/HMI 叠加工作流，用于源区对比。
+- 面向 2025-01-24 事件的 JSOC/AIA、STEREO-A/EUVI、GOES/SUVI 和
+  Solar Orbiter/EUI 数据获取辅助脚本。
+- 图片序列转 MP4，用于时间演化产品。
+- 本地路径配置，避免把个人机器路径提交到仓库。
 
-## Local Path Configuration
+### 推荐主入口
 
-Most science workflows need local FITS, JP2, NetCDF, CSV, or NumPy data. Avoid
-hard-coding personal paths in source files by copying the example config:
+| 用途 | 推荐脚本 | 说明 |
+|---|---|---|
+| SDO/AIA 与 HMI 可视化 | `scripts/aia_hmi/sdo_aia_euv_processor.py` | AIA 主处理脚本，用于单波段图像、多波段拼图、预览和差分产品。AIA/radio/HMI 叠加使用 `scripts/radio/sdo_aia_radio_hmi_overlay.py`。 |
+| JSOC / AIA / HMI 数据下载与准备 | `scripts/aia_hmi/sdo_aia_jsoc_download_20250124.py` | 面向事件的 AIA JSOC 下载脚本。本地 FITS 文件名规范化使用 `scripts/aia_hmi/sdo_aia_hmi_fits_rename.py`。 |
+| STEREO / SUVI 数据下载 | `scripts/data_download/stereo_a_euvi_download_20250124.py`; `scripts/data_download/goes_suvi_download_20250124.py` | 面向 2025-01-24 事件背景数据的下载辅助脚本。 |
+| 射电频谱图绘制 | `scripts/radio/cso_radio_spectrogram_plot.py` | CSO 动态频谱图主绘制流程。 |
+| 射电源图像叠加 | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` | 射电源图主流程，支持多频面板和可选 CSO 频谱面板。 |
+| 高斯拟合与诊断 | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` | 输出拟合中心、FWHM 叠加、质量诊断和 CSV 结果。 |
+| AIA/radio/HMI 叠加 | `scripts/radio/sdo_aia_radio_hmi_overlay.py` | AIA、射电等值线和可选 HMI 等值线的主叠加流程。 |
+| 图片转视频 | `scripts/tools/image_sequence_to_video.py` | 将已检查的 PNG/JPG 图片序列转换为 MP4。 |
+| 路径配置与工具函数 | `solar_toolkit/path_config.py` | 使用 `configs/paths.example.yaml` 作为本地路径配置模板。 |
 
-```powershell
-Copy-Item configs\paths.example.yaml configs\paths.local.yaml
-```
+### 快速开始
 
-Edit `configs/paths.local.yaml` for your machine. This file is ignored by Git.
-You can also point to another config file:
-
-```powershell
-$env:SOLAR_PHYSICS_CONFIG="D:\my_project\solar_paths.yaml"
-```
-
-Missing config sections leave each script's built-in defaults unchanged.
-
-Additional module-level templates are provided for future cleanup and refactoring:
-
-- `configs/aia.example.yaml`
-- `configs/radio.example.yaml`
-- `configs/cso.example.yaml`
-- `configs/overlay.example.yaml`
-
-These templates are documentation aids for now. Existing scripts are not
-required to read them yet.
-
-## Recommended Run Order
-
-For a typical local event-analysis session:
-
-1. Configure local paths in `configs/paths.local.yaml`.
-2. Run an AIA single-image preview or AIA mosaic with `sdo_aia_euv_processor.py`.
-3. Run AIA base/running difference products from the same AIA processor.
-4. Run radio source maps with `radio_source_map_plot_gaussian_overlay.py`.
-5. Enable Gaussian fitting and inspect the fitted centers, FWHM, and diagnostics.
-6. Run the AIA/radio/HMI overlay workflow.
-7. Run the CSO dynamic spectrogram workflow.
-8. Optionally run manual drift-rate endpoint selection.
-9. Optionally convert a vetted image sequence to video.
-
-## Quick Start
-
-```powershell
-# AIA single-band or mosaic processing
-python scripts\aia_hmi\sdo_aia_euv_processor.py --mode single --waves 171 193 304
-
-# AIA preview mode for checking ROI and intensity scaling
-python scripts\aia_hmi\sdo_aia_euv_processor.py --mode test --test-wave 171 --test-index 0 --roi -700 -100 -100 400
-
-# Normalize AIA/HMI FITS filenames without modifying files
-python scripts\aia_hmi\sdo_aia_hmi_fits_rename.py D:\solar_data\SDO --dry-run
-
-# CSO dynamic spectrum plotting
-python scripts\radio\cso_radio_spectrogram_plot.py
-
-# Multi-band radio maps with Gaussian fitting and optional spectrogram panel
-python scripts\radio\radio_source_map_plot_gaussian_overlay.py
-
-# Select drift-rate endpoints interactively, then save a reusable JSON file
-python scripts\radio\radio_source_map_plot_gaussian_overlay.py --select-drift --drift-port 8050
-
-# Reuse a saved drift-rate selection in later composite plots
-python scripts\radio\radio_source_map_plot_gaussian_overlay.py --use-drift-selection spectrogram_drift_rate_manual_selection.json
-
-# Open the selector automatically only when the selection JSON is missing
-python scripts\radio\radio_source_map_plot_gaussian_overlay.py --enable-drift --drift-launch-policy auto_if_missing
-
-# AIA, radio source, and HMI overlay workflow
-python scripts\radio\sdo_aia_radio_hmi_overlay.py
-
-# Neupert-effect SXR derivative comparison
-python scripts\xray_dem\neupert_sxr_derivative_hxr_comparison.py
-
-# Convert generated PNG sequence to MP4
-python scripts\tools\image_sequence_to_video.py
-```
-
-## Radio Gaussian and Drift-Rate Workflow
-
-The advanced radio workflow is implemented in
-`scripts/radio/radio_source_map_plot_gaussian_overlay.py`. It supports
-single-band and multi-band radio source maps, RR/LL/RR+LL polarization handling,
-Gaussian source fitting, CSO spectrogram panels, and manual drift-rate overlays.
-
-Common controls live near the top of the script in `USER_CONFIG`. Normal users
-should edit `USER_CONFIG`; lower-level compatibility keys remain in
-`DEFAULT_CONFIG` / `ADVANCED_CONFIG`.
-
-Key radio and Gaussian features:
-
-- `calc_image_extent_arcsec()` uses matplotlib-standard
-  `extent=[left, right, bottom, top]`.
-- `preserve_fits_wcs_orientation=True` keeps FITS `CDELT1/CDELT2` orientation
-  instead of sorting it away.
-- `radio_image_origin_mode="auto"` chooses an image origin consistent with that
-  WCS handling.
-- Gaussian center, raw peak, source mask contour, Gaussian contour, and FWHM
-  ellipse use the same pixel-to-data coordinate conversion.
-- Invalid fits such as oversized FWHM or centers far from the raw peak are not
-  shown as valid source centers.
-- Gaussian diagnostics use a fixed CSV schema so successful, failed, and skipped
-  fits remain readable by pandas.
-
-Manual drift-rate measurement:
-
-1. Run the selector:
+1. 克隆仓库：
 
    ```powershell
-   python scripts\radio\radio_source_map_plot_gaussian_overlay.py --select-drift --drift-port 8050
+   git clone https://github.com/YUCONG-28/python-for-solar-physics.git
+   cd python-for-solar-physics
    ```
 
-2. Open the printed local URL, usually `http://127.0.0.1:8050`.
-3. Click two points on the spectrogram for each drift-rate line. The first click
-   fixes the start point; a dashed preview line follows the mouse until the
-   second click fixes the end point.
-4. Click `Save & Continue`. The script writes
-   `spectrogram_drift_rate_manual_selection.json`.
-5. Reuse that JSON during plotting:
+2. 创建环境：
 
    ```powershell
-   python scripts\radio\radio_source_map_plot_gaussian_overlay.py --use-drift-selection spectrogram_drift_rate_manual_selection.json
+   conda create -n solarphysics_env python=3.11
+   conda activate solarphysics_env
+   python -m pip install --upgrade pip
    ```
 
-Drift-rate launch policies:
+3. 安装依赖：
 
-- `cli_only`: safest default; only `--select-drift` opens the browser selector.
-- `auto_if_missing`: normal plotting opens the selector if the JSON is missing.
-- `always`: each run starts a new selector, then reuses the saved JSON for the
-  rest of that run.
+   ```powershell
+   python -m pip install -r requirements.txt
+   python -m pip install -e ".[dev,full]"
+   ```
 
-Disable drift-rate overlays entirely with:
+   可选 GUI 工具可能还需要：
 
-```powershell
-python scripts\radio\radio_source_map_plot_gaussian_overlay.py --disable-drift
+   ```powershell
+   python -m pip install -e ".[gui]"
+   ```
+
+4. 运行快速测试：
+
+   ```powershell
+   ruff check .
+   python -m compileall scripts tests
+   pytest tests/test_path_config.py tests/test_imports.py
+   ```
+
+   当前不将全量 pytest 作为发布成功标准，因为本地 Windows 环境可能在导入 NumPy
+   时触发与 BLAS 相关的 fatal exception。
+
+5. 运行指定脚本：
+
+   ```powershell
+   # AIA 单波段或拼图处理
+   python scripts\aia_hmi\sdo_aia_euv_processor.py --mode single --waves 171 193 304
+
+   # 只预览 AIA/HMI FITS 重命名结果，不实际改名
+   python scripts\aia_hmi\sdo_aia_hmi_fits_rename.py D:\solar_data\SDO --dry-run
+
+   # 下载事件相关 AIA JSOC 数据
+   python scripts\aia_hmi\sdo_aia_jsoc_download_20250124.py
+
+   # 下载 STEREO-A/EUVI 和 GOES/SUVI 事件背景数据
+   python scripts\data_download\stereo_a_euvi_download_20250124.py
+   python scripts\data_download\goes_suvi_download_20250124.py
+
+   # 绘制 CSO 动态频谱图
+   python scripts\radio\cso_radio_spectrogram_plot.py
+
+   # 绘制射电源图并输出高斯拟合诊断
+   python scripts\radio\radio_source_map_plot_gaussian_overlay.py
+
+   # AIA、射电源和 HMI 叠加
+   python scripts\radio\sdo_aia_radio_hmi_overlay.py
+
+   # 将生成的 PNG 序列转为 MP4
+   python scripts\tools\image_sequence_to_video.py
+   ```
+
+### 数据管理策略
+
+- 原始观测数据不进入 Git。
+- 生成产品不进入 Git。
+- 压缩包不进入 Git。
+- 旧本地目录 `data dowload/` 已被忽略。
+- 大型数据产品应放在被忽略的数据目录下，例如 `data/raw/`、`data/products/`、
+  `outputs/` 或其他仅本地使用的目录。
+- 本地路径文件，例如 `configs/paths.local.yaml`，不应提交。
+
+常见忽略对象包括 FITS/FTS 文件、JP2 文件、NetCDF/CDF 文件、NumPy 数组、HDF5
+文件、批量绘图目录、视频、CSV/XLSX 产品、缓存目录和本地归档目录。
+
+### 项目结构
+
+```text
+Python/
+  README.md
+  requirements.txt
+  pyproject.toml
+  scripts/         # 可运行科研脚本
+  solar_toolkit/   # 共享工具包
+  docs/            # 项目文档与整理报告
+  configs/         # 配置模板
+  examples/        # 小型示例；大型输出保留在本地
+  tests/           # 不依赖观测数据的轻量测试
+  legacy/          # 高风险历史脚本，保留用于审查
+  archive/         # 被忽略的本地归档目录，不作为 GitHub 公开内容
+  data/products/   # 被忽略的生成产品目录
 ```
 
-## Verification
+### 示例输出
 
-These checks are data-independent and should run before committing:
+示例输出占位目录位于 `docs/assets/`、`examples/images/` 和 `examples/videos/`。
+目前 `examples/images/` 与 `examples/videos/` 仅保留 `.gitkeep`，还没有精选示例文件。
+后续可在压缩体积并补充来源说明后加入代表性示例图片或视频。
+当前仓库不虚构示例输出，完整科研产品应保留在本地。
+
+### 文档索引
+
+- `docs/script_index.md`：当前脚本索引，并标记 `main`、`utility`、`archived`、
+  `deprecated`。
+- `docs/project_structure.md`：仓库结构与数据管理策略说明。
+- `docs/data_download/event_20250124_inventory.md`：2025-01-24 事件下载与可视化流程。
+
+### 环境与依赖
+
+项目主要在 Windows + Miniforge/conda 环境下开发，但核心包可安装在支持 SunPy 和
+AstroPy 的 Python 3.10+ 环境中。`pyproject.toml` 是主要包元数据文件，
+`requirements.txt` 作为便捷依赖清单。
+
+核心依赖包括 NumPy、SciPy、AstroPy、SunPy、Matplotlib、Reproject、
+Scikit-image、PyYAML、Pandas 和 tqdm。可选工作流可能需要 DRMS、Requests、
+OpenCV、ImageIO、PyQt5、pyqtgraph、Helioviewer 相关依赖或其他数据源相关库。
+
+### 验证状态
+
+当前发布前检查命令：
 
 ```powershell
-python -m compileall -q solar_toolkit scripts tests examples
-$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"; python -m pytest -q tests
-python -c "from solar_toolkit import solar_analysis_utils; import solar_toolkit; print(solar_toolkit.__version__)"
+ruff check .
+python -m compileall scripts tests
+pytest tests/test_path_config.py tests/test_imports.py
 ```
 
-Full science workflows still require the corresponding local observation data.
+这些检查已在第三轮整理中通过。完整科研工作流仍需要本地观测数据，不能假设从全新克隆
+仓库后无需配置即可运行。
 
-For the radio Gaussian/drift-rate script specifically:
+### 注意事项与限制
 
-```powershell
-python -m py_compile scripts\radio\radio_source_map_plot_gaussian_overlay.py
-python scripts\radio\radio_source_map_plot_gaussian_overlay.py --self-test
-```
-
-## Data Policy
-
-Do not commit raw observation data, generated figures, videos, local path
-configs, cache folders, Excel/CSV products, or machine-specific temporary files.
-Keep reproducible code, configuration templates, documentation, and lightweight
-tests in Git.
-
-In particular, do not upload real science data or bulk outputs such as:
-
-- FITS products: `*.fits`, `*.fts`, `*.fit`, `*.fits.gz`, `*.fits.fz`
-- SOHO/LASCO JP2 products: `*.jp2`
-- NetCDF/CDF products: `*.nc`, `*.cdf`
-- NumPy arrays: `*.npy`, `*.npz`
-- HDF5 products: `*.h5`, `*.hdf5`
-- Batch PNG/JPG plot folders
-- Videos: `*.mp4`, `*.avi`, `*.mov`, `*.gif`, `*.mkv`
-- Local path files such as `configs/paths.local.yaml`
-
-README display assets should be compressed, source-documented examples placed
-under `docs/assets/images/` or `docs/assets/videos/`, not full research
-processing outputs.
+- 本仓库是研究工具箱，不是开箱即用的数据门户。
+- 大多数脚本需要本地 FITS、FTS、JP2、NetCDF、CSV 或 NumPy 产品。
+- 部分脚本是事件专用脚本，当前主要面向 2025-01-24 事件。
+- GUI 和下载脚本可能需要可选依赖和网络访问。
+- 高风险科研脚本优先保留审查，不直接删除。
+- 在当前本地 Windows 环境中，全量 pytest 不是发布门槛，因为导入 NumPy 时存在已知的
+  BLAS 相关 fatal exception 风险。
 
 ## Citation
 
