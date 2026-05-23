@@ -43,6 +43,7 @@ full = [
     "fitsio>=1.2.0",
     "skyfield>=1.45",
     "drms>=0.6.3",
+    "requests>=2.31.0",
 ]
 gui = [
     "PyQt5>=5.15.0",

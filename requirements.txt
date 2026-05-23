@@ -20,6 +20,8 @@ imageio>=2.31.0
 pillow>=10.0.0
 psutil>=5.9.0
 opencv-python>=4.8.0
+drms>=0.6.3
+requests>=2.31.0
 
 # Workflow-specific optional packages:
 # - hvpy: required only by SOHO/LASCO Helioviewer downloads.

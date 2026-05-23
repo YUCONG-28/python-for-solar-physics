@@ -19,6 +19,7 @@ build/
 develop-eggs/
 dist/
 downloads/
+data dowload/
 eggs/
 .eggs/
 lib/
@@ -34,6 +35,9 @@ MANIFEST
 
 # Backup files and archives
 backup_*/
+archive/
+archives/
+*.zip
 *.bak
 *.bak_*
 *~
@@ -86,6 +90,7 @@ tmp/
 *.fits.fz
 data/raw/
 data/processed/
+data/products/
 observations/
 
 # Generated outputs
@@ -152,3 +157,9 @@ htmlcov/
 !docs/assets/videos/.gitkeep
 !examples/output/
 !examples/output/.gitkeep
+!examples/images/
+!examples/images/.gitkeep
+!examples/videos/
+!examples/videos/.gitkeep
+!examples/configs/
+!examples/configs/.gitkeep
