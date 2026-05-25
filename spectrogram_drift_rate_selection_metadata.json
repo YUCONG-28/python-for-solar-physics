@@ -1,0 +1,17 @@
+{
+  "fig_width_px": 3600,
+  "fig_height_px": 1125,
+  "axes_bbox_px": {
+    "left": 210.3333333333334,
+    "right": 3019.853333333333,
+    "top": 108.00000000000011,
+    "bottom": 954.1666666666666
+  },
+  "x_start_num": 20112.176504667626,
+  "x_end_num": 20112.177314760556,
+  "x_start_unix_ms": 1737692050003,
+  "x_end_unix_ms": 1737692119995,
+  "f_min_mhz": 80.0323486328125,
+  "f_max_mhz": 339.9658203125,
+  "source_file": "D:\\spike_topping_type_III\\2025\\20250124\\OROCH_MWRS01_SRSP_L1_05M_20250124041219_V01.01.fits"
+}

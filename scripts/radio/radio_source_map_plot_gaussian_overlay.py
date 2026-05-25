@@ -239,6 +239,15 @@ USER_CONFIG = {
         "save_drift_diagnostics": True,
         "drift_diagnostics_csv": "radio_spectrogram_drift_rate_diagnostics.csv",
     },
+    "newkirk": {
+        "enabled": True,
+        "multipliers": [1, 2, 4],
+        "harmonics": [1, 2],
+        "solar_radius_arcsec": 959.63,
+        "los_sign": 1,
+        "output_csv": "radio_gaussian_newkirk_extrapolated.csv",
+        "drift_speed_csv": "radio_drift_newkirk_speed.csv",
+    },
     "output": {
         "output_dir": r"D:\spike_topping_type_III\2025\20250124\RS_test",
         "show_plot": False,
