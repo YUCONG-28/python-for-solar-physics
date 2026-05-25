@@ -29,6 +29,11 @@ source-center diagnostics, and time-evolution products.
 - AIA/radio/HMI overlay workflows for source-region comparison.
 - Event-specific JSOC/AIA, STEREO-A/EUVI, GOES/SUVI, and Solar Orbiter/EUI data
   acquisition helpers.
+- STEREO-A/EUVI processing: manifest generation by wavelength, overview plots,
+  and region-of-interest (ROI) time-evolution movies.
+- GOES/SUVI context image generation with quadrant plotting.
+- Solar Orbiter/EUI SOAR query and FITS download workflow.
+- Modular configuration templates for AIA, radio, CSO, and overlay workflows.
 - Image-sequence to MP4 conversion for time-evolution products.
 - Local path configuration without committing machine-specific data paths.
 
@@ -39,6 +44,9 @@ source-center diagnostics, and time-evolution products.
 | SDO/AIA and HMI visualization | `scripts/aia_hmi/sdo_aia_euv_processor.py` | Main AIA processor for single-band views, mosaics, previews, and difference products. Use `scripts/radio/sdo_aia_radio_hmi_overlay.py` for AIA/radio/HMI overlays. |
 | JSOC / AIA / HMI data download and preparation | `scripts/aia_hmi/sdo_aia_jsoc_download_20250124.py` | Event-specific AIA JSOC downloader. Use `scripts/aia_hmi/sdo_aia_hmi_fits_rename.py` for local FITS filename normalization. |
 | STEREO / SUVI data download | `scripts/data_download/stereo_a_euvi_download_20250124.py`; `scripts/data_download/goes_suvi_download_20250124.py` | Event-specific download helpers for the 2025-01-24 context data. |
+| Solar Orbiter / EUI data download | `scripts/data_download/solo_eui_soar_query_download.py` | Query SOAR for EUI observations and download FITS files. |
+| STEREO-A/EUVI processing | `scripts/stereo_suvi/stereo_euvi_manifest_by_wavelength.py`; `scripts/stereo_suvi/stereo_euvi_0448_overview_plot.py`; `scripts/stereo_suvi/stereo_euvi_roi_movie.py` | EUVI wavelength manifest generation, multi-band overview plots, and ROI time-evolution MP4 generation. |
+| GOES/SUVI context imaging | `scripts/stereo_suvi/goes_suvi_0448_quadrant_plot.py` | Generate GOES/SUVI quadrant layout plots for context images. |
 | Radio spectrogram plotting | `scripts/radio/cso_radio_spectrogram_plot.py` | Main CSO dynamic spectrum plotting workflow. |
 | Radio source image overlay | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` | Main radio source map workflow with multi-frequency panels and optional CSO spectrogram panel. |
 | Gaussian fitting and diagnostics | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` | Produces fitted centers, FWHM overlays, quality diagnostics, and CSV outputs. |
@@ -104,6 +112,17 @@ source-center diagnostics, and time-evolution products.
    python scripts\data_download\stereo_a_euvi_download_20250124.py
    python scripts\data_download\goes_suvi_download_20250124.py
 
+   # Solar Orbiter / EUI SOAR query and download
+   python scripts\data_download\solo_eui_soar_query_download.py
+
+   # STEREO-A/EUVI manifest, overview, and ROI movie
+   python scripts\stereo_suvi\stereo_euvi_manifest_by_wavelength.py
+   python scripts\stereo_suvi\stereo_euvi_0448_overview_plot.py
+   python scripts\stereo_suvi\stereo_euvi_roi_movie.py
+
+   # GOES/SUVI quadrant context plot
+   python scripts\stereo_suvi\goes_suvi_0448_quadrant_plot.py
+
    # CSO dynamic spectrum plotting
    python scripts\radio\cso_radio_spectrogram_plot.py
 
@@ -138,16 +157,50 @@ Python/
   README.md
   requirements.txt
   pyproject.toml
-  scripts/         # runnable research workflows
-  solar_toolkit/   # shared helper package
-  docs/            # project documentation
-  configs/         # example configuration templates
-  examples/        # small examples; larger outputs stay local
-  tests/           # lightweight data-independent tests
-  legacy/          # high-risk historical scripts kept for review
-  archive/         # ignored local archive area, not public GitHub content
-  data/products/   # ignored generated products
+  .github/workflows/ci.yml   # automated CI (ruff, compileall, import tests)
+  scripts/                   # runnable research workflows
+    aia_hmi/                 # SDO/AIA, HMI visualization and JSOC download
+    data_download/           # STEREO, GOES/SUVI, Solar Orbiter/EUI download
+    lasco_cme/               # LASCO CME detection utilities
+    radio/                   # CSO spec, radio source maps, AIA/radio/HMI overlay
+    stereo_suvi/             # STEREO-A/EUVI and GOES/SUVI processing & plots
+    tools/                   # image-to-video and other general utilities
+    xray_dem/                # X-ray/DEM temperature analysis utilities
+  solar_toolkit/             # shared helper package
+    coordinates.py           # solar coordinate transforms
+    cso.py                   # CSO spectrogram reader
+    gaussian.py              # 2D Gaussian fitting utilities
+    path_config.py           # local path configuration loader
+    solar_analysis_utils.py  # common analysis helpers (aia, hmi, radio, etc.)
+  docs/                      # project documentation & refactor reports
+  configs/                   # example YAML configuration templates
+    aia.example.yaml         # AIA workflow config template
+    cso.example.yaml         # CSO spectrogram config template
+    overlay.example.yaml     # AIA/radio/HMI overlay config template
+    paths.example.yaml       # local data paths config template
+    radio.example.yaml       # radio source map config template
+  examples/                  # small examples; larger outputs stay local
+  tests/                     # lightweight data-independent tests
+  legacy/                    # high-risk historical scripts kept for review
+  archive/                   # ignored local archive area, not public GitHub content
+  data/products/             # ignored generated products
 ```
+
+**Key directories explained:**
+
+- **`solar_toolkit/`** — shared helper package with modules for coordinate
+  transforms (`coordinates.py`), CSO spectrogram I/O (`cso.py`), 2D Gaussian
+  fitting (`gaussian.py`), local path configuration (`path_config.py`), and
+  common analysis utilities (`solar_analysis_utils.py`).
+- **`configs/`** — YAML configuration templates for AIA, CSO, radio source map,
+  and overlay workflows plus local path settings. Copy and adapt these for your
+  environment instead of hard-coding paths in scripts.
+- **`scripts/`** — organized by instrument/workflow:
+  `aia_hmi/` (SDO), `data_download/` (multi-instrument), `radio/` (CSO + LOFAR
+  source maps), `stereo_suvi/` (STEREO/EUVI + GOES/SUVI), `lasco_cme/` (LASCO),
+  `xray_dem/` (X-ray), and `tools/` (utilities).
+- **`.github/workflows/ci.yml`** — GitHub Actions CI that runs `ruff check`,
+  `compileall`, `test_imports`, and `test_path_config` on push and PR.
 
 ### Example Outputs
 
@@ -165,8 +218,13 @@ products should remain local.
 - `docs/script_index.md`: current script index with `main`, `utility`,
   `archived`, and `deprecated` labels.
 - `docs/project_structure.md`: repository layout and data policy details.
+- `docs/MAIN_FILES.md`: curated list of main production scripts and their roles.
+- `docs/PROJECT_OVERVIEW.md`: high-level project architecture and module map.
+- `docs/CODE_ORGANIZATION_MANIFEST.md`: code organization rules and retention
+  policy after project restructuring.
 - `docs/data_download/event_20250124_inventory.md`: 2025-01-24 event download
   and visualization workflow.
+- `CHANGELOG.md`: versioned release notes and change log.
 
 ### Environment and Dependencies
 
@@ -225,6 +283,10 @@ without user data paths.
 - AIA/radio/HMI 叠加工作流，用于源区对比。
 - 面向 2025-01-24 事件的 JSOC/AIA、STEREO-A/EUVI、GOES/SUVI 和
   Solar Orbiter/EUI 数据获取辅助脚本。
+- STEREO-A/EUVI 处理：按波长生成清单、多波段概览图和 ROI 时间演化动画。
+- GOES/SUVI 背景图像生成与象限排布图绘制。
+- Solar Orbiter/EUI SOAR 查询与 FITS 下载工作流。
+- AIA、射电、CSO 和叠加工作流的模块化配置模板（YAML）。
 - 图片序列转 MP4，用于时间演化产品。
 - 本地路径配置，避免把个人机器路径提交到仓库。
 
@@ -235,6 +297,9 @@ without user data paths.
 | SDO/AIA 与 HMI 可视化 | `scripts/aia_hmi/sdo_aia_euv_processor.py` | AIA 主处理脚本，用于单波段图像、多波段拼图、预览和差分产品。AIA/radio/HMI 叠加使用 `scripts/radio/sdo_aia_radio_hmi_overlay.py`。 |
 | JSOC / AIA / HMI 数据下载与准备 | `scripts/aia_hmi/sdo_aia_jsoc_download_20250124.py` | 面向事件的 AIA JSOC 下载脚本。本地 FITS 文件名规范化使用 `scripts/aia_hmi/sdo_aia_hmi_fits_rename.py`。 |
 | STEREO / SUVI 数据下载 | `scripts/data_download/stereo_a_euvi_download_20250124.py`; `scripts/data_download/goes_suvi_download_20250124.py` | 面向 2025-01-24 事件背景数据的下载辅助脚本。 |
+| Solar Orbiter / EUI 数据下载 | `scripts/data_download/solo_eui_soar_query_download.py` | 查询 SOAR 获取 EUI 观测并下载 FITS 文件。 |
+| STEREO-A/EUVI 处理 | `scripts/stereo_suvi/stereo_euvi_manifest_by_wavelength.py`; `scripts/stereo_suvi/stereo_euvi_0448_overview_plot.py`; `scripts/stereo_suvi/stereo_euvi_roi_movie.py` | EUVI 按波长生成清单、多波段概览图和 ROI 时间演化 MP4 生成。 |
+| GOES/SUVI 背景图绘制 | `scripts/stereo_suvi/goes_suvi_0448_quadrant_plot.py` | 生成 GOES/SUVI 象限排布图。 |
 | 射电频谱图绘制 | `scripts/radio/cso_radio_spectrogram_plot.py` | CSO 动态频谱图主绘制流程。 |
 | 射电源图像叠加 | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` | 射电源图主流程，支持多频面板和可选 CSO 频谱面板。 |
 | 高斯拟合与诊断 | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` | 输出拟合中心、FWHM 叠加、质量诊断和 CSV 结果。 |
@@ -299,6 +364,17 @@ without user data paths.
    python scripts\data_download\stereo_a_euvi_download_20250124.py
    python scripts\data_download\goes_suvi_download_20250124.py
 
+   # Solar Orbiter / EUI SOAR 查询与下载
+   python scripts\data_download\solo_eui_soar_query_download.py
+
+   # STEREO-A/EUVI 清单、概览图与 ROI 动画
+   python scripts\stereo_suvi\stereo_euvi_manifest_by_wavelength.py
+   python scripts\stereo_suvi\stereo_euvi_0448_overview_plot.py
+   python scripts\stereo_suvi\stereo_euvi_roi_movie.py
+
+   # GOES/SUVI 象限背景图
+   python scripts\stereo_suvi\goes_suvi_0448_quadrant_plot.py
+
    # 绘制 CSO 动态频谱图
    python scripts\radio\cso_radio_spectrogram_plot.py
 
@@ -332,16 +408,48 @@ Python/
   README.md
   requirements.txt
   pyproject.toml
-  scripts/         # 可运行科研脚本
-  solar_toolkit/   # 共享工具包
-  docs/            # 项目文档与整理报告
-  configs/         # 配置模板
-  examples/        # 小型示例；大型输出保留在本地
-  tests/           # 不依赖观测数据的轻量测试
-  legacy/          # 高风险历史脚本，保留用于审查
-  archive/         # 被忽略的本地归档目录，不作为 GitHub 公开内容
-  data/products/   # 被忽略的生成产品目录
+  .github/workflows/ci.yml   # 自动化 CI（ruff、compileall、导入测试）
+  scripts/                   # 可运行科研脚本
+    aia_hmi/                 # SDO/AIA、HMI 可视化与 JSOC 下载
+    data_download/           # STEREO、GOES/SUVI、Solar Orbiter/EUI 下载
+    lasco_cme/               # LASCO CME 检测工具
+    radio/                   # CSO 频谱、射电源图、AIA/radio/HMI 叠加
+    stereo_suvi/             # STEREO-A/EUVI 与 GOES/SUVI 处理与绘图
+    tools/                   # 图片转视频与其他通用工具
+    xray_dem/                # X 射线/DEM 温度分析工具
+  solar_toolkit/             # 共享工具包
+    coordinates.py           # 太阳坐标变换
+    cso.py                   # CSO 频谱图读取
+    gaussian.py              # 二维高斯拟合工具
+    path_config.py           # 本地路径配置加载
+    solar_analysis_utils.py  # 通用分析辅助函数（aia、hmi、radio 等）
+  docs/                      # 项目文档与整理报告
+  configs/                   # YAML 配置模板
+    aia.example.yaml         # AIA 工作流配置模板
+    cso.example.yaml         # CSO 频谱图配置模板
+    overlay.example.yaml     # AIA/radio/HMI 叠加配置模板
+    paths.example.yaml       # 本地数据路径配置模板
+    radio.example.yaml       # 射电源图配置模板
+  examples/                  # 小型示例；大型输出保留在本地
+  tests/                     # 不依赖观测数据的轻量测试
+  legacy/                    # 高风险历史脚本，保留用于审查
+  archive/                   # 被忽略的本地归档目录，不作为 GitHub 公开内容
+  data/products/             # 被忽略的生成产品目录
 ```
+
+**主要目录说明：**
+
+- **`solar_toolkit/`** — 共享工具包，包含坐标变换（`coordinates.py`）、CSO
+  频谱图 I/O（`cso.py`）、二维高斯拟合（`gaussian.py`）、本地路径配置
+  （`path_config.py`）和通用分析辅助函数（`solar_analysis_utils.py`）。
+- **`configs/`** — AIA、CSO、射电源图和叠加工作流的 YAML 配置模板，以及本地
+  路径设置。请将这些模板复制并适配到自己的环境中使用，而不是在脚本中硬编码路径。
+- **`scripts/`** — 按仪器/工作流组织：`aia_hmi/`（SDO）、`data_download/`
+  （多仪器）、`radio/`（CSO + LOFAR 射电源图）、`stereo_suvi/`
+  （STEREO/EUVI + GOES/SUVI）、`lasco_cme/`（LASCO）、`xray_dem/`
+  （X 射线）和 `tools/`（通用工具）。
+- **`.github/workflows/ci.yml`** — GitHub Actions CI，在 push 和 PR 时执行
+  `ruff check`、`compileall`、`test_imports` 和 `test_path_config`。
 
 ### 示例输出
 
@@ -355,7 +463,11 @@ Python/
 - `docs/script_index.md`：当前脚本索引，并标记 `main`、`utility`、`archived`、
   `deprecated`。
 - `docs/project_structure.md`：仓库结构与数据管理策略说明。
+- `docs/MAIN_FILES.md`：主要生产脚本及其用途的精选列表。
+- `docs/PROJECT_OVERVIEW.md`：项目架构与模块关系的高级概览。
+- `docs/CODE_ORGANIZATION_MANIFEST.md`：项目重构后的代码组织规则与保留策略。
 - `docs/data_download/event_20250124_inventory.md`：2025-01-24 事件下载与可视化流程。
+- `CHANGELOG.md`：版本化发布说明与变更日志。
 
 ### 环境与依赖
 
