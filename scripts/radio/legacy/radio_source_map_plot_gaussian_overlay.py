@@ -22,6 +22,7 @@ import json
 import math
 import os
 import shutil
+import sys
 import threading
 import time
 import warnings
@@ -30,6 +31,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 from dataclasses import dataclass
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlparse
 
 import matplotlib
@@ -46,6 +48,9 @@ from tqdm import tqdm
 
 from solar_toolkit.path_config import load_script_config
 
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
 BoolArray = NDArray[np.bool_]
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.intp]
@@ -53,208 +58,10 @@ IntArray = NDArray[np.intp]
 # ============================================================
 #   ★ All configurable parameters are centralized here, no need to dive into code to adjust ★
 # ============================================================
-USER_CONFIG = {
-    "mode": "multi_band",
-    "data": {
-        "multi_band_root": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450",
-        "multi_band_freqs": [149, 164, 190, 205, 223, 238],
-        "polarization": "RR+LL",
-        "single_file_path": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450\149MHz\RR\149MHz_2025124_045710_093.fits",
-        "data_dir": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450\149MHz\RR",
-        "start_idx": 1588,
-        "end_idx": 1666,
-    },
-    "features": {
-        "gaussian_overlay": True,
-        "spectrogram_panel": True,
-        "background_correction": False,
-        "save_gaussian_diagnostics": True,
-        "save_background_products": False,
-        "save_individual_pols": False,
-    },
-    "display": {
-        "use_custom_lim": True,
-        "custom_xlim": (-3000, 3000),
-        "custom_ylim": (-3000, 3000),
-        "radio_cmap": "hot",
-        "background_bad_color": "#000080",
-        "use_per_band_colormap": True,
-        "per_band_range_method": "fixed_percentile",
-        "per_band_percentiles": [99.7, 99.99],
-        "preserve_fits_wcs_orientation": True,
-        "radio_image_origin_mode": "auto",
-        "draw_coordinate_corner_debug": False,
-    },
-    "gaussian": {
-        "overlay_display_mode": "fwhm_only",
-        "fit_use_source_mask": True,
-        "fit_snr_threshold": 5.0,
-        "fit_peak_fraction_threshold": 0.40,
-        "fit_grow_peak_fraction_threshold": 0.22,
-        "fit_mask_target_min_pixels": 18,
-        "fit_mask_target_max_pixels": 260,
-        "fit_peak_fraction_threshold_min": 0.25,
-        "fit_peak_fraction_threshold_max": 0.62,
-        "fit_peak_fraction_threshold_step": 0.03,
-        "gaussian_per_band_params": {
-            149: {
-                "fit_peak_fraction_threshold": 0.38,
-                "fit_peak_fraction_threshold_min": 0.25,
-                "fit_peak_fraction_threshold_max": 0.55,
-                "fit_mask_target_min_pixels": 18,
-                "fit_mask_target_max_pixels": 180,
-                "gaussian_fit_roi_padding_pixels": 4,
-                "gaussian_fit_max_pixels": 350,
-                "max_sigma_fraction": 0.17,
-                "fit_background_model": "constant",
-                "fit_mask_dilation_pixels": 1,
-            },
-            164: {
-                "fit_peak_fraction_threshold": 0.38,
-                "fit_peak_fraction_threshold_min": 0.25,
-                "fit_peak_fraction_threshold_max": 0.55,
-                "fit_mask_target_min_pixels": 18,
-                "fit_mask_target_max_pixels": 180,
-                "gaussian_fit_roi_padding_pixels": 4,
-                "gaussian_fit_max_pixels": 350,
-                "max_sigma_fraction": 0.17,
-                "fit_background_model": "constant",
-                "fit_mask_dilation_pixels": 1,
-            },
-            190: {
-                "fit_peak_fraction_threshold": 0.40,
-                "fit_peak_fraction_threshold_min": 0.25,
-                "fit_peak_fraction_threshold_max": 0.60,
-                "fit_mask_target_min_pixels": 18,
-                "fit_mask_target_max_pixels": 220,
-                "gaussian_fit_roi_padding_pixels": 4,
-                "gaussian_fit_max_pixels": 400,
-                "max_sigma_fraction": 0.18,
-                "fit_background_model": "constant",
-                "fit_mask_dilation_pixels": 1,
-            },
-            205: {
-                "fit_peak_fraction_threshold": 0.40,
-                "fit_peak_fraction_threshold_min": 0.25,
-                "fit_peak_fraction_threshold_max": 0.60,
-                "fit_mask_target_min_pixels": 18,
-                "fit_mask_target_max_pixels": 240,
-                "gaussian_fit_roi_padding_pixels": 4,
-                "gaussian_fit_max_pixels": 400,
-                "max_sigma_fraction": 0.18,
-                "fit_background_model": "constant",
-                "fit_mask_dilation_pixels": 1,
-            },
-            223: {
-                "fit_peak_fraction_threshold": 0.42,
-                "fit_peak_fraction_threshold_min": 0.25,
-                "fit_peak_fraction_threshold_max": 0.65,
-                "fit_mask_target_min_pixels": 16,
-                "fit_mask_target_max_pixels": 180,
-                "gaussian_fit_roi_padding_pixels": 3,
-                "gaussian_fit_max_pixels": 320,
-                "max_sigma_fraction": 0.16,
-                "fit_background_model": "plane",
-                "fit_mask_dilation_pixels": 1,
-            },
-            238: {
-                "fit_peak_fraction_threshold": 0.42,
-                "fit_peak_fraction_threshold_min": 0.25,
-                "fit_peak_fraction_threshold_max": 0.65,
-                "fit_mask_target_min_pixels": 16,
-                "fit_mask_target_max_pixels": 180,
-                "gaussian_fit_roi_padding_pixels": 3,
-                "gaussian_fit_max_pixels": 320,
-                "max_sigma_fraction": 0.16,
-                "fit_background_model": "plane",
-                "fit_mask_dilation_pixels": 1,
-            },
-        },
-        "max_fwhm_arcsec": 1800.0,
-        "max_center_peak_distance_arcsec": 300.0,
-        "draw_raw_peak_marker": True,
-        "draw_fit_peak_distance": True,
-        "draw_coordinate_debug": True,
-    },
-    "background": {
-        "mode": "off",
-        "apply_to_display": False,
-        "apply_to_fit": False,
-        "apply_before_polarization_combine": False,
-    },
-    "spectrogram": {
-        # file_paths is used for continuous multi-file dynamic spectra.
-        "file_paths": [
-            r"<PROJECT_ROOT>\2026\20260326\OROCH_MWRS01_SRSP_L1_05M_20260326065200_V01.01.fits",
-            r"<PROJECT_ROOT>\2026\20260326\OROCH_MWRS01_SRSP_L1_05M_20260326065509_V01.01.fits",
-        ],
-        # file_path is kept as the single-file compatibility entry point.
-        "file_path": r"<PROJECT_ROOT>\2025\20250124\OROCH_MWRS01_SRSP_L1_05M_20250124044743_V01.01.fits",
-        "time_display_mode": "user",
-        "time_start": "2025-01-24T04:48:30",
-        "time_end": "2025-01-24T04:49:00",
-        "f_start": 80.0,
-        "f_end": 340.0,
-        "polarization": "sum",
-    },
-    "drift_rate": {
-        "enabled": True,
-        "mode": "interactive_manual",
-        "interactive": {
-            "enabled": True,
-            "host": "127.0.0.1",
-            "port": 8050,
-            "auto_open_browser": True,
-            "launch_policy": "always",
-            "reuse_existing_selection": True,
-            "overwrite_selection": False,
-            "print_usage_hint": True,
-            "auto_increment_port": True,
-            "max_port_tries": 20,
-            "block_until_done": True,
-            "selection_timeout_seconds": 0,
-            "allow_multiple_lines": True,
-            "click_pair_mode": "start_end",
-            "show_crosshair": True,
-            "show_live_coordinate": True,
-            "show_preview_line": True,
-            "line_color_cycle": [
-                "white",
-                "cyan",
-                "lime",
-                "magenta",
-            ],
-        },
-        "selection_json": "spectrogram_drift_rate_manual_selection.json",
-        "selection_preview_png": "spectrogram_drift_rate_selection_preview.png",
-        "selection_metadata_json": "spectrogram_drift_rate_selection_metadata.json",
-        "draw_lines": True,
-        "draw_endpoints": True,
-        "draw_label": True,
-        "draw_selected_id": True,
-        "label_format": "{label}: df/dt={drift_rate:.2f} MHz/s",
-        "line_width": 2.2,
-        "endpoint_marker": "o",
-        "endpoint_size": 30,
-        "save_drift_diagnostics": True,
-        "drift_diagnostics_csv": "radio_spectrogram_drift_rate_diagnostics.csv",
-    },
-    "newkirk": {
-        "enabled": True,
-        "multipliers": [1, 2, 4],
-        "harmonics": [1, 2],
-        "solar_radius_arcsec": 959.63,
-        "los_sign": 1,
-        "output_csv": "radio_gaussian_newkirk_extrapolated.csv",
-        "drift_speed_csv": "radio_drift_newkirk_speed.csv",
-    },
-    "output": {
-        "output_dir": r"<PROJECT_ROOT>\2025\20250124\RS_test",
-        "show_plot": False,
-        "save_plot": True,
-        "dpi": 300,
-    },
-}
+try:
+    from scripts.radio.configs.radio_20250124_config import USER_CONFIG
+except Exception:
+    USER_CONFIG = {}
 
 DEFAULT_CONFIG = {
     # ---------- 坐标轴和颜色条数字颜色 ----------
@@ -7995,10 +7802,18 @@ def _run_select_drift_workflow(cfg):
         )
 
 
-def main():
+def main(user_config=None):
     """
     Main function: process single-band or multi-band radio data according to configuration mode, parallel plotting and saving results.
     """
+    global CONFIG, USER_CONFIG
+    if user_config is not None:
+        USER_CONFIG = dict(user_config or {})
+        CONFIG = load_script_config(
+            "radio_source_map_plot_gaussian_overlay",
+            build_config(USER_CONFIG, DEFAULT_CONFIG),
+        )
+
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--select-drift", action="store_true")
