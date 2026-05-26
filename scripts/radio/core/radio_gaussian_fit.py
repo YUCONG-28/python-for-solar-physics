@@ -1,4 +1,5 @@
 """Gaussian fitting helpers extracted from radio source-map plotting."""
+
 from __future__ import annotations
 
 import csv
@@ -11,10 +12,10 @@ from dataclasses import dataclass
 
 import matplotlib.patches as patches
 import numpy as np
-from scipy.ndimage import binary_dilation, find_objects, label, median_filter
+from scipy.ndimage import binary_dilation, find_objects, label
 from scipy.optimize import curve_fit
 
-from . import radio_source_map_plot_gaussian_overlay as _legacy
+from ..legacy import radio_source_map_plot_gaussian_overlay as _legacy
 
 BoolArray = _legacy.BoolArray
 FloatArray = _legacy.FloatArray
@@ -23,6 +24,7 @@ GAUSSIAN_DIAGNOSTIC_FIELDS = _legacy.GAUSSIAN_DIAGNOSTIC_FIELDS
 _plot_output_subdir = _legacy._plot_output_subdir
 pixel_to_data_coord = _legacy.pixel_to_data_coord
 coordinate_roundtrip_error_pixel = _legacy.coordinate_roundtrip_error_pixel
+_unravel_2d_index = _legacy._unravel_2d_index
 
 
 @dataclass
@@ -43,6 +45,7 @@ class GaussianFitResult:
     mask_pixel_count: int
     source_file: str | None = None
 
+
 def elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta):
     x, y = xy
     cos_t = np.cos(theta)
@@ -54,8 +57,10 @@ def elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta):
     exponent = -0.5 * ((x_rot / sigma_x) ** 2 + (y_rot / sigma_y) ** 2)
     return A * np.exp(exponent)
 
+
 def elliptical_gaussian_2d_with_constant_bg(xy, A, x0, y0, sigma_x, sigma_y, theta, b0):
     return elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta) + b0
+
 
 def elliptical_gaussian_2d_with_plane_bg(
     xy, A, x0, y0, sigma_x, sigma_y, theta, b0, bx, by
@@ -68,8 +73,10 @@ def elliptical_gaussian_2d_with_plane_bg(
         + by * y
     )
 
+
 def gaussian_only_from_popt(xy, popt, background_model):
     return elliptical_gaussian_2d(xy, *popt[:6])
+
 
 def estimate_background_noise(data, source_exclusion_mask=None):
     work = np.asarray(data, dtype=np.float64)
@@ -86,6 +93,7 @@ def estimate_background_noise(data, source_exclusion_mask=None):
         noise_sigma = float(np.nanstd(finite_data))
     return background_level, noise_sigma
 
+
 def _safe_rms_map(rms_map):
     safe = np.asarray(rms_map, dtype=np.float64).copy()
     finite_positive = safe[np.isfinite(safe) & (safe > 0)]
@@ -94,6 +102,7 @@ def _safe_rms_map(rms_map):
         fallback = 1.0
     safe[~np.isfinite(safe) | (safe <= 0)] = fallback
     return safe
+
 
 def _select_peak_connected_mask(
     source_mask_bool,
@@ -138,6 +147,7 @@ def _select_peak_connected_mask(
         if grow_label > 0:
             main_mask = np.asarray(grown_labels == grow_label, dtype=np.bool_)
     return np.asarray(main_mask, dtype=np.bool_)
+
 
 def create_source_mask(
     data: FloatArray | np.ndarray,
@@ -401,9 +411,11 @@ def create_source_mask(
 
     return np.asarray(main_mask, dtype=np.bool_), diagnostics
 
+
 def _fit_failure_warning(source_file, quality_flag, detail=""):
-    if isinstance(CONFIG, dict) and not CONFIG.get("gaussian_fit_verbose", False):
-        counts = CONFIG.setdefault("_gaussian_warning_counts", {})
+    config = getattr(_legacy, "CONFIG", {})
+    if isinstance(config, dict) and not config.get("gaussian_fit_verbose", False):
+        counts = config.setdefault("_gaussian_warning_counts", {})
         key = str(quality_flag)
         counts[key] = counts.get(key, 0) + 1
         if counts[key] > 3:
@@ -413,6 +425,7 @@ def _fit_failure_warning(source_file, quality_flag, detail=""):
     warnings.warn(
         f"Gaussian fit skipped for {name}: reason={quality_flag}{suffix}", stacklevel=2
     )
+
 
 def _gaussian_fit_diag_defaults(cfg):
     return {
@@ -428,6 +441,7 @@ def _gaussian_fit_diag_defaults(cfg):
         "normalization_scale": np.nan,
     }
 
+
 def _roi_slices_from_mask(mask, shape, padding):
     if mask is None or not np.any(mask):
         return slice(0, shape[0]), slice(0, shape[1]), False
@@ -441,6 +455,7 @@ def _roi_slices_from_mask(mask, shape, padding):
     x1 = min(int(np.max(xs)) + pad + 1, shape[1])
     roi_used = (y0 > 0) or (x0 > 0) or (y1 < shape[0]) or (x1 < shape[1])
     return slice(y0, y1), slice(x0, x1), roi_used
+
 
 def _weighted_moment_initial_guess(x, y, z, bg, nx, ny, peak_x, peak_y, cfg):
     weights = np.asarray(z, dtype=np.float64) - bg
@@ -466,6 +481,7 @@ def _weighted_moment_initial_guess(x, y, z, bg, nx, ny, peak_x, peak_y, cfg):
         cx, cy = float(peak_x), float(peak_y)
     return cx, cy, sigma_x, sigma_y
 
+
 def _limit_fit_pixels(x, y, z, peak_x, peak_y, max_pixels):
     count = int(z.size)
     max_pixels = int(max_pixels or 0)
@@ -479,6 +495,7 @@ def _limit_fit_pixels(x, y, z, peak_x, peak_y, max_pixels):
     order = np.lexsort((dist2, -intensity_rank))
     keep = np.sort(order[:max_pixels])
     return x[keep], y[keep], z[keep], count, int(keep.size)
+
 
 def _attach_gaussian_fit_metadata(result, cfg, mask_diag, fit_input_type, fit_meta):
     result.fit_input_type = fit_input_type
@@ -502,6 +519,7 @@ def _attach_gaussian_fit_metadata(result, cfg, mask_diag, fit_input_type, fit_me
         setattr(result, key, value)
     return result
 
+
 def _gaussian_fwhm_arcsec(fit_result, extent, img_shape):
     ny, nx = img_shape
     dx = abs((extent[1] - extent[0]) / max(nx, 1))
@@ -509,6 +527,7 @@ def _gaussian_fwhm_arcsec(fit_result, extent, img_shape):
     width = 2.355 * fit_result.sigma_pixel[0] * dx
     height = 2.355 * fit_result.sigma_pixel[1] * dy
     return float(width), float(height)
+
 
 def _center_peak_distance_arcsec(fit_result):
     raw_center = getattr(fit_result, "raw_center_arcsec", None)
@@ -519,6 +538,7 @@ def _center_peak_distance_arcsec(fit_result):
     fit_result.center_peak_dx_arcsec = float(cx - rx)
     fit_result.center_peak_dy_arcsec = float(cy - ry)
     return float(math.sqrt((cx - rx) ** 2 + (cy - ry) ** 2))
+
 
 def _gaussian_quality_config(cfg):
     quality_cfg = dict(cfg.get("gaussian_quality_requirements", {}) or {})
@@ -531,6 +551,7 @@ def _gaussian_quality_config(cfg):
     quality_cfg.setdefault("min_snr", cfg.get("fit_snr_threshold", 5.0))
     quality_cfg.setdefault("max_residual_rms_fraction", 0.8)
     return quality_cfg
+
 
 def _update_gaussian_quality(fit_result, extent, img_shape, cfg):
     """Mark fits valid for display only when they satisfy compact-source criteria."""
@@ -629,6 +650,7 @@ def _update_gaussian_quality(fit_result, extent, img_shape, cfg):
     )
     return bool(fit_result.overlay_valid)
 
+
 def _set_gaussian_failure_diag(
     cfg: dict, source_file, reason: str, mask_diag: dict | None = None, **extra
 ) -> None:
@@ -684,6 +706,7 @@ def _set_gaussian_failure_diag(
         "normalization_scale": extra.get("normalization_scale", np.nan),
     }
     cfg["_last_gaussian_failure_diag"] = diag
+
 
 def fit_elliptical_gaussian_on_radio_image(
     data,
@@ -1100,6 +1123,7 @@ def fit_elliptical_gaussian_on_radio_image(
         result, cfg, mask_diag, fit_input_type, fit_meta
     )
 
+
 def overlay_gaussian_fit_on_axis(ax, fit_result, extent, img_shape, cfg):
     if fit_result is None:
         return
@@ -1291,6 +1315,7 @@ def overlay_gaussian_fit_on_axis(ax, fit_result, extent, img_shape, cfg):
             bbox=dict(facecolor="black", alpha=0.55, edgecolor="none"),
         )
 
+
 def _acquire_csv_lock(lock_path, timeout_seconds=60.0, stale_seconds=300.0):
     deadline = time.time() + float(timeout_seconds)
     fd = None
@@ -1312,6 +1337,7 @@ def _acquire_csv_lock(lock_path, timeout_seconds=60.0, stale_seconds=300.0):
                 ) from None
             time.sleep(0.05)
 
+
 def _release_csv_lock(lock_path, fd):
     try:
         if fd is not None:
@@ -1321,6 +1347,7 @@ def _release_csv_lock(lock_path, fd):
             os.remove(lock_path)
         except FileNotFoundError:
             pass
+
 
 def save_gaussian_diagnostics_row(row, output_dir, cfg):
     diagnostics_dir = os.path.join(output_dir, _plot_output_subdir(cfg))
@@ -1353,4 +1380,3 @@ def save_gaussian_diagnostics_row(row, output_dir, cfg):
             writer.writerow({name: row.get(name, "") for name in fieldnames})
     finally:
         _release_csv_lock(lock_path, lock_fd)
-

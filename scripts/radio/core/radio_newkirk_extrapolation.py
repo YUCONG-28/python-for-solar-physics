@@ -27,9 +27,7 @@ def newkirk_density_cm3(r_rsun, multiplier=1.0):
     multiplier = float(multiplier)
     if multiplier <= 0:
         raise ValueError("multiplier must be positive")
-    density = multiplier * NEWKIRK_BASE_DENSITY_CM3 * 10.0 ** (
-        NEWKIRK_EXPONENT / r
-    )
+    density = multiplier * NEWKIRK_BASE_DENSITY_CM3 * 10.0 ** (NEWKIRK_EXPONENT / r)
     return _scalar_or_array(density)
 
 
@@ -140,14 +138,12 @@ def extrapolate_drift_line_with_newkirk(drift_row, multiplier, harmonic):
     out.update(
         {
             "newkirk_multiplier": float(multiplier),
-            "newkirk_harmonic": int(harmonic)
-            if float(harmonic).is_integer()
-            else float(harmonic),
+            "newkirk_harmonic": (
+                int(harmonic) if float(harmonic).is_integer() else float(harmonic)
+            ),
             "mid_frequency_mhz": mid_freq,
             "newkirk_r_rsun": radius,
-            "newkirk_height_rsun": radius - 1.0
-            if np.isfinite(radius)
-            else np.nan,
+            "newkirk_height_rsun": radius - 1.0 if np.isfinite(radius) else np.nan,
             "dr_dt_rsun_s": speed["dr_dt_rsun_s"],
             "speed_km_s": speed["speed_km_s"],
         }
