@@ -1,4 +1,5 @@
 """Dynamic spectrogram cache and overlay helpers extracted from radio plotting."""
+
 from __future__ import annotations
 
 import datetime
@@ -11,7 +12,7 @@ import matplotlib.dates as mdates
 import numpy as np
 from astropy.io import fits
 
-from . import radio_source_map_plot_gaussian_overlay as _legacy
+from ..legacy import radio_source_map_plot_gaussian_overlay as _legacy
 
 _parse_datetime_value = _legacy._parse_datetime_value
 _index_range_from_values = _legacy._index_range_from_values
@@ -37,8 +38,10 @@ class SpectrogramCache:
     source_file: str
     source_files: list[str] | None = None
 
+
 def _spectrogram_panel_enabled(cfg: dict) -> bool:
     return bool(cfg.get("enable_spectrogram_panel", False))
+
 
 def _normalize_spectrogram_paths(cfg: dict) -> list[str]:
     """
@@ -72,6 +75,7 @@ def _normalize_spectrogram_paths(cfg: dict) -> list[str]:
             )
     return paths
 
+
 def _read_spectrogram_file_metadata(path: str) -> dict:
     """
     Read only header/time/frequency metadata from one CSO spectrogram FITS.
@@ -102,6 +106,7 @@ def _read_spectrogram_file_metadata(path: str) -> dict:
         "file_start": file_start,
         "file_end": file_end,
     }
+
 
 def resolve_spectrogram_time_window_multi(cfg, radio_time_range, file_metas):
     """
@@ -137,6 +142,7 @@ def resolve_spectrogram_time_window_multi(cfg, radio_time_range, file_metas):
         t_start, t_end = t_end, t_start
     print(f"[Spectrogram time window] mode={mode}, start={t_start}, end={t_end}")
     return t_start, t_end, mode
+
 
 def _spectrogram_overlap_segments(cfg, t_start, t_end, metas):
     segments = []
@@ -194,6 +200,7 @@ def _spectrogram_overlap_segments(cfg, t_start, t_end, metas):
             return []
     return segments
 
+
 def _rebinned_axis_values(
     arr: np.ndarray, i0: int, i1: int, bin_size: int
 ) -> np.ndarray:
@@ -203,6 +210,7 @@ def _rebinned_axis_values(
     if n_trim <= 0:
         raise ValueError("Cannot rebin an empty spectrogram axis slice")
     return arr[i0 : i0 + n_trim].reshape(-1, bin_eff).mean(axis=1)
+
 
 def _read_rebinned_plane(
     plane,
@@ -255,6 +263,7 @@ def _read_rebinned_plane(
         out[:, out_col : out_col + n_t_chunk] = rb
         out_col += n_t_chunk
     return out
+
 
 def build_spectrogram_cache(
     cfg: dict, radio_time_range=None
@@ -481,6 +490,7 @@ def build_spectrogram_cache(
         source_files=paths,
     )
 
+
 def get_spectrogram_cache(cfg: dict) -> SpectrogramCache | None:
     global _SPECTROGRAM_CACHE
     if not _spectrogram_panel_enabled(cfg):
@@ -488,6 +498,7 @@ def get_spectrogram_cache(cfg: dict) -> SpectrogramCache | None:
     if _SPECTROGRAM_CACHE is None:
         _SPECTROGRAM_CACHE = build_spectrogram_cache(cfg)
     return _SPECTROGRAM_CACHE
+
 
 def _spectrogram_time_locator(cfg: dict, span_seconds: float):
     max_ticks = max(2, int(cfg.get("spectrogram_max_time_ticks", 8) or 8))
@@ -507,8 +518,10 @@ def _spectrogram_time_locator(cfg: dict, span_seconds: float):
         return mdates.HourLocator(interval=interval)
     return mdates.AutoDateLocator(minticks=3, maxticks=max_ticks)
 
+
 def _date_num_to_datetime(value: float) -> datetime.datetime:
     return mdates.num2date(float(value)).replace(tzinfo=None)
+
 
 def _spectrogram_display_data_extent(cache):
     f_min = float(np.nanmin(cache.freq))
@@ -518,6 +531,7 @@ def _spectrogram_display_data_extent(cache):
         data = np.flipud(data)
     x_start, x_end = cache.display_time_nums
     return data, [x_start, x_end, f_min, f_max], f_min, f_max
+
 
 def overlay_spectrogram_panel(ax, cfg: dict, current_time: datetime.datetime | None):
     """Draw cached dynamic spectrum and the current-time vertical dashed line."""
@@ -597,4 +611,3 @@ def overlay_spectrogram_panel(ax, cfg: dict, current_time: datetime.datetime | N
         )
         cbar.ax.tick_params(labelsize=max(cfg.get("tick_fontsize", 22) - 12, 8))
     return im
-

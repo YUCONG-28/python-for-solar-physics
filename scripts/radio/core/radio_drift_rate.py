@@ -1,4 +1,5 @@
 """Manual drift-rate selection and overlay helpers extracted from radio plotting."""
+
 from __future__ import annotations
 
 import csv
@@ -7,7 +8,6 @@ import json
 import os
 import shutil
 import threading
-import time
 import warnings
 import webbrowser
 from dataclasses import dataclass
@@ -18,7 +18,7 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 
-from . import radio_source_map_plot_gaussian_overlay as _legacy
+from ..legacy import radio_source_map_plot_gaussian_overlay as _legacy
 from .radio_spectrogram import (
     _date_num_to_datetime,
     _spectrogram_display_data_extent,
@@ -48,14 +48,17 @@ class DriftRateResult:
     quality_flag: str = "ok"
     warning: str = ""
 
+
 def _datetime_iso_ms(value: datetime.datetime) -> str:
     return value.replace(tzinfo=None).isoformat(timespec="milliseconds")
+
 
 def _drift_line_time(line: dict, key: str) -> datetime.datetime:
     parsed = _parse_datetime_value(line.get(key))
     if parsed is None:
         raise ValueError(f"Invalid drift-rate time field {key}: {line.get(key)!r}")
     return parsed
+
 
 def calculate_drift_rate_from_line(line: dict) -> DriftRateResult:
     t_start = _drift_line_time(line, "t_start")
@@ -94,6 +97,7 @@ def calculate_drift_rate_from_line(line: dict) -> DriftRateResult:
         warning=warning,
     )
 
+
 def _mark_drift_range_warnings(results, cache):
     x_start, x_end = cache.display_time_nums
     f_min = float(np.nanmin(cache.freq))
@@ -110,6 +114,7 @@ def _mark_drift_range_warnings(results, cache):
         if out and "out_of_range" not in result.warning:
             result.warning = ";".join(filter(None, [result.warning, "out_of_range"]))
     return results
+
 
 def _spectrogram_coord_from_pixel(
     metadata: dict, x_pixel: float, y_pixel: float
@@ -136,12 +141,14 @@ def _spectrogram_coord_from_pixel(
         "frequency_mhz": float(freq),
     }
 
+
 def assert_spectrogram_mapping_not_flipped(metadata):
     bbox = metadata["axes_bbox_px"]
     top_left = _spectrogram_coord_from_pixel(metadata, bbox["left"], bbox["top"])
     bottom_left = _spectrogram_coord_from_pixel(metadata, bbox["left"], bbox["bottom"])
     if top_left["frequency_mhz"] <= bottom_left["frequency_mhz"]:
         raise AssertionError("Spectrogram selector mapping is flipped")
+
 
 def save_drift_selection_json(path, lines, cache, cfg):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -163,6 +170,7 @@ def save_drift_selection_json(path, lines, cache, cfg):
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, ensure_ascii=False)
 
+
 def load_drift_selection_json(path) -> list[dict]:
     if not os.path.exists(path):
         raise FileNotFoundError(f"Drift-rate selection JSON does not exist: {path}")
@@ -172,6 +180,7 @@ def load_drift_selection_json(path) -> list[dict]:
         return payload
     return list(payload.get("lines", []) or [])
 
+
 def _load_drift_selection_payload(path) -> dict:
     if not os.path.exists(path):
         raise FileNotFoundError(f"Drift-rate selection JSON does not exist: {path}")
@@ -180,6 +189,7 @@ def _load_drift_selection_payload(path) -> dict:
     if isinstance(payload, list):
         return {"lines": payload}
     return dict(payload)
+
 
 def render_spectrogram_selection_preview(cache, cfg) -> tuple[str, dict]:
     png_path = _drift_output_path(cfg, "drift_rate_selection_preview_png")
@@ -285,6 +295,7 @@ def render_spectrogram_selection_preview(cache, cfg) -> tuple[str, dict]:
     with open(metadata_path, "w", encoding="utf-8") as handle:
         json.dump(metadata, handle, indent=2)
     return png_path, metadata
+
 
 def _drift_selection_html(metadata, interactive):
     metadata_json = json.dumps(metadata)
@@ -546,6 +557,7 @@ resizeCanvas();
 </body>
 </html>"""
 
+
 def launch_drift_selection_server(cache, cfg) -> list[dict]:
     preview_path, metadata = render_spectrogram_selection_preview(cache, cfg)
     selection_path = _drift_output_path(cfg, "drift_rate_selection_json")
@@ -650,6 +662,7 @@ def launch_drift_selection_server(cache, cfg) -> list[dict]:
         state["lines"] = load_drift_selection_json(selection_path)
     return list(state["lines"] or [])
 
+
 def get_or_load_drift_rate_results(
     cache, cfg, launch_func=None
 ) -> list[DriftRateResult]:
@@ -698,7 +711,7 @@ def get_or_load_drift_rate_results(
         else:
             hint = (
                 "No drift-rate selection JSON found. Run:\n"
-                "  python radio_source_map_plot_gaussian_overlay.py "
+                "  python run_radio_burst_pipeline.py "
                 "--select-drift --drift-port 8050\n"
                 "or set drift_rate.interactive.launch_policy='auto_if_missing'."
             )
@@ -713,7 +726,7 @@ def get_or_load_drift_rate_results(
         if not selection_exists:
             warnings.warn(
                 "No drift-rate selection JSON found for manual_json mode. Run: "
-                "python radio_source_map_plot_gaussian_overlay.py --select-drift "
+                "python run_radio_burst_pipeline.py --select-drift "
                 "--drift-port 8050",
                 stacklevel=2,
             )
@@ -731,6 +744,7 @@ def get_or_load_drift_rate_results(
     results = _mark_drift_range_warnings(results, cache)
     _DRIFT_RATE_RESULTS_CACHE[cache_key] = results
     return results
+
 
 def overlay_drift_rate_results(ax, results, cfg):
     if not results:
@@ -791,6 +805,7 @@ def overlay_drift_rate_results(ax, results, cfg):
                 zorder=6,
             )
 
+
 def save_drift_rate_diagnostics_once(results, cfg, source_file):
     if not results:
         return
@@ -840,4 +855,3 @@ def save_drift_rate_diagnostics_once(results, cfg, source_file):
                     "warning": result.warning,
                 }
             )
-

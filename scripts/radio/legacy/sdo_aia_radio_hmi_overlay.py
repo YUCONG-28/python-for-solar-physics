@@ -24,7 +24,6 @@ import glob  # noqa: E402
 import math  # noqa: E402
 import os  # noqa: E402
 import re  # noqa: E402
-import time  # noqa: E402
 import warnings  # noqa: E402
 from dataclasses import dataclass, field  # noqa: E402
 from datetime import datetime, timedelta  # noqa: E402
@@ -51,7 +50,6 @@ from scipy.ndimage import (  # noqa: E402
     find_objects,
     gaussian_filter,
     label,
-    median_filter,
 )
 from scipy.optimize import curve_fit  # noqa: E402
 
@@ -163,6 +161,7 @@ class Config:
     aia_base_dir: str = r"<PROJECT_ROOT>\2025\20250124\AIA\171\1"
     hmi_base_dir: str = r"<PROJECT_ROOT>\2025\20250124\AIA\hmi\1"
     output_dir: str = r"<PROJECT_ROOT>\2025\20250124\AIA_RS_HMI\test"
+    aia_wavelength: str = "171"
 
     # ── 文件处理配置 ───────────────────────────────────────────
     save_figure: bool = True
@@ -399,6 +398,44 @@ class Config:
 
     def __post_init__(self):
         apply_config_to_object(self, "sdo_aia_radio_hmi_overlay")
+
+
+def _apply_values_to_config(cfg: Config, values: dict | None) -> Config:
+    for key, value in (values or {}).items():
+        if key == "style" and isinstance(value, dict):
+            for style_key, style_value in value.items():
+                if hasattr(cfg.style, style_key):
+                    setattr(cfg.style, style_key, style_value)
+        elif hasattr(cfg, key):
+            setattr(cfg, key, value)
+    return cfg
+
+
+def apply_aia_radio_hmi_user_config(cfg: Config, user_config: dict | None) -> Config:
+    """Apply grouped user config to the legacy Config dataclass."""
+    if not user_config:
+        return cfg
+    for section in (
+        "paths",
+        "aia",
+        "hmi",
+        "radio",
+        "wcs_reproject",
+        "gaussian",
+        "display",
+        "output",
+        "runtime",
+    ):
+        _apply_values_to_config(cfg, user_config.get(section))
+    _apply_values_to_config(
+        cfg,
+        {
+            key: value
+            for key, value in user_config.items()
+            if not isinstance(value, dict)
+        },
+    )
+    return cfg
 
 
 @dataclass
@@ -1258,9 +1295,15 @@ def estimate_background_rms_mesh(data, cfg, source_mask=None):
         background_map = np.full_like(work, global_bg, dtype=np.float64)
         rms_map = np.full_like(work, global_rms, dtype=np.float64)
     else:
-        background_map = _mesh_values_to_map(mesh_y, mesh_x, bg_values, work.shape, global_bg)
-        rms_map = _mesh_values_to_map(mesh_y, mesh_x, rms_values, work.shape, global_rms)
-    rms_map = np.maximum(_safe_rms_map(rms_map), float(cfg.get("background_rms_floor", 1e-12)))
+        background_map = _mesh_values_to_map(
+            mesh_y, mesh_x, bg_values, work.shape, global_bg
+        )
+        rms_map = _mesh_values_to_map(
+            mesh_y, mesh_x, rms_values, work.shape, global_rms
+        )
+    rms_map = np.maximum(
+        _safe_rms_map(rms_map), float(cfg.get("background_rms_floor", 1e-12))
+    )
     diagnostics.update(
         {
             "background_rms_median": float(np.nanmedian(rms_map[np.isfinite(rms_map)])),
@@ -1356,11 +1399,19 @@ def create_source_mask(data, cfg, background_map=None, rms_map=None):
     peak_y, peak_x = _unravel_2d_index(int(np.argmax(finite_peak_work)), work.shape)
     base_peak_fraction = float(cfg.get("fit_peak_fraction_threshold", 0.40))
     grow_peak_fraction = float(cfg.get("fit_grow_peak_fraction_threshold", 0.22))
-    min_peak_fraction = float(cfg.get("fit_peak_fraction_threshold_min", base_peak_fraction))
-    max_peak_fraction = float(cfg.get("fit_peak_fraction_threshold_max", base_peak_fraction))
+    min_peak_fraction = float(
+        cfg.get("fit_peak_fraction_threshold_min", base_peak_fraction)
+    )
+    max_peak_fraction = float(
+        cfg.get("fit_peak_fraction_threshold_max", base_peak_fraction)
+    )
     step_peak_fraction = abs(float(cfg.get("fit_peak_fraction_threshold_step", 0.03)))
-    min_peak_fraction, max_peak_fraction = sorted((min_peak_fraction, max_peak_fraction))
-    base_peak_fraction = min(max(base_peak_fraction, min_peak_fraction), max_peak_fraction)
+    min_peak_fraction, max_peak_fraction = sorted(
+        (min_peak_fraction, max_peak_fraction)
+    )
+    base_peak_fraction = min(
+        max(base_peak_fraction, min_peak_fraction), max_peak_fraction
+    )
     grow_peak_fraction = min(max(grow_peak_fraction, 0.0), base_peak_fraction)
     target_min_pixels = int(cfg.get("fit_mask_target_min_pixels", 18))
     target_max_pixels = int(cfg.get("fit_mask_target_max_pixels", 260))
@@ -1375,7 +1426,9 @@ def create_source_mask(data, cfg, background_map=None, rms_map=None):
                 "background_level": float(np.nanmedian(bg[np.isfinite(bg)])),
                 "noise_sigma": float(np.nanmedian(rms[np.isfinite(rms) & (rms > 0)])),
                 "threshold": fit_threshold,
-                "background_rms_median": float(np.nanmedian(rms[np.isfinite(rms) & (rms > 0)])),
+                "background_rms_median": float(
+                    np.nanmedian(rms[np.isfinite(rms) & (rms > 0)])
+                ),
                 "background_level_median": float(np.nanmedian(bg[np.isfinite(bg)])),
                 "mask_method": "snr_mesh",
             }
@@ -1413,7 +1466,10 @@ def create_source_mask(data, cfg, background_map=None, rms_map=None):
             threshold_used = fit_threshold
         else:
             noise_sigma = diagnostics["noise_sigma"]
-            threshold_used = max(float(cfg.get("fit_snr_threshold", 5.0)) * noise_sigma, intensity_threshold)
+            threshold_used = max(
+                float(cfg.get("fit_snr_threshold", 5.0)) * noise_sigma,
+                intensity_threshold,
+            )
             core_mask = np.isfinite(work) & (work > threshold_used)
             grow_threshold_used = max(
                 float(cfg.get("fit_grow_snr_threshold", 3.0)) * noise_sigma,
@@ -1434,7 +1490,11 @@ def create_source_mask(data, cfg, background_map=None, rms_map=None):
         dilation_pixels = int(cfg.get("fit_mask_dilation_pixels", 1))
         if dilation_pixels > 0:
             candidate_mask = binary_dilation(candidate_mask, iterations=dilation_pixels)
-        return np.asarray(candidate_mask, dtype=np.bool_), int(np.count_nonzero(candidate_mask)), threshold_used
+        return (
+            np.asarray(candidate_mask, dtype=np.bool_),
+            int(np.count_nonzero(candidate_mask)),
+            threshold_used,
+        )
 
     if step_peak_fraction <= 0:
         candidate_fractions = [base_peak_fraction]
@@ -1448,7 +1508,9 @@ def create_source_mask(data, cfg, background_map=None, rms_map=None):
             candidate_fractions.append(max_peak_fraction)
     candidates = []
     for candidate_fraction in sorted(set(candidate_fractions)):
-        candidate_mask, candidate_count, candidate_threshold = build_mask_for_peak_fraction(candidate_fraction)
+        candidate_mask, candidate_count, candidate_threshold = (
+            build_mask_for_peak_fraction(candidate_fraction)
+        )
         candidates.append(
             {
                 "fraction": float(candidate_fraction),
@@ -1461,14 +1523,18 @@ def create_source_mask(data, cfg, background_map=None, rms_map=None):
     in_target_candidates = [
         item
         for item in candidates
-        if item["mask"] is not None and target_min_pixels <= item["count"] <= target_max_pixels
+        if item["mask"] is not None
+        and target_min_pixels <= item["count"] <= target_max_pixels
     ]
     usable_candidates = [
         item
         for item in candidates
-        if item["mask"] is not None and item["count"] >= int(cfg.get("fit_min_mask_pixels", 12))
+        if item["mask"] is not None
+        and item["count"] >= int(cfg.get("fit_min_mask_pixels", 12))
     ]
-    nonempty_candidates = [item for item in candidates if item["mask"] is not None and item["count"] > 0]
+    nonempty_candidates = [
+        item for item in candidates if item["mask"] is not None and item["count"] > 0
+    ]
     if in_target_candidates:
         selected = min(
             in_target_candidates,
@@ -1488,7 +1554,12 @@ def create_source_mask(data, cfg, background_map=None, rms_map=None):
     elif nonempty_candidates:
         selected = max(nonempty_candidates, key=lambda item: item["count"])
     else:
-        selected = {"fraction": base_peak_fraction, "mask": None, "count": 0, "threshold": np.nan}
+        selected = {
+            "fraction": base_peak_fraction,
+            "mask": None,
+            "count": 0,
+            "threshold": np.nan,
+        }
     diagnostics.update(
         {
             "fit_peak_fraction_threshold_used": float(selected["fraction"]),
@@ -1506,8 +1577,12 @@ def create_source_mask(data, cfg, background_map=None, rms_map=None):
         return None, diagnostics
     if use_snr and snr_map is not None:
         source_snr = snr_map[main_mask & np.isfinite(snr_map)]
-        diagnostics["source_snr_peak"] = float(np.nanmax(source_snr)) if source_snr.size else np.nan
-        diagnostics["source_snr_mean"] = float(np.nanmean(source_snr)) if source_snr.size else np.nan
+        diagnostics["source_snr_peak"] = (
+            float(np.nanmax(source_snr)) if source_snr.size else np.nan
+        )
+        diagnostics["source_snr_mean"] = (
+            float(np.nanmean(source_snr)) if source_snr.size else np.nan
+        )
     if int(selected["count"]) < int(cfg.get("fit_min_mask_pixels", 12)):
         diagnostics["quality_flag"] = "mask_too_small"
     return np.asarray(main_mask, dtype=np.bool_), diagnostics
@@ -1606,7 +1681,9 @@ def _set_gaussian_failure_diag(
         "quality_flag": reason,
         "quality_flag_detail": extra.get("quality_flag_detail", ""),
         "finite_pixel_count": extra.get("finite_pixel_count", ""),
-        "mask_pixel_count": mask_diag.get("mask_pixel_count", extra.get("mask_pixel_count", 0)),
+        "mask_pixel_count": mask_diag.get(
+            "mask_pixel_count", extra.get("mask_pixel_count", 0)
+        ),
         "background_rms_median": mask_diag.get("background_rms_median", np.nan),
         "background_level_median": mask_diag.get("background_level_median", np.nan),
         "fit_peak_fraction_threshold_used": mask_diag.get(
@@ -1633,7 +1710,9 @@ def _fit_failure_warning(source_file, quality_flag, detail=""):
         )
 
 
-def pixel_to_data_coord(x_pix, y_pix, extent, shape, origin="upper") -> tuple[float, float]:
+def pixel_to_data_coord(
+    x_pix, y_pix, extent, shape, origin="upper"
+) -> tuple[float, float]:
     left, right, bottom, top = map(float, extent)
     ny, nx = shape
     dx = (right - left) / max(float(nx), 1.0)
@@ -1648,7 +1727,9 @@ def pixel_to_data_coord(x_pix, y_pix, extent, shape, origin="upper") -> tuple[fl
     return float(x_arcsec), float(y_arcsec)
 
 
-def data_coord_to_pixel(x_arcsec, y_arcsec, extent, shape, origin="upper") -> tuple[float, float]:
+def data_coord_to_pixel(
+    x_arcsec, y_arcsec, extent, shape, origin="upper"
+) -> tuple[float, float]:
     left, right, bottom, top = map(float, extent)
     ny, nx = shape
     dx = (right - left) / max(float(nx), 1.0)
@@ -1663,7 +1744,9 @@ def data_coord_to_pixel(x_arcsec, y_arcsec, extent, shape, origin="upper") -> tu
     return float(x_pix), float(y_pix)
 
 
-def coordinate_roundtrip_error_pixel(x_pix, y_pix, extent, shape, origin="upper") -> float:
+def coordinate_roundtrip_error_pixel(
+    x_pix, y_pix, extent, shape, origin="upper"
+) -> float:
     x_arcsec, y_arcsec = pixel_to_data_coord(x_pix, y_pix, extent, shape, origin)
     x_back, y_back = data_coord_to_pixel(x_arcsec, y_arcsec, extent, shape, origin)
     return float(math.hypot(float(x_pix) - x_back, float(y_pix) - y_back))
@@ -1720,7 +1803,11 @@ def _update_gaussian_quality(fit_result, extent, img_shape, cfg):
             detail = "center_far_from_peak"
             valid = False
     min_snr = float(quality_cfg.get("min_snr", cfg.get("fit_snr_threshold", 5.0)))
-    if fit_result.snr is not None and np.isfinite(fit_result.snr) and fit_result.snr < min_snr:
+    if (
+        fit_result.snr is not None
+        and np.isfinite(fit_result.snr)
+        and fit_result.snr < min_snr
+    ):
         if not is_moment_fallback:
             fit_result.quality_flag = "low_snr"
         detail = "low_snr"
@@ -1748,7 +1835,9 @@ def _update_gaussian_quality(fit_result, extent, img_shape, cfg):
     fit_result.trajectory_valid = (
         bool(valid) if cfg.get("gaussian_valid_only_for_trajectory", True) else True
     )
-    if is_moment_fallback and not cfg.get("gaussian_allow_moment_fallback_for_trajectory", False):
+    if is_moment_fallback and not cfg.get(
+        "gaussian_allow_moment_fallback_for_trajectory", False
+    ):
         fit_result.trajectory_valid = False
     return bool(fit_result.overlay_valid)
 
@@ -1886,7 +1975,9 @@ def fit_elliptical_gaussian_on_radio_image(
     if background_model not in model_map:
         background_model = "constant"
     model_func = model_map[background_model]
-    sigma_upper = max(2.0, float(cfg.get("max_sigma_fraction", 0.18)) * max(roi_nx, roi_ny))
+    sigma_upper = max(
+        2.0, float(cfg.get("max_sigma_fraction", 0.18)) * max(roi_nx, roi_ny)
+    )
     amp_upper = max(abs(A0_curve) * 10.0, 2.0)
     slope_limit = bg_abs_limit / max(roi_nx, roi_ny, 1)
     p0 = [A0_curve, float(cx0), float(cy0), sigma_x0, sigma_y0, 0.0]
@@ -1959,7 +2050,9 @@ def fit_elliptical_gaussian_on_radio_image(
         return None
     x0_fit, y0_fit = float(popt[1]) + x_offset, float(popt[2]) + y_offset
     sigma_x, sigma_y = abs(float(popt[3])), abs(float(popt[4]))
-    center_arcsec = pixel_to_data_coord(x0_fit, y0_fit, extent, work.shape, origin=image_origin)
+    center_arcsec = pixel_to_data_coord(
+        x0_fit, y0_fit, extent, work.shape, origin=image_origin
+    )
     raw_peak_arcsec = pixel_to_data_coord(
         peak_x + x_offset, peak_y + y_offset, extent, work.shape, origin=image_origin
     )
@@ -2024,7 +2117,9 @@ def fit_elliptical_gaussian_on_radio_image(
     if fit_meta["gaussian_fit_method"] == "moment_fallback":
         result.reason = "fit_failed_moment_fallback"
         result.quality_flag_detail = str(fit_exception or "curve_fit_failed")
-    result = _attach_gaussian_fit_metadata(result, cfg, mask_diag, fit_input_type, fit_meta)
+    result = _attach_gaussian_fit_metadata(
+        result, cfg, mask_diag, fit_input_type, fit_meta
+    )
     _update_gaussian_quality(result, extent, work.shape, cfg)
     return result
 
@@ -2095,7 +2190,11 @@ def save_gaussian_diagnostics_row(row, output_dir, cfg):
         os.makedirs(output_dir, exist_ok=True)
         csv_path = os.path.join(
             output_dir,
-            getattr(cfg, "gaussian_diagnostics_csv", "aia_radio_gaussian_fit_diagnostics.csv"),
+            getattr(
+                cfg,
+                "gaussian_diagnostics_csv",
+                "aia_radio_gaussian_fit_diagnostics.csv",
+            ),
         )
         write_header = not os.path.exists(csv_path)
         with open(csv_path, "a", newline="", encoding="utf-8") as handle:
@@ -2106,7 +2205,9 @@ def save_gaussian_diagnostics_row(row, output_dir, cfg):
             )
             if write_header:
                 writer.writeheader()
-            writer.writerow({name: row.get(name, "") for name in GAUSSIAN_DIAGNOSTIC_FIELDS})
+            writer.writerow(
+                {name: row.get(name, "") for name in GAUSSIAN_DIAGNOSTIC_FIELDS}
+            )
     except Exception as exc:
         if getattr(cfg, "debug_mode", False):
             print(f"    [高斯诊断] CSV 写入失败: {exc}")
@@ -2122,7 +2223,11 @@ def _gaussian_diagnostics_row(
     bg_diag=None,
 ):
     bg_diag = bg_diag or {}
-    time_str = radio_time.isoformat() if hasattr(radio_time, "isoformat") else (radio_time or "")
+    time_str = (
+        radio_time.isoformat()
+        if hasattr(radio_time, "isoformat")
+        else (radio_time or "")
+    )
     if fit_result is None:
         fail = cfg_dict.get("_last_gaussian_failure_diag", {})
         return {
@@ -2131,10 +2236,16 @@ def _gaussian_diagnostics_row(
             "band": band or "",
             "polarization": polarization or "",
             "quality_flag": fail.get("quality_flag", fail.get("reason", "fit_failed")),
-            "quality_flag_detail": fail.get("quality_flag_detail", fail.get("reason", "")),
+            "quality_flag_detail": fail.get(
+                "quality_flag_detail", fail.get("reason", "")
+            ),
             "mask_pixel_count": fail.get("mask_pixel_count", 0),
-            "fit_peak_fraction_threshold_used": fail.get("fit_peak_fraction_threshold_used", ""),
-            "fit_peak_fraction_candidate_counts": fail.get("fit_peak_fraction_candidate_counts", ""),
+            "fit_peak_fraction_threshold_used": fail.get(
+                "fit_peak_fraction_threshold_used", ""
+            ),
+            "fit_peak_fraction_candidate_counts": fail.get(
+                "fit_peak_fraction_candidate_counts", ""
+            ),
             "background_rms_median": bg_diag.get(
                 "background_rms_median", fail.get("background_rms_median", "")
             ),
@@ -2174,7 +2285,8 @@ def _gaussian_diagnostics_row(
             "background_rms_median", getattr(fit_result, "background_rms_median", "")
         ),
         "background_level_median": bg_diag.get(
-            "background_level_median", getattr(fit_result, "background_level_median", "")
+            "background_level_median",
+            getattr(fit_result, "background_level_median", ""),
         ),
         "gaussian_fit_method": getattr(fit_result, "gaussian_fit_method", ""),
         "roi_used": getattr(fit_result, "roi_used", ""),
@@ -3048,9 +3160,7 @@ def test_gaussian_fit_synthetic_source():
     shape = (96, 128)
     y, x = np.indices(shape, dtype=np.float64)
     x0, y0 = 70.25, 34.75
-    data = 2.0 + 80.0 * np.exp(
-        -0.5 * (((x - x0) / 7.0) ** 2 + ((y - y0) / 5.0) ** 2)
-    )
+    data = 2.0 + 80.0 * np.exp(-0.5 * (((x - x0) / 7.0) ** 2 + ((y - y0) / 5.0) ** 2))
     result = fit_elliptical_gaussian_on_radio_image(
         data,
         extent=[0, shape[1] - 1, 0, shape[0] - 1],
@@ -3067,9 +3177,11 @@ def test_gaussian_fit_synthetic_source():
 # 15. 主程序入口
 # ============================================================
 
+
 # ---- 主流程：创建配置、构建匹配任务、串行处理所有 AIA 文件 ----
-if __name__ == "__main__":
+def main(user_config=None):
     cfg = Config()
+    cfg = apply_aia_radio_hmi_user_config(cfg, user_config)
     os.makedirs(cfg.output_dir, exist_ok=True)
     color_cache = []
 
@@ -3088,3 +3200,7 @@ if __name__ == "__main__":
             cfg,
             color_cache,
         )
+
+
+if __name__ == "__main__":
+    main()
