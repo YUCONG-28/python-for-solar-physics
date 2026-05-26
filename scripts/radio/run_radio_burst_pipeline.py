@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import copy
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -12,54 +12,65 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
 if __package__ in {None, ""}:  # direct ``python scripts/radio/...`` execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 if __package__ in {None, ""}:
-    from scripts.radio import radio_source_map_plot_gaussian_overlay as legacy
-    from scripts.radio.radio_drift_rate import (
+    from scripts.radio.configs import DEFAULT_CONFIG_NAME, load_radio_user_config
+    from scripts.radio.core.radio_drift_rate import (
         get_or_load_drift_rate_results,
         save_drift_rate_diagnostics_once,
     )
-    from scripts.radio.radio_newkirk_extrapolation import (
+    from scripts.radio.core.radio_newkirk_extrapolation import (
         attach_newkirk_height_to_gaussian,
         extrapolate_drift_line_with_newkirk,
     )
-    from scripts.radio.radio_spectrogram import build_spectrogram_cache
+    from scripts.radio.core.radio_spectrogram import build_spectrogram_cache
+    from scripts.radio.legacy import radio_source_map_plot_gaussian_overlay as legacy
 else:
-    from . import radio_source_map_plot_gaussian_overlay as legacy
-    from .radio_drift_rate import (
+    from .configs import DEFAULT_CONFIG_NAME, load_radio_user_config
+    from .core.radio_drift_rate import (
         get_or_load_drift_rate_results,
         save_drift_rate_diagnostics_once,
     )
-    from .radio_newkirk_extrapolation import (
+    from .core.radio_newkirk_extrapolation import (
         attach_newkirk_height_to_gaussian,
         extrapolate_drift_line_with_newkirk,
     )
-    from .radio_spectrogram import build_spectrogram_cache
+    from .core.radio_spectrogram import build_spectrogram_cache
+    from .legacy import radio_source_map_plot_gaussian_overlay as legacy
 
 
-USER_CONFIG = copy.deepcopy(legacy.USER_CONFIG)
-USER_CONFIG["newkirk"] = {
+DEFAULT_NEWKIRK_CONFIG = {
     "enabled": True,
     "multipliers": [1, 2, 4],
     "harmonics": [1, 2],
     "solar_radius_arcsec": 959.63,
     "los_sign": 1,
-    "output_csv": "radio_gaussian_newkirk_extrapolated.csv",
-    "drift_speed_csv": "radio_drift_newkirk_speed.csv",
 }
 
 
-def main():
-    cfg = legacy.build_config(USER_CONFIG, legacy.DEFAULT_CONFIG)
+def _parse_args():
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument("--config", default=DEFAULT_CONFIG_NAME)
+    args, _unknown = parser.parse_known_args()
+    return args
+
+
+def main(config_name: str | None = None):
+    args = _parse_args() if config_name is None else None
+    selected_config = config_name or args.config
+    user_config, newkirk_cfg = load_radio_user_config(selected_config)
+    if not newkirk_cfg:
+        newkirk_cfg = dict(DEFAULT_NEWKIRK_CONFIG)
+
+    cfg = legacy.build_config(user_config, legacy.DEFAULT_CONFIG)
     cfg = legacy._migrate_config(cfg)
     cfg["enable_gaussian_overlay"] = True
     cfg["save_gaussian_diagnostics"] = True
-    if USER_CONFIG.get("drift_rate", {}).get("enabled", False):
+    if user_config.get("drift_rate", {}).get("enabled", False):
         cfg["enable_spectrogram_panel"] = True
         cfg["enable_drift_rate_overlay"] = True
 
@@ -81,7 +92,6 @@ def main():
     valid_csv = analysis_dir / "radio_gaussian_valid_centers.csv"
     valid_df.to_csv(valid_csv, index=False)
 
-    newkirk_cfg = dict(USER_CONFIG.get("newkirk", {}) or {})
     if newkirk_cfg.get("enabled", True):
         newkirk_df = _build_gaussian_newkirk_table(valid_df, newkirk_cfg)
         newkirk_csv = analysis_dir / newkirk_cfg.get(
