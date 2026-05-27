@@ -26,6 +26,9 @@ source-center diagnostics, and time-evolution products.
 - Radio source image plotting, contour overlays, Gaussian fitting, and
   source-center diagnostics.
 - Manual drift-rate selection and reuse of saved drift-rate JSON selections.
+- Newkirk density-model extrapolation, drift-speed tables,
+  Gaussian-Newkirk height residuals, and optional illustrative plane-of-sky
+  projection on AIA 171 context.
 - AIA/radio/HMI overlay workflows for source-region comparison.
 - Event-specific JSOC/AIA, STEREO-A/EUVI, GOES/SUVI, and Solar Orbiter/EUI data
   acquisition helpers.
@@ -41,16 +44,17 @@ source-center diagnostics, and time-evolution products.
 
 | Purpose | Recommended Script | Notes |
 |---|---|---|
-| SDO/AIA and HMI visualization | `scripts/aia_hmi/sdo_aia_euv_processor.py` | Main AIA processor for single-band views, mosaics, previews, and difference products. Use `scripts/radio/sdo_aia_radio_hmi_overlay.py` for AIA/radio/HMI overlays. |
+| SDO/AIA and HMI visualization | `scripts/aia_hmi/sdo_aia_euv_processor.py` | Main AIA processor for single-band views, mosaics, previews, and difference products. Use `scripts/radio/run_aia_radio_hmi_overlay.py` for AIA/radio/HMI overlays. |
 | JSOC / AIA / HMI data download and preparation | `scripts/aia_hmi/sdo_aia_jsoc_download_20250124.py` | Event-specific AIA JSOC downloader. Use `scripts/aia_hmi/sdo_aia_hmi_fits_rename.py` for local FITS filename normalization. |
 | STEREO / SUVI data download | `scripts/data_download/stereo_a_euvi_download_20250124.py`; `scripts/data_download/goes_suvi_download_20250124.py` | Event-specific download helpers for the 2025-01-24 context data. |
 | Solar Orbiter / EUI data download | `scripts/data_download/solo_eui_soar_query_download.py` | Query SOAR for EUI observations and download FITS files. |
 | STEREO-A/EUVI processing | `scripts/stereo_suvi/stereo_euvi_manifest_by_wavelength.py`; `scripts/stereo_suvi/stereo_euvi_0448_overview_plot.py`; `scripts/stereo_suvi/stereo_euvi_roi_movie.py` | EUVI wavelength manifest generation, multi-band overview plots, and ROI time-evolution MP4 generation. |
 | GOES/SUVI context imaging | `scripts/stereo_suvi/goes_suvi_0448_quadrant_plot.py` | Generate GOES/SUVI quadrant layout plots for context images. |
-| Radio spectrogram plotting | `scripts/radio/cso_radio_spectrogram_plot.py` | Main CSO dynamic spectrum plotting workflow. |
-| Radio source image overlay | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` | Main radio source map workflow with multi-frequency panels and optional CSO spectrogram panel. |
-| Gaussian fitting and diagnostics | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` | Produces fitted centers, FWHM overlays, quality diagnostics, and CSV outputs. |
-| AIA/radio/HMI overlays | `scripts/radio/sdo_aia_radio_hmi_overlay.py` | Main context overlay workflow for AIA, radio contours, and optional HMI contours. |
+| Radio spectrogram plotting | `scripts/radio/legacy/cso_radio_spectrogram_plot.py` | Compatibility CSO dynamic spectrum plotting workflow; no `run_*.py` wrapper exists yet. |
+| Full radio burst analysis | `scripts/radio/run_radio_burst_pipeline.py` | Main full pipeline for source maps, Gaussian diagnostics, spectrogram/drift support, Newkirk height comparison, Gaussian-Newkirk height residuals, and optional illustrative AIA 171 plane-of-sky projection. |
+| Radio source image overlay | `scripts/radio/run_radio_source_map.py` | Quick radio source map workflow with Gaussian overlay. |
+| Gaussian fitting and diagnostics | `scripts/radio/run_radio_source_map.py` | Produces fitted centers, FWHM overlays, quality diagnostics, and CSV outputs through the compatibility source-map workflow. |
+| AIA/radio/HMI overlays | `scripts/radio/run_aia_radio_hmi_overlay.py` | Main context overlay workflow for AIA, radio contours, and optional HMI contours. |
 | Image to video | `scripts/tools/image_sequence_to_video.py` | General utility for converting vetted PNG/JPG frame sequences to MP4. |
 | Path configuration and shared helpers | `solar_toolkit/path_config.py` | Use `configs/paths.example.yaml` as the template for local path configuration. |
 
@@ -98,6 +102,9 @@ source-center diagnostics, and time-evolution products.
 
 5. Run selected scripts:
 
+   Full science workflows require local observation data and event-specific path
+   configuration before they can produce research products.
+
    ```powershell
    # AIA single-band or mosaic processing
    python scripts\aia_hmi\sdo_aia_euv_processor.py --mode single --waves 171 193 304
@@ -124,13 +131,16 @@ source-center diagnostics, and time-evolution products.
    python scripts\stereo_suvi\goes_suvi_0448_quadrant_plot.py
 
    # CSO dynamic spectrum plotting
-   python scripts\radio\cso_radio_spectrogram_plot.py
+   python scripts\radio\legacy\cso_radio_spectrogram_plot.py
 
    # Radio source maps with Gaussian diagnostics
-   python scripts\radio\radio_source_map_plot_gaussian_overlay.py
+   python scripts\radio\run_radio_source_map.py
+
+   # Full radio burst pipeline with Gaussian, drift, Newkirk height comparison, and optional AIA 171 projection schematic
+   python scripts\radio\run_radio_burst_pipeline.py --config radio_20250124_config
 
    # AIA, radio source, and HMI overlay workflow
-   python scripts\radio\sdo_aia_radio_hmi_overlay.py
+   python scripts\radio\run_aia_radio_hmi_overlay.py
 
    # Convert generated PNG sequence to MP4
    python scripts\tools\image_sequence_to_video.py
@@ -280,6 +290,8 @@ without user data paths.
 - CSO 射电动态频谱图绘制，并支持内存友好的下采样。
 - 射电源图像绘制、等值线叠加、高斯拟合和源中心诊断。
 - 手动频漂率选点，并复用已保存的频漂率 JSON 结果。
+- Newkirk 密度模型外推、频漂速度表、Gaussian-Newkirk 高度残差，
+  以及可选的 AIA 171 Å 背景下平面径向投影示意图。
 - AIA/radio/HMI 叠加工作流，用于源区对比。
 - 面向 2025-01-24 事件的 JSOC/AIA、STEREO-A/EUVI、GOES/SUVI 和
   Solar Orbiter/EUI 数据获取辅助脚本。
@@ -294,16 +306,17 @@ without user data paths.
 
 | 用途 | 推荐脚本 | 说明 |
 |---|---|---|
-| SDO/AIA 与 HMI 可视化 | `scripts/aia_hmi/sdo_aia_euv_processor.py` | AIA 主处理脚本，用于单波段图像、多波段拼图、预览和差分产品。AIA/radio/HMI 叠加使用 `scripts/radio/sdo_aia_radio_hmi_overlay.py`。 |
+| SDO/AIA 与 HMI 可视化 | `scripts/aia_hmi/sdo_aia_euv_processor.py` | AIA 主处理脚本，用于单波段图像、多波段拼图、预览和差分产品。AIA/radio/HMI 叠加使用 `scripts/radio/run_aia_radio_hmi_overlay.py`。 |
 | JSOC / AIA / HMI 数据下载与准备 | `scripts/aia_hmi/sdo_aia_jsoc_download_20250124.py` | 面向事件的 AIA JSOC 下载脚本。本地 FITS 文件名规范化使用 `scripts/aia_hmi/sdo_aia_hmi_fits_rename.py`。 |
 | STEREO / SUVI 数据下载 | `scripts/data_download/stereo_a_euvi_download_20250124.py`; `scripts/data_download/goes_suvi_download_20250124.py` | 面向 2025-01-24 事件背景数据的下载辅助脚本。 |
 | Solar Orbiter / EUI 数据下载 | `scripts/data_download/solo_eui_soar_query_download.py` | 查询 SOAR 获取 EUI 观测并下载 FITS 文件。 |
 | STEREO-A/EUVI 处理 | `scripts/stereo_suvi/stereo_euvi_manifest_by_wavelength.py`; `scripts/stereo_suvi/stereo_euvi_0448_overview_plot.py`; `scripts/stereo_suvi/stereo_euvi_roi_movie.py` | EUVI 按波长生成清单、多波段概览图和 ROI 时间演化 MP4 生成。 |
 | GOES/SUVI 背景图绘制 | `scripts/stereo_suvi/goes_suvi_0448_quadrant_plot.py` | 生成 GOES/SUVI 象限排布图。 |
-| 射电频谱图绘制 | `scripts/radio/cso_radio_spectrogram_plot.py` | CSO 动态频谱图主绘制流程。 |
-| 射电源图像叠加 | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` | 射电源图主流程，支持多频面板和可选 CSO 频谱面板。 |
-| 高斯拟合与诊断 | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` | 输出拟合中心、FWHM 叠加、质量诊断和 CSV 结果。 |
-| AIA/radio/HMI 叠加 | `scripts/radio/sdo_aia_radio_hmi_overlay.py` | AIA、射电等值线和可选 HMI 等值线的主叠加流程。 |
+| 射电频谱图绘制 | `scripts/radio/legacy/cso_radio_spectrogram_plot.py` | CSO 动态频谱图兼容流程；当前还没有 `run_*.py` wrapper。 |
+| 完整射电爆发分析 | `scripts/radio/run_radio_burst_pipeline.py` | 射电源图、Gaussian 诊断、频谱/频漂支持、Newkirk 高度比较、Gaussian-Newkirk 高度残差，以及可选 AIA 171 平面投影示意的完整主流程。 |
+| 射电源图像叠加 | `scripts/radio/run_radio_source_map.py` | 快速射电源图流程，支持 Gaussian 叠加。 |
+| 高斯拟合与诊断 | `scripts/radio/run_radio_source_map.py` | 通过兼容 source-map 工作流输出拟合中心、FWHM 叠加、质量诊断和 CSV 结果。 |
+| AIA/radio/HMI 叠加 | `scripts/radio/run_aia_radio_hmi_overlay.py` | AIA、射电等值线和可选 HMI 等值线的主叠加流程。 |
 | 图片转视频 | `scripts/tools/image_sequence_to_video.py` | 将已检查的 PNG/JPG 图片序列转换为 MP4。 |
 | 路径配置与工具函数 | `solar_toolkit/path_config.py` | 使用 `configs/paths.example.yaml` 作为本地路径配置模板。 |
 
@@ -350,6 +363,8 @@ without user data paths.
 
 5. 运行指定脚本：
 
+   完整科学工作流需要本地观测数据和面向事件的路径配置，才能生成可用于研究的产品。
+
    ```powershell
    # AIA 单波段或拼图处理
    python scripts\aia_hmi\sdo_aia_euv_processor.py --mode single --waves 171 193 304
@@ -376,13 +391,16 @@ without user data paths.
    python scripts\stereo_suvi\goes_suvi_0448_quadrant_plot.py
 
    # 绘制 CSO 动态频谱图
-   python scripts\radio\cso_radio_spectrogram_plot.py
+   python scripts\radio\legacy\cso_radio_spectrogram_plot.py
 
    # 绘制射电源图并输出高斯拟合诊断
-   python scripts\radio\radio_source_map_plot_gaussian_overlay.py
+   python scripts\radio\run_radio_source_map.py
+
+   # 完整射电爆发流程：Gaussian、频漂、Newkirk 高度比较和可选 AIA 171 投影示意
+   python scripts\radio\run_radio_burst_pipeline.py --config radio_20250124_config
 
    # AIA、射电源和 HMI 叠加
-   python scripts\radio\sdo_aia_radio_hmi_overlay.py
+   python scripts\radio\run_aia_radio_hmi_overlay.py
 
    # 将生成的 PNG 序列转为 MP4
    python scripts\tools\image_sequence_to_video.py

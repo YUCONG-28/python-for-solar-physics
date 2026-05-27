@@ -15,16 +15,16 @@ import numpy as np
 from scipy.ndimage import binary_dilation, find_objects, label
 from scipy.optimize import curve_fit
 
-from ..legacy import radio_source_map_plot_gaussian_overlay as _legacy
+from .radio_coordinates import (
+    coordinate_roundtrip_error_pixel,
+    pixel_to_data_coord,
+    unravel_2d_index,
+)
+from .radio_io import BoolArray, FloatArray, GAUSSIAN_DIAGNOSTIC_FIELDS, IntArray
+from .radio_io import plot_output_subdir as _plot_output_subdir
 
-BoolArray = _legacy.BoolArray
-FloatArray = _legacy.FloatArray
-IntArray = _legacy.IntArray
-GAUSSIAN_DIAGNOSTIC_FIELDS = _legacy.GAUSSIAN_DIAGNOSTIC_FIELDS
-_plot_output_subdir = _legacy._plot_output_subdir
-pixel_to_data_coord = _legacy.pixel_to_data_coord
-coordinate_roundtrip_error_pixel = _legacy.coordinate_roundtrip_error_pixel
-_unravel_2d_index = _legacy._unravel_2d_index
+_unravel_2d_index = unravel_2d_index
+_GAUSSIAN_WARNING_COUNTS = {}
 
 
 @dataclass
@@ -413,13 +413,10 @@ def create_source_mask(
 
 
 def _fit_failure_warning(source_file, quality_flag, detail=""):
-    config = getattr(_legacy, "CONFIG", {})
-    if isinstance(config, dict) and not config.get("gaussian_fit_verbose", False):
-        counts = config.setdefault("_gaussian_warning_counts", {})
-        key = str(quality_flag)
-        counts[key] = counts.get(key, 0) + 1
-        if counts[key] > 3:
-            return
+    key = str(quality_flag)
+    _GAUSSIAN_WARNING_COUNTS[key] = _GAUSSIAN_WARNING_COUNTS.get(key, 0) + 1
+    if _GAUSSIAN_WARNING_COUNTS[key] > 3:
+        return
     name = os.path.basename(source_file) if source_file else "radio image"
     suffix = f" / {detail}" if detail else ""
     warnings.warn(

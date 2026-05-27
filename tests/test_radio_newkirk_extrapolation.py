@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from scripts.radio.radio_newkirk_extrapolation import (
+from scripts.radio.core.radio_newkirk_extrapolation import (
     attach_newkirk_height_to_gaussian,
     extrapolate_drift_line_with_newkirk,
     newkirk_density_cm3,
@@ -94,6 +94,19 @@ def test_extrapolate_drift_line_with_newkirk_maps_midpoint_speed():
 
 
 def pytest_approx(value):
-    import pytest
+    try:
+        import pytest
+    except ModuleNotFoundError:
+        class Approx:
+            def __eq__(self, other):
+                return math.isclose(other, value, rel_tol=1e-12, abs_tol=1e-12)
+
+        return Approx()
 
     return pytest.approx(value, rel=1e-12, abs=1e-12)
+
+
+if __name__ == "__main__":
+    for name, func in sorted(globals().items()):
+        if name.startswith("test_") and callable(func):
+            func()

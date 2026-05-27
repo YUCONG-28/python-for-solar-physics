@@ -12,11 +12,15 @@ import matplotlib.dates as mdates
 import numpy as np
 from astropy.io import fits
 
-from ..legacy import radio_source_map_plot_gaussian_overlay as _legacy
+from .radio_io import (
+    index_range_from_time_values,
+    index_range_from_values,
+    parse_datetime_value,
+)
 
-_parse_datetime_value = _legacy._parse_datetime_value
-_index_range_from_values = _legacy._index_range_from_values
-_index_range_from_time_values = _legacy._index_range_from_time_values
+_parse_datetime_value = parse_datetime_value
+_index_range_from_values = index_range_from_values
+_index_range_from_time_values = index_range_from_time_values
 
 _SPECTROGRAM_CACHE = None
 

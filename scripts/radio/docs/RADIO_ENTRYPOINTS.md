@@ -9,13 +9,23 @@ All three entrypoints default to `--config radio_20250124_config`.
 Recommended full scientific pipeline.
 
 - Purpose: run Gaussian fitting, dynamic spectrogram support, manual drift-rate
-  selection/overlay, Newkirk extrapolation, and summary plots/tables.
+  selection/overlay, Newkirk extrapolation, Gaussian-Newkirk height comparison,
+  height-residual plots, and optional illustrative AIA 171 plane-of-sky
+  projection.
 - Inputs: radio FITS settings, spectrogram FITS settings, drift-rate settings,
-  and output settings inherited from the legacy source-map configuration.
+  Newkirk settings, `NEWKIRK_HEIGHT_COMPARISON_CONFIG`, optional
+  `NEWKIRK_SPATIAL_CONFIG`, and output settings inherited from the legacy
+  source-map configuration.
 - Outputs: Gaussian diagnostics, valid Gaussian centers, Newkirk extrapolated
-  Gaussian heights, drift-rate Newkirk speeds, and diagnostic preview figures.
+  Gaussian heights, drift-rate Newkirk speeds, diagnostic preview figures,
+  and, when enabled, `gaussian_newkirk_height_comparison_table.csv`,
+  `gaussian_vs_newkirk_height_frequency.png`,
+  `gaussian_vs_newkirk_height_time.png`, and
+  `gaussian_newkirk_height_residual_vs_frequency.png`.
 - Best for: complete burst analysis where fitted radio-source centers and
-  drift-rate-derived speeds are both needed.
+  drift-rate-derived speeds are both needed. If the optional illustrative
+  plane-of-sky projection is enabled and `aia171_path` is missing, only that
+  projection schematic is skipped while height diagnostics are still saved.
 - Example: `python scripts\radio\run_radio_burst_pipeline.py --config radio_20250124_config`
 
 ## `run_radio_source_map.py`
