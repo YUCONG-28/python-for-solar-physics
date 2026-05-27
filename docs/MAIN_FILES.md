@@ -11,12 +11,14 @@
 
 - `scripts/aia_hmi/sdo_aia_euv_processor.py`
   - AIA 图像、拼图、base difference 和 running difference 的推荐主入口。
-- `scripts/radio/radio_source_map_plot_gaussian_overlay.py`
-  - 射电源图、多频拼图、高斯拟合、CSO 频谱面板和频漂率叠加的推荐主入口。
-- `scripts/radio/sdo_aia_radio_hmi_overlay.py`
+- `scripts/radio/run_radio_burst_pipeline.py`
+  - 射电源图、高斯拟合、CSO 频谱/频漂率、Newkirk 高度比较、Gaussian-Newkirk 高度残差和可选 AIA 171 平面投影示意的完整推荐主入口。
+- `scripts/radio/run_radio_source_map.py`
+  - 快速射电源图和 Gaussian 叠加的推荐入口。
+- `scripts/radio/run_aia_radio_hmi_overlay.py`
   - AIA + radio + HMI 多仪器叠加的推荐主入口。
-- `scripts/radio/cso_radio_spectrogram_plot.py`
-  - CSO 动态频谱绘制的推荐主入口。
+- `scripts/radio/legacy/cso_radio_spectrogram_plot.py`
+  - CSO 动态频谱绘制的兼容入口；当前还没有 `run_*.py` wrapper。
 - `scripts/tools/gaussian_source_fitting.py`
   - 二维椭圆高斯拟合工具，后续建议作为公共拟合核心。
 

@@ -18,16 +18,15 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ..legacy import radio_source_map_plot_gaussian_overlay as _legacy
+from .radio_io import DRIFT_RATE_DIAGNOSTIC_FIELDS
+from .radio_io import drift_output_path as _drift_output_path
+from .radio_io import parse_datetime_value as _parse_datetime_value
 from .radio_spectrogram import (
     _date_num_to_datetime,
     _spectrogram_display_data_extent,
     _spectrogram_time_locator,
 )
 
-_parse_datetime_value = _legacy._parse_datetime_value
-_drift_output_path = _legacy._drift_output_path
-DRIFT_RATE_DIAGNOSTIC_FIELDS = _legacy.DRIFT_RATE_DIAGNOSTIC_FIELDS
 _DRIFT_RATE_RESULTS_CACHE = {}
 _DRIFT_RATE_DIAGNOSTIC_WRITTEN_KEYS = set()
 

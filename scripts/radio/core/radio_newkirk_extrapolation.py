@@ -119,6 +119,12 @@ def attach_newkirk_height_to_gaussian(
     data["projected_r_rsun"] = projected_r
     data["newkirk_z_rsun"] = z_rsun
     data["newkirk_z_arcsec"] = z_rsun * float(solar_radius_arcsec)
+    data["newkirk_geometry_valid"] = np.isfinite(z_rsun)
+    data["newkirk_geometry_reason"] = np.where(
+        data["newkirk_geometry_valid"],
+        "ok",
+        "projected_position_exceeds_newkirk_radius",
+    )
     return data[np.isfinite(data["newkirk_r_rsun"])].reset_index(drop=True)
 
 

@@ -15,6 +15,93 @@ DEFAULT_NEWKIRK_CONFIG = {
     "solar_radius_arcsec": 959.63,
     "los_sign": 1,
 }
+DEFAULT_NEWKIRK_HEIGHT_COMPARISON_CONFIG = {
+    "enable": True,
+    "selected_models": [
+        {"multiplier": 1.0, "harmonic": 1},
+        {"multiplier": 1.0, "harmonic": 2},
+        {"multiplier": 2.0, "harmonic": 1},
+        {"multiplier": 2.0, "harmonic": 2},
+        {"multiplier": 4.0, "harmonic": 1},
+        {"multiplier": 4.0, "harmonic": 2},
+    ],
+    "solar_radius_arcsec": None,
+    "plot_height_frequency": True,
+    "plot_height_time": True,
+    "plot_residual_frequency": True,
+    "output_table_name": "gaussian_newkirk_height_comparison_table.csv",
+    "height_frequency_plot_name": "gaussian_vs_newkirk_height_frequency.png",
+    "height_time_plot_name": "gaussian_vs_newkirk_height_time.png",
+    "height_residual_plot_name": "gaussian_newkirk_height_residual_vs_frequency.png",
+    "height_residual_summary_name": "gaussian_newkirk_height_residual_summary.csv",
+    "reverse_frequency_axis": True,
+    "color_by": "source_type",
+    "drift_time_tolerance_s": 0.75,
+    "drift_frequency_tolerance_mhz": "adaptive_half_band_spacing",
+    "max_adaptive_frequency_tolerance_mhz": 15.0,
+    "min_adaptive_frequency_tolerance_mhz": 5.0,
+}
+DEFAULT_DRIFT_SELECTION_PRODUCT_CONFIG = {
+    "enable": True,
+    "save_raw_preview": True,
+    "save_annotated_preview": True,
+    "save_selection_csv": True,
+    "save_metadata_json": True,
+    "save_per_drift_cutouts": True,
+    "cutout_time_padding_s": 2.0,
+    "cutout_frequency_padding_mhz": 20.0,
+    "annotate_drift_rate": True,
+    "annotate_endpoints": True,
+    "preserve_existing": True,
+    "dpi": 200,
+    "output_subdir": "drift_selection",
+}
+DEFAULT_RADIO_DIAGNOSTIC_PRESENTATION_CONFIG = {
+    "enable": True,
+    "enable_static_summary": True,
+    "enable_html_dashboard": True,
+    "comparison_frequency_mhz": None,
+    "drift_source_type_map": {
+        "drift_001": "typeIII",
+        "drift_002": "typeIII",
+        "drift_003": "spike",
+        "drift_004": "spike",
+    },
+    "drift_time_tolerance_s": 0.75,
+    "drift_frequency_tolerance_mhz": "adaptive_half_band_spacing",
+    "max_adaptive_frequency_tolerance_mhz": 15.0,
+    "min_adaptive_frequency_tolerance_mhz": 5.0,
+    "best_model_metric": "median_abs_residual_rsun",
+    "top_residual_models": 3,
+    "summary_panel_name": "radio_newkirk_frequency_priority_summary.png",
+    "center_facets_name": "gaussian_center_by_frequency_facets.png",
+    "drift_band_matching_name": "drift_frequency_band_matching.png",
+    "height_time_facets_name": "height_time_by_frequency_facets.png",
+    "dashboard_name": "radio_newkirk_frequency_priority_dashboard.html",
+    "summary_csv_name": "radio_newkirk_frequency_priority_summary.csv",
+}
+DEFAULT_NEWKIRK_SPATIAL_CONFIG = {
+    "enable": False,
+    "aia_channel": 171,
+    "aia171_path": None,
+    "geometry": "plane_of_sky_radial_anchor",
+    "documentation_status": "illustrative plane-of-sky projection only, not a physical 2D reconstruction",
+    "harmonic": 1,
+    "newkirk_multiplier": 1.0,
+    "solar_radius_arcsec": None,
+    "color_by": "frequency",
+    "plot_typeIII": True,
+    "plot_spike": True,
+    "draw_gaussian_ellipse": True,
+    "draw_residual_arrows": True,
+    "max_residual_arrow_arcsec": None,
+    "output_name": "aia171_typeIII_spike_newkirk_projection_schematic.png",
+    "comparison_csv_name": "gaussian_newkirk_projection_schematic_table.csv",
+    "TYPEIII_TIME_WINDOWS": [],
+    "SPIKE_TIME_WINDOWS": [],
+    "TYPEIII_FREQ_RANGE": None,
+    "SPIKE_FREQ_RANGE": None,
+}
 
 
 def _normalize_config_module_name(config_name: str | None) -> str:
@@ -60,3 +147,48 @@ def load_aia_radio_hmi_user_config(config_name: str | None = None):
         fallback = load_radio_config_module(DEFAULT_AIA_CONFIG_NAME)
         return copy.deepcopy(getattr(fallback, "AIA_RADIO_HMI_CONFIG", {}) or {})
     return {}
+
+
+def load_newkirk_spatial_config(config_name: str | None = None):
+    """Load optional illustrative plane-of-sky projection config."""
+    module = load_radio_config_module(config_name)
+    config = copy.deepcopy(DEFAULT_NEWKIRK_SPATIAL_CONFIG)
+    config.update(copy.deepcopy(getattr(module, "NEWKIRK_SPATIAL_CONFIG", {}) or {}))
+    return config
+
+
+def load_newkirk_height_comparison_config(config_name: str | None = None):
+    """Load Gaussian-Newkirk height comparison config."""
+    module = load_radio_config_module(config_name)
+    config = copy.deepcopy(DEFAULT_NEWKIRK_HEIGHT_COMPARISON_CONFIG)
+    config.update(
+        copy.deepcopy(getattr(module, "NEWKIRK_HEIGHT_COMPARISON_CONFIG", {}) or {})
+    )
+    return config
+
+
+def load_drift_selection_product_config(config_name: str | None = None):
+    """Load persistent drift-selection product config."""
+    module = load_radio_config_module(config_name)
+    config = copy.deepcopy(DEFAULT_DRIFT_SELECTION_PRODUCT_CONFIG)
+    config.update(
+        copy.deepcopy(getattr(module, "DRIFT_SELECTION_PRODUCT_CONFIG", {}) or {})
+    )
+    return config
+
+
+def load_radio_diagnostic_presentation_config(config_name: str | None = None):
+    """Load frequency-priority diagnostic presentation config."""
+    module = load_radio_config_module(config_name)
+    user_config = copy.deepcopy(getattr(module, "USER_CONFIG", {}) or {})
+    config = copy.deepcopy(DEFAULT_RADIO_DIAGNOSTIC_PRESENTATION_CONFIG)
+    config.update(
+        copy.deepcopy(
+            getattr(module, "RADIO_DIAGNOSTIC_PRESENTATION_CONFIG", {}) or {}
+        )
+    )
+    if not config.get("comparison_frequency_mhz"):
+        data_cfg = user_config.get("data", {}) if isinstance(user_config, dict) else {}
+        freqs = data_cfg.get("multi_band_freqs") or []
+        config["comparison_frequency_mhz"] = [float(freq) for freq in freqs]
+    return config
