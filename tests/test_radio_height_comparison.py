@@ -7,6 +7,7 @@ import pandas as pd
 
 from scripts.radio.core.radio_height_comparison import (
     build_gaussian_newkirk_height_table,
+    build_gaussian_newkirk_height_summary_table,
     compute_gaussian_projected_height,
 )
 
@@ -34,6 +35,8 @@ def test_gaussian_projected_height_inside_disk_is_flagged_projected_only():
     assert result["gaussian_height_rsun"] == pytest_approx(-0.5)
     assert result["height_valid"] is False
     assert result["height_invalid_reason"] == "inside_disk_projected_distance_only"
+    assert result["gaussian_projected_height_valid"] is False
+    assert result["gaussian_projected_height_reason"] == "projected_inside_limb_or_bad_fit"
 
 
 def test_lower_frequency_gives_larger_newkirk_height():
@@ -86,6 +89,45 @@ def test_nan_gaussian_centers_do_not_crash():
     assert len(out) == 1
     assert out.iloc[0]["height_valid"] == False
     assert out.iloc[0]["height_invalid_reason"] == "nonfinite_projected_coordinate"
+    assert out.iloc[0]["gaussian_projected_height_valid"] == False
+    assert out.iloc[0]["gaussian_projected_height_reason"] == "gaussian_fit_or_coordinate_invalid"
+
+
+def test_height_summary_excludes_invalid_projected_heights_from_statistics():
+    raw = build_gaussian_newkirk_height_table(
+        pd.DataFrame(
+            [
+                _gaussian_row(freq=149.0, x=480.0, y=0.0),
+                _gaussian_row(freq=149.0, x=1200.0, y=0.0),
+            ]
+        ),
+        {
+            "solar_radius_arcsec": 960.0,
+            "selected_models": [
+                {"multiplier": 1.0, "harmonic": 1},
+                {"multiplier": 1.0, "harmonic": 2},
+                {"multiplier": 2.0, "harmonic": 1},
+                {"multiplier": 2.0, "harmonic": 2},
+                {"multiplier": 4.0, "harmonic": 1},
+                {"multiplier": 4.0, "harmonic": 2},
+            ],
+        },
+    )
+
+    summary = build_gaussian_newkirk_height_summary_table(
+        raw,
+        {
+            "comparison_frequency_mhz": [149],
+            "reference_newkirk_assumption": "2xH2",
+        },
+    )
+    row = summary.iloc[0]
+
+    assert row["gaussian_valid_count"] == 1
+    assert row["gaussian_invalid_count"] == 1
+    assert row["gaussian_projected_height_median_rsun"] == pytest_approx(0.25)
+    assert row["newkirk_height_rsun_1xH2"] == pytest_approx(row["newkirk_height_rsun_4xH1"])
+    assert "abs_delta_reference_rsun" in summary.columns
 
 
 def test_drift_selection_match_propagates_label_and_source_type():

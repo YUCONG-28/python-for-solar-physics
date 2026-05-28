@@ -30,6 +30,7 @@ DEFAULT_NEWKIRK_HEIGHT_COMPARISON_CONFIG = {
     "plot_height_time": True,
     "plot_residual_frequency": True,
     "output_table_name": "gaussian_newkirk_height_comparison_table.csv",
+    "raw_output_table_name": "gaussian_newkirk_height_rows.csv",
     "height_frequency_plot_name": "gaussian_vs_newkirk_height_frequency.png",
     "height_time_plot_name": "gaussian_vs_newkirk_height_time.png",
     "height_residual_plot_name": "gaussian_newkirk_height_residual_vs_frequency.png",
@@ -71,12 +72,27 @@ DEFAULT_RADIO_DIAGNOSTIC_PRESENTATION_CONFIG = {
     "drift_frequency_tolerance_mhz": "adaptive_half_band_spacing",
     "max_adaptive_frequency_tolerance_mhz": 15.0,
     "min_adaptive_frequency_tolerance_mhz": 5.0,
+    "selected_newkirk_multiplier": 2.0,
+    "selected_newkirk_harmonic": 2,
+    "reference_newkirk_assumption": "2xH2",
+    "connect_same_drift_only": True,
+    "enable_debug_center_facets": False,
+    "enable_debug_height_time_facets": False,
+    "enable_debug_drift_band_matching": False,
+    "enable_debug_trajectory_by_frequency": False,
+    "enable_event_height_comparison": True,
+    "enable_event_speed_frequency": True,
     "best_model_metric": "median_abs_residual_rsun",
     "top_residual_models": 3,
     "summary_panel_name": "radio_newkirk_frequency_priority_summary.png",
     "center_facets_name": "gaussian_center_by_frequency_facets.png",
+    "trajectory_by_frequency_name_template": "gaussian_center_trajectory_time_colored_{frequency:g}MHz.png",
     "drift_band_matching_name": "drift_frequency_band_matching.png",
     "height_time_facets_name": "height_time_by_frequency_facets.png",
+    "event_height_comparison_name": "event_gaussian_newkirk_height_comparison.png",
+    "event_speed_frequency_name": "event_newkirk_speed_frequency_scatter.png",
+    "selected_band_newkirk_table_name": "event_selected_band_newkirk_table.csv",
+    "physical_consistency_report_name": "newkirk_physical_consistency_report.md",
     "dashboard_name": "radio_newkirk_frequency_priority_dashboard.html",
     "summary_csv_name": "radio_newkirk_frequency_priority_summary.csv",
 }
@@ -122,6 +138,13 @@ def load_radio_config_module(config_name: str | None = None) -> ModuleType:
     return importlib.import_module(_normalize_config_module_name(config_name))
 
 
+def _event_section(module: ModuleType, section: str, legacy_name: str):
+    event_config = getattr(module, "EVENT_CONFIG", None)
+    if isinstance(event_config, dict) and section in event_config:
+        return event_config.get(section) or {}
+    return getattr(module, legacy_name, {}) or {}
+
+
 def load_radio_user_config(config_name: str | None = None):
     """
     Load a radio event config.
@@ -131,9 +154,9 @@ def load_radio_user_config(config_name: str | None = None):
     module path such as ``scripts.radio.configs.radio_20250124_config``.
     """
     module = load_radio_config_module(config_name)
-    user_config = copy.deepcopy(getattr(module, "USER_CONFIG", {}) or {})
+    user_config = copy.deepcopy(_event_section(module, "user", "USER_CONFIG"))
     newkirk_config = dict(DEFAULT_NEWKIRK_CONFIG)
-    newkirk_config.update(copy.deepcopy(getattr(module, "NEWKIRK_CONFIG", {}) or {}))
+    newkirk_config.update(copy.deepcopy(_event_section(module, "newkirk", "NEWKIRK_CONFIG")))
     return user_config, newkirk_config
 
 
@@ -153,7 +176,7 @@ def load_newkirk_spatial_config(config_name: str | None = None):
     """Load optional illustrative plane-of-sky projection config."""
     module = load_radio_config_module(config_name)
     config = copy.deepcopy(DEFAULT_NEWKIRK_SPATIAL_CONFIG)
-    config.update(copy.deepcopy(getattr(module, "NEWKIRK_SPATIAL_CONFIG", {}) or {}))
+    config.update(copy.deepcopy(_event_section(module, "newkirk_spatial", "NEWKIRK_SPATIAL_CONFIG")))
     return config
 
 
@@ -162,7 +185,7 @@ def load_newkirk_height_comparison_config(config_name: str | None = None):
     module = load_radio_config_module(config_name)
     config = copy.deepcopy(DEFAULT_NEWKIRK_HEIGHT_COMPARISON_CONFIG)
     config.update(
-        copy.deepcopy(getattr(module, "NEWKIRK_HEIGHT_COMPARISON_CONFIG", {}) or {})
+        copy.deepcopy(_event_section(module, "newkirk_height_comparison", "NEWKIRK_HEIGHT_COMPARISON_CONFIG"))
     )
     return config
 
@@ -172,7 +195,7 @@ def load_drift_selection_product_config(config_name: str | None = None):
     module = load_radio_config_module(config_name)
     config = copy.deepcopy(DEFAULT_DRIFT_SELECTION_PRODUCT_CONFIG)
     config.update(
-        copy.deepcopy(getattr(module, "DRIFT_SELECTION_PRODUCT_CONFIG", {}) or {})
+        copy.deepcopy(_event_section(module, "drift_selection_products", "DRIFT_SELECTION_PRODUCT_CONFIG"))
     )
     return config
 
@@ -180,11 +203,11 @@ def load_drift_selection_product_config(config_name: str | None = None):
 def load_radio_diagnostic_presentation_config(config_name: str | None = None):
     """Load frequency-priority diagnostic presentation config."""
     module = load_radio_config_module(config_name)
-    user_config = copy.deepcopy(getattr(module, "USER_CONFIG", {}) or {})
+    user_config = copy.deepcopy(_event_section(module, "user", "USER_CONFIG"))
     config = copy.deepcopy(DEFAULT_RADIO_DIAGNOSTIC_PRESENTATION_CONFIG)
     config.update(
         copy.deepcopy(
-            getattr(module, "RADIO_DIAGNOSTIC_PRESENTATION_CONFIG", {}) or {}
+            _event_section(module, "diagnostic_presentation", "RADIO_DIAGNOSTIC_PRESENTATION_CONFIG")
         )
     )
     if not config.get("comparison_frequency_mhz"):

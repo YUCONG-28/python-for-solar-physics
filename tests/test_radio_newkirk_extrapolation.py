@@ -93,6 +93,27 @@ def test_extrapolate_drift_line_with_newkirk_maps_midpoint_speed():
     assert out["speed_km_s"] > 0
 
 
+def test_newkirk_harmonic_density_degeneracy_and_speed_aliases():
+    row = {
+        "label": "drift_001",
+        "f_start_mhz": 180.0,
+        "f_end_mhz": 120.0,
+        "drift_rate_mhz_s": -10.0,
+    }
+
+    harmonic = extrapolate_drift_line_with_newkirk(row, multiplier=1.0, harmonic=2)
+    dense_fundamental = extrapolate_drift_line_with_newkirk(row, multiplier=4.0, harmonic=1)
+
+    assert harmonic["density_multiplier"] == pytest_approx(1.0)
+    assert harmonic["emission_harmonic"] == pytest_approx(2.0)
+    assert harmonic["effective_density_factor"] == pytest_approx(4.0)
+    assert dense_fundamental["effective_density_factor"] == pytest_approx(4.0)
+    assert harmonic["newkirk_height_rsun"] == pytest_approx(dense_fundamental["newkirk_height_rsun"])
+    assert harmonic["newkirk_speed_km_s"] == pytest_approx(dense_fundamental["newkirk_speed_km_s"])
+    assert harmonic["newkirk_speed_c"] == pytest_approx(harmonic["newkirk_speed_km_s"] / 299792.458)
+    assert harmonic["newkirk_assumption_label"] == "1x Newkirk, H=2, N*s^2=4"
+
+
 def pytest_approx(value):
     try:
         import pytest

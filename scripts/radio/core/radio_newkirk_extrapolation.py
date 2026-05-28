@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 RSUN_KM = 695_700.0
+SPEED_OF_LIGHT_KM_S = 299_792.458
 NEWKIRK_BASE_DENSITY_CM3 = 4.2e4
 NEWKIRK_EXPONENT = 4.32
 PLASMA_FREQ_COEFF_KHZ = 8.98
@@ -79,6 +80,20 @@ def newkirk_speed_from_drift_rate(freq_mhz, drift_rate_mhz_s, r_rsun):
     }
 
 
+def effective_density_factor(multiplier, harmonic):
+    """Return the Newkirk density/emission degeneracy factor N*s^2."""
+    return float(multiplier) * float(harmonic) ** 2
+
+
+def newkirk_assumption_label(multiplier, harmonic):
+    """Return a compact physical label for a density and emission assumption."""
+    factor = effective_density_factor(multiplier, harmonic)
+    return (
+        f"{float(multiplier):g}x Newkirk, H={float(harmonic):g}, "
+        f"N*s^2={factor:g}"
+    )
+
+
 def attach_newkirk_height_to_gaussian(
     df,
     multiplier,
@@ -111,6 +126,10 @@ def attach_newkirk_height_to_gaussian(
     data["newkirk_harmonic"] = (
         int(harmonic) if float(harmonic).is_integer() else float(harmonic)
     )
+    data["density_multiplier"] = float(multiplier)
+    data["emission_harmonic"] = float(harmonic)
+    data["effective_density_factor"] = effective_density_factor(multiplier, harmonic)
+    data["newkirk_assumption_label"] = newkirk_assumption_label(multiplier, harmonic)
     data["newkirk_density_cm3"] = plasma_density_from_frequency_mhz(
         freq.to_numpy(dtype=float), harmonic=harmonic
     )
@@ -140,6 +159,8 @@ def extrapolate_drift_line_with_newkirk(drift_row, multiplier, harmonic):
         )
     )
     speed = newkirk_speed_from_drift_rate(mid_freq, drift, radius)
+    speed_km_s = speed["speed_km_s"]
+    speed_c = speed_km_s / SPEED_OF_LIGHT_KM_S if np.isfinite(speed_km_s) else np.nan
     out = dict(row)
     out.update(
         {
@@ -147,11 +168,18 @@ def extrapolate_drift_line_with_newkirk(drift_row, multiplier, harmonic):
             "newkirk_harmonic": (
                 int(harmonic) if float(harmonic).is_integer() else float(harmonic)
             ),
+            "density_multiplier": float(multiplier),
+            "emission_harmonic": float(harmonic),
+            "effective_density_factor": effective_density_factor(multiplier, harmonic),
+            "newkirk_assumption_label": newkirk_assumption_label(multiplier, harmonic),
             "mid_frequency_mhz": mid_freq,
             "newkirk_r_rsun": radius,
             "newkirk_height_rsun": radius - 1.0 if np.isfinite(radius) else np.nan,
             "dr_dt_rsun_s": speed["dr_dt_rsun_s"],
-            "speed_km_s": speed["speed_km_s"],
+            "speed_km_s": speed_km_s,
+            "v_over_c": speed_c,
+            "newkirk_speed_km_s": speed_km_s,
+            "newkirk_speed_c": speed_c,
         }
     )
     return out

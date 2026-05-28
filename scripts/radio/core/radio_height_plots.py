@@ -41,15 +41,15 @@ def plot_gaussian_vs_newkirk_height_frequency(height_df, output_path, config=Non
             linewidth=2.4 if is_best else 1.2,
             alpha=0.95 if is_best else 0.70,
             label=(
-                f"{model_label(multiplier, harmonic)} (best median |residual|)"
+                f"{model_label(multiplier, harmonic)} Newkirk radial height (best median |residual|)"
                 if is_best
-                else model_label(multiplier, harmonic)
+                else f"{model_label(multiplier, harmonic)} Newkirk radial height"
             ),
             zorder=4 if is_best else 2,
         )
     ax.set_xlabel("Frequency (MHz)")
-    ax.set_ylabel("Height (Rsun above photosphere)")
-    ax.set_title("Gaussian projected height vs Newkirk height")
+    ax.set_ylabel("Height above photosphere (Rsun)")
+    ax.set_title("Projected Gaussian source height vs Newkirk radial height")
     if cfg.get("reverse_frequency_axis", True):
         ax.invert_xaxis()
     ax.grid(True, linestyle=":", alpha=0.35)
@@ -80,7 +80,7 @@ def plot_gaussian_vs_newkirk_height_time(height_df, output_path, config=None):
             group["gaussian_height_rsun"],
             s=24,
             marker="o",
-            label=f"Gaussian {source_type}",
+        label="Gaussian center projected height",
             alpha=0.65,
             edgecolors="none",
         )
@@ -188,6 +188,23 @@ def _scatter_gaussian_height_by_frequency(ax, df: pd.DataFrame, cfg: dict):
     one_per_source = df.drop_duplicates(
         subset=["time", "frequency_mhz", "gaussian_x_arcsec", "gaussian_y_arcsec"]
     ).copy()
+    if "gaussian_projected_height_valid" in one_per_source.columns:
+        valid_mask = one_per_source["gaussian_projected_height_valid"].map(_truthy)
+    else:
+        valid_mask = one_per_source["gaussian_height_rsun"] >= 0
+    invalid = one_per_source[~valid_mask].dropna(subset=["gaussian_height_rsun"])
+    one_per_source = one_per_source[valid_mask]
+    if not invalid.empty and cfg.get("show_invalid_projected_heights", True):
+        ax.scatter(
+            invalid["frequency_mhz"],
+            invalid["gaussian_height_rsun"],
+            s=28,
+            marker="x",
+            alpha=0.65,
+            color="0.5",
+            label="Invalid projected height",
+            zorder=2,
+        )
     color_by = str(cfg.get("color_by", "source_type")).lower()
     if color_by == "time":
         colors = mdates.date2num(one_per_source["time_dt"])
@@ -199,7 +216,7 @@ def _scatter_gaussian_height_by_frequency(ax, df: pd.DataFrame, cfg: dict):
             s=36,
             edgecolors="black",
             linewidths=0.35,
-            label="Gaussian projected height",
+            label="Gaussian center projected height",
             zorder=3,
         )
         cbar = ax.figure.colorbar(sc, ax=ax)
@@ -214,7 +231,7 @@ def _scatter_gaussian_height_by_frequency(ax, df: pd.DataFrame, cfg: dict):
             alpha=0.45,
             edgecolors="black",
             linewidths=0.35,
-            label=f"Gaussian {source_type}",
+            label="Gaussian center projected height",
             zorder=3,
         )
 
@@ -249,6 +266,12 @@ def _plot_gaussian_frequency_median_iqr(ax, df: pd.DataFrame):
     one_per_source = df.drop_duplicates(
         subset=["time", "frequency_mhz", "gaussian_x_arcsec", "gaussian_y_arcsec"]
     ).dropna(subset=["frequency_mhz", "gaussian_height_rsun"])
+    if "gaussian_projected_height_valid" in one_per_source.columns:
+        one_per_source = one_per_source[
+            one_per_source["gaussian_projected_height_valid"].map(_truthy)
+        ]
+    else:
+        one_per_source = one_per_source[one_per_source["gaussian_height_rsun"] >= 0]
     summary = _median_iqr(
         one_per_source,
         ["frequency_mhz"],
@@ -376,6 +399,17 @@ def _legend_if_needed(ax, **kwargs):
 
 def _has_columns(df: pd.DataFrame, columns: list[str]) -> bool:
     return all(column in df.columns for column in columns)
+
+
+def _truthy(value) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "ok"}
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return bool(value)
 
 
 def _model_pairs(df: pd.DataFrame):
