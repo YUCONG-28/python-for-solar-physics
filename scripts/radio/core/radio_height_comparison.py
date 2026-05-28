@@ -7,6 +7,8 @@ import pandas as pd
 
 from .radio_io import parse_datetime_value, truthy
 from .radio_newkirk_extrapolation import (
+    effective_density_factor,
+    newkirk_assumption_label,
     newkirk_radius_from_frequency_mhz,
     plasma_density_from_frequency_mhz,
 )
@@ -31,6 +33,8 @@ def compute_gaussian_projected_height(x_arcsec, y_arcsec, solar_radius_arcsec):
             "gaussian_height_rsun": np.nan,
             "height_valid": False,
             "height_invalid_reason": "invalid_solar_radius_arcsec",
+            "gaussian_projected_height_valid": False,
+            "gaussian_projected_height_reason": "gaussian_fit_or_coordinate_invalid",
         }
 
     x = _float_or_nan(x_arcsec)
@@ -41,6 +45,8 @@ def compute_gaussian_projected_height(x_arcsec, y_arcsec, solar_radius_arcsec):
             "gaussian_height_rsun": np.nan,
             "height_valid": False,
             "height_invalid_reason": "nonfinite_projected_coordinate",
+            "gaussian_projected_height_valid": False,
+            "gaussian_projected_height_reason": "gaussian_fit_or_coordinate_invalid",
         }
 
     rho = float(np.hypot(x, y) / radius)
@@ -51,12 +57,16 @@ def compute_gaussian_projected_height(x_arcsec, y_arcsec, solar_radius_arcsec):
             "gaussian_height_rsun": height,
             "height_valid": False,
             "height_invalid_reason": "inside_disk_projected_distance_only",
+            "gaussian_projected_height_valid": False,
+            "gaussian_projected_height_reason": "projected_inside_limb_or_bad_fit",
         }
     return {
         "gaussian_rho_rsun": rho,
         "gaussian_height_rsun": height,
         "height_valid": True,
         "height_invalid_reason": "ok",
+        "gaussian_projected_height_valid": True,
+        "gaussian_projected_height_reason": "valid_projected_height",
     }
 
 
@@ -99,10 +109,13 @@ def build_gaussian_newkirk_height_table(gaussian_df, config):
         if not gaussian_fit_success and projected["height_invalid_reason"] == "ok":
             projected["height_valid"] = False
             projected["height_invalid_reason"] = "invalid_gaussian_fit"
+            projected["gaussian_projected_height_valid"] = False
+            projected["gaussian_projected_height_reason"] = "gaussian_fit_or_coordinate_invalid"
 
         for model in _selected_models(cfg):
             multiplier = float(model.get("multiplier", model.get("newkirk_multiplier", 1.0)))
             harmonic = model.get("harmonic", 1)
+            effective_factor = effective_density_factor(multiplier, harmonic)
             density = _safe_physics_value(
                 plasma_density_from_frequency_mhz, freq, harmonic=harmonic
             )
@@ -144,8 +157,14 @@ def build_gaussian_newkirk_height_table(gaussian_df, config):
                     "solar_radius_arcsec": solar_radius,
                     "gaussian_rho_rsun": projected["gaussian_rho_rsun"],
                     "gaussian_height_rsun": projected["gaussian_height_rsun"],
+                    "gaussian_projected_height_valid": projected["gaussian_projected_height_valid"],
+                    "gaussian_projected_height_reason": projected["gaussian_projected_height_reason"],
                     "newkirk_multiplier": multiplier,
                     "harmonic": harmonic,
+                    "density_multiplier": multiplier,
+                    "emission_harmonic": harmonic,
+                    "effective_density_factor": effective_factor,
+                    "newkirk_assumption_label": newkirk_assumption_label(multiplier, harmonic),
                     "electron_density_cm3": density,
                     "newkirk_radius_rsun": radius,
                     "newkirk_height_rsun": newkirk_height,
@@ -166,8 +185,116 @@ def build_gaussian_newkirk_height_table(gaussian_df, config):
     return out[HEIGHT_COLUMNS]
 
 
+def build_gaussian_newkirk_height_summary_table(height_df, config=None):
+    """Summarize valid projected Gaussian heights against Newkirk radial heights."""
+    cfg = dict(config or {})
+    df = pd.DataFrame(height_df).copy()
+    columns = _height_summary_columns()
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+
+    freqs = _summary_frequencies(df, cfg)
+    reference = str(cfg.get("reference_newkirk_assumption") or "2xH2")
+    unique = df.drop_duplicates(
+        subset=["time", "frequency_mhz", "gaussian_x_arcsec", "gaussian_y_arcsec"]
+    ).copy()
+    if "gaussian_projected_height_valid" not in unique.columns:
+        unique["gaussian_projected_height_valid"] = (
+            pd.to_numeric(unique.get("gaussian_height_rsun"), errors="coerce") >= 0
+        )
+
+    rows = []
+    for freq in freqs:
+        group = unique[
+            pd.to_numeric(unique.get("frequency_mhz"), errors="coerce").eq(float(freq))
+        ]
+        valid_mask = group["gaussian_projected_height_valid"].map(truthy)
+        valid_heights = pd.to_numeric(
+            group.loc[valid_mask, "gaussian_height_rsun"], errors="coerce"
+        ).dropna()
+        row = {
+            "frequency_mhz": float(freq),
+            "gaussian_valid_count": int(len(valid_heights)),
+            "gaussian_invalid_count": int(len(group) - len(valid_heights)),
+            "gaussian_projected_height_median_rsun": np.nan,
+            "gaussian_projected_height_q25_rsun": np.nan,
+            "gaussian_projected_height_q75_rsun": np.nan,
+            "abs_delta_reference_rsun": np.nan,
+            "relative_delta_reference": np.nan,
+        }
+        if not valid_heights.empty:
+            row["gaussian_projected_height_median_rsun"] = float(valid_heights.median())
+            row["gaussian_projected_height_q25_rsun"] = float(valid_heights.quantile(0.25))
+            row["gaussian_projected_height_q75_rsun"] = float(valid_heights.quantile(0.75))
+
+        for multiplier, harmonic in _canonical_assumptions():
+            key = _assumption_key(multiplier, harmonic)
+            row[f"newkirk_height_rsun_{key}"] = _height_for_assumption(
+                df, freq, multiplier, harmonic
+            )
+
+        median = row["gaussian_projected_height_median_rsun"]
+        ref_height = row.get(f"newkirk_height_rsun_{reference}", np.nan)
+        if np.isfinite(median) and np.isfinite(ref_height):
+            delta = abs(float(median) - float(ref_height))
+            row["abs_delta_reference_rsun"] = delta
+            row["relative_delta_reference"] = (
+                delta / abs(float(ref_height)) if float(ref_height) != 0 else np.nan
+            )
+        rows.append(row)
+
+    out = pd.DataFrame(rows)
+    for column in columns:
+        if column not in out.columns:
+            out[column] = np.nan
+    return out[columns]
+
+
 def model_label(multiplier, harmonic) -> str:
     return f"{float(multiplier):g}× Newkirk, s={float(harmonic):g}"
+
+
+def _canonical_assumptions():
+    return [(1.0, 1.0), (1.0, 2.0), (2.0, 1.0), (2.0, 2.0), (4.0, 1.0), (4.0, 2.0)]
+
+
+def _assumption_key(multiplier, harmonic):
+    return f"{float(multiplier):g}xH{float(harmonic):g}"
+
+
+def _summary_frequencies(df, config):
+    freqs = config.get("comparison_frequency_mhz")
+    if freqs:
+        return [float(freq) for freq in freqs]
+    values = pd.to_numeric(df.get("frequency_mhz"), errors="coerce").dropna().unique()
+    return [float(freq) for freq in sorted(values)]
+
+
+def _height_for_assumption(df, freq, multiplier, harmonic):
+    data = df[
+        pd.to_numeric(df.get("frequency_mhz"), errors="coerce").eq(float(freq))
+        & pd.to_numeric(df.get("newkirk_multiplier"), errors="coerce").eq(float(multiplier))
+        & pd.to_numeric(df.get("harmonic"), errors="coerce").eq(float(harmonic))
+    ]
+    values = pd.to_numeric(data.get("newkirk_height_rsun"), errors="coerce").dropna()
+    return float(values.iloc[0]) if not values.empty else np.nan
+
+
+def _height_summary_columns():
+    columns = [
+        "frequency_mhz",
+        "gaussian_valid_count",
+        "gaussian_invalid_count",
+        "gaussian_projected_height_median_rsun",
+        "gaussian_projected_height_q25_rsun",
+        "gaussian_projected_height_q75_rsun",
+    ]
+    columns.extend(
+        f"newkirk_height_rsun_{_assumption_key(multiplier, harmonic)}"
+        for multiplier, harmonic in _canonical_assumptions()
+    )
+    columns.extend(["abs_delta_reference_rsun", "relative_delta_reference"])
+    return columns
 
 
 def _selected_models(config):
@@ -326,8 +453,14 @@ HEIGHT_COLUMNS = [
     "solar_radius_arcsec",
     "gaussian_rho_rsun",
     "gaussian_height_rsun",
+    "gaussian_projected_height_valid",
+    "gaussian_projected_height_reason",
     "newkirk_multiplier",
     "harmonic",
+    "density_multiplier",
+    "emission_harmonic",
+    "effective_density_factor",
+    "newkirk_assumption_label",
     "electron_density_cm3",
     "newkirk_radius_rsun",
     "newkirk_height_rsun",

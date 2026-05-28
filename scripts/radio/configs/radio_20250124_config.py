@@ -217,6 +217,7 @@ NEWKIRK_HEIGHT_COMPARISON_CONFIG = {
     "plot_height_time": True,
     "plot_residual_frequency": True,
     "output_table_name": "gaussian_newkirk_height_comparison_table.csv",
+    "raw_output_table_name": "gaussian_newkirk_height_rows.csv",
     "height_frequency_plot_name": "gaussian_vs_newkirk_height_frequency.png",
     "height_time_plot_name": "gaussian_vs_newkirk_height_time.png",
     "height_residual_plot_name": "gaussian_newkirk_height_residual_vs_frequency.png",
@@ -247,8 +248,14 @@ DRIFT_SELECTION_PRODUCT_CONFIG = {
 
 RADIO_DIAGNOSTIC_PRESENTATION_CONFIG = {
     "enable": True,
-    "enable_static_summary": True,
-    "enable_html_dashboard": True,
+    "enable_static_summary": False,
+    "enable_html_dashboard": False,
+    "enable_debug_center_facets": False,
+    "enable_debug_height_time_facets": False,
+    "enable_debug_drift_band_matching": False,
+    "enable_debug_trajectory_by_frequency": False,
+    "enable_event_height_comparison": True,
+    "enable_event_speed_frequency": True,
     "comparison_frequency_mhz": [149, 164, 190, 205, 223, 238],
     "drift_source_type_map": {
         "drift_001": "typeIII",
@@ -260,12 +267,21 @@ RADIO_DIAGNOSTIC_PRESENTATION_CONFIG = {
     "drift_frequency_tolerance_mhz": "adaptive_half_band_spacing",
     "max_adaptive_frequency_tolerance_mhz": 15.0,
     "min_adaptive_frequency_tolerance_mhz": 5.0,
+    "selected_newkirk_multiplier": 2.0,
+    "selected_newkirk_harmonic": 2,
+    "reference_newkirk_assumption": "2xH2",
+    "connect_same_drift_only": True,
     "best_model_metric": "median_abs_residual_rsun",
     "top_residual_models": 3,
     "summary_panel_name": "radio_newkirk_frequency_priority_summary.png",
     "center_facets_name": "gaussian_center_by_frequency_facets.png",
+    "trajectory_by_frequency_name_template": "gaussian_center_trajectory_time_colored_{frequency:g}MHz.png",
     "drift_band_matching_name": "drift_frequency_band_matching.png",
     "height_time_facets_name": "height_time_by_frequency_facets.png",
+    "event_height_comparison_name": "event_gaussian_newkirk_height_comparison.png",
+    "event_speed_frequency_name": "event_newkirk_speed_frequency_scatter.png",
+    "selected_band_newkirk_table_name": "event_selected_band_newkirk_table.csv",
+    "physical_consistency_report_name": "newkirk_physical_consistency_report.md",
     "dashboard_name": "radio_newkirk_frequency_priority_dashboard.html",
     "summary_csv_name": "radio_newkirk_frequency_priority_summary.csv",
 }
@@ -292,3 +308,20 @@ NEWKIRK_SPATIAL_CONFIG = {
     "TYPEIII_FREQ_RANGE": None,
     "SPIKE_FREQ_RANGE": None,
 }
+
+
+EVENT_CONFIG = {
+    "user": USER_CONFIG,
+    "newkirk": NEWKIRK_CONFIG,
+    "newkirk_height_comparison": NEWKIRK_HEIGHT_COMPARISON_CONFIG,
+    "drift_selection_products": DRIFT_SELECTION_PRODUCT_CONFIG,
+    "diagnostic_presentation": RADIO_DIAGNOSTIC_PRESENTATION_CONFIG,
+    "newkirk_spatial": NEWKIRK_SPATIAL_CONFIG,
+}
+
+USER_CONFIG = EVENT_CONFIG["user"]
+NEWKIRK_CONFIG = EVENT_CONFIG["newkirk"]
+NEWKIRK_HEIGHT_COMPARISON_CONFIG = EVENT_CONFIG["newkirk_height_comparison"]
+DRIFT_SELECTION_PRODUCT_CONFIG = EVENT_CONFIG["drift_selection_products"]
+RADIO_DIAGNOSTIC_PRESENTATION_CONFIG = EVENT_CONFIG["diagnostic_presentation"]
+NEWKIRK_SPATIAL_CONFIG = EVENT_CONFIG["newkirk_spatial"]

@@ -120,9 +120,6 @@ def main(config_name: str | None = None):
     _plot_gaussian_center_trajectory(
         valid_df, analysis_dir / "gaussian_center_trajectory.png"
     )
-    _plot_gaussian_center_trajectory_time_colored(
-        valid_df, analysis_dir / "gaussian_center_trajectory_time_colored.png"
-    )
     _plot_gaussian_newkirk_height_time(
         newkirk_df, analysis_dir / "gaussian_newkirk_height_time.png"
     )
@@ -171,6 +168,7 @@ def _run_newkirk_height_comparison(
 ) -> None:
     from scripts.radio.core.radio_height_comparison import (
         build_gaussian_newkirk_height_table,
+        build_gaussian_newkirk_height_summary_table,
     )
     from scripts.radio.core.radio_height_plots import (
         plot_gaussian_vs_newkirk_height_frequency,
@@ -188,6 +186,7 @@ def _run_newkirk_height_comparison(
         "drift_frequency_tolerance_mhz",
         "max_adaptive_frequency_tolerance_mhz",
         "min_adaptive_frequency_tolerance_mhz",
+        "reference_newkirk_assumption",
     ):
         if key in presentation and key not in cfg:
             cfg[key] = presentation[key]
@@ -198,11 +197,17 @@ def _run_newkirk_height_comparison(
 
     print("[Newkirk Height] enabled")
     height_df = build_gaussian_newkirk_height_table(gaussian_df, cfg)
+    raw_table_path = analysis_dir / cfg.get(
+        "raw_output_table_name", "gaussian_newkirk_height_rows.csv"
+    )
+    height_df.to_csv(raw_table_path, index=False)
+    print(f"[Newkirk Height] raw comparison rows saved: {raw_table_path}")
+    height_summary_df = build_gaussian_newkirk_height_summary_table(height_df, cfg)
     table_path = analysis_dir / cfg.get(
         "output_table_name", "gaussian_newkirk_height_comparison_table.csv"
     )
-    height_df.to_csv(table_path, index=False)
-    print(f"[Newkirk Height] comparison table saved: {table_path}")
+    height_summary_df.to_csv(table_path, index=False)
+    print(f"[HeightComparison] summary table saved: {table_path}")
 
     skipped_rows = int((~height_df["height_valid"].map(_truthy)).sum()) if not height_df.empty else 0
     skipped_reasons = summarize_invalid_reasons(
@@ -262,12 +267,20 @@ def _run_frequency_priority_diagnostics(
 ) -> None:
     from scripts.radio.core.radio_frequency_priority_diagnostics import (
         build_frequency_priority_summary,
+        build_selected_band_newkirk_height_speed_table,
         plot_drift_frequency_band_matching,
+        plot_event_gaussian_newkirk_height_comparison,
+        plot_event_newkirk_speed_frequency,
         plot_frequency_priority_summary,
         plot_gaussian_center_by_frequency_facets,
+        plot_gaussian_center_trajectory_by_frequency,
         plot_height_time_by_frequency_facets,
+        save_newkirk_physical_consistency_report,
         save_frequency_priority_summary_csv,
         write_frequency_priority_dashboard,
+    )
+    from scripts.radio.core.radio_height_comparison import (
+        build_gaussian_newkirk_height_summary_table,
     )
 
     cfg = dict(presentation_cfg or {})
@@ -278,9 +291,56 @@ def _run_frequency_priority_diagnostics(
     )
     save_frequency_priority_summary_csv(summary, csv_path)
     print(f"[Frequency Priority] summary CSV saved: {csv_path}")
+    selected_band_path = analysis_dir / cfg.get(
+        "selected_band_newkirk_table_name",
+        "event_selected_band_newkirk_table.csv",
+    )
+    selected_band_table = build_selected_band_newkirk_height_speed_table(
+        drift_df, cfg
+    )
+    selected_band_table.to_csv(selected_band_path, index=False)
+    print(f"[Frequency Priority] selected-band Newkirk table saved: {selected_band_path}")
+    height_summary_table = build_gaussian_newkirk_height_summary_table(height_df, cfg)
+    report_path = analysis_dir / cfg.get(
+        "physical_consistency_report_name",
+        "newkirk_physical_consistency_report.md",
+    )
+    report_result = save_newkirk_physical_consistency_report(
+        selected_band_table, height_summary_table, report_path, cfg
+    )
+    print(f"[PhysicalCheck] report saved: {report_result['path']}")
 
+    if cfg.get("enable_event_height_comparison", True):
+        path = analysis_dir / cfg.get(
+            "event_height_comparison_name",
+            "event_gaussian_newkirk_height_comparison.png",
+        )
+        result = plot_event_gaussian_newkirk_height_comparison(height_df, path, cfg)
+        if result.get("status") == "saved":
+            print(f"[Frequency Priority] event height comparison saved: {path}")
+        else:
+            print(
+                "[Frequency Priority] event height comparison skipped: "
+                f"{result.get('reason', 'unknown')}"
+            )
+
+    if cfg.get("enable_event_speed_frequency", True):
+        path = analysis_dir / cfg.get(
+            "event_speed_frequency_name",
+            "event_newkirk_speed_frequency_scatter.png",
+        )
+        result = plot_event_newkirk_speed_frequency(selected_band_table, path, cfg)
+        if result.get("status") == "saved":
+            print(f"[Frequency Priority] event speed-frequency plot saved: {path}")
+        else:
+            print(
+                "[Frequency Priority] event speed-frequency plot skipped: "
+                f"{result.get('reason', 'unknown')}"
+            )
+
+    debug_outputs = []
     if cfg.get("enable_static_summary", True):
-        outputs = [
+        debug_outputs.append(
             (
                 "summary panel",
                 analysis_dir / cfg.get(
@@ -290,7 +350,10 @@ def _run_frequency_priority_diagnostics(
                 lambda path: plot_frequency_priority_summary(
                     height_df, gaussian_df, drift_df, path, cfg
                 ),
-            ),
+            )
+        )
+    if cfg.get("enable_debug_center_facets", False):
+        debug_outputs.append(
             (
                 "center facets",
                 analysis_dir / cfg.get(
@@ -299,7 +362,10 @@ def _run_frequency_priority_diagnostics(
                 lambda path: plot_gaussian_center_by_frequency_facets(
                     gaussian_df, path, cfg
                 ),
-            ),
+            )
+        )
+    if cfg.get("enable_debug_height_time_facets", False):
+        debug_outputs.append(
             (
                 "height-time facets",
                 analysis_dir / cfg.get(
@@ -309,20 +375,35 @@ def _run_frequency_priority_diagnostics(
                 lambda path: plot_height_time_by_frequency_facets(
                     height_df, path, cfg
                 ),
-            ),
-        ]
-        for label, path, func in outputs:
-            result = func(path)
-            if result.get("status") == "saved":
-                print(f"[Frequency Priority] {label} saved: {path}")
-            else:
-                print(
-                    f"[Frequency Priority] {label} skipped: "
-                    f"{result.get('reason', 'unknown')}"
-                )
+            )
+        )
+    for label, path, func in debug_outputs:
+        result = func(path)
+        if result.get("status") == "saved":
+            print(f"[Frequency Priority] {label} saved: {path}")
+        else:
+            print(
+                f"[Frequency Priority] {label} skipped: "
+                f"{result.get('reason', 'unknown')}"
+            )
+    if cfg.get("enable_debug_drift_band_matching", False):
         _run_drift_band_matching_plot(
             drift_df, analysis_dir, cfg, pipeline_cfg, plot_drift_frequency_band_matching
         )
+    if cfg.get("enable_debug_trajectory_by_frequency", False):
+        trajectory_result = plot_gaussian_center_trajectory_by_frequency(
+            gaussian_df, analysis_dir, cfg
+        )
+        if trajectory_result.get("status") == "saved":
+            print(
+                "[Frequency Priority] time-colored trajectories saved: "
+                f"{len(trajectory_result.get('paths', []))} files"
+            )
+        else:
+            print(
+                "[Frequency Priority] time-colored trajectories skipped: "
+                f"{trajectory_result.get('reason', 'unknown')}"
+            )
 
     if cfg.get("enable_html_dashboard", True):
         path = analysis_dir / cfg.get(
@@ -718,18 +799,31 @@ def _plot_drift_speed_comparison(df: pd.DataFrame, path: Path) -> None:
             + "H"
             + data["newkirk_harmonic"].map(lambda v: f"{float(v):g}")
         )
-        data["speed_km_s_num"] = pd.to_numeric(data["speed_km_s"], errors="coerce")
+        speed_col = "newkirk_speed_km_s" if "newkirk_speed_km_s" in data.columns else "speed_km_s"
+        data["speed_km_s_num"] = pd.to_numeric(data[speed_col], errors="coerce")
+        if "newkirk_speed_c" in data.columns:
+            data["speed_c_num"] = pd.to_numeric(data["newkirk_speed_c"], errors="coerce")
+        else:
+            data["speed_c_num"] = data["speed_km_s_num"] / 299792.458
         heatmap = data.pivot_table(
             index="label",
             columns="newkirk_case",
             values="speed_km_s_num",
             aggfunc="mean",
         )
+        heatmap_c = data.pivot_table(
+            index="label",
+            columns="newkirk_case",
+            values="speed_c_num",
+            aggfunc="mean",
+        )
         desired_cols = ["1xH1", "1xH2", "2xH1", "2xH2", "4xH1", "4xH2"]
         existing_cols = [col for col in desired_cols if col in heatmap.columns]
         extra_cols = [col for col in heatmap.columns if col not in existing_cols]
         heatmap = heatmap.reindex(columns=existing_cols + extra_cols)
+        heatmap_c = heatmap_c.reindex(index=heatmap.index, columns=heatmap.columns)
         values = heatmap.to_numpy(dtype=float)
+        c_values = heatmap_c.to_numpy(dtype=float)
         if values.size:
             finite_mean = np.nanmean(values) if np.isfinite(values).any() else np.nan
             im = ax.imshow(values, aspect="auto", cmap="viridis")
@@ -740,21 +834,30 @@ def _plot_drift_speed_comparison(df: pd.DataFrame, path: Path) -> None:
             for y_idx in range(values.shape[0]):
                 for x_idx in range(values.shape[1]):
                     value = values[y_idx, x_idx]
+                    c_value = c_values[y_idx, x_idx] if c_values.size else np.nan
                     if np.isfinite(value):
                         ax.text(
                             x_idx,
                             y_idx,
-                            f"{value:.0f}",
+                            f"{value:.0f}\n{c_value:.2f}c" if np.isfinite(c_value) else f"{value:.0f}",
                             ha="center",
                             va="center",
                             color="white" if value > finite_mean else "black",
                             fontsize=7,
                         )
-            fig.colorbar(im, ax=ax, label="Radial speed (km/s)")
-    ax.set_xlabel("Newkirk assumption")
+            fig.colorbar(im, ax=ax, label="Newkirk-inferred exciter speed (km/s)")
+    ax.set_xlabel("Density / emission assumption")
     ax.set_ylabel("Drift label")
-    ax.set_title("Drift-rate Newkirk speed comparison")
+    ax.set_title("Drift-rate-derived Newkirk exciter speed comparison")
+    fig.text(
+        0.5,
+        0.01,
+        "Note: 1xH2 and 4xH1 are degenerate because the inferred height depends on N*s^2.",
+        ha="center",
+        fontsize=8,
+    )
     fig.tight_layout()
+    fig.subplots_adjust(bottom=0.18)
     fig.savefig(path)
     plt.close(fig)
 

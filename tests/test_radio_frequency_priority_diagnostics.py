@@ -6,13 +6,22 @@ from pathlib import Path
 
 import pandas as pd
 
-from scripts.radio.configs import load_radio_diagnostic_presentation_config
+from scripts.radio.configs import (
+    load_radio_config_module,
+    load_radio_diagnostic_presentation_config,
+    load_radio_user_config,
+)
 from scripts.radio.core.radio_frequency_priority_diagnostics import (
     apply_frequency_priority_drift_matching,
+    build_selected_band_newkirk_height_speed_table,
     build_frequency_priority_summary,
+    build_newkirk_physical_consistency_report,
     model_label,
+    plot_event_gaussian_newkirk_height_comparison,
+    plot_event_newkirk_speed_frequency,
     plot_frequency_priority_summary,
     plot_gaussian_center_by_frequency_facets,
+    plot_gaussian_center_trajectory_by_frequency,
     plot_height_time_by_frequency_facets,
     write_frequency_priority_dashboard,
 )
@@ -22,6 +31,29 @@ def test_config_uses_gaussian_multiband_frequencies():
     cfg = load_radio_diagnostic_presentation_config("radio_20250124_config")
 
     assert cfg["comparison_frequency_mhz"] == [149, 164, 190, 205, 223, 238]
+
+
+def test_event_config_is_single_source_for_legacy_exports():
+    module = load_radio_config_module("radio_20250124_config")
+    user_config, newkirk_config = load_radio_user_config("radio_20250124_config")
+    presentation = load_radio_diagnostic_presentation_config("radio_20250124_config")
+
+    assert set(module.EVENT_CONFIG) >= {
+        "user",
+        "newkirk",
+        "newkirk_height_comparison",
+        "drift_selection_products",
+        "diagnostic_presentation",
+    }
+    assert module.USER_CONFIG == module.EVENT_CONFIG["user"]
+    assert module.NEWKIRK_CONFIG == module.EVENT_CONFIG["newkirk"]
+    assert user_config == module.EVENT_CONFIG["user"]
+    assert newkirk_config["solar_radius_arcsec"] == 959.63
+    assert presentation["enable_static_summary"] is False
+    assert presentation["enable_html_dashboard"] is False
+    assert presentation["event_height_comparison_name"] == "event_gaussian_newkirk_height_comparison.png"
+    assert presentation["event_speed_frequency_name"] == "event_newkirk_speed_frequency_scatter.png"
+    assert presentation["selected_band_newkirk_table_name"] == "event_selected_band_newkirk_table.csv"
 
 
 def test_summary_uses_only_configured_gaussian_frequency_bands():
@@ -123,6 +155,28 @@ def test_height_time_facets_do_not_connect_across_frequency_bands():
         assert result["cross_frequency_line_count"] == 0
 
 
+def test_height_time_facets_report_newkirk_reference_lines():
+    with tempfile.TemporaryDirectory() as tmp:
+        result = plot_height_time_by_frequency_facets(
+            pd.DataFrame(
+                [
+                    _height_row(149, 0.10, 0.09, 2, 2),
+                    _height_row(164, 0.20, 0.19, 2, 2),
+                ]
+            ),
+            Path(tmp) / "height_time_by_frequency_facets.png",
+            {
+                "comparison_frequency_mhz": [149, 164],
+                "selected_newkirk_multiplier": 2.0,
+                "selected_newkirk_harmonic": 2,
+            },
+        )
+
+        assert result["status"] == "saved"
+        assert result["newkirk_reference_line_count"] == 2
+        assert result["newkirk_reference_model_label"] == "2× Newkirk, s=2"
+
+
 def test_static_summary_and_dashboard_are_written_without_plotly():
     height_df = pd.DataFrame(
         [
@@ -187,6 +241,180 @@ def test_center_facets_accept_radio_compact_time_strings():
 
         assert result["status"] == "saved"
         assert path.exists()
+
+
+def test_center_facets_report_solar_radius_annotation_config():
+    gaussian_df = pd.DataFrame([_gaussian_row("2025-01-24T04:48:40", 149.0)])
+    with tempfile.TemporaryDirectory() as tmp:
+        result = plot_gaussian_center_by_frequency_facets(
+            gaussian_df,
+            Path(tmp) / "gaussian_center_by_frequency_facets.png",
+            {"comparison_frequency_mhz": [149], "solar_radius_arcsec": 959.63},
+        )
+
+        assert result["status"] == "saved"
+        assert result["solar_radius_arcsec"] == pytest_approx(959.63)
+        assert result["color_meaning"] == "Time (UT)"
+
+
+def test_time_colored_trajectory_outputs_one_file_per_frequency():
+    gaussian_df = pd.DataFrame(
+        [
+            _gaussian_row("2025-01-24T04:48:40", 149.0),
+            _gaussian_row("2025-01-24T04:48:41", 149.0),
+            _gaussian_row("2025-01-24T04:48:42", 164.0),
+            _gaussian_row("2025-01-24T04:48:43", 164.0),
+        ]
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        result = plot_gaussian_center_trajectory_by_frequency(
+            gaussian_df,
+            Path(tmp),
+            {"comparison_frequency_mhz": [149, 164]},
+        )
+
+        assert result["status"] == "saved"
+        assert result["cross_frequency_line_count"] == 0
+        assert sorted(Path(path).name for path in result["paths"]) == [
+            "gaussian_center_trajectory_time_colored_149MHz.png",
+            "gaussian_center_trajectory_time_colored_164MHz.png",
+        ]
+
+
+def test_selected_band_newkirk_table_has_speed_for_matched_drift_and_status_for_unmatched():
+    drift_df = pd.DataFrame(
+        [
+            {
+                "label": "drift_001",
+                "t_start": "2025-01-24T04:48:39",
+                "t_end": "2025-01-24T04:48:41",
+                "f_start_mhz": 160.0,
+                "f_end_mhz": 138.0,
+                "drift_rate_mhz_s": -11.0,
+            }
+        ]
+    )
+
+    out = build_selected_band_newkirk_height_speed_table(
+        drift_df,
+        {
+            "comparison_frequency_mhz": [149, 238],
+            "selected_newkirk_multiplier": 2.0,
+            "selected_newkirk_harmonic": 2,
+            "drift_frequency_tolerance_mhz": 12.0,
+        },
+    )
+
+    matched = out[out["frequency_mhz"].eq(149.0)].iloc[0]
+    unmatched = out[out["frequency_mhz"].eq(238.0)].iloc[0]
+    assert matched["drift_label"] == "drift_001"
+    assert math.isfinite(matched["newkirk_speed_km_s"])
+    assert matched["newkirk_speed_c"] == pytest_approx(matched["newkirk_speed_km_s"] / 299792.458)
+    assert matched["effective_density_factor"] == pytest_approx(8.0)
+    assert matched["newkirk_assumption_label"] == "2x Newkirk, H=2, N*s^2=8"
+    assert matched["speed_status"] == "ok"
+    assert unmatched["speed_status"] == "no_matching_drift_rate"
+    assert math.isnan(unmatched["newkirk_speed_km_s"])
+
+
+def test_event_height_comparison_uses_only_selected_newkirk_model():
+    height_df = pd.DataFrame(
+        [
+            _height_row(149, 0.10, 0.09, 2, 2),
+            _height_row(149, 0.10, 0.40, 1, 1),
+            _height_row(164, 0.20, 0.19, 2, 2),
+            _height_row(164, 0.20, 0.50, 1, 1),
+        ]
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        result = plot_event_gaussian_newkirk_height_comparison(
+            height_df,
+            Path(tmp) / "event_gaussian_newkirk_height_comparison.png",
+            {
+                "comparison_frequency_mhz": [149, 164],
+                "selected_newkirk_multiplier": 2.0,
+                "selected_newkirk_harmonic": 2,
+            },
+        )
+
+        assert result["status"] == "saved"
+        assert result["selected_model_label"] == "2xH2"
+        assert result["newkirk_model_count"] == 2
+        assert result["gaussian_frequency_count"] == 2
+
+
+def test_event_speed_frequency_plots_only_matched_frequency_rows():
+    speed_df = pd.DataFrame(
+        [
+            {
+                "frequency_mhz": 149.0,
+                "newkirk_speed_km_s": 50000.0,
+                "newkirk_speed_c": 0.17,
+                "speed_status": "ok",
+                "drift_label": "drift_001",
+                "newkirk_assumption_label": "2x Newkirk, H=2, N*s^2=8",
+            },
+            {
+                "frequency_mhz": 238.0,
+                "newkirk_speed_km_s": float("nan"),
+                "newkirk_speed_c": float("nan"),
+                "speed_status": "no_matching_drift_rate",
+                "drift_label": "",
+                "newkirk_assumption_label": "2x Newkirk, H=2, N*s^2=8",
+            },
+        ]
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        result = plot_event_newkirk_speed_frequency(
+            speed_df,
+            Path(tmp) / "event_newkirk_speed_frequency_scatter.png",
+            {"reverse_frequency_axis": True, "connect_same_drift_only": True},
+        )
+
+        assert result["status"] == "saved"
+        assert result["plotted_frequency_count"] == 1
+        assert result["skipped_frequency_count"] == 1
+        assert result["cross_drift_line_count"] == 0
+
+
+def test_physical_consistency_report_summarizes_speed_height_and_invalid_points():
+    speed_df = pd.DataFrame(
+        [
+            {
+                "frequency_mhz": 149.0,
+                "newkirk_speed_km_s": 50000.0,
+                "newkirk_speed_c": 0.17,
+                "speed_status": "ok",
+                "drift_label": "drift_001",
+            }
+        ]
+    )
+    height_summary = pd.DataFrame(
+        [
+            {
+                "frequency_mhz": 149.0,
+                "gaussian_valid_count": 1,
+                "gaussian_invalid_count": 1,
+                "gaussian_projected_height_median_rsun": 0.30,
+                "gaussian_projected_height_q25_rsun": 0.25,
+                "gaussian_projected_height_q75_rsun": 0.35,
+                "newkirk_height_rsun_2xH2": 0.32,
+                "abs_delta_reference_rsun": 0.02,
+                "relative_delta_reference": 0.0625,
+            }
+        ]
+    )
+
+    report = build_newkirk_physical_consistency_report(
+        speed_df,
+        height_summary,
+        {"reference_newkirk_assumption": "2xH2"},
+    )
+
+    assert "Speed range summary" in report
+    assert "plausible type III / spike-associated exciter range" in report
+    assert "Invalid Gaussian points summary" in report
+    assert "model-inferred exciter speeds rather than direct radio source bulk motions" in report
 
 
 def _height_row(freq, gaussian_height, newkirk_height, multiplier, harmonic, time="2025-01-24T04:48:40"):
