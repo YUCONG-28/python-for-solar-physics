@@ -4,11 +4,14 @@ import json
 import math
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 
 from scripts.radio.core.radio_drift_products import save_drift_selection_artifacts
+from scripts.radio.run_radio_burst_pipeline import _save_drift_selection_products
 
 
 def test_drift_selection_metadata_contains_selections():
@@ -67,6 +70,71 @@ def test_annotated_preview_can_be_regenerated_from_saved_csv_records():
             second_dir / "spectrogram_drift_rate_selection_preview_annotated.png"
         ).exists()
         assert (second_dir / "cutouts" / "drift_001_zoom.png").exists()
+
+
+def test_metadata_records_spectrogram_display_parameters():
+    with tempfile.TemporaryDirectory() as tmp:
+        output_dir = Path(tmp)
+        save_drift_selection_artifacts(
+            _spectrogram_data(),
+            _time_axis(),
+            _frequency_axis(),
+            [_selection()],
+            output_dir,
+            config={
+                "preserve_existing": False,
+                "dpi": 80,
+                "cmap": "jet",
+                "vmin": 2.5,
+                "vmax": 4.5,
+                "colorbar_label": r"log$_{10}$ intensity",
+            },
+        )
+
+        metadata_path = output_dir / "spectrogram_drift_rate_selection_metadata.json"
+        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+        assert payload["display"] == {
+            "cmap": "jet",
+            "vmin": 2.5,
+            "vmax": 4.5,
+            "colorbar_label": r"log$_{10}$ intensity",
+        }
+
+
+def test_pipeline_forwards_spectrogram_cache_display_parameters():
+    captured = {}
+
+    def fake_save_drift_selection_artifacts(*args, **kwargs):
+        captured["config"] = kwargs["config"]
+        return {"status": "saved"}
+
+    cache = SimpleNamespace(
+        data=_spectrogram_data(),
+        time_datetimes=list(_time_axis()),
+        freq=_frequency_axis(),
+        source_file="synthetic.fits",
+        cmap="jet",
+        vmin=2.5,
+        vmax=4.5,
+        cbar_label=r"log$_{10}$ intensity",
+    )
+
+    with patch(
+        "scripts.radio.core.radio_drift_products.save_drift_selection_artifacts",
+        fake_save_drift_selection_artifacts,
+    ):
+        _save_drift_selection_products(
+            cache,
+            {"enable": True, "output_subdir": "drift_selection"},
+            pd.DataFrame([_selection()]),
+            Path("analysis"),
+        )
+
+    assert captured["config"]["cmap"] == "jet"
+    assert captured["config"]["vmin"] == 2.5
+    assert captured["config"]["vmax"] == 4.5
+    assert captured["config"]["colorbar_label"] == r"log$_{10}$ intensity"
 
 
 def _spectrogram_data():

@@ -299,6 +299,12 @@ def _metadata_payload(display, rows, source_file, png_path, plot_meta, cfg, cuto
         "fig_width_px": int(plot_meta.get("fig_width_px", 0) or 0),
         "fig_height_px": int(plot_meta.get("fig_height_px", 0) or 0),
         "axes_bbox_px": plot_meta.get("axes_bbox_px", {}),
+        "display": {
+            "cmap": cfg.get("cmap", "viridis"),
+            "vmin": cfg.get("vmin"),
+            "vmax": cfg.get("vmax"),
+            "colorbar_label": cfg.get("colorbar_label", "Intensity"),
+        },
         "raw_preview_png": RAW_PREVIEW_NAME,
         "annotated_preview_png": ANNOTATED_PREVIEW_NAME,
         "selection_csv": SELECTION_CSV_NAME,
