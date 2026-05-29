@@ -1,33 +1,335 @@
-"""Template radio configuration for a future 2025-05-03 event pass."""
+"""User-editable radio configuration for the 2025-05-03 event."""
 
 from __future__ import annotations
 
-import copy
-
-from .radio_20250124_config import NEWKIRK_CONFIG as _BASE_NEWKIRK_CONFIG
-from .radio_20250124_config import USER_CONFIG as _BASE_USER_CONFIG
-
-USER_CONFIG = copy.deepcopy(_BASE_USER_CONFIG)
-USER_CONFIG["data"].update(
-    {
-        "multi_band_root": r"TODO:\path\to\20250503\radio\multi_band_root",
-        "single_file_path": r"TODO:\path\to\20250503\radio\single_file.fits",
-        "data_dir": r"TODO:\path\to\20250503\radio\data_dir",
+USER_CONFIG = {
+    "mode": "multi_band",
+    "data": {
+        "multi_band_root": r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600",
+        "multi_band_freqs": [149, 164, 190, 205, 223, 238],
+        "polarization": "RR+LL",
+        "single_file_path": (
+            r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600"
+            r"\149MHz\RR\149MHz_202553_071600_353.fits"
+        ),
+        "data_dir": r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600\149MHz\RR",
         "start_idx": 0,
-        "end_idx": 0,
-    }
-)
-USER_CONFIG["spectrogram"].update(
-    {
+        "end_idx": 1467,
+    },
+    "features": {
+        "gaussian_overlay": True,
+        "spectrogram_panel": True,
+        "background_correction": False,
+        "save_gaussian_diagnostics": True,
+        "save_background_products": False,
+        "save_individual_pols": False,
+    },
+    "display": {
+        "use_custom_lim": True,
+        "custom_xlim": (-3000, 3000),
+        "custom_ylim": (-3000, 3000),
+        "radio_cmap": "hot",
+        "background_bad_color": "#000080",
+        "use_per_band_colormap": True,
+        "per_band_range_method": "fixed_percentile",
+        "per_band_percentiles": [99.7, 99.99],
+        "preserve_fits_wcs_orientation": True,
+        "radio_image_origin_mode": "auto",
+        "draw_coordinate_corner_debug": False,
+    },
+    "gaussian": {
+        "overlay_display_mode": "fwhm_only",
+        "fit_use_source_mask": True,
+        "fit_snr_threshold": 5.0,
+        "fit_peak_fraction_threshold": 0.40,
+        "fit_grow_peak_fraction_threshold": 0.22,
+        "fit_mask_target_min_pixels": 18,
+        "fit_mask_target_max_pixels": 260,
+        "fit_peak_fraction_threshold_min": 0.25,
+        "fit_peak_fraction_threshold_max": 0.62,
+        "fit_peak_fraction_threshold_step": 0.03,
+        "gaussian_per_band_params": {
+            149: {
+                "fit_peak_fraction_threshold": 0.38,
+                "fit_peak_fraction_threshold_min": 0.25,
+                "fit_peak_fraction_threshold_max": 0.55,
+                "fit_mask_target_min_pixels": 18,
+                "fit_mask_target_max_pixels": 180,
+                "gaussian_fit_roi_padding_pixels": 4,
+                "gaussian_fit_max_pixels": 350,
+                "max_sigma_fraction": 0.17,
+                "fit_background_model": "constant",
+                "fit_mask_dilation_pixels": 1,
+            },
+            164: {
+                "fit_peak_fraction_threshold": 0.38,
+                "fit_peak_fraction_threshold_min": 0.25,
+                "fit_peak_fraction_threshold_max": 0.55,
+                "fit_mask_target_min_pixels": 18,
+                "fit_mask_target_max_pixels": 180,
+                "gaussian_fit_roi_padding_pixels": 4,
+                "gaussian_fit_max_pixels": 350,
+                "max_sigma_fraction": 0.17,
+                "fit_background_model": "constant",
+                "fit_mask_dilation_pixels": 1,
+            },
+            190: {
+                "fit_peak_fraction_threshold": 0.40,
+                "fit_peak_fraction_threshold_min": 0.25,
+                "fit_peak_fraction_threshold_max": 0.60,
+                "fit_mask_target_min_pixels": 18,
+                "fit_mask_target_max_pixels": 220,
+                "gaussian_fit_roi_padding_pixels": 4,
+                "gaussian_fit_max_pixels": 400,
+                "max_sigma_fraction": 0.18,
+                "fit_background_model": "constant",
+                "fit_mask_dilation_pixels": 1,
+            },
+            205: {
+                "fit_peak_fraction_threshold": 0.40,
+                "fit_peak_fraction_threshold_min": 0.25,
+                "fit_peak_fraction_threshold_max": 0.60,
+                "fit_mask_target_min_pixels": 18,
+                "fit_mask_target_max_pixels": 240,
+                "gaussian_fit_roi_padding_pixels": 4,
+                "gaussian_fit_max_pixels": 400,
+                "max_sigma_fraction": 0.18,
+                "fit_background_model": "constant",
+                "fit_mask_dilation_pixels": 1,
+            },
+            223: {
+                "fit_peak_fraction_threshold": 0.42,
+                "fit_peak_fraction_threshold_min": 0.25,
+                "fit_peak_fraction_threshold_max": 0.65,
+                "fit_mask_target_min_pixels": 16,
+                "fit_mask_target_max_pixels": 180,
+                "gaussian_fit_roi_padding_pixels": 3,
+                "gaussian_fit_max_pixels": 320,
+                "max_sigma_fraction": 0.16,
+                "fit_background_model": "plane",
+                "fit_mask_dilation_pixels": 1,
+            },
+            238: {
+                "fit_peak_fraction_threshold": 0.42,
+                "fit_peak_fraction_threshold_min": 0.25,
+                "fit_peak_fraction_threshold_max": 0.65,
+                "fit_mask_target_min_pixels": 16,
+                "fit_mask_target_max_pixels": 180,
+                "gaussian_fit_roi_padding_pixels": 3,
+                "gaussian_fit_max_pixels": 320,
+                "max_sigma_fraction": 0.16,
+                "fit_background_model": "plane",
+                "fit_mask_dilation_pixels": 1,
+            },
+        },
+        "max_fwhm_arcsec": 1800.0,
+        "max_center_peak_distance_arcsec": 300.0,
+        "draw_raw_peak_marker": False,
+        "draw_fit_peak_distance": False,
+        "draw_coordinate_debug": False,
+    },
+    "background": {
+        "mode": "off",
+        "apply_to_display": False,
+        "apply_to_fit": False,
+        "apply_before_polarization_combine": False,
+    },
+    "spectrogram": {
         "file_paths": [
-            r"TODO:\path\to\20250503\spectrogram_part1.fits",
-            r"TODO:\path\to\20250503\spectrogram_part2.fits",
+            r"<PROJECT_ROOT>\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503071510_V01.01.fits",
+            r"<PROJECT_ROOT>\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503072013_V01.01.fits",
         ],
-        "file_path": r"TODO:\path\to\20250503\spectrogram.fits",
-        "time_start": "TODO:2025-05-03T00:00:00",
-        "time_end": "TODO:2025-05-03T00:00:30",
-    }
-)
-USER_CONFIG["output"]["output_dir"] = r"TODO:\path\to\20250503\outputs"
+        "file_path": r"<PROJECT_ROOT>\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503071510_V01.01.fits",
+        "time_display_mode": "user",
+        "time_start": "2025-05-03T07:16:00",
+        "time_end": "2025-05-03T07:26:00",
+        "f_start": 80.0,
+        "f_end": 340.0,
+        "polarization": "sum",
+    },
+    "drift_rate": {
+        "enabled": True,
+        "mode": "interactive_manual",
+        "interactive": {
+            "enabled": True,
+            "host": "127.0.0.1",
+            "port": 8050,
+            "auto_open_browser": True,
+            "launch_policy": "always",
+            "reuse_existing_selection": True,
+            "overwrite_selection": False,
+            "print_usage_hint": True,
+            "auto_increment_port": True,
+            "max_port_tries": 20,
+            "block_until_done": True,
+            "selection_timeout_seconds": 0,
+            "allow_multiple_lines": True,
+            "click_pair_mode": "start_end",
+            "show_crosshair": True,
+            "show_live_coordinate": True,
+            "show_preview_line": True,
+            "line_color_cycle": [
+                "white",
+                "cyan",
+                "lime",
+                "magenta",
+            ],
+        },
+        "selection_json": "spectrogram_drift_rate_manual_selection.json",
+        "selection_preview_png": "spectrogram_drift_rate_selection_preview.png",
+        "selection_metadata_json": "spectrogram_drift_rate_selection_metadata.json",
+        "draw_lines": True,
+        "draw_endpoints": True,
+        "draw_label": True,
+        "draw_selected_id": True,
+        "label_format": "{label}: df/dt={drift_rate:.2f} MHz/s",
+        "line_width": 2.2,
+        "endpoint_marker": "o",
+        "endpoint_size": 30,
+        "save_drift_diagnostics": True,
+        "drift_diagnostics_csv": "radio_spectrogram_drift_rate_diagnostics.csv",
+    },
+    "output": {
+        "output_dir": r"<PROJECT_ROOT>\2025\20250503\RS_test",
+        "show_plot": False,
+        "save_plot": True,
+        "dpi": 300,
+    },
+}
 
-NEWKIRK_CONFIG = copy.deepcopy(_BASE_NEWKIRK_CONFIG)
+NEWKIRK_CONFIG = {
+    "enabled": True,
+    "multipliers": [1, 2, 4],
+    "harmonics": [1, 2],
+    "solar_radius_arcsec": 959.63,
+    "los_sign": 1,
+    "output_csv": "radio_gaussian_newkirk_extrapolated.csv",
+    "drift_speed_csv": "radio_drift_newkirk_speed.csv",
+}
+
+NEWKIRK_HEIGHT_COMPARISON_CONFIG = {
+    "enable": True,
+    "selected_models": [
+        {"multiplier": 1.0, "harmonic": 1},
+        {"multiplier": 1.0, "harmonic": 2},
+        {"multiplier": 2.0, "harmonic": 1},
+        {"multiplier": 2.0, "harmonic": 2},
+        {"multiplier": 4.0, "harmonic": 1},
+        {"multiplier": 4.0, "harmonic": 2},
+    ],
+    "solar_radius_arcsec": None,
+    "plot_height_frequency": True,
+    "plot_height_time": True,
+    "plot_residual_frequency": True,
+    "output_table_name": "gaussian_newkirk_height_comparison_table.csv",
+    "raw_output_table_name": "gaussian_newkirk_height_rows.csv",
+    "height_frequency_plot_name": "gaussian_vs_newkirk_height_frequency.png",
+    "height_time_plot_name": "gaussian_vs_newkirk_height_time.png",
+    "height_residual_plot_name": "gaussian_newkirk_height_residual_vs_frequency.png",
+    "height_residual_summary_name": "gaussian_newkirk_height_residual_summary.csv",
+    "reverse_frequency_axis": False,
+    "color_by": "source_type",
+    "drift_time_tolerance_s": 0.75,
+    "drift_frequency_tolerance_mhz": "adaptive_half_band_spacing",
+    "max_adaptive_frequency_tolerance_mhz": 15.0,
+    "min_adaptive_frequency_tolerance_mhz": 5.0,
+}
+
+DRIFT_SELECTION_PRODUCT_CONFIG = {
+    "enable": True,
+    "save_raw_preview": True,
+    "save_annotated_preview": True,
+    "save_selection_csv": True,
+    "save_metadata_json": True,
+    "save_per_drift_cutouts": True,
+    "cutout_time_padding_s": 2.0,
+    "cutout_frequency_padding_mhz": 20.0,
+    "annotate_drift_rate": True,
+    "annotate_endpoints": True,
+    "preserve_existing": True,
+    "dpi": 200,
+    "output_subdir": "drift_selection",
+}
+
+RADIO_DIAGNOSTIC_PRESENTATION_CONFIG = {
+    "enable": True,
+    "enable_static_summary": False,
+    "enable_html_dashboard": False,
+    "enable_debug_center_facets": False,
+    "enable_debug_height_time_facets": False,
+    "enable_debug_drift_band_matching": False,
+    "enable_debug_trajectory_by_frequency": False,
+    "enable_event_height_comparison": True,
+    "enable_event_speed_frequency": True,
+    "comparison_frequency_mhz": [149, 164, 190, 205, 223, 238],
+    "drift_source_type_map": {
+        "drift_001": "typeIII",
+        "drift_002": "typeIII",
+        "drift_003": "spike",
+        "drift_004": "spike",
+    },
+    "drift_time_tolerance_s": 0.75,
+    "drift_frequency_tolerance_mhz": "adaptive_half_band_spacing",
+    "max_adaptive_frequency_tolerance_mhz": 15.0,
+    "min_adaptive_frequency_tolerance_mhz": 5.0,
+    "selected_newkirk_multiplier": 2.0,
+    "selected_newkirk_harmonic": 2,
+    "reference_newkirk_assumption": "2xH2",
+    "connect_same_drift_only": False,
+    "reverse_frequency_axis": False,
+    "best_model_metric": "median_abs_residual_rsun",
+    "top_residual_models": 3,
+    "summary_panel_name": "radio_newkirk_frequency_priority_summary.png",
+    "center_facets_name": "gaussian_center_by_frequency_facets.png",
+    "trajectory_by_frequency_name_template": "gaussian_center_trajectory_time_colored_{frequency:g}MHz.png",
+    "drift_band_matching_name": "drift_frequency_band_matching.png",
+    "height_time_facets_name": "height_time_by_frequency_facets.png",
+    "event_height_comparison_name": "event_gaussian_newkirk_height_comparison.png",
+    "event_speed_frequency_name": "event_newkirk_speed_frequency_scatter.png",
+    "selected_band_newkirk_table_name": "event_selected_band_newkirk_table.csv",
+    "physical_consistency_report_name": "newkirk_physical_consistency_report.md",
+    "dashboard_name": "radio_newkirk_frequency_priority_dashboard.html",
+    "summary_csv_name": "radio_newkirk_frequency_priority_summary.csv",
+}
+
+NEWKIRK_SPATIAL_CONFIG = {
+    "enable": False,
+    "aia_channel": 171,
+    "aia171_path": (
+        r"<PROJECT_ROOT>\2025\20250503\AIA\171"
+        r"\aia.lev1_euv_12s.2025-05-03T071558Z.171.image_lev1.fits"
+    ),
+    "geometry": "illustrative_plane_of_sky_radial_anchor",
+    "documentation_status": "illustrative plane-of-sky projection only, not a physical 2D reconstruction",
+    "harmonic": 1,
+    "newkirk_multiplier": 1.0,
+    "solar_radius_arcsec": None,
+    "color_by": "frequency",
+    "plot_typeIII": True,
+    "plot_spike": True,
+    "draw_gaussian_ellipse": True,
+    "draw_residual_arrows": True,
+    "max_residual_arrow_arcsec": None,
+    "output_name": "aia171_typeIII_spike_newkirk_projection_schematic.png",
+    "comparison_csv_name": "gaussian_newkirk_projection_schematic_table.csv",
+    "TYPEIII_TIME_WINDOWS": [],
+    "SPIKE_TIME_WINDOWS": [],
+    "TYPEIII_FREQ_RANGE": None,
+    "SPIKE_FREQ_RANGE": None,
+}
+
+EVENT_CONFIG = {
+    "user": USER_CONFIG,
+    "newkirk": NEWKIRK_CONFIG,
+    "newkirk_height_comparison": NEWKIRK_HEIGHT_COMPARISON_CONFIG,
+    "drift_selection_products": DRIFT_SELECTION_PRODUCT_CONFIG,
+    "diagnostic_presentation": RADIO_DIAGNOSTIC_PRESENTATION_CONFIG,
+    "newkirk_spatial": NEWKIRK_SPATIAL_CONFIG,
+}
+
+USER_CONFIG = EVENT_CONFIG["user"]
+NEWKIRK_CONFIG = EVENT_CONFIG["newkirk"]
+NEWKIRK_HEIGHT_COMPARISON_CONFIG = EVENT_CONFIG["newkirk_height_comparison"]
+DRIFT_SELECTION_PRODUCT_CONFIG = EVENT_CONFIG["drift_selection_products"]
+RADIO_DIAGNOSTIC_PRESENTATION_CONFIG = EVENT_CONFIG["diagnostic_presentation"]
+NEWKIRK_SPATIAL_CONFIG = EVENT_CONFIG["newkirk_spatial"]

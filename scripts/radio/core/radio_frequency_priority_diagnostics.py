@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from pathlib import Path
 
 import matplotlib
@@ -31,6 +32,46 @@ DEFAULT_COMPARISON_FREQUENCIES_MHZ = [149, 164, 190, 205, 223, 238]
 
 def model_label(multiplier, harmonic) -> str:
     return f"{float(multiplier):g}× Newkirk, s={float(harmonic):g}"
+
+
+def format_newkirk_case_label(multiplier, harmonic, compact=False) -> str:
+    multiplier_value = float(multiplier)
+    harmonic_value = float(harmonic)
+    factor = effective_density_factor(multiplier_value, harmonic_value)
+    mode = "fundamental" if harmonic_value == 1.0 else "harmonic"
+    harmonic_text = f"H={harmonic_value:g}"
+    if compact:
+        return (
+            f"{multiplier_value:g}x Newkirk\n"
+            f"{mode} {harmonic_text}\n"
+            f"N*s^2={factor:g}"
+        )
+    return f"{multiplier_value:g}x Newkirk / {mode} ({harmonic_text}), N*s^2={factor:g}"
+
+
+def _short_newkirk_case_label(multiplier, harmonic, reference=False) -> str:
+    mode = "F" if float(harmonic) == 1.0 else "H"
+    label = f"{float(multiplier):g}x {mode}"
+    return f"{label} ref" if reference else label
+
+
+def _format_drift_rate(value) -> str:
+    drift_rate = _float_or_nan(value)
+    if not np.isfinite(drift_rate):
+        return ""
+    return f"df/dt={drift_rate:.2f} MHz/s"
+
+
+def _format_newkirk_label_from_row(row, fallback="Newkirk model") -> str:
+    multiplier = _float_or_nan(row.get("newkirk_multiplier"))
+    harmonic = _float_or_nan(row.get("harmonic", row.get("newkirk_harmonic")))
+    if np.isfinite(multiplier) and np.isfinite(harmonic):
+        return format_newkirk_case_label(multiplier, harmonic)
+    text = str(row.get("newkirk_assumption_label") or fallback)
+    match = re.search(r"(?P<multiplier>\d+(?:\.\d+)?)x\s+Newkirk,\s+H=(?P<harmonic>\d+(?:\.\d+)?)", text)
+    if match:
+        return format_newkirk_case_label(match.group("multiplier"), match.group("harmonic"))
+    return text
 
 
 def build_frequency_priority_summary(height_df, gaussian_df, drift_df=None, config=None):
@@ -454,7 +495,7 @@ def plot_event_gaussian_newkirk_height_comparison(height_df, output_path, config
                 alpha=0.45,
                 color="#2f80ed",
                 edgecolors="none",
-                label="Gaussian center projected height" if not plotted_gaussian_freqs else None,
+                label="Gaussian centers" if not plotted_gaussian_freqs else None,
                 zorder=2,
             )
             median = float(values.median())
@@ -488,6 +529,8 @@ def plot_event_gaussian_newkirk_height_comparison(height_df, output_path, config
             invalid_plotted = True
 
     model_count = 0
+    newkirk_legend_added = False
+    label_y_positions = []
     for multiplier, harmonic in _model_pairs(height):
         key = f"{float(multiplier):g}xH{float(harmonic):g}"
         group = newkirk[
@@ -513,9 +556,28 @@ def plot_event_gaussian_newkirk_height_comparison(height_df, output_path, config
             linestyle="-" if is_reference else "--",
             linewidth=2.0 if is_reference else 0.9,
             markersize=5 if is_reference else 3.5,
-            alpha=0.95 if is_reference else 0.45,
-            label=f"{key} Newkirk radial height" + (" (reference)" if is_reference else ""),
+            alpha=0.95 if is_reference else 0.58,
+            label="Reference Newkirk model" if is_reference and not newkirk_legend_added else None,
             zorder=5 if is_reference else 3,
+        )
+        if is_reference:
+            newkirk_legend_added = True
+        label_y = y[-1]
+        for existing_y in label_y_positions:
+            if abs(label_y - existing_y) < 0.035:
+                label_y = existing_y + 0.035
+        label_y_positions.append(label_y)
+        label_x = x[-1] + (0.08 if not cfg.get("reverse_frequency_axis", False) else -0.08)
+        ax.text(
+            label_x,
+            label_y,
+            _short_newkirk_case_label(multiplier, harmonic, reference=is_reference),
+            color="black" if is_reference else "0.35",
+            fontsize=7,
+            va="center",
+            ha="left" if not cfg.get("reverse_frequency_axis", False) else "right",
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.75, "pad": 0.4},
+            zorder=6,
         )
         model_count += 1
 
@@ -525,9 +587,16 @@ def plot_event_gaussian_newkirk_height_comparison(height_df, output_path, config
     ax.set_ylabel("Height above photosphere (Rsun)")
     ax.set_title("Projected Gaussian source height vs Newkirk radial height")
     ax.grid(True, axis="y", linestyle=":", alpha=0.35)
-    if cfg.get("reverse_frequency_axis", True):
+    if cfg.get("reverse_frequency_axis", False):
         ax.invert_xaxis()
-    ax.legend(fontsize=7, ncol=2)
+    ax.legend(fontsize=7, ncol=2, loc="lower left")
+    fig.text(
+        0.5,
+        0.01,
+        "F = fundamental (H=1), H = harmonic (H=2); prefix = Newkirk density multiplier.",
+        ha="center",
+        fontsize=8,
+    )
     _save(fig, output_path)
     return {
         "status": "saved",
@@ -559,18 +628,27 @@ def plot_event_newkirk_speed_frequency(speed_df, output_path, config=None):
     ok = df["speed_status"].astype(str).eq("ok") & df["frequency_mhz"].notna() & df["newkirk_speed_km_s"].notna()
     plotted = df[ok].copy().sort_values("frequency_mhz")
     skipped_count = int((~ok).sum())
+    unmatched = df[
+        ~ok
+        & df["frequency_mhz"].notna()
+        & df["speed_status"].astype(str).eq("no_matching_drift_rate")
+    ].copy()
     if plotted.empty:
         return {"status": "skipped", "reason": "no_matched_speed_rows", "skipped_frequency_count": skipped_count}
 
     fig, ax = plt.subplots(figsize=cfg.get("event_speed_figsize", (7.8, 5.2)), dpi=int(cfg.get("dpi", 180)))
     cross_drift_line_count = 0
-    connect_same_drift_only = bool(cfg.get("connect_same_drift_only", True))
     markers = ["o", "s", "^", "D", "P", "X"]
+    model_label_text = _format_newkirk_label_from_row(plotted.iloc[0])
     for idx, (assumption, group) in enumerate(plotted.groupby("newkirk_assumption_label", dropna=False)):
         marker = markers[idx % len(markers)]
         for drift_label, part in group.groupby("drift_label", dropna=False):
             part = part.sort_values("frequency_mhz")
-            label = f"{assumption} {drift_label}".strip()
+            drift_rate_text = _format_drift_rate(part["drift_rate_mhz_s"].iloc[0]) if "drift_rate_mhz_s" in part else ""
+            label_parts = [str(drift_label).strip() or str(assumption).strip()]
+            if drift_rate_text:
+                label_parts.append(drift_rate_text)
+            label = ", ".join(part for part in label_parts if part)
             ax.scatter(
                 part["frequency_mhz"],
                 part["newkirk_speed_km_s"],
@@ -579,43 +657,75 @@ def plot_event_newkirk_speed_frequency(speed_df, output_path, config=None):
                 alpha=0.85,
                 label=label,
             )
-            if connect_same_drift_only and len(part) > 1 and str(drift_label).strip():
-                ax.plot(
-                    part["frequency_mhz"],
-                    part["newkirk_speed_km_s"],
-                    linewidth=1.0,
-                    alpha=0.55,
-                )
     for _, row in plotted.iterrows():
         label = str(row.get("drift_label") or "").strip()
         if label:
+            drift_rate_text = _format_drift_rate(row.get("drift_rate_mhz_s"))
+            text = f"{label}\n{drift_rate_text}" if drift_rate_text else label
             ax.annotate(
-                label,
+                text,
                 (row["frequency_mhz"], row["newkirk_speed_km_s"]),
                 xytext=(4, 5),
                 textcoords="offset points",
                 fontsize=8,
             )
+    y_values = plotted["newkirk_speed_km_s"].dropna().to_numpy(dtype=float)
+    y_min = float(np.nanmin(y_values))
+    y_max = float(np.nanmax(y_values))
+    y_span = max(y_max - y_min, abs(y_max) * 0.08, 1.0)
+    y_pad = y_span * 0.18
+    missing_y = y_min - y_pad * 0.55
+    if not unmatched.empty:
+        unmatched = unmatched.drop_duplicates(subset=["frequency_mhz"]).sort_values("frequency_mhz")
+        ax.scatter(
+            unmatched["frequency_mhz"],
+            np.full(len(unmatched), missing_y, dtype=float),
+            marker="o",
+            s=42,
+            facecolors="none",
+            edgecolors="0.45",
+            linewidths=1.0,
+            alpha=0.8,
+            label="No matching drift rate",
+        )
+        for _, row in unmatched.iterrows():
+            freq = float(row["frequency_mhz"])
+            ax.annotate(
+                f"{freq:g} MHz: no drift",
+                (freq, missing_y),
+                xytext=(4, -10),
+                textcoords="offset points",
+                fontsize=7,
+                color="0.35",
+            )
+    all_freqs = pd.concat([plotted["frequency_mhz"], unmatched["frequency_mhz"]]).dropna()
+    x_min = float(all_freqs.min())
+    x_max = float(all_freqs.max())
+    x_span = max(x_max - x_min, abs(x_max) * 0.04, 1.0)
+    x_pad = x_span * 0.08
+    ax.set_xlim(x_min - x_pad, x_max + x_pad)
+    ax.set_ylim(missing_y - y_pad * 0.45, y_max + y_pad)
     ax.set_xlabel("Selected frequency (MHz)")
     ax.set_ylabel("Newkirk-inferred exciter speed (km/s)")
     ax.set_title("Newkirk-inferred exciter speed by selected frequency")
     ax.grid(True, linestyle=":", alpha=0.35)
-    if cfg.get("reverse_frequency_axis", True):
+    if cfg.get("reverse_frequency_axis", False):
         ax.invert_xaxis()
-    ax.legend(fontsize=7)
+    ax.legend(fontsize=7, title=f"Model: {model_label_text}", title_fontsize=7)
     fig.text(
         0.5,
         0.01,
-        "Points from different drift labels are not connected because they may correspond to different burst branches.",
+        "Points are grouped by drift label; connecting lines are omitted to avoid implying branch continuity.",
         ha="center",
         fontsize=8,
     )
-    _save(fig, output_path)
+    _save(fig, output_path, bbox_inches="tight")
     return {
         "status": "saved",
         "path": str(output_path),
         "plotted_frequency_count": int(len(plotted)),
         "skipped_frequency_count": skipped_count,
+        "unmatched_frequency_count": int(len(unmatched)),
         "cross_drift_line_count": cross_drift_line_count,
     }
 
@@ -1548,9 +1658,9 @@ def _float_or_nan(value):
         return np.nan
 
 
-def _save(fig, output_path):
+def _save(fig, output_path, **savefig_kwargs):
     path = Path(output_path)
     ensure_output_dir(path.parent or ".")
     fig.tight_layout()
-    fig.savefig(path)
+    fig.savefig(path, **savefig_kwargs)
     plt.close(fig)

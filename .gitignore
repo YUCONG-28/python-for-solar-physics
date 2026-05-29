@@ -140,6 +140,10 @@ ENV/
 .cache/
 .pytest_cache/
 .pytest_tmp/
+.pytest_tmp_*/
+.pytest_tmp_run/
+.pytest_tmp_run*/
+.pytest_tmp_fresh*/
 pytest-cache-files-*/
 .ruff_cache/
 .mypy_cache/

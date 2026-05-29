@@ -4,8 +4,10 @@ import math
 import tempfile
 from pathlib import Path
 
+from matplotlib.figure import Figure
 import pandas as pd
 
+import scripts.radio.core.radio_frequency_priority_diagnostics as diagnostics
 from scripts.radio.configs import (
     load_radio_config_module,
     load_radio_diagnostic_presentation_config,
@@ -16,6 +18,7 @@ from scripts.radio.core.radio_frequency_priority_diagnostics import (
     build_selected_band_newkirk_height_speed_table,
     build_frequency_priority_summary,
     build_newkirk_physical_consistency_report,
+    format_newkirk_case_label,
     model_label,
     plot_event_gaussian_newkirk_height_comparison,
     plot_event_newkirk_speed_frequency,
@@ -25,12 +28,14 @@ from scripts.radio.core.radio_frequency_priority_diagnostics import (
     plot_height_time_by_frequency_facets,
     write_frequency_priority_dashboard,
 )
+from scripts.radio.run_radio_burst_pipeline import _plot_drift_speed_comparison
 
 
 def test_config_uses_gaussian_multiband_frequencies():
     cfg = load_radio_diagnostic_presentation_config("radio_20250124_config")
 
     assert cfg["comparison_frequency_mhz"] == [149, 164, 190, 205, 223, 238]
+    assert cfg["reverse_frequency_axis"] is False
 
 
 def test_event_config_is_single_source_for_legacy_exports():
@@ -317,30 +322,61 @@ def test_selected_band_newkirk_table_has_speed_for_matched_drift_and_status_for_
     assert math.isnan(unmatched["newkirk_speed_km_s"])
 
 
-def test_event_height_comparison_uses_only_selected_newkirk_model():
+def test_event_height_comparison_uses_only_selected_newkirk_model(monkeypatch):
     height_df = pd.DataFrame(
         [
-            _height_row(149, 0.10, 0.09, 2, 2),
-            _height_row(149, 0.10, 0.40, 1, 1),
-            _height_row(164, 0.20, 0.19, 2, 2),
-            _height_row(164, 0.20, 0.50, 1, 1),
+            _height_row(149, 0.10, 0.02, 1, 1),
+            _height_row(149, 0.10, 0.10, 1, 2),
+            _height_row(149, 0.10, 0.19, 2, 1),
+            _height_row(149, 0.10, 0.30, 2, 2),
+            _height_row(149, 0.10, 0.43, 4, 1),
+            _height_row(149, 0.10, 0.48, 4, 2),
+            _height_row(164, 0.20, 0.04, 1, 1),
+            _height_row(164, 0.20, 0.12, 1, 2),
+            _height_row(164, 0.20, 0.21, 2, 1),
+            _height_row(164, 0.20, 0.32, 2, 2),
+            _height_row(164, 0.20, 0.46, 4, 1),
+            _height_row(164, 0.20, 0.50, 4, 2),
         ]
     )
-    with tempfile.TemporaryDirectory() as tmp:
-        result = plot_event_gaussian_newkirk_height_comparison(
-            height_df,
-            Path(tmp) / "event_gaussian_newkirk_height_comparison.png",
-            {
-                "comparison_frequency_mhz": [149, 164],
-                "selected_newkirk_multiplier": 2.0,
-                "selected_newkirk_harmonic": 2,
-            },
-        )
+    captured = {}
 
-        assert result["status"] == "saved"
-        assert result["selected_model_label"] == "2xH2"
-        assert result["newkirk_model_count"] == 2
-        assert result["gaussian_frequency_count"] == 2
+    def capture_save(fig, output_path, **savefig_kwargs):
+        captured["ax"] = fig.axes[0]
+
+    monkeypatch.setattr(diagnostics, "_save", capture_save)
+
+    result = plot_event_gaussian_newkirk_height_comparison(
+        height_df,
+        Path("event_gaussian_newkirk_height_comparison.png"),
+        {
+            "comparison_frequency_mhz": [149, 164],
+            "selected_newkirk_multiplier": 2.0,
+            "selected_newkirk_harmonic": 2,
+            "reverse_frequency_axis": False,
+        },
+    )
+
+    ax = captured["ax"]
+    x_left, x_right = ax.get_xlim()
+    legend_text = " ".join(text.get_text() for text in ax.get_legend().get_texts())
+    plot_text = " ".join(text.get_text() for text in ax.texts)
+
+    assert result["status"] == "saved"
+    assert result["selected_model_label"] == "2xH2"
+    assert result["newkirk_model_count"] == 6
+    assert result["gaussian_frequency_count"] == 2
+    assert x_left < x_right
+    assert "Gaussian centers" in legend_text
+    assert "Gaussian median +/- IQR" in legend_text
+    assert "Reference Newkirk model" in legend_text
+    assert "2x Newkirk / harmonic" not in legend_text
+    assert "1x F" in plot_text
+    assert "2x H ref" in plot_text
+    assert "4x H" in plot_text
+    assert "F = fundamental (H=1), H = harmonic (H=2)" in " ".join(
+        text.get_text() for text in ax.figure.texts
+    )
 
 
 def test_event_speed_frequency_plots_only_matched_frequency_rows():
@@ -375,6 +411,115 @@ def test_event_speed_frequency_plots_only_matched_frequency_rows():
         assert result["plotted_frequency_count"] == 1
         assert result["skipped_frequency_count"] == 1
         assert result["cross_drift_line_count"] == 0
+
+
+def test_event_speed_frequency_marks_unmatched_frequency_and_pads_labels(monkeypatch):
+    speed_df = pd.DataFrame(
+        [
+            {
+                "frequency_mhz": 149.0,
+                "newkirk_speed_km_s": 53700.0,
+                "newkirk_speed_c": 0.18,
+                "speed_status": "ok",
+                "drift_label": "drift_001",
+                "drift_rate_mhz_s": -25.1719235164734,
+                "newkirk_assumption_label": "2x Newkirk, H=2, N*s^2=8",
+            },
+            {
+                "frequency_mhz": 164.0,
+                "newkirk_speed_km_s": 46100.0,
+                "newkirk_speed_c": 0.15,
+                "speed_status": "ok",
+                "drift_label": "drift_001",
+                "drift_rate_mhz_s": -25.1719235164734,
+                "newkirk_assumption_label": "2x Newkirk, H=2, N*s^2=8",
+            },
+            {
+                "frequency_mhz": 205.0,
+                "newkirk_speed_km_s": float("nan"),
+                "newkirk_speed_c": float("nan"),
+                "speed_status": "no_matching_drift_rate",
+                "drift_label": "",
+                "newkirk_assumption_label": "2x Newkirk, H=2, N*s^2=8",
+            },
+        ]
+    )
+    captured = {}
+
+    def capture_save(fig, output_path, **savefig_kwargs):
+        captured["ax"] = fig.axes[0]
+        captured["savefig_kwargs"] = savefig_kwargs
+
+    monkeypatch.setattr(diagnostics, "_save", capture_save)
+
+    result = diagnostics.plot_event_newkirk_speed_frequency(
+        speed_df,
+        Path("event_newkirk_speed_frequency_scatter.png"),
+        {"reverse_frequency_axis": False, "connect_same_drift_only": True},
+    )
+
+    ax = captured["ax"]
+    x_left, x_right = ax.get_xlim()
+    y_bottom, y_top = ax.get_ylim()
+
+    assert result["status"] == "saved"
+    assert result["plotted_frequency_count"] == 2
+    assert result["skipped_frequency_count"] == 1
+    assert result["unmatched_frequency_count"] == 1
+    assert x_left < 149.0
+    assert x_right > 205.0
+    assert y_top > 53700.0
+    assert captured["savefig_kwargs"]["bbox_inches"] == "tight"
+    assert any("205 MHz: no drift" in text.get_text() for text in ax.texts)
+    assert any("df/dt=-25.17 MHz/s" in text.get_text() for text in ax.texts)
+    assert len(ax.lines) == 0
+    legend = ax.get_legend()
+    assert legend is not None
+    assert "2x Newkirk" in legend.get_title().get_text()
+    assert "harmonic" in legend.get_title().get_text()
+    assert "H=2" in legend.get_title().get_text()
+    assert "N*s^2=8" in legend.get_title().get_text()
+    assert any("drift_001, df/dt=-25.17 MHz/s" in text.get_text() for text in legend.get_texts())
+
+
+def test_newkirk_case_label_describes_density_and_emission_mode():
+    assert (
+        format_newkirk_case_label(2, 2)
+        == "2x Newkirk / harmonic (H=2), N*s^2=8"
+    )
+    assert (
+        format_newkirk_case_label(1, 1, compact=True)
+        == "1x Newkirk\nfundamental H=1\nN*s^2=1"
+    )
+
+
+def test_drift_speed_heatmap_labels_models_and_drift_rates(monkeypatch):
+    speed_df = pd.DataFrame(
+        [
+            {
+                "label": "drift_001",
+                "drift_rate_mhz_s": -25.1719235164734,
+                "newkirk_multiplier": 2.0,
+                "newkirk_harmonic": 2.0,
+                "newkirk_speed_km_s": 53700.0,
+                "newkirk_speed_c": 0.18,
+            }
+        ]
+    )
+    captured = {}
+
+    def capture_savefig(self, path, *args, **kwargs):
+        captured["ax"] = self.axes[0]
+
+    monkeypatch.setattr(Figure, "savefig", capture_savefig)
+
+    _plot_drift_speed_comparison(speed_df, Path("drift_newkirk_speed_comparison.png"))
+
+    ax = captured["ax"]
+    xlabels = [label.get_text() for label in ax.get_xticklabels()]
+    ylabels = [label.get_text() for label in ax.get_yticklabels()]
+    assert any("2x Newkirk" in label and "harmonic H=2" in label and "N*s^2=8" in label for label in xlabels)
+    assert any("drift_001\n-25.17 MHz/s" == label for label in ylabels)
 
 
 def test_physical_consistency_report_summarizes_speed_height_and_invalid_points():

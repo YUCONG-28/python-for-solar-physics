@@ -604,6 +604,15 @@ def _save_drift_selection_products(
     from scripts.radio.core.radio_drift_products import save_drift_selection_artifacts
 
     out_dir = Path(analysis_dir) / product_cfg.get("output_subdir", "drift_selection")
+    preview_cfg = dict(product_cfg)
+    preview_cfg.update(
+        {
+            "cmap": cache.cmap,
+            "vmin": cache.vmin,
+            "vmax": cache.vmax,
+            "colorbar_label": cache.cbar_label,
+        }
+    )
     try:
         result = save_drift_selection_artifacts(
             cache.data,
@@ -612,7 +621,7 @@ def _save_drift_selection_products(
             drift_df,
             out_dir,
             source_file=cache.source_file,
-            config=product_cfg,
+            config=preview_cfg,
         )
     except Exception as exc:
         print(f"[Drift selection products] skipped: {exc}")
@@ -791,13 +800,29 @@ def _plot_gaussian_newkirk_height_time(
 
 
 def _plot_drift_speed_comparison(df: pd.DataFrame, path: Path) -> None:
-    fig, ax = plt.subplots(figsize=(10, 5.5), dpi=180)
+    from scripts.radio.core.radio_frequency_priority_diagnostics import (
+        format_newkirk_case_label,
+    )
+
+    fig, ax = plt.subplots(figsize=(10, 6.4), dpi=180)
     if not df.empty:
         data = df.copy()
         data["newkirk_case"] = (
             data["newkirk_multiplier"].map(lambda v: f"{float(v):g}x")
             + "H"
             + data["newkirk_harmonic"].map(lambda v: f"{float(v):g}")
+        )
+        case_labels = {
+            row["newkirk_case"]: format_newkirk_case_label(
+                row["newkirk_multiplier"], row["newkirk_harmonic"], compact=True
+            )
+            for _, row in data.drop_duplicates(subset=["newkirk_case"]).iterrows()
+        }
+        drift_rates = (
+            data.assign(drift_rate_num=pd.to_numeric(data.get("drift_rate_mhz_s"), errors="coerce"))
+            .drop_duplicates(subset=["label"])
+            .set_index("label")["drift_rate_num"]
+            .to_dict()
         )
         speed_col = "newkirk_speed_km_s" if "newkirk_speed_km_s" in data.columns else "speed_km_s"
         data["speed_km_s_num"] = pd.to_numeric(data[speed_col], errors="coerce")
@@ -828,9 +853,21 @@ def _plot_drift_speed_comparison(df: pd.DataFrame, path: Path) -> None:
             finite_mean = np.nanmean(values) if np.isfinite(values).any() else np.nan
             im = ax.imshow(values, aspect="auto", cmap="viridis")
             ax.set_xticks(np.arange(len(heatmap.columns)))
-            ax.set_xticklabels(heatmap.columns, rotation=35, ha="right")
+            ax.set_xticklabels(
+                [case_labels.get(col, col) for col in heatmap.columns],
+                rotation=40,
+                ha="right",
+                fontsize=8,
+            )
             ax.set_yticks(np.arange(len(heatmap.index)))
-            ax.set_yticklabels(heatmap.index)
+            ax.set_yticklabels(
+                [
+                    f"{label}\n{drift_rates[label]:.2f} MHz/s"
+                    if label in drift_rates and np.isfinite(drift_rates[label])
+                    else label
+                    for label in heatmap.index
+                ]
+            )
             for y_idx in range(values.shape[0]):
                 for x_idx in range(values.shape[1]):
                     value = values[y_idx, x_idx]
@@ -851,14 +888,14 @@ def _plot_drift_speed_comparison(df: pd.DataFrame, path: Path) -> None:
     ax.set_title("Drift-rate-derived Newkirk exciter speed comparison")
     fig.text(
         0.5,
-        0.01,
+        0.02,
         "Note: 1xH2 and 4xH1 are degenerate because the inferred height depends on N*s^2.",
         ha="center",
         fontsize=8,
     )
-    fig.tight_layout()
-    fig.subplots_adjust(bottom=0.18)
-    fig.savefig(path)
+    fig.tight_layout(rect=(0, 0.08, 1, 1))
+    fig.subplots_adjust(bottom=0.30)
+    fig.savefig(path, bbox_inches="tight")
     plt.close(fig)
 
 

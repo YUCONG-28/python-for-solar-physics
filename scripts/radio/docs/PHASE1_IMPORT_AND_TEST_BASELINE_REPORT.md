@@ -1,6 +1,6 @@
 # Phase 1 Import and Test Baseline Report
 
-Date: 2026-05-27
+Date: 2026-05-29
 
 ## Scope
 
@@ -28,21 +28,53 @@ during package import.
 
 ## Verification
 
-- `python` and `py` are not available on this workstation PATH.
-- Equivalent compile check was run with the bundled Codex Python:
+`python -m pytest` executed under the `solarphysics_env` environment.
 
-```powershell
-& '<USER_HOME>\.cache\runtime-cache\codex-primary-runtime\dependencies\python\python.exe' -m compileall scripts\radio
-```
+An earlier pytest run reported a partial result:
 
-Result: `compileall` completed for `scripts/radio`.
-
-Radio pytest baseline could not be executed with the bundled Codex Python
-because `pytest` is not installed in that runtime:
+- Most tests completed.
+- Several tests in `tests/test_aia_hmi_fits_rename.py` failed during setup.
+- The repeated setup failure was:
 
 ```text
-<USER_HOME>\.cache\runtime-cache\codex-primary-runtime\dependencies\python\python.exe: No module named pytest
+PermissionError: [WinError 5] Access is denied: '<USER_HOME>\AppData\Local\Temp\pytest-of-Lee'
 ```
+
+That failure occurred while pytest was preparing the `tmp_path` fixture / base
+temporary directory.
+
+Temporary directory follow-up:
+
+- `<PROJECT_ROOT>\Python\.pytest_tmp`: not found during cleanup
+  check; no removal was needed.
+- `<PROJECT_ROOT>\Python\.pytest_tmp_fresh_20260529`: not found
+  during cleanup check; no removal was needed.
+- `<PROJECT_ROOT>\Python\.pytest_tmp_run`: not found during cleanup
+  check; no removal was needed.
+- `<USER_HOME>\AppData\Local\Temp\pytest-of-Lee`: still exists.
+
+A fresh project-local base temp directory was created and write-tested:
+
+```text
+<PROJECT_ROOT>\Python\.pytest_tmp_run_final
+```
+
+Final pytest rerun command:
+
+```powershell
+conda activate solarphysics_env
+python -m pytest --basetemp <PROJECT_ROOT>\Python\.pytest_tmp_run_final
+```
+
+Final result:
+
+```text
+88 passed, 2 warnings in 6.07s
+```
+
+Conclusion: the earlier `tests/test_aia_hmi_fits_rename.py` setup errors were
+caused by local pytest temporary-directory state/permission issues, not by a
+project source-code failure or rename-test logic failure.
 
 ## Scientific Behavior
 
