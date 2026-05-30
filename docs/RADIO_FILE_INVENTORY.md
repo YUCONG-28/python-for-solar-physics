@@ -58,7 +58,6 @@
 | --- | ---: | --- | --- |
 | `scripts/radio/configs/__init__.py` | 62 | 配置模块名归一化、加载 radio config、加载 AIA/radio/HMI config。 | 保留；可补失败路径测试。 |
 | `scripts/radio/configs/radio_20250124_config.py` | 203 | 2025-01-24 radio 主配置，含 `USER_CONFIG`、`NEWKIRK_CONFIG`，并复用 AIA overlay config。 | 作为当前默认事件配置保留。 |
-| `scripts/radio/configs/aia_radio_hmi_20250124_config.py` | 115 | 2025-01-24 AIA/HMI/radio 叠加配置。 | 保留；后续继续接收从 legacy `Config` 抽出的参数。 |
 | `scripts/radio/configs/radio_20250503_config.py` | 33 | 未来 2025-05-03 事件模板，基于 2025-01-24 深拷贝调整。 | 保留为模板；实际使用前检查路径和事件参数。 |
 | `scripts/radio/configs/example_radio_pipeline_config.py` | 5 | 兼容 alias，导出 2025-01-24 配置。 | 可保留到旧文档/脚本不再引用。 |
 | `scripts/radio/configs/README.md` | 37 | 配置编辑说明。 | 保留并与本清单交叉引用。 |
@@ -112,4 +111,3 @@
 - 是否会改变输出文件名、输出目录或 CSV 字段？
 - 是否有旧示例/论文图依赖当前默认参数？
 - 修改后是否能运行对应测试，或至少完成 `compileall scripts/radio`？
-

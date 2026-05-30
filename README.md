@@ -27,8 +27,7 @@ source-center diagnostics, and time-evolution products.
   source-center diagnostics.
 - Manual drift-rate selection and reuse of saved drift-rate JSON selections.
 - Newkirk density-model extrapolation, drift-speed tables,
-  Gaussian-Newkirk height residuals, and optional illustrative plane-of-sky
-  projection on AIA 171 context.
+  Gaussian-Newkirk height residuals, and height/time/frequency diagnostics.
 - AIA/radio/HMI overlay workflows for source-region comparison.
 - Event-specific JSOC/AIA, STEREO-A/EUVI, GOES/SUVI, and Solar Orbiter/EUI data
   acquisition helpers.
@@ -51,7 +50,7 @@ source-center diagnostics, and time-evolution products.
 | STEREO-A/EUVI processing | `scripts/stereo_suvi/stereo_euvi_manifest_by_wavelength.py`; `scripts/stereo_suvi/stereo_euvi_0448_overview_plot.py`; `scripts/stereo_suvi/stereo_euvi_roi_movie.py` | EUVI wavelength manifest generation, multi-band overview plots, and ROI time-evolution MP4 generation. |
 | GOES/SUVI context imaging | `scripts/stereo_suvi/goes_suvi_0448_quadrant_plot.py` | Generate GOES/SUVI quadrant layout plots for context images. |
 | Radio spectrogram plotting | `scripts/radio/legacy/cso_radio_spectrogram_plot.py` | Compatibility CSO dynamic spectrum plotting workflow; no `run_*.py` wrapper exists yet. |
-| Full radio burst analysis | `scripts/radio/run_radio_burst_pipeline.py` | Main full pipeline for source maps, Gaussian diagnostics, spectrogram/drift support, Newkirk height comparison, Gaussian-Newkirk height residuals, and optional illustrative AIA 171 plane-of-sky projection. |
+| Full radio burst analysis | `scripts/radio/run_radio_burst_pipeline.py` | Main full pipeline for source maps, Gaussian diagnostics, spectrogram/drift support, Newkirk height comparison, Gaussian-Newkirk height residuals, and drift-speed diagnostics. |
 | Radio source image overlay | `scripts/radio/run_radio_source_map.py` | Quick radio source map workflow with Gaussian overlay. |
 | Gaussian fitting and diagnostics | `scripts/radio/run_radio_source_map.py` | Produces fitted centers, FWHM overlays, quality diagnostics, and CSV outputs through the compatibility source-map workflow. |
 | AIA/radio/HMI overlays | `scripts/radio/run_aia_radio_hmi_overlay.py` | Main context overlay workflow for AIA, radio contours, and optional HMI contours. |
@@ -139,7 +138,7 @@ available as a compatibility wrapper for existing local workflows.
    # Radio source maps with Gaussian diagnostics
    python scripts\radio\run_radio_source_map.py
 
-   # Full radio burst pipeline with Gaussian, drift, Newkirk height comparison, and optional AIA 171 projection schematic
+   # Full radio burst pipeline with Gaussian, drift, Newkirk height comparison, and drift-speed diagnostics
    python scripts\radio\run_radio_burst_pipeline.py --config radio_20250124_config
 
    # AIA, radio source, and HMI overlay workflow
@@ -297,7 +296,7 @@ without user data paths.
 - 射电源图像绘制、等值线叠加、高斯拟合和源中心诊断。
 - 手动频漂率选点，并复用已保存的频漂率 JSON 结果。
 - Newkirk 密度模型外推、频漂速度表、Gaussian-Newkirk 高度残差，
-  以及可选的 AIA 171 Å 背景下平面径向投影示意图。
+  以及 Newkirk 高度/速度诊断图表。
 - AIA/radio/HMI 叠加工作流，用于源区对比。
 - 面向 2025-01-24 事件的 JSOC/AIA、STEREO-A/EUVI、GOES/SUVI 和
   Solar Orbiter/EUI 数据获取辅助脚本。
@@ -319,7 +318,7 @@ without user data paths.
 | STEREO-A/EUVI 处理 | `scripts/stereo_suvi/stereo_euvi_manifest_by_wavelength.py`; `scripts/stereo_suvi/stereo_euvi_0448_overview_plot.py`; `scripts/stereo_suvi/stereo_euvi_roi_movie.py` | EUVI 按波长生成清单、多波段概览图和 ROI 时间演化 MP4 生成。 |
 | GOES/SUVI 背景图绘制 | `scripts/stereo_suvi/goes_suvi_0448_quadrant_plot.py` | 生成 GOES/SUVI 象限排布图。 |
 | 射电频谱图绘制 | `scripts/radio/legacy/cso_radio_spectrogram_plot.py` | CSO 动态频谱图兼容流程；当前还没有 `run_*.py` wrapper。 |
-| 完整射电爆发分析 | `scripts/radio/run_radio_burst_pipeline.py` | 射电源图、Gaussian 诊断、频谱/频漂支持、Newkirk 高度比较、Gaussian-Newkirk 高度残差，以及可选 AIA 171 平面投影示意的完整主流程。 |
+| 完整射电爆发分析 | `scripts/radio/run_radio_burst_pipeline.py` | 射电源图、Gaussian 诊断、频谱/频漂支持、Newkirk 高度比较、Gaussian-Newkirk 高度残差和频漂速度诊断的完整主流程。 |
 | 射电源图像叠加 | `scripts/radio/run_radio_source_map.py` | 快速射电源图流程，支持 Gaussian 叠加。 |
 | 高斯拟合与诊断 | `scripts/radio/run_radio_source_map.py` | 通过兼容 source-map 工作流输出拟合中心、FWHM 叠加、质量诊断和 CSV 结果。 |
 | AIA/radio/HMI 叠加 | `scripts/radio/run_aia_radio_hmi_overlay.py` | AIA、射电等值线和可选 HMI 等值线的主叠加流程。 |
@@ -405,7 +404,7 @@ without user data paths.
    # 绘制射电源图并输出高斯拟合诊断
    python scripts\radio\run_radio_source_map.py
 
-   # 完整射电爆发流程：Gaussian、频漂、Newkirk 高度比较和可选 AIA 171 投影示意
+   # 完整射电爆发流程：Gaussian、频漂、Newkirk 高度比较和频漂速度诊断
    python scripts\radio\run_radio_burst_pipeline.py --config radio_20250124_config
 
    # AIA、射电源和 HMI 叠加

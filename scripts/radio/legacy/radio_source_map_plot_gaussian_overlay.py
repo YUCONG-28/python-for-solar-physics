@@ -401,6 +401,7 @@ def build_config(user_config, default_config):
         "gaussian_per_band_params": "gaussian_per_band_params",
         "gaussian_fit_roi_padding_pixels": "gaussian_fit_roi_padding_pixels",
         "gaussian_fit_max_pixels": "gaussian_fit_max_pixels",
+        "gaussian_diagnostics_csv": "gaussian_diagnostics_csv",
         "max_sigma_fraction": "max_sigma_fraction",
         "fit_background_model": "fit_background_model",
         "max_fwhm_arcsec": "max_fwhm_arcsec",
@@ -463,6 +464,11 @@ def build_config(user_config, default_config):
         "f_start": "spectrogram_f_start",
         "f_end": "spectrogram_f_end",
         "polarization": "spectrogram_polarization",
+        "vmin": "spectrogram_vmin",
+        "vmax": "spectrogram_vmax",
+        "use_log10": "spectrogram_use_log10",
+        "cmap": "spectrogram_cmap",
+        "colorbar_label": "spectrogram_colorbar_label",
     }
     for user_key, flat_key in spectrogram_map.items():
         if user_key in spectrogram:
@@ -793,6 +799,9 @@ def _background_disabled_diag(source_file=None):
 
 def _plot_output_subdir(cfg: dict) -> str:
     """Choose an output subdirectory that reflects enabled overlays."""
+    configured = str(cfg.get("analysis_subdir") or "").strip()
+    if configured and configured.lower() != "auto":
+        return configured
     use_gaussian = cfg.get("enable_gaussian_overlay", False)
     use_spec = _spectrogram_panel_enabled(cfg)
     show_bgsub = background_enabled_for_display(cfg)

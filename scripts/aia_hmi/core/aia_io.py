@@ -1,27 +1,40 @@
-"""Path, file ordering, and selection helpers for AIA/HMI workflows."""
+"""Path, file ordering, and selection helpers for AIA/HMI workflows.
+
+This module is intentionally lightweight: it resolves FITS paths and time
+ordering before the SunPy/Astropy image stack is imported by the runtime
+processor.
+"""
 
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from pathlib import Path
 
 from .aia_config import AIAConfig
 
 
-def parse_timestr(file_path: Path) -> str:
+@lru_cache(maxsize=8192)
+def _parse_timestr_from_name(name: str) -> str:
     """Extract a stable time string such as 2025-01-24T033001Z."""
-    match = re.search(r"\d{4}-\d{2}-\d{2}T\d{6}Z", file_path.name)
+    match = re.search(r"\d{4}-\d{2}-\d{2}T\d{6}Z", name)
     if match:
         return match.group(0)
 
-    parts = file_path.name.split(".")
+    parts = name.split(".")
     for part in parts:
         if "T" in part and "Z" in part:
             return part
-    return file_path.stem
+    return Path(name).stem
+
+
+def parse_timestr(file_path: Path) -> str:
+    """Extract a stable time string such as 2025-01-24T033001Z."""
+    return _parse_timestr_from_name(Path(file_path).name)
 
 
 def resolve_files(input_path: Path, start_idx: int, end_idx: int | None) -> list:
+    """Return a deterministic FITS slice from either one file or a directory."""
     if input_path.is_file():
         file_list = [input_path]
     elif input_path.is_dir():
@@ -43,6 +56,7 @@ def resolve_files(input_path: Path, start_idx: int, end_idx: int | None) -> list
 
 
 def discover_wavelength_dirs(data_path: Path) -> tuple[int, ...]:
+    """Discover numeric AIA wavelength subdirectories such as 94, 171, or 304."""
     if not data_path.is_dir():
         raise ValueError(f"AIA data directory does not exist: {data_path}")
     found = [
@@ -58,6 +72,7 @@ def discover_wavelength_dirs(data_path: Path) -> tuple[int, ...]:
 def sorted_fits_for_band(
     data_path: Path, wave: int, use_band_subdirs: bool
 ) -> list[Path]:
+    """Resolve and time-sort all FITS files for one wavelength band."""
     band_dir = (data_path / str(wave)) if use_band_subdirs else data_path
     if not band_dir.is_dir():
         raise ValueError(f"Missing AIA band directory for {wave} A: {band_dir}")
@@ -70,12 +85,14 @@ def sorted_fits_for_band(
 def slice_band_files(
     files: list[Path], start_idx: int, end_idx: int | None
 ) -> list[Path]:
+    """Apply the user-selected index window while preserving time order."""
     total = len(files)
     end = total if end_idx is None else min(end_idx, total)
     return files[start_idx:end]
 
 
 def resolve_single_files(cfg: AIAConfig) -> list[Path]:
+    """Resolve files for single-image processing, including multi-wave batches."""
     data_path = Path(cfg.data_path)
     waves = cfg.multi_band_wavelengths
 
@@ -99,6 +116,7 @@ def resolve_single_files(cfg: AIAConfig) -> list[Path]:
 
 
 def resolve_test_file(cfg: AIAConfig) -> Path:
+    """Resolve the single FITS file used by AIA test-mode previews."""
     if cfg.test_file:
         test_path = Path(cfg.test_file)
         if not test_path.is_file():
@@ -134,6 +152,7 @@ def resolve_test_file(cfg: AIAConfig) -> Path:
 def build_multi_band_slots(
     cfg: AIAConfig, wavelengths: tuple[int, ...]
 ) -> list[tuple[Path, ...]]:
+    """Build per-time slots that group one FITS path from each wavelength."""
     data_path = Path(cfg.data_path)
     per_band: list[list[Path]] = []
 
@@ -145,7 +164,7 @@ def build_multi_band_slots(
                 f"Band {wave} has no FITS files in index range "
                 f"[{cfg.start_idx}, {cfg.end_idx})"
             )
-        per_band.append(sorted(sliced, key=lambda p: parse_timestr(p)))
+        per_band.append(sliced)
 
     slot_count = min(len(files) for files in per_band)
     if any(len(files) != slot_count for files in per_band):

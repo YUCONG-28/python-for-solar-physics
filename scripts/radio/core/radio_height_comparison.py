@@ -12,7 +12,6 @@ from .radio_newkirk_extrapolation import (
     newkirk_radius_from_frequency_mhz,
     plasma_density_from_frequency_mhz,
 )
-from .radio_newkirk_spatial import classify_source_type
 
 DEFAULT_SELECTED_MODELS = [
     {"multiplier": 1.0, "harmonic": 1},
@@ -67,6 +66,32 @@ def compute_gaussian_projected_height(x_arcsec, y_arcsec, solar_radius_arcsec):
         "gaussian_projected_height_valid": True,
         "gaussian_projected_height_reason": "valid_projected_height",
     }
+
+
+def classify_source_type(row, config):
+    """Classify a row without implying any Newkirk 2D source position."""
+    for key in ("source_type", "burst_type", "type"):
+        value = row.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+
+    time_value = parse_datetime_value(row.get("time"))
+    freq = _row_frequency(row)
+    if _matches_window_and_frequency(
+        time_value,
+        freq,
+        config.get("TYPEIII_TIME_WINDOWS", []),
+        config.get("TYPEIII_FREQ_RANGE"),
+    ):
+        return "typeIII"
+    if _matches_window_and_frequency(
+        time_value,
+        freq,
+        config.get("SPIKE_TIME_WINDOWS", []),
+        config.get("SPIKE_FREQ_RANGE"),
+    ):
+        return "spike"
+    return "unknown"
 
 
 def build_gaussian_newkirk_height_table(gaussian_df, config):
@@ -336,6 +361,43 @@ def _solar_radius_arcsec(config) -> float:
     if value is None or not np.isfinite(_float_or_nan(value)) or float(value) <= 0:
         return 959.63
     return float(value)
+
+
+def _matches_window_and_frequency(time_value, freq, windows, freq_range) -> bool:
+    if not windows and freq_range is None:
+        return False
+    time_ok = not windows or any(
+        _time_in_window(time_value, window) for window in windows
+    )
+    freq_ok = _frequency_in_range(freq, freq_range)
+    return bool(time_ok and freq_ok)
+
+
+def _time_in_window(value, window) -> bool:
+    if value is None or not window:
+        return False
+    if isinstance(window, dict):
+        start = parse_datetime_value(window.get("start"))
+        end = parse_datetime_value(window.get("end"))
+    else:
+        start = parse_datetime_value(window[0]) if len(window) >= 1 else None
+        end = parse_datetime_value(window[1]) if len(window) >= 2 else None
+    if start is None or end is None:
+        return False
+    if end < start:
+        start, end = end, start
+    return start <= value <= end
+
+
+def _frequency_in_range(freq, freq_range) -> bool:
+    if freq_range is None:
+        return True
+    if not np.isfinite(freq):
+        return False
+    lo, hi = map(float, freq_range)
+    if lo > hi:
+        lo, hi = hi, lo
+    return lo <= float(freq) <= hi
 
 
 def _row_frequency(row) -> float:

@@ -12,7 +12,6 @@ DEFAULT_NEWKIRK_CONFIG = {
     "multipliers": [1, 2, 4],
     "harmonics": [1, 2],
     "solar_radius_arcsec": 959.63,
-    "los_sign": 1,
 }
 DEFAULT_NEWKIRK_HEIGHT_COMPARISON_CONFIG = {
     "enable": True,
@@ -40,6 +39,17 @@ DEFAULT_NEWKIRK_HEIGHT_COMPARISON_CONFIG = {
     "drift_frequency_tolerance_mhz": "adaptive_half_band_spacing",
     "max_adaptive_frequency_tolerance_mhz": 15.0,
     "min_adaptive_frequency_tolerance_mhz": 5.0,
+}
+DEFAULT_OUTPUT_CONFIG = {
+    "output_dir": None,
+    "analysis_subdir": "auto",
+    "gaussian_diagnostics_csv": "radio_gaussian_fit_diagnostics.csv",
+    "valid_centers_csv": "radio_gaussian_valid_centers.csv",
+    "newkirk_csv": "radio_gaussian_newkirk_extrapolated.csv",
+    "drift_speed_csv": "radio_drift_newkirk_speed.csv",
+    "drift_selection_subdir": "drift_selection",
+    "enable_static_summary": None,
+    "enable_html_dashboard": None,
 }
 DEFAULT_DRIFT_SELECTION_PRODUCT_CONFIG = {
     "enable": True,
@@ -96,28 +106,6 @@ DEFAULT_RADIO_DIAGNOSTIC_PRESENTATION_CONFIG = {
     "dashboard_name": "radio_newkirk_frequency_priority_dashboard.html",
     "summary_csv_name": "radio_newkirk_frequency_priority_summary.csv",
 }
-DEFAULT_NEWKIRK_SPATIAL_CONFIG = {
-    "enable": False,
-    "aia_channel": 171,
-    "aia171_path": None,
-    "geometry": "plane_of_sky_radial_anchor",
-    "documentation_status": "illustrative plane-of-sky projection only, not a physical 2D reconstruction",
-    "harmonic": 1,
-    "newkirk_multiplier": 1.0,
-    "solar_radius_arcsec": None,
-    "color_by": "frequency",
-    "plot_typeIII": True,
-    "plot_spike": True,
-    "draw_gaussian_ellipse": True,
-    "draw_residual_arrows": True,
-    "max_residual_arrow_arcsec": None,
-    "output_name": "aia171_typeIII_spike_newkirk_projection_schematic.png",
-    "comparison_csv_name": "gaussian_newkirk_projection_schematic_table.csv",
-    "TYPEIII_TIME_WINDOWS": [],
-    "SPIKE_TIME_WINDOWS": [],
-    "TYPEIII_FREQ_RANGE": None,
-    "SPIKE_FREQ_RANGE": None,
-}
 
 
 def _normalize_config_module_name(config_name: str | None) -> str:
@@ -155,10 +143,16 @@ def load_radio_user_config(config_name: str | None = None):
     """
     module = load_radio_config_module(config_name)
     user_config = copy.deepcopy(_event_section(module, "user", "USER_CONFIG"))
+    output_config = _load_output_config_from_module(module)
+    _apply_output_config_to_user_config(user_config, output_config)
     newkirk_config = dict(DEFAULT_NEWKIRK_CONFIG)
     newkirk_config.update(
         copy.deepcopy(_event_section(module, "newkirk", "NEWKIRK_CONFIG"))
     )
+    if output_config.get("newkirk_csv"):
+        newkirk_config["output_csv"] = output_config["newkirk_csv"]
+    if output_config.get("drift_speed_csv"):
+        newkirk_config["drift_speed_csv"] = output_config["drift_speed_csv"]
     return user_config, newkirk_config
 
 
@@ -168,18 +162,6 @@ def load_aia_radio_hmi_user_config(config_name: str | None = None):
     return copy.deepcopy(
         _event_section(module, "aia_radio_hmi", "AIA_RADIO_HMI_CONFIG")
     )
-
-
-def load_newkirk_spatial_config(config_name: str | None = None):
-    """Load optional illustrative plane-of-sky projection config."""
-    module = load_radio_config_module(config_name)
-    config = copy.deepcopy(DEFAULT_NEWKIRK_SPATIAL_CONFIG)
-    config.update(
-        copy.deepcopy(
-            _event_section(module, "newkirk_spatial", "NEWKIRK_SPATIAL_CONFIG")
-        )
-    )
-    return config
 
 
 def load_newkirk_height_comparison_config(config_name: str | None = None):
@@ -199,6 +181,7 @@ def load_newkirk_height_comparison_config(config_name: str | None = None):
 def load_drift_selection_product_config(config_name: str | None = None):
     """Load persistent drift-selection product config."""
     module = load_radio_config_module(config_name)
+    output_config = _load_output_config_from_module(module)
     config = copy.deepcopy(DEFAULT_DRIFT_SELECTION_PRODUCT_CONFIG)
     config.update(
         copy.deepcopy(
@@ -207,13 +190,21 @@ def load_drift_selection_product_config(config_name: str | None = None):
             )
         )
     )
+    if output_config.get("drift_selection_subdir"):
+        config["output_subdir"] = output_config["drift_selection_subdir"]
     return config
+
+
+def load_radio_output_config(config_name: str | None = None):
+    """Load common user-facing output controls from an event config."""
+    return _load_output_config_from_module(load_radio_config_module(config_name))
 
 
 def load_radio_diagnostic_presentation_config(config_name: str | None = None):
     """Load frequency-priority diagnostic presentation config."""
     module = load_radio_config_module(config_name)
     user_config = copy.deepcopy(_event_section(module, "user", "USER_CONFIG"))
+    output_config = _load_output_config_from_module(module)
     config = copy.deepcopy(DEFAULT_RADIO_DIAGNOSTIC_PRESENTATION_CONFIG)
     config.update(
         copy.deepcopy(
@@ -224,8 +215,30 @@ def load_radio_diagnostic_presentation_config(config_name: str | None = None):
             )
         )
     )
+    if output_config.get("enable_static_summary") is not None:
+        config["enable_static_summary"] = bool(output_config["enable_static_summary"])
+    if output_config.get("enable_html_dashboard") is not None:
+        config["enable_html_dashboard"] = bool(output_config["enable_html_dashboard"])
     if not config.get("comparison_frequency_mhz"):
         data_cfg = user_config.get("data", {}) if isinstance(user_config, dict) else {}
         freqs = data_cfg.get("multi_band_freqs") or []
         config["comparison_frequency_mhz"] = [float(freq) for freq in freqs]
     return config
+
+
+def _load_output_config_from_module(module: ModuleType) -> dict:
+    config = copy.deepcopy(DEFAULT_OUTPUT_CONFIG)
+    config.update(copy.deepcopy(_event_section(module, "output", "OUTPUT_CONFIG")))
+    return config
+
+
+def _apply_output_config_to_user_config(user_config: dict, output_config: dict) -> None:
+    output = user_config.setdefault("output", {})
+    gaussian = user_config.setdefault("gaussian", {})
+    for key in ("output_dir", "analysis_subdir"):
+        value = output_config.get(key)
+        if value not in (None, ""):
+            output[key] = value
+    gaussian_csv = output_config.get("gaussian_diagnostics_csv")
+    if gaussian_csv:
+        gaussian["gaussian_diagnostics_csv"] = gaussian_csv

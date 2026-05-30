@@ -149,6 +149,8 @@ from tqdm import tqdm
 
 from solar_toolkit.path_config import apply_config_to_object
 
+from .aia_io import parse_timestr as _shared_parse_timestr
+
 # ==============================================================================
 # Configuration
 # ==============================================================================
@@ -434,15 +436,7 @@ class PanelData:
 # ==============================================================================
 def _parse_timestr(file_path: Path) -> str:
     """Extract a stable time string such as 2025-01-24T033001Z."""
-    match = re.search(r"\d{4}-\d{2}-\d{2}T\d{6}Z", file_path.name)
-    if match:
-        return match.group(0)
-
-    parts = file_path.name.split(".")
-    for part in parts:
-        if "T" in part and "Z" in part:
-            return part
-    return file_path.stem
+    return _shared_parse_timestr(file_path)
 
 
 def _resolve_files(input_path: Path, start_idx: int, end_idx: int | None) -> list:
@@ -569,7 +563,7 @@ def _build_multi_band_slots(
                 f"Band {wave} has no FITS files in index range "
                 f"[{cfg.start_idx}, {cfg.end_idx})"
             )
-        per_band.append(sorted(sliced, key=lambda p: _parse_timestr(p)))
+        per_band.append(sliced)
 
     slot_count = min(len(files) for files in per_band)
     if any(len(files) != slot_count for files in per_band):

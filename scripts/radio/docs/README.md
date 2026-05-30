@@ -27,7 +27,6 @@ as audit records and may describe older intermediate states.
 | --- | --- |
 | `DRIFT_SELECTION_AND_HEIGHT_PLOT_OPTIMIZATION_REPORT.md` | Drift selection and height-plot optimization notes. |
 | `NEWKIRK_HEIGHT_COMPARISON_REVISION_REPORT.md` | Newkirk height-comparison revision notes. |
-| `NEWKIRK_SPATIAL_DISTRIBUTION_REPORT.md` | Newkirk spatial-distribution output notes. |
 
 Runtime figures, CSV files, local selections, and diagnostics should stay under
 configured output directories, not in this documentation folder.

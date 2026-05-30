@@ -1,5 +1,18 @@
 """User-editable radio configuration for the 2025-01-24 event."""
 
+OUTPUT_CONFIG = {
+    # Common output controls used by both radio entrypoints.
+    "output_dir": r"<PROJECT_ROOT>\2025\20250124\output",
+    "analysis_subdir": "auto",
+    "gaussian_diagnostics_csv": "radio_gaussian_fit_diagnostics.csv",
+    "valid_centers_csv": "radio_gaussian_valid_centers.csv",
+    "newkirk_csv": "radio_gaussian_newkirk_extrapolated.csv",
+    "drift_speed_csv": "radio_drift_newkirk_speed.csv",
+    "drift_selection_subdir": "drift_selection",
+    "enable_static_summary": False,
+    "enable_html_dashboard": False,
+}
+
 USER_CONFIG = {
     "mode": "multi_band",
     "data": {
@@ -122,6 +135,7 @@ USER_CONFIG = {
         "draw_raw_peak_marker": False,
         "draw_fit_peak_distance": False,
         "draw_coordinate_debug": False,
+        "gaussian_diagnostics_csv": OUTPUT_CONFIG["gaussian_diagnostics_csv"],
     },
     "background": {
         "mode": "off",
@@ -141,6 +155,11 @@ USER_CONFIG = {
         "f_start": 80.0,
         "f_end": 340.0,
         "polarization": "sum",
+        # With use_log10=True, vmin/vmax are log10 intensity limits.
+        "vmin": 2.5,
+        "vmax": 4.5,
+        "use_log10": True,
+        "cmap": "jet",
     },
     "drift_rate": {
         "enabled": True,
@@ -185,7 +204,8 @@ USER_CONFIG = {
         "drift_diagnostics_csv": "radio_spectrogram_drift_rate_diagnostics.csv",
     },
     "output": {
-        "output_dir": r"<PROJECT_ROOT>\2025\20250124\RS_test",
+        "output_dir": OUTPUT_CONFIG["output_dir"],
+        "analysis_subdir": OUTPUT_CONFIG["analysis_subdir"],
         "show_plot": False,
         "save_plot": True,
         "dpi": 300,
@@ -197,7 +217,7 @@ AIA_RADIO_HMI_CONFIG = {
         "radio_base_dir": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450",
         "aia_base_dir": r"<PROJECT_ROOT>\2025\20250124\SDO\AIA\171",
         "hmi_base_dir": r"<PROJECT_ROOT>\2025\20250124\SDO\HMI\1",
-        "output_dir": r"<PROJECT_ROOT>\2025\20250124\test",
+        "output_dir": r"<PROJECT_ROOT>\2025\20250124\outpus\AIA_Gaussian_Overlay",
     },
     "aia": {
         "wavelength": "171",
@@ -238,8 +258,12 @@ AIA_RADIO_HMI_CONFIG = {
         "use_radec_maps": True,
     },
     "wcs_reproject": {
-        "roi_bottom_left": [600, -800],
-        "roi_top_right": [1600, 200],
+        "roi_bounds_arcsec": {
+            "left": 600,
+            "bottom": -800,
+            "right": 1600,
+            "top": 200,
+        },
         "use_radec_maps": True,
     },
     "gaussian": {
@@ -296,7 +320,7 @@ AIA_RADIO_HMI_CONFIG = {
         },
     },
     "output": {
-        "output_dir": r"<PROJECT_ROOT>\2025\20250124\AIA_RS_HMI\test",
+        "output_dir": r"<PROJECT_ROOT>\2025\20250124\output\AIA_Gaussian_Overlay",
         "save_figure": True,
         "dpi": 300,
     },
@@ -311,9 +335,8 @@ NEWKIRK_CONFIG = {
     "multipliers": [1, 2, 4],
     "harmonics": [1, 2],
     "solar_radius_arcsec": 959.63,
-    "los_sign": 1,
-    "output_csv": "radio_gaussian_newkirk_extrapolated.csv",
-    "drift_speed_csv": "radio_drift_newkirk_speed.csv",
+    "output_csv": OUTPUT_CONFIG["newkirk_csv"],
+    "drift_speed_csv": OUTPUT_CONFIG["drift_speed_csv"],
 }
 
 NEWKIRK_HEIGHT_COMPARISON_CONFIG = {
@@ -357,13 +380,13 @@ DRIFT_SELECTION_PRODUCT_CONFIG = {
     "annotate_endpoints": True,
     "preserve_existing": True,
     "dpi": 200,
-    "output_subdir": "drift_selection",
+    "output_subdir": OUTPUT_CONFIG["drift_selection_subdir"],
 }
 
 RADIO_DIAGNOSTIC_PRESENTATION_CONFIG = {
     "enable": True,
-    "enable_static_summary": False,
-    "enable_html_dashboard": False,
+    "enable_static_summary": OUTPUT_CONFIG["enable_static_summary"],
+    "enable_html_dashboard": OUTPUT_CONFIG["enable_html_dashboard"],
     "enable_debug_center_facets": False,
     "enable_debug_height_time_facets": False,
     "enable_debug_drift_band_matching": False,
@@ -401,44 +424,20 @@ RADIO_DIAGNOSTIC_PRESENTATION_CONFIG = {
     "summary_csv_name": "radio_newkirk_frequency_priority_summary.csv",
 }
 
-NEWKIRK_SPATIAL_CONFIG = {
-    "enable": False,
-    "aia_channel": 171,
-    "aia171_path": r"<PROJECT_ROOT>\2025\20250124\SDO\AIA\171\aia.lev1_euv_12s.2025-01-24T044834Z.171.image_lev1.fits",
-    "geometry": "illustrative_plane_of_sky_radial_anchor",
-    "documentation_status": "illustrative plane-of-sky projection only, not a physical 2D reconstruction",
-    "harmonic": 1,
-    "newkirk_multiplier": 1.0,
-    "solar_radius_arcsec": None,
-    "color_by": "frequency",
-    "plot_typeIII": True,
-    "plot_spike": True,
-    "draw_gaussian_ellipse": True,
-    "draw_residual_arrows": True,
-    "max_residual_arrow_arcsec": None,
-    "output_name": "aia171_typeIII_spike_newkirk_projection_schematic.png",
-    "comparison_csv_name": "gaussian_newkirk_projection_schematic_table.csv",
-    "TYPEIII_TIME_WINDOWS": [],
-    "SPIKE_TIME_WINDOWS": [],
-    "TYPEIII_FREQ_RANGE": None,
-    "SPIKE_FREQ_RANGE": None,
-}
-
-
 EVENT_CONFIG = {
     "user": USER_CONFIG,
+    "output": OUTPUT_CONFIG,
     "aia_radio_hmi": AIA_RADIO_HMI_CONFIG,
     "newkirk": NEWKIRK_CONFIG,
     "newkirk_height_comparison": NEWKIRK_HEIGHT_COMPARISON_CONFIG,
     "drift_selection_products": DRIFT_SELECTION_PRODUCT_CONFIG,
     "diagnostic_presentation": RADIO_DIAGNOSTIC_PRESENTATION_CONFIG,
-    "newkirk_spatial": NEWKIRK_SPATIAL_CONFIG,
 }
 
 USER_CONFIG = EVENT_CONFIG["user"]
+OUTPUT_CONFIG = EVENT_CONFIG["output"]
 AIA_RADIO_HMI_CONFIG = EVENT_CONFIG["aia_radio_hmi"]
 NEWKIRK_CONFIG = EVENT_CONFIG["newkirk"]
 NEWKIRK_HEIGHT_COMPARISON_CONFIG = EVENT_CONFIG["newkirk_height_comparison"]
 DRIFT_SELECTION_PRODUCT_CONFIG = EVENT_CONFIG["drift_selection_products"]
 RADIO_DIAGNOSTIC_PRESENTATION_CONFIG = EVENT_CONFIG["diagnostic_presentation"]
-NEWKIRK_SPATIAL_CONFIG = EVENT_CONFIG["newkirk_spatial"]

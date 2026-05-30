@@ -60,8 +60,8 @@ When `NEWKIRK_HEIGHT_COMPARISON_CONFIG["enable"]` is true, the pipeline writes:
 - `gaussian_vs_newkirk_height_time.png`
 - `gaussian_newkirk_height_residual_vs_frequency.png`
 
-The optional old projection schematic remains available only when
-`NEWKIRK_SPATIAL_CONFIG["enable"]` is explicitly set to true.
+The older projection schematic has been removed from the supported pipeline.
+Newkirk-derived products now stay in height/time/frequency or drift-speed space.
 
 ## Remaining Caveats
 

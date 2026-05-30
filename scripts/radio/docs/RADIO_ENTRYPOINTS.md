@@ -10,12 +10,11 @@ Recommended full scientific pipeline.
 
 - Purpose: run Gaussian fitting, dynamic spectrogram support, manual drift-rate
   selection/overlay, Newkirk extrapolation, Gaussian-Newkirk height comparison,
-  height-residual plots, and optional illustrative AIA 171 plane-of-sky
-  projection.
+  height-residual plots, and drift-speed diagnostics. Newkirk is treated as a
+  frequency-to-height model, not as a 2D image-plane source locator.
 - Inputs: radio FITS settings, spectrogram FITS settings, drift-rate settings,
-  Newkirk settings, `NEWKIRK_HEIGHT_COMPARISON_CONFIG`, optional
-  `NEWKIRK_SPATIAL_CONFIG`, and output settings inherited from the legacy
-  source-map configuration.
+  Newkirk settings, `NEWKIRK_HEIGHT_COMPARISON_CONFIG`, and output settings
+  inherited from the legacy source-map configuration.
 - Outputs: Gaussian diagnostics, valid Gaussian centers, Newkirk extrapolated
   Gaussian heights, drift-rate Newkirk speeds, diagnostic preview figures,
   and, when enabled, `gaussian_newkirk_height_comparison_table.csv`,
@@ -23,10 +22,12 @@ Recommended full scientific pipeline.
   `gaussian_vs_newkirk_height_time.png`, and
   `gaussian_newkirk_height_residual_vs_frequency.png`.
 - Best for: complete burst analysis where fitted radio-source centers and
-  drift-rate-derived speeds are both needed. If the optional illustrative
-  plane-of-sky projection is enabled and `aia171_path` is missing, only that
-  projection schematic is skipped while height diagnostics are still saved.
+  drift-rate-derived speeds are both needed.
 - Example: `python scripts\radio\run_radio_burst_pipeline.py --config radio_20250124_config`
+- Output overrides:
+  `--output-dir PATH`, `--analysis-subdir NAME`, `--gaussian-csv NAME`,
+  `--valid-centers-csv NAME`, `--newkirk-csv NAME`, and
+  `--drift-speed-csv NAME`.
 
 ## `run_radio_source_map.py`
 
@@ -42,6 +43,8 @@ Compatibility entrypoint for radio source maps with Gaussian overlay.
 - Best for: quick visual checks of radio images, source masks, fitted centers,
   FWHM ellipses, and per-band image quality without forcing Newkirk analysis.
 - Example: `python scripts\radio\run_radio_source_map.py --config radio_20250124_config`
+- Output overrides:
+  `--output-dir PATH`, `--analysis-subdir NAME`, and `--gaussian-csv NAME`.
 
 ## `run_aia_radio_hmi_overlay.py`
 

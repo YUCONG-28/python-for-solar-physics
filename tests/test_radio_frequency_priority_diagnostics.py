@@ -39,7 +39,6 @@ def test_config_uses_gaussian_multiband_frequencies():
 
 def test_event_config_is_single_source_for_legacy_exports():
     module = load_radio_config_module("radio_20250124_config")
-    legacy_aia_module = load_radio_config_module("aia_radio_hmi_20250124_config")
     user_config, newkirk_config = load_radio_user_config("radio_20250124_config")
     presentation = load_radio_diagnostic_presentation_config("radio_20250124_config")
 
@@ -49,9 +48,11 @@ def test_event_config_is_single_source_for_legacy_exports():
         "newkirk_height_comparison",
         "drift_selection_products",
         "diagnostic_presentation",
+        "output",
     }
-    assert legacy_aia_module.AIA_RADIO_HMI_CONFIG is module.AIA_RADIO_HMI_CONFIG
+    assert "newkirk_spatial" not in module.EVENT_CONFIG
     assert module.USER_CONFIG == module.EVENT_CONFIG["user"]
+    assert module.OUTPUT_CONFIG == module.EVENT_CONFIG["output"]
     assert module.NEWKIRK_CONFIG == module.EVENT_CONFIG["newkirk"]
     assert user_config == module.EVENT_CONFIG["user"]
     assert newkirk_config["solar_radius_arcsec"] == 959.63

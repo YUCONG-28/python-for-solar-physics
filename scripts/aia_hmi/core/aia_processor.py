@@ -10,6 +10,7 @@ from .aia_config import AIAConfig
 
 
 def _actual_mode(cfg: AIAConfig) -> str:
+    """Normalize compatibility flags into the runtime mode used by the CLI."""
     if cfg.use_test_mode or cfg.mode == "test":
         return "test"
     if cfg.mode == "mosaic" or cfg.multi_band_composite:
@@ -18,6 +19,7 @@ def _actual_mode(cfg: AIAConfig) -> str:
 
 
 def _load_impl():
+    """Import the heavy implementation only when processing is requested."""
     from . import _aia_euv_processor_impl
 
     return _aia_euv_processor_impl
