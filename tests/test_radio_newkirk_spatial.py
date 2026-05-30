@@ -103,7 +103,7 @@ def test_nan_inputs_do_not_crash():
     out = build_newkirk_spatial_dataframe(df, {"solar_radius_arcsec": 960.0})
 
     assert len(out) == 1
-    assert out.iloc[0]["geometry_valid"] == False
+    assert not out.iloc[0]["geometry_valid"]
     assert isinstance(out.iloc[0]["geometry_reason"], str)
 
 
@@ -141,8 +141,8 @@ def test_invalid_gaussian_row_is_kept_but_geometry_invalid():
     out = build_newkirk_spatial_dataframe(row, {"solar_radius_arcsec": 960.0})
 
     assert len(out) == 1
-    assert out.iloc[0]["gaussian_fit_success"] == False
-    assert out.iloc[0]["geometry_valid"] == False
+    assert not out.iloc[0]["gaussian_fit_success"]
+    assert not out.iloc[0]["geometry_valid"]
     assert out.iloc[0]["geometry_reason"] == "invalid_gaussian_fit"
 
 
@@ -150,6 +150,7 @@ def pytest_approx(value):
     try:
         import pytest
     except ModuleNotFoundError:
+
         class Approx:
             def __eq__(self, other):
                 return math.isclose(other, value, rel_tol=1e-12, abs_tol=1e-12)

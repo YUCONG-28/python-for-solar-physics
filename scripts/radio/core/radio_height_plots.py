@@ -25,7 +25,9 @@ def plot_gaussian_vs_newkirk_height_frequency(height_df, output_path, config=Non
     valid = df.dropna(subset=["frequency_mhz", "gaussian_height_rsun"])
     if valid.empty:
         return {"status": "skipped", "reason": "no_valid_height_rows"}
-    fig, ax = plt.subplots(figsize=cfg.get("figsize", (8.5, 6)), dpi=int(cfg.get("dpi", 180)))
+    fig, ax = plt.subplots(
+        figsize=cfg.get("figsize", (8.5, 6)), dpi=int(cfg.get("dpi", 180))
+    )
     _scatter_gaussian_height_by_frequency(ax, df, cfg)
     _plot_gaussian_frequency_median_iqr(ax, df)
     best_pair = _best_residual_model_pair(df)
@@ -66,13 +68,17 @@ def plot_gaussian_vs_newkirk_height_time(height_df, output_path, config=None):
     valid = df.dropna(subset=["time_dt", "gaussian_height_rsun"])
     if valid.empty:
         return {"status": "skipped", "reason": "no_valid_time_height_rows"}
-    fig, ax = plt.subplots(figsize=cfg.get("figsize", (9, 5.5)), dpi=int(cfg.get("dpi", 180)))
+    fig, ax = plt.subplots(
+        figsize=cfg.get("figsize", (9, 5.5)), dpi=int(cfg.get("dpi", 180))
+    )
     connected_line_count = 0
     one_per_source = df.drop_duplicates(
         subset=["time", "frequency_mhz", "gaussian_x_arcsec", "gaussian_y_arcsec"]
     ).copy()
-    for source_type, group in one_per_source.groupby("source_type", dropna=False):
-        group = group.dropna(subset=["time_dt", "gaussian_height_rsun"]).sort_values("time_dt")
+    for _source_type, group in one_per_source.groupby("source_type", dropna=False):
+        group = group.dropna(subset=["time_dt", "gaussian_height_rsun"]).sort_values(
+            "time_dt"
+        )
         if group.empty:
             continue
         ax.scatter(
@@ -80,7 +86,7 @@ def plot_gaussian_vs_newkirk_height_time(height_df, output_path, config=None):
             group["gaussian_height_rsun"],
             s=24,
             marker="o",
-        label="Gaussian center projected height",
+            label="Gaussian center projected height",
             alpha=0.65,
             edgecolors="none",
         )
@@ -103,7 +109,9 @@ def plot_gaussian_vs_newkirk_height_time(height_df, output_path, config=None):
             ["newkirk_multiplier", "harmonic", "source_type", "drift_label"],
             dropna=False,
         ):
-            group = group.dropna(subset=["time_dt", "newkirk_height_rsun"]).sort_values("time_dt")
+            group = group.dropna(subset=["time_dt", "newkirk_height_rsun"]).sort_values(
+                "time_dt"
+            )
             if len(group) < 2:
                 continue
             ax.plot(
@@ -146,12 +154,16 @@ def plot_height_residual_vs_frequency(height_df, output_path, config=None):
         "gaussian_newkirk_height_residual_summary.csv",
     )
     summary = _write_residual_summary(valid, summary_path)
-    fig, ax = plt.subplots(figsize=cfg.get("figsize", (8.5, 5.5)), dpi=int(cfg.get("dpi", 180)))
+    fig, ax = plt.subplots(
+        figsize=cfg.get("figsize", (8.5, 5.5)), dpi=int(cfg.get("dpi", 180))
+    )
     ax.axhline(0.0, color="black", linewidth=1.0, linestyle=":", label="zero residual")
     for (multiplier, harmonic, source_type), group in valid.groupby(
         ["newkirk_multiplier", "harmonic", "source_type"], dropna=False
     ):
-        outlier = group["height_residual_rsun"].abs() > float(cfg.get("outlier_residual_rsun", 0.5))
+        outlier = group["height_residual_rsun"].abs() > float(
+            cfg.get("outlier_residual_rsun", 0.5)
+        )
         ax.scatter(
             group.loc[~outlier, "frequency_mhz"],
             group.loc[~outlier, "height_residual_rsun"],
@@ -223,7 +235,7 @@ def _scatter_gaussian_height_by_frequency(ax, df: pd.DataFrame, cfg: dict):
         cbar.set_label("Time (UT)")
         cbar.ax.yaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
         return
-    for source_type, group in one_per_source.groupby("source_type", dropna=False):
+    for _source_type, group in one_per_source.groupby("source_type", dropna=False):
         ax.scatter(
             group["frequency_mhz"],
             group["gaussian_height_rsun"],
@@ -315,9 +327,13 @@ def _plot_residual_median_iqr(ax, summary: pd.DataFrame):
 
 def _write_residual_summary(df: pd.DataFrame, path: Path) -> pd.DataFrame:
     rows = []
-    grouped = df.groupby(["newkirk_multiplier", "harmonic", "frequency_mhz"], dropna=False)
+    grouped = df.groupby(
+        ["newkirk_multiplier", "harmonic", "frequency_mhz"], dropna=False
+    )
     for (multiplier, harmonic, frequency), group in grouped:
-        residual = pd.to_numeric(group["height_residual_rsun"], errors="coerce").dropna()
+        residual = pd.to_numeric(
+            group["height_residual_rsun"], errors="coerce"
+        ).dropna()
         if residual.empty:
             continue
         q25 = float(residual.quantile(0.25))
@@ -352,7 +368,9 @@ def _write_residual_summary(df: pd.DataFrame, path: Path) -> pd.DataFrame:
     return summary
 
 
-def _median_iqr(df: pd.DataFrame, group_cols: list[str], value_col: str) -> pd.DataFrame:
+def _median_iqr(
+    df: pd.DataFrame, group_cols: list[str], value_col: str
+) -> pd.DataFrame:
     rows = []
     for keys, group in df.groupby(group_cols, dropna=False):
         series = pd.to_numeric(group[value_col], errors="coerce").dropna()
@@ -360,7 +378,7 @@ def _median_iqr(df: pd.DataFrame, group_cols: list[str], value_col: str) -> pd.D
             continue
         if not isinstance(keys, tuple):
             keys = (keys,)
-        row = {col: key for col, key in zip(group_cols, keys)}
+        row = {col: key for col, key in zip(group_cols, keys, strict=False)}
         row.update(
             {
                 "median": float(series.median()),
@@ -381,7 +399,9 @@ def _best_residual_model_pair(df: pd.DataFrame):
     for (multiplier, harmonic), group in valid.groupby(
         ["newkirk_multiplier", "harmonic"], dropna=False
     ):
-        residual = pd.to_numeric(group["height_residual_rsun"], errors="coerce").abs().dropna()
+        residual = (
+            pd.to_numeric(group["height_residual_rsun"], errors="coerce").abs().dropna()
+        )
         if residual.empty:
             continue
         scores.append((float(residual.median()), float(multiplier), float(harmonic)))

@@ -12,6 +12,11 @@ python-for-solar-physics/
 |   `-- solar_analysis_utils.py
 |-- scripts/
 |   |-- aia_hmi/
+|   |   |-- core/
+|   |   |-- configs/
+|   |   |-- docs/
+|   |   |-- run_aia_euv_processor.py
+|   |   `-- sdo_aia_euv_processor.py
 |   |-- radio/
 |   |-- data_download/
 |   |-- stereo_suvi/
@@ -75,9 +80,9 @@ python-for-solar-physics/
   material. It is intentionally excluded from Git by `.gitignore`.
 - `tests/`: lightweight pytest tests that do not depend on FITS, NetCDF, JP2, or
   other local science data.
-- `outputs/`: documentation placeholder for generated products. Keep only notes
-  such as `outputs/README.md` in Git; actual figures, videos, and intermediate
-  data products should remain local and ignored.
+- `outputs/`: ignored local output tree for generated figures, videos, tables,
+  and intermediate data products. Keep durable guidance in `docs/` instead of
+  tracking files under `outputs/`.
 - `data/products/`: ignored local output tree for generated figures, videos,
   manifests, and other reproducible products. Do not commit it.
 
@@ -85,6 +90,12 @@ python-for-solar-physics/
 
 - `scripts/aia_hmi/`: SDO/AIA and SDO/HMI image processing, difference imaging,
   light curves, time-distance analysis, file selection, and magnetic overlays.
+  The main AIA EUV processor now uses a radio-style phased structure with
+  `run_aia_euv_processor.py`, `core/`, `configs/`, `docs/`, and the historical
+  `sdo_aia_euv_processor.py` compatibility entrypoint.
+  New reusable AIA/HMI logic should go under `core/`; new command-line
+  entrypoints should be small `run_*.py` wrappers. Keep compatibility wrappers
+  when an old script path is already used by tests, docs, or local workflows.
 - `scripts/radio/`: CSO dynamic spectra, radio source maps, polarization
   products, multi-frequency source panels, and AIA/radio/HMI overlays.
 - `scripts/data_download/`: remote data access helpers that create local
@@ -118,7 +129,8 @@ data-independent tests.
 Root-level images such as `HXR.png`, `SXR.png`, `SXR to HXR.png`, and
 `SXR to HXR enhance.png` need manual review before any future move into
 `docs/assets/images/`. They may be README assets, paper figures, or historical
-outputs, so this cleanup phase leaves them untouched.
+outputs, so this cleanup phase leaves the local files in place but removes them
+from Git tracking.
 
 ## README
 

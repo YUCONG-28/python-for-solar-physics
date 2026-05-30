@@ -1,194 +1,96 @@
 # Project Cleanup Report
 
-生成时间：2026-05-22
+Last updated: 2026-05-30
 
-## 2026-05-22 第一阶段整理补充
+This report summarizes the current cleanup state of the repository. It replaces
+the older pre-refactor audit notes whose file lists and cache paths no longer
+matched the workspace.
 
-本轮整理仅补充文档、配置模板和 GitHub 展示规范，不删除、不移动、不重命名任何已有文件，也不修改科研算法。
+## Cleanup Scope
 
-新增或更新的整理资料：
+This cleanup is intentionally conservative:
 
-- `docs/PROJECT_OPTIMIZATION_PLAN.md`：第一阶段目标、边界、入口脚本、legacy 文件和后续重构路线。
-- `docs/LEGACY_AND_REVIEW_FILES.md`：需要人工确认的 legacy、实验、结果和展示资产清单。
-- `docs/assets/README.md`：README 展示图和视频资产规范。
-- `configs/aia.example.yaml`、`configs/radio.example.yaml`、`configs/cso.example.yaml`、`configs/overlay.example.yaml`：后续配置集中化模板。
+- Scientific algorithms, FITS/WCS handling, plotting defaults, output naming,
+  and local data products are not changed as part of cleanup.
+- Legacy scientific entrypoints are kept as wrappers or review files until
+  output parity can be verified with real data.
+- Ignored local data, archive folders, workbooks, and manually selected results
+  are documented but not automatically deleted.
+- Regenerable caches and temporary test products are safe cleanup targets.
 
-本轮仍不处理以下高风险文件：
+## Completed Cleanup
 
-- `scripts/radio/sdo_aia_radio_hmi_overlay_bgcorrected.py`
-- `scripts/radio/spectrogram_drift_rate_manual_selection.json`
-- `HXR.png`
-- `SXR.png`
-- `SXR to HXR.png`
-- `SXR to HXR enhance.png`
-- `AIA.xlsx`
-- `CSO.xlsx`
-- `examples/radio_aia_hmi/*`
+- Removed reproducible Python and test artifacts when present:
+  `__pycache__/`, `.ruff_cache/`, pytest temporary folders, and old
+  `pytest-cache-files-*` style directories.
+- Kept non-empty local or research-sensitive ignored paths:
+  `archive/`, `data dowload/`, `scripts/radio/outputs/`, `.aider*`,
+  `.vscode/`, `AIA.xlsx`, and `CSO.xlsx`.
+- Stopped tracking generated-looking root products while leaving local copies in
+  place: `HXR.png`, `SXR.png`, `SXR to HXR.png`,
+  `SXR to HXR enhance.png`, and the root drift-selection JSON/PNG products.
+- Removed the tracked zero-byte `fit_min_mask_pixels` marker file after
+  confirming no code or docs referenced it as a path.
+- Replaced the large historical AIA script body with a compatibility wrapper
+  while retaining the implementation under `scripts/aia_hmi/core/`.
+- Added the recommended AIA entrypoint
+  `scripts/aia_hmi/run_aia_euv_processor.py`.
+- Restored `scripts/radio/configs/aia_radio_hmi_20250124_config.py` as a
+  compatibility shim that re-exports the consolidated 2025-01-24 overlay
+  config without duplicating event parameters.
+- Updated the public documentation set to point at current recommended
+  entrypoints and to describe the AIA/HMI radio-style phased structure.
 
-## 当前目录结构概览
+## Current Structure Decisions
 
-项目根目录是一个太阳物理科研 Python 项目，当前主结构如下：
+| Area | Current decision |
+| --- | --- |
+| AIA/HMI main processor | Use `scripts/aia_hmi/run_aia_euv_processor.py`; keep `scripts/aia_hmi/sdo_aia_euv_processor.py` as a compatibility wrapper. |
+| AIA/HMI reusable code | Place reusable code under `scripts/aia_hmi/core/`; keep CLI, config, I/O, difference, mosaic, and runtime-dispatch boundaries explicit. |
+| Radio workflows | Keep existing radio run wrappers, `core/`, `configs/`, `legacy/`, and `docs/` structure. Current radio config changes in the working tree are treated as user work and are not part of this cleanup pass. |
+| Historical AIA difference scripts | Keep under `legacy/scripts/aia_hmi/` for parameter and output comparison. |
+| Local products | Keep ignored outputs and workbooks local; document them in `docs/LEGACY_AND_REVIEW_FILES.md` rather than deleting them. |
 
-```text
-project_root/
-├── .github/
-├── configs/
-├── docs/
-├── examples/
-├── outputs/
-├── scripts/
-├── solar_toolkit/
-├── tests/
-├── README.md
-├── LICENSE
-├── CITATION.cff
-├── pyproject.toml
-└── requirements.txt
-```
+## Current Documentation Set
 
-审计时还发现大量可再生成缓存与临时目录：
+The current high-signal project documentation is:
 
-- `.aider.tags.cache.v4/`
-- `.pytest_tmp/`
-- `.ruff_cache/`
-- `__pycache__/`
-- `tmp/`
-- `pytest-cache-files-*`
-- 多处子目录中的 `__pycache__/`
+- `README.md`: bilingual public overview and recommended entrypoints.
+- `docs/project_structure.md`: repository layout, data policy, and AIA/HMI
+  structure notes.
+- `docs/script_index.md`: public runnable scripts, compatibility entrypoints,
+  and selected examples.
+- `docs/MAIN_FILES.md`: compact list of core workflows and module boundaries.
+- `docs/LEGACY_AND_REVIEW_FILES.md`: files and local artifacts that require
+  manual review before removal.
+- `scripts/aia_hmi/docs/AIA_ENTRYPOINTS.md`: AIA-specific entrypoint and
+  compatibility policy.
 
-## 核心源码文件
+## Validation
 
-- `solar_toolkit/`
-  - `solar_toolkit/__init__.py`：包元数据与公开模块声明。
-  - `solar_toolkit/path_config.py`：本地 YAML 路径配置加载与对象参数覆盖工具。
-  - `solar_toolkit/solar_analysis_utils.py`：太阳物理数据处理共享工具，包括时间解析、文件排序、内存管理、坐标和可视化辅助功能。
+The cleanup is checked with lightweight, data-independent tests:
 
-## 主程序入口与主要脚本
+- Documentation path and mojibake checks in
+  `tests/test_project_docs_current_paths.py`.
+- AIA/HMI structure and compatibility checks in
+  `tests/test_aia_hmi_radio_style_structure.py`.
+- Existing import/wrapper/rename tests for public compatibility.
+- `ruff check . --no-cache`.
+- `compileall` on `solar_toolkit`, `scripts`, `tests`, and `examples`.
+- Targeted pytest with third-party plugin autoload disabled and a workspace
+  temporary directory.
 
-- `scripts/aia_hmi/`：SDO/AIA 与 SDO/HMI 处理、差分、光变、FITS 规范命名和叠加绘图。
-- `scripts/radio/`：CSO 动态频谱、射电源图像、高斯拟合叠加、AIA/射电/HMI 多仪器叠加。
-- `scripts/xray_dem/`：GOES SXR、HESSI/HXI、AIA/HXI 叠加、DEM 反演、Neupert 效应分析。
-- `scripts/lasco_cme/`：SOHO/LASCO 数据下载、图像绘制、运行差分 CME 图像。
-- `scripts/tools/`：图像序列转视频、二维高斯源拟合工具。
+Full scientific output equivalence is not claimed by these checks. Real FITS
+output comparison remains a separate validation step before deleting legacy
+scientific workflows.
 
-## 配置文件
+## Remaining Review Items
 
-- `configs/paths.example.yaml`：本地数据路径与脚本参数配置模板。
-- `pyproject.toml`：项目元数据、依赖、打包配置、ruff/black/pytest/mypy 配置。
-- `requirements.txt`：运行依赖列表。
-- `.pre-commit-config.yaml`：pre-commit 钩子配置。
-- `.gitignore`：忽略缓存、大型科学数据、生成媒体和临时输出。
-
-## 文档文件
-
-- `README.md`
-- `CHANGELOG.md`
-- `CONTRIBUTING.md`
-- `CODE_ORGANIZATION_MANIFEST.md`
-- `docs/project_structure.md`
-- `docs/script_index.md`
-- `docs/path_configuration.md`
-
-## 示例脚本
-
-- `examples/aia_hmi/solar_limb_contour_example.py`
-- `examples/radio/cso_spectrogram_processing_example.py`
-- `examples/radio/fits_header_metadata_example.py`
-- `examples/radio_aia_hmi/*.py`
-
-## 测试文件
-
-正式单元测试文件已纳入保留项：
-
-- `tests/test_aia_hmi_fits_rename.py`
-- `tests/test_imports.py`
-- `tests/test_observation_time_parsing.py`
-- `tests/test_path_config.py`
-
-审计时发现 `tests/Guass_fits/` 是未跟踪目录，包含独立 `pyproject.toml`、README、脚本、图片、视频、zip 包、日志、`__MACOSX` 和多级 `__pycache__`。其结构不像当前项目的正式 pytest 单元测试，更像历史/临时高斯拟合实验包与输出结果，建议删除。
-
-## 建议保留的主要文件/文件夹
-
-- `.git/`
-- `.github/`
-- `configs/`
-- `docs/`
-- `examples/`
-- `scripts/`
-- `solar_toolkit/`
-- `tests/` 中正式 pytest 单元测试文件
-- `README.md`
-- `LICENSE`
-- `CITATION.cff`
-- `CHANGELOG.md`
-- `CONTRIBUTING.md`
-- `CODE_ORGANIZATION_MANIFEST.md`
-- `pyproject.toml`
-- `requirements.txt`
-- `.pre-commit-config.yaml`
-
-## 建议删除的测试文件/缓存文件/临时文件
-
-明确可删除：
-
-- 所有 `__pycache__/`
-- 所有 `*.pyc`
-- 所有 `*.pyo`
-- `.pytest_cache/`
-- `.pytest_tmp/`
-- `pytest-cache-files-*`
-- `.ruff_cache/`
-- `.aider.tags.cache.v4/`
-- `.aider.chat.history.md`
-- `.aider.input.history`
-- `tmp/`
-- `tests/Guass_fits/`
-- `scripts/dev_tests/`，若清理 `__pycache__` 后为空
-
-## 大型图片、视频、FITS 或运行结果文件
-
-发现的大型/科研结果类文件：
-
-- 根目录图片：`HXR.png`、`SXR.png`、`SXR to HXR.png`、`SXR to HXR enhance.png`
-- 根目录表格：`AIA.xlsx`、`CSO.xlsx`
-- `outputs/README.md`
-- `tests/Guass_fits/` 下的 zip、mp4、png、日志与输出目录
-- `pytest-cache-files-aia-hmi-rename-2/` 下有测试生成的 FITS 文件
-
-## 人工确认项
-
-以下项目不在本轮自动删除范围，建议人工确认后再决定是否迁移、压缩或移除：
-
-- 根目录 `HXR.png`、`SXR.png`、`SXR to HXR.png`、`SXR to HXR enhance.png`：可能是 README 或论文展示图，也可能是历史输出图。
-- 根目录 `AIA.xlsx`、`CSO.xlsx`：可能是科研表格数据或中间数据。
-- `outputs/README.md`：当前是受版本控制的输出目录说明文件，保留。
-- `.aider-conventions.md`、`.aider.conf.yml`、`.aider.model.settings.yml`、`.aiderignore`：属于 Aider 配置/约定文件，不按缓存处理；如项目发布不希望保留 AI 工具配置，可人工确认后移除。
-- `.vscode/`：本地 IDE 配置，当前不按核心文件处理，但本轮不主动删除。
-- `solar_physics_toolkit.egg-info/`：打包生成元数据，通常可再生成；因不在用户明确删除清单中，本轮不主动删除。
-- `scripts/radio/sdo_aia_radio_hmi_overlay_bgcorrected.py`：未跟踪的新脚本，疑似背景扣除实验版，建议人工确认是否纳入正式脚本。
-- `scripts/radio/spectrogram_drift_rate_manual_selection.json`：未跟踪 JSON，可能是手工选点结果，建议人工确认是否保留为示例/配置/结果。
-
-## 潜在风险说明
-
-- 删除缓存目录不会影响核心算法，但会移除本地测试运行状态和 Python 编译缓存。
-- 删除 `pytest-cache-files-*` 会移除测试生成的临时 FITS 文件；这些应由测试重新生成，不应作为科研数据来源。
-- 删除 `tests/Guass_fits/` 会移除未跟踪的历史实验目录和大型媒体/压缩包；该目录未纳入 Git 正式测试文件，且包含大量运行结果和独立项目文件。
-- README 后续展示用资源应放入 `docs/assets/images/` 和 `docs/assets/videos/`，少量压缩示例图片可按需手动加入版本控制。
-
-## 清理执行备注
-
-清理过程中，以下目录在 Windows 文件系统层面返回 `Access denied`，无法由当前进程删除。它们仍属于测试缓存/临时目录，建议后续用管理员权限、关闭占用进程后，或重启后手工删除：
-
-- `.pytest_tmp/`
-- `pytest-cache-files-aia-hmi-rename/`
-- `pytest-cache-files-final-submit/`
-- `pytest-cache-files-ll5v3iu2/`
-- `pytest-cache-files-pbnenyrm/`
-- `pytest-cache-files-ruff-batch1/`
-- `pytest-cache-files-ruff-batch2/`
-- `pytest-cache-files-ruff-batch3/`
-- `pytest-cache-files-ruff-batch4/`
-- `pytest-cache-files-ruff-batch5/`
-- `pytest-cache-files-ruff-batch6/`
-- `pytest-cache-files-ruff-batch7/`
-- `pytest-cache-files-ruff-final/`
+- Decide whether ignored local folders such as `data dowload/` and
+  `scripts/radio/outputs/` should be archived outside the repo or kept in place.
+- Decide whether the local root-level PNG files should become compressed README
+  assets under `docs/assets/images/`.
+- Decide whether `AIA.xlsx` and `CSO.xlsx` are local scratch products, research
+  inputs, or publishable examples.
+- Continue migrating future large scripts using the same wrapper-plus-core
+  pattern only after defining tests for their public behavior.

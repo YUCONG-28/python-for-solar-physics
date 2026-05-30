@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 
 from scripts.radio.core.radio_height_comparison import (
-    build_gaussian_newkirk_height_table,
     build_gaussian_newkirk_height_summary_table,
+    build_gaussian_newkirk_height_table,
     compute_gaussian_projected_height,
 )
 
@@ -36,7 +36,9 @@ def test_gaussian_projected_height_inside_disk_is_flagged_projected_only():
     assert result["height_valid"] is False
     assert result["height_invalid_reason"] == "inside_disk_projected_distance_only"
     assert result["gaussian_projected_height_valid"] is False
-    assert result["gaussian_projected_height_reason"] == "projected_inside_limb_or_bad_fit"
+    assert (
+        result["gaussian_projected_height_reason"] == "projected_inside_limb_or_bad_fit"
+    )
 
 
 def test_lower_frequency_gives_larger_newkirk_height():
@@ -87,10 +89,13 @@ def test_nan_gaussian_centers_do_not_crash():
     )
 
     assert len(out) == 1
-    assert out.iloc[0]["height_valid"] == False
+    assert not out.iloc[0]["height_valid"]
     assert out.iloc[0]["height_invalid_reason"] == "nonfinite_projected_coordinate"
-    assert out.iloc[0]["gaussian_projected_height_valid"] == False
-    assert out.iloc[0]["gaussian_projected_height_reason"] == "gaussian_fit_or_coordinate_invalid"
+    assert not out.iloc[0]["gaussian_projected_height_valid"]
+    assert (
+        out.iloc[0]["gaussian_projected_height_reason"]
+        == "gaussian_fit_or_coordinate_invalid"
+    )
 
 
 def test_height_summary_excludes_invalid_projected_heights_from_statistics():
@@ -126,7 +131,9 @@ def test_height_summary_excludes_invalid_projected_heights_from_statistics():
     assert row["gaussian_valid_count"] == 1
     assert row["gaussian_invalid_count"] == 1
     assert row["gaussian_projected_height_median_rsun"] == pytest_approx(0.25)
-    assert row["newkirk_height_rsun_1xH2"] == pytest_approx(row["newkirk_height_rsun_4xH1"])
+    assert row["newkirk_height_rsun_1xH2"] == pytest_approx(
+        row["newkirk_height_rsun_4xH1"]
+    )
     assert "abs_delta_reference_rsun" in summary.columns
 
 
@@ -171,6 +178,7 @@ def pytest_approx(value):
     try:
         import pytest
     except ModuleNotFoundError:
+
         class Approx:
             def __eq__(self, other):
                 return math.isclose(other, value, rel_tol=1e-12, abs_tol=1e-12)

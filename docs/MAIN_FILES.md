@@ -9,8 +9,13 @@
 
 ## Recommended Core Workflow Scripts
 
-- `scripts/aia_hmi/sdo_aia_euv_processor.py`
+- `scripts/aia_hmi/run_aia_euv_processor.py`
   - AIA 图像、拼图、base difference 和 running difference 的推荐主入口。
+  - 旧路径 `scripts/aia_hmi/sdo_aia_euv_processor.py` 作为兼容入口保留。
+  - 可复用逻辑位于 `scripts/aia_hmi/core/`；其中 `aia_cli.py` 管理 CLI，
+    `aia_config.py` 管理默认配置，`aia_io.py` 管理文件选择，
+    `aia_difference.py` 与 `aia_mosaic.py` 提供轻量 helper，
+    `aia_processor.py` 负责延迟加载原始科研实现。
 - `scripts/radio/run_radio_burst_pipeline.py`
   - 射电源图、高斯拟合、CSO 频谱/频漂率、Newkirk 高度比较、Gaussian-Newkirk 高度残差和可选 AIA 171 平面投影示意的完整推荐主入口。
 - `scripts/radio/run_radio_source_map.py`

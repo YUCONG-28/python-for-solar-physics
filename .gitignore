@@ -104,6 +104,16 @@ plots/
 video/
 videos/
 
+# Root-level generated products kept local only.
+/HXR.png
+/SXR.png
+/SXR to HXR.png
+/SXR to HXR enhance.png
+/spectrogram_drift_rate_manual_selection.json
+/spectrogram_drift_rate_selection_metadata.json
+/spectrogram_drift_rate_selection_preview.png
+/fit_min_mask_pixels
+
 # Generated media
 *.mp4
 *.avi

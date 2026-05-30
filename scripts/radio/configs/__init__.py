@@ -7,7 +7,6 @@ import importlib
 from types import ModuleType
 
 DEFAULT_CONFIG_NAME = "radio_20250124_config"
-DEFAULT_AIA_CONFIG_NAME = "aia_radio_hmi_20250124_config"
 DEFAULT_NEWKIRK_CONFIG = {
     "enabled": True,
     "multipliers": [1, 2, 4],
@@ -157,27 +156,29 @@ def load_radio_user_config(config_name: str | None = None):
     module = load_radio_config_module(config_name)
     user_config = copy.deepcopy(_event_section(module, "user", "USER_CONFIG"))
     newkirk_config = dict(DEFAULT_NEWKIRK_CONFIG)
-    newkirk_config.update(copy.deepcopy(_event_section(module, "newkirk", "NEWKIRK_CONFIG")))
+    newkirk_config.update(
+        copy.deepcopy(_event_section(module, "newkirk", "NEWKIRK_CONFIG"))
+    )
     return user_config, newkirk_config
 
 
 def load_aia_radio_hmi_user_config(config_name: str | None = None):
     """Load AIA/HMI/radio overlay config from a config module."""
     module = load_radio_config_module(config_name)
-    config = copy.deepcopy(getattr(module, "AIA_RADIO_HMI_CONFIG", {}) or {})
-    if config:
-        return config
-    if (config_name or DEFAULT_CONFIG_NAME).strip() == DEFAULT_CONFIG_NAME:
-        fallback = load_radio_config_module(DEFAULT_AIA_CONFIG_NAME)
-        return copy.deepcopy(getattr(fallback, "AIA_RADIO_HMI_CONFIG", {}) or {})
-    return {}
+    return copy.deepcopy(
+        _event_section(module, "aia_radio_hmi", "AIA_RADIO_HMI_CONFIG")
+    )
 
 
 def load_newkirk_spatial_config(config_name: str | None = None):
     """Load optional illustrative plane-of-sky projection config."""
     module = load_radio_config_module(config_name)
     config = copy.deepcopy(DEFAULT_NEWKIRK_SPATIAL_CONFIG)
-    config.update(copy.deepcopy(_event_section(module, "newkirk_spatial", "NEWKIRK_SPATIAL_CONFIG")))
+    config.update(
+        copy.deepcopy(
+            _event_section(module, "newkirk_spatial", "NEWKIRK_SPATIAL_CONFIG")
+        )
+    )
     return config
 
 
@@ -186,7 +187,11 @@ def load_newkirk_height_comparison_config(config_name: str | None = None):
     module = load_radio_config_module(config_name)
     config = copy.deepcopy(DEFAULT_NEWKIRK_HEIGHT_COMPARISON_CONFIG)
     config.update(
-        copy.deepcopy(_event_section(module, "newkirk_height_comparison", "NEWKIRK_HEIGHT_COMPARISON_CONFIG"))
+        copy.deepcopy(
+            _event_section(
+                module, "newkirk_height_comparison", "NEWKIRK_HEIGHT_COMPARISON_CONFIG"
+            )
+        )
     )
     return config
 
@@ -196,7 +201,11 @@ def load_drift_selection_product_config(config_name: str | None = None):
     module = load_radio_config_module(config_name)
     config = copy.deepcopy(DEFAULT_DRIFT_SELECTION_PRODUCT_CONFIG)
     config.update(
-        copy.deepcopy(_event_section(module, "drift_selection_products", "DRIFT_SELECTION_PRODUCT_CONFIG"))
+        copy.deepcopy(
+            _event_section(
+                module, "drift_selection_products", "DRIFT_SELECTION_PRODUCT_CONFIG"
+            )
+        )
     )
     return config
 
@@ -208,7 +217,11 @@ def load_radio_diagnostic_presentation_config(config_name: str | None = None):
     config = copy.deepcopy(DEFAULT_RADIO_DIAGNOSTIC_PRESENTATION_CONFIG)
     config.update(
         copy.deepcopy(
-            _event_section(module, "diagnostic_presentation", "RADIO_DIAGNOSTIC_PRESENTATION_CONFIG")
+            _event_section(
+                module,
+                "diagnostic_presentation",
+                "RADIO_DIAGNOSTIC_PRESENTATION_CONFIG",
+            )
         )
     )
     if not config.get("comparison_frequency_mhz"):

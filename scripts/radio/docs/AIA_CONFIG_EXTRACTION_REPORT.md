@@ -6,15 +6,13 @@ AIA/HMI/radio overlay parameters were extracted from the default values in:
 
 - `scripts/radio/legacy/sdo_aia_radio_hmi_overlay.py::Config`
 
-into:
-
-- `scripts/radio/configs/aia_radio_hmi_20250124_config.py::AIA_RADIO_HMI_CONFIG`
-
-The 2025-01-24 event config also re-exports this overlay config from:
+into the event config:
 
 - `scripts/radio/configs/radio_20250124_config.py`
 
 so the existing default `--config radio_20250124_config` works for the AIA entrypoint.
+Later event configs should keep their own `AIA_RADIO_HMI_CONFIG` block in the
+same file as `USER_CONFIG`.
 
 ## Extracted Parameter Groups
 
@@ -57,17 +55,17 @@ Supported examples:
 
 ```powershell
 python scripts\radio\run_aia_radio_hmi_overlay.py --config radio_20250124_config
-python scripts\radio\run_aia_radio_hmi_overlay.py --config aia_radio_hmi_20250124_config
-python scripts\radio\run_aia_radio_hmi_overlay.py --config scripts.radio.configs.aia_radio_hmi_20250124_config
+python scripts\radio\run_aia_radio_hmi_overlay.py --config radio_20250503_config
 ```
 
 ## User Edit Target
 
-For AIA/HMI/radio overlay work, edit:
+For AIA/HMI/radio overlay work, edit the relevant event config:
 
-- `scripts/radio/configs/aia_radio_hmi_20250124_config.py`
+- `scripts/radio/configs/radio_20250124_config.py`
+- `scripts/radio/configs/radio_20250503_config.py`
 
-Common edit locations in that file:
+Common edit locations in the `AIA_RADIO_HMI_CONFIG` block:
 
 - AIA file path: `AIA_RADIO_HMI_CONFIG["paths"]["aia_base_dir"]`
 - HMI file path: `AIA_RADIO_HMI_CONFIG["paths"]["hmi_base_dir"]`
@@ -77,15 +75,12 @@ Common edit locations in that file:
   and `AIA_RADIO_HMI_CONFIG["wcs_reproject"]["roi_top_right"]`
 - output path: `AIA_RADIO_HMI_CONFIG["output"]["output_dir"]`
 
-For shared event use, `scripts/radio/configs/radio_20250124_config.py` re-exports
-the same `AIA_RADIO_HMI_CONFIG`.
-
 ## Verification Notes
 
 - `compileall scripts\radio` was run with the bundled Codex Python because
   `python` is not on PATH in the current PowerShell environment.
-- AIA config loader checks were run for both `radio_20250124_config` and
-  `aia_radio_hmi_20250124_config`.
+- AIA config loader checks were run for event config modules such as
+  `radio_20250124_config`.
 - The requested config loading checks passed: `load_radio_user_config` returned
   `mode=multi_band` and `multipliers=[1, 2, 4]`; `load_aia_radio_hmi_user_config`
   returned a `dict` with `aia.wavelength=171`.

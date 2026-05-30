@@ -4,8 +4,8 @@ import math
 import tempfile
 from pathlib import Path
 
-from matplotlib.figure import Figure
 import pandas as pd
+from matplotlib.figure import Figure
 
 import scripts.radio.core.radio_frequency_priority_diagnostics as diagnostics
 from scripts.radio.configs import (
@@ -15,11 +15,10 @@ from scripts.radio.configs import (
 )
 from scripts.radio.core.radio_frequency_priority_diagnostics import (
     apply_frequency_priority_drift_matching,
-    build_selected_band_newkirk_height_speed_table,
     build_frequency_priority_summary,
     build_newkirk_physical_consistency_report,
+    build_selected_band_newkirk_height_speed_table,
     format_newkirk_case_label,
-    model_label,
     plot_event_gaussian_newkirk_height_comparison,
     plot_event_newkirk_speed_frequency,
     plot_frequency_priority_summary,
@@ -40,6 +39,7 @@ def test_config_uses_gaussian_multiband_frequencies():
 
 def test_event_config_is_single_source_for_legacy_exports():
     module = load_radio_config_module("radio_20250124_config")
+    legacy_aia_module = load_radio_config_module("aia_radio_hmi_20250124_config")
     user_config, newkirk_config = load_radio_user_config("radio_20250124_config")
     presentation = load_radio_diagnostic_presentation_config("radio_20250124_config")
 
@@ -50,15 +50,25 @@ def test_event_config_is_single_source_for_legacy_exports():
         "drift_selection_products",
         "diagnostic_presentation",
     }
+    assert legacy_aia_module.AIA_RADIO_HMI_CONFIG is module.AIA_RADIO_HMI_CONFIG
     assert module.USER_CONFIG == module.EVENT_CONFIG["user"]
     assert module.NEWKIRK_CONFIG == module.EVENT_CONFIG["newkirk"]
     assert user_config == module.EVENT_CONFIG["user"]
     assert newkirk_config["solar_radius_arcsec"] == 959.63
     assert presentation["enable_static_summary"] is False
     assert presentation["enable_html_dashboard"] is False
-    assert presentation["event_height_comparison_name"] == "event_gaussian_newkirk_height_comparison.png"
-    assert presentation["event_speed_frequency_name"] == "event_newkirk_speed_frequency_scatter.png"
-    assert presentation["selected_band_newkirk_table_name"] == "event_selected_band_newkirk_table.csv"
+    assert (
+        presentation["event_height_comparison_name"]
+        == "event_gaussian_newkirk_height_comparison.png"
+    )
+    assert (
+        presentation["event_speed_frequency_name"]
+        == "event_newkirk_speed_frequency_scatter.png"
+    )
+    assert (
+        presentation["selected_band_newkirk_table_name"]
+        == "event_selected_band_newkirk_table.csv"
+    )
 
 
 def test_summary_uses_only_configured_gaussian_frequency_bands():
@@ -221,7 +231,9 @@ def test_static_summary_and_dashboard_are_written_without_plotly():
         assert summary_png.exists()
         assert html_result["status"] == "saved"
         assert dashboard_html.exists()
-        assert "Frequency-Priority Dashboard" in dashboard_html.read_text(encoding="utf-8")
+        assert "Frequency-Priority Dashboard" in dashboard_html.read_text(
+            encoding="utf-8"
+        )
 
 
 def test_center_facets_accept_radio_compact_time_strings():
@@ -314,7 +326,9 @@ def test_selected_band_newkirk_table_has_speed_for_matched_drift_and_status_for_
     unmatched = out[out["frequency_mhz"].eq(238.0)].iloc[0]
     assert matched["drift_label"] == "drift_001"
     assert math.isfinite(matched["newkirk_speed_km_s"])
-    assert matched["newkirk_speed_c"] == pytest_approx(matched["newkirk_speed_km_s"] / 299792.458)
+    assert matched["newkirk_speed_c"] == pytest_approx(
+        matched["newkirk_speed_km_s"] / 299792.458
+    )
     assert matched["effective_density_factor"] == pytest_approx(8.0)
     assert matched["newkirk_assumption_label"] == "2x Newkirk, H=2, N*s^2=8"
     assert matched["speed_status"] == "ok"
@@ -479,14 +493,14 @@ def test_event_speed_frequency_marks_unmatched_frequency_and_pads_labels(monkeyp
     assert "harmonic" in legend.get_title().get_text()
     assert "H=2" in legend.get_title().get_text()
     assert "N*s^2=8" in legend.get_title().get_text()
-    assert any("drift_001, df/dt=-25.17 MHz/s" in text.get_text() for text in legend.get_texts())
+    assert any(
+        "drift_001, df/dt=-25.17 MHz/s" in text.get_text()
+        for text in legend.get_texts()
+    )
 
 
 def test_newkirk_case_label_describes_density_and_emission_mode():
-    assert (
-        format_newkirk_case_label(2, 2)
-        == "2x Newkirk / harmonic (H=2), N*s^2=8"
-    )
+    assert format_newkirk_case_label(2, 2) == "2x Newkirk / harmonic (H=2), N*s^2=8"
     assert (
         format_newkirk_case_label(1, 1, compact=True)
         == "1x Newkirk\nfundamental H=1\nN*s^2=1"
@@ -518,7 +532,10 @@ def test_drift_speed_heatmap_labels_models_and_drift_rates(monkeypatch):
     ax = captured["ax"]
     xlabels = [label.get_text() for label in ax.get_xticklabels()]
     ylabels = [label.get_text() for label in ax.get_yticklabels()]
-    assert any("2x Newkirk" in label and "harmonic H=2" in label and "N*s^2=8" in label for label in xlabels)
+    assert any(
+        "2x Newkirk" in label and "harmonic H=2" in label and "N*s^2=8" in label
+        for label in xlabels
+    )
     assert any("drift_001\n-25.17 MHz/s" == label for label in ylabels)
 
 
@@ -559,10 +576,20 @@ def test_physical_consistency_report_summarizes_speed_height_and_invalid_points(
     assert "Speed range summary" in report
     assert "plausible type III / spike-associated exciter range" in report
     assert "Invalid Gaussian points summary" in report
-    assert "model-inferred exciter speeds rather than direct radio source bulk motions" in report
+    assert (
+        "model-inferred exciter speeds rather than direct radio source bulk motions"
+        in report
+    )
 
 
-def _height_row(freq, gaussian_height, newkirk_height, multiplier, harmonic, time="2025-01-24T04:48:40"):
+def _height_row(
+    freq,
+    gaussian_height,
+    newkirk_height,
+    multiplier,
+    harmonic,
+    time="2025-01-24T04:48:40",
+):
     return {
         "time": time,
         "frequency_mhz": float(freq),
@@ -595,6 +622,7 @@ def pytest_approx(value):
     try:
         import pytest
     except ModuleNotFoundError:
+
         class Approx:
             def __eq__(self, other):
                 return math.isclose(other, value, rel_tol=1e-12, abs_tol=1e-12)

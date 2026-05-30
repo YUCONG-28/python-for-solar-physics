@@ -1,6 +1,14 @@
 ﻿# 项目只读审计报告
 
 生成日期：2026-05-22
+
+> Current note (2026-05-30): this document is a historical architecture audit.
+> The current README-facing AIA entrypoint is
+> `scripts/aia_hmi/run_aia_euv_processor.py`, with
+> `scripts/aia_hmi/sdo_aia_euv_processor.py` kept as a compatibility wrapper.
+> The current tracked file list is authoritative in `docs/script_index.md`.
+> Older rows below may mention pre-cleanup examples or scripts that have since
+> been archived or removed.
 审计范围：只读扫描当前仓库；未修改、删除、移动、重命名任何核心代码。仅新增本报告文件。
 
 ## 1. 项目总览

@@ -14,7 +14,6 @@ from .radio_newkirk_extrapolation import (
 )
 from .radio_newkirk_spatial import classify_source_type
 
-
 DEFAULT_SELECTED_MODELS = [
     {"multiplier": 1.0, "harmonic": 1},
     {"multiplier": 1.0, "harmonic": 2},
@@ -110,10 +109,14 @@ def build_gaussian_newkirk_height_table(gaussian_df, config):
             projected["height_valid"] = False
             projected["height_invalid_reason"] = "invalid_gaussian_fit"
             projected["gaussian_projected_height_valid"] = False
-            projected["gaussian_projected_height_reason"] = "gaussian_fit_or_coordinate_invalid"
+            projected["gaussian_projected_height_reason"] = (
+                "gaussian_fit_or_coordinate_invalid"
+            )
 
         for model in _selected_models(cfg):
-            multiplier = float(model.get("multiplier", model.get("newkirk_multiplier", 1.0)))
+            multiplier = float(
+                model.get("multiplier", model.get("newkirk_multiplier", 1.0))
+            )
             harmonic = model.get("harmonic", 1)
             effective_factor = effective_density_factor(multiplier, harmonic)
             density = _safe_physics_value(
@@ -157,19 +160,27 @@ def build_gaussian_newkirk_height_table(gaussian_df, config):
                     "solar_radius_arcsec": solar_radius,
                     "gaussian_rho_rsun": projected["gaussian_rho_rsun"],
                     "gaussian_height_rsun": projected["gaussian_height_rsun"],
-                    "gaussian_projected_height_valid": projected["gaussian_projected_height_valid"],
-                    "gaussian_projected_height_reason": projected["gaussian_projected_height_reason"],
+                    "gaussian_projected_height_valid": projected[
+                        "gaussian_projected_height_valid"
+                    ],
+                    "gaussian_projected_height_reason": projected[
+                        "gaussian_projected_height_reason"
+                    ],
                     "newkirk_multiplier": multiplier,
                     "harmonic": harmonic,
                     "density_multiplier": multiplier,
                     "emission_harmonic": harmonic,
                     "effective_density_factor": effective_factor,
-                    "newkirk_assumption_label": newkirk_assumption_label(multiplier, harmonic),
+                    "newkirk_assumption_label": newkirk_assumption_label(
+                        multiplier, harmonic
+                    ),
                     "electron_density_cm3": density,
                     "newkirk_radius_rsun": radius,
                     "newkirk_height_rsun": newkirk_height,
                     "height_residual_rsun": residual,
-                    "height_residual_arcsec": residual * solar_radius if np.isfinite(residual) else np.nan,
+                    "height_residual_arcsec": (
+                        residual * solar_radius if np.isfinite(residual) else np.nan
+                    ),
                     "height_ratio_gauss_to_newkirk": ratio,
                     "gaussian_fit_success": gaussian_fit_success,
                     "gaussian_quality_flag": str(row.get("quality_flag", "")),
@@ -224,8 +235,12 @@ def build_gaussian_newkirk_height_summary_table(height_df, config=None):
         }
         if not valid_heights.empty:
             row["gaussian_projected_height_median_rsun"] = float(valid_heights.median())
-            row["gaussian_projected_height_q25_rsun"] = float(valid_heights.quantile(0.25))
-            row["gaussian_projected_height_q75_rsun"] = float(valid_heights.quantile(0.75))
+            row["gaussian_projected_height_q25_rsun"] = float(
+                valid_heights.quantile(0.25)
+            )
+            row["gaussian_projected_height_q75_rsun"] = float(
+                valid_heights.quantile(0.75)
+            )
 
         for multiplier, harmonic in _canonical_assumptions():
             key = _assumption_key(multiplier, harmonic)
@@ -273,7 +288,9 @@ def _summary_frequencies(df, config):
 def _height_for_assumption(df, freq, multiplier, harmonic):
     data = df[
         pd.to_numeric(df.get("frequency_mhz"), errors="coerce").eq(float(freq))
-        & pd.to_numeric(df.get("newkirk_multiplier"), errors="coerce").eq(float(multiplier))
+        & pd.to_numeric(df.get("newkirk_multiplier"), errors="coerce").eq(
+            float(multiplier)
+        )
         & pd.to_numeric(df.get("harmonic"), errors="coerce").eq(float(harmonic))
     ]
     values = pd.to_numeric(data.get("newkirk_height_rsun"), errors="coerce").dropna()
@@ -305,7 +322,9 @@ def _selected_models(config):
             continue
         normalized.append(
             {
-                "multiplier": float(model.get("multiplier", model.get("newkirk_multiplier", 1.0))),
+                "multiplier": float(
+                    model.get("multiplier", model.get("newkirk_multiplier", 1.0))
+                ),
                 "harmonic": model.get("harmonic", 1),
             }
         )

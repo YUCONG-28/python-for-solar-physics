@@ -63,7 +63,7 @@ def main(config_name: str | None = None):
     args = _parse_args() if config_name is None else None
     selected_config = config_name or args.config
     user_config, newkirk_cfg = load_radio_user_config(selected_config)
-    aia_config = load_aia_radio_hmi_user_config(selected_config)
+    _aia_config = load_aia_radio_hmi_user_config(selected_config)
     newkirk_height_cfg = load_newkirk_height_comparison_config(selected_config)
     newkirk_spatial_cfg = load_newkirk_spatial_config(selected_config)
     drift_product_cfg = load_drift_selection_product_config(selected_config)
@@ -167,8 +167,8 @@ def _run_newkirk_height_comparison(
     pipeline_cfg: dict | None = None,
 ) -> None:
     from scripts.radio.core.radio_height_comparison import (
-        build_gaussian_newkirk_height_table,
         build_gaussian_newkirk_height_summary_table,
+        build_gaussian_newkirk_height_table,
     )
     from scripts.radio.core.radio_height_plots import (
         plot_gaussian_vs_newkirk_height_frequency,
@@ -191,7 +191,9 @@ def _run_newkirk_height_comparison(
         if key in presentation and key not in cfg:
             cfg[key] = presentation[key]
     if cfg.get("solar_radius_arcsec") is None:
-        cfg["solar_radius_arcsec"] = float(newkirk_cfg.get("solar_radius_arcsec", 959.63))
+        cfg["solar_radius_arcsec"] = float(
+            newkirk_cfg.get("solar_radius_arcsec", 959.63)
+        )
     if drift_df is not None and not drift_df.empty:
         cfg["drift_selections"] = drift_df.to_dict("records")
 
@@ -209,7 +211,11 @@ def _run_newkirk_height_comparison(
     height_summary_df.to_csv(table_path, index=False)
     print(f"[HeightComparison] summary table saved: {table_path}")
 
-    skipped_rows = int((~height_df["height_valid"].map(_truthy)).sum()) if not height_df.empty else 0
+    skipped_rows = (
+        int((~height_df["height_valid"].map(_truthy)).sum())
+        if not height_df.empty
+        else 0
+    )
     skipped_reasons = summarize_invalid_reasons(
         height_df, "height_valid", "height_invalid_reason"
     )
@@ -224,7 +230,9 @@ def _run_newkirk_height_comparison(
         if result.get("status") == "saved":
             print(f"[Newkirk Height] frequency plot saved: {path}")
         else:
-            print(f"[Newkirk Height] frequency plot skipped: {result.get('reason', 'unknown')}")
+            print(
+                f"[Newkirk Height] frequency plot skipped: {result.get('reason', 'unknown')}"
+            )
     if cfg.get("plot_height_time", True):
         path = analysis_dir / cfg.get(
             "height_time_plot_name", "gaussian_vs_newkirk_height_time.png"
@@ -233,7 +241,9 @@ def _run_newkirk_height_comparison(
         if result.get("status") == "saved":
             print(f"[Newkirk Height] time plot saved: {path}")
         else:
-            print(f"[Newkirk Height] time plot skipped: {result.get('reason', 'unknown')}")
+            print(
+                f"[Newkirk Height] time plot skipped: {result.get('reason', 'unknown')}"
+            )
     if cfg.get("plot_residual_frequency", True):
         path = analysis_dir / cfg.get(
             "height_residual_plot_name",
@@ -243,9 +253,13 @@ def _run_newkirk_height_comparison(
         if result.get("status") == "saved":
             print(f"[Newkirk Height] residual plot saved: {path}")
             if result.get("summary_csv"):
-                print(f"[Newkirk Height] residual summary saved: {result['summary_csv']}")
+                print(
+                    f"[Newkirk Height] residual summary saved: {result['summary_csv']}"
+                )
         else:
-            print(f"[Newkirk Height] residual plot skipped: {result.get('reason', 'unknown')}")
+            print(
+                f"[Newkirk Height] residual plot skipped: {result.get('reason', 'unknown')}"
+            )
     if presentation.get("enable", True):
         _run_frequency_priority_diagnostics(
             height_df,
@@ -275,8 +289,8 @@ def _run_frequency_priority_diagnostics(
         plot_gaussian_center_by_frequency_facets,
         plot_gaussian_center_trajectory_by_frequency,
         plot_height_time_by_frequency_facets,
-        save_newkirk_physical_consistency_report,
         save_frequency_priority_summary_csv,
+        save_newkirk_physical_consistency_report,
         write_frequency_priority_dashboard,
     )
     from scripts.radio.core.radio_height_comparison import (
@@ -295,11 +309,11 @@ def _run_frequency_priority_diagnostics(
         "selected_band_newkirk_table_name",
         "event_selected_band_newkirk_table.csv",
     )
-    selected_band_table = build_selected_band_newkirk_height_speed_table(
-        drift_df, cfg
-    )
+    selected_band_table = build_selected_band_newkirk_height_speed_table(drift_df, cfg)
     selected_band_table.to_csv(selected_band_path, index=False)
-    print(f"[Frequency Priority] selected-band Newkirk table saved: {selected_band_path}")
+    print(
+        f"[Frequency Priority] selected-band Newkirk table saved: {selected_band_path}"
+    )
     height_summary_table = build_gaussian_newkirk_height_summary_table(height_df, cfg)
     report_path = analysis_dir / cfg.get(
         "physical_consistency_report_name",
@@ -343,7 +357,8 @@ def _run_frequency_priority_diagnostics(
         debug_outputs.append(
             (
                 "summary panel",
-                analysis_dir / cfg.get(
+                analysis_dir
+                / cfg.get(
                     "summary_panel_name",
                     "radio_newkirk_frequency_priority_summary.png",
                 ),
@@ -356,7 +371,8 @@ def _run_frequency_priority_diagnostics(
         debug_outputs.append(
             (
                 "center facets",
-                analysis_dir / cfg.get(
+                analysis_dir
+                / cfg.get(
                     "center_facets_name", "gaussian_center_by_frequency_facets.png"
                 ),
                 lambda path: plot_gaussian_center_by_frequency_facets(
@@ -368,13 +384,12 @@ def _run_frequency_priority_diagnostics(
         debug_outputs.append(
             (
                 "height-time facets",
-                analysis_dir / cfg.get(
+                analysis_dir
+                / cfg.get(
                     "height_time_facets_name",
                     "height_time_by_frequency_facets.png",
                 ),
-                lambda path: plot_height_time_by_frequency_facets(
-                    height_df, path, cfg
-                ),
+                lambda path: plot_height_time_by_frequency_facets(height_df, path, cfg),
             )
         )
     for label, path, func in debug_outputs:
@@ -388,7 +403,11 @@ def _run_frequency_priority_diagnostics(
             )
     if cfg.get("enable_debug_drift_band_matching", False):
         _run_drift_band_matching_plot(
-            drift_df, analysis_dir, cfg, pipeline_cfg, plot_drift_frequency_band_matching
+            drift_df,
+            analysis_dir,
+            cfg,
+            pipeline_cfg,
+            plot_drift_frequency_band_matching,
         )
     if cfg.get("enable_debug_trajectory_by_frequency", False):
         trajectory_result = plot_gaussian_center_trajectory_by_frequency(
@@ -434,12 +453,16 @@ def _run_drift_band_matching_plot(
         print(f"[Frequency Priority] drift band matching skipped: {exc}")
         return
     if cache is None:
-        print("[Frequency Priority] drift band matching skipped: missing_spectrogram_cache")
+        print(
+            "[Frequency Priority] drift band matching skipped: missing_spectrogram_cache"
+        )
         return
     path = analysis_dir / cfg.get(
         "drift_band_matching_name", "drift_frequency_band_matching.png"
     )
-    result = plot_func(cache.data, cache.time_datetimes, cache.freq, drift_df, path, cfg)
+    result = plot_func(
+        cache.data, cache.time_datetimes, cache.freq, drift_df, path, cfg
+    )
     if result.get("status") == "saved":
         print(f"[Frequency Priority] drift band matching saved: {path}")
     else:
@@ -463,7 +486,9 @@ def _run_newkirk_spatial_product(
 
     cfg = dict(spatial_cfg or {})
     if cfg.get("solar_radius_arcsec") is None:
-        cfg["solar_radius_arcsec"] = float(newkirk_cfg.get("solar_radius_arcsec", 959.63))
+        cfg["solar_radius_arcsec"] = float(
+            newkirk_cfg.get("solar_radius_arcsec", 959.63)
+        )
     cfg.setdefault("harmonic", (newkirk_cfg.get("harmonics") or [1])[0])
     cfg.setdefault("newkirk_multiplier", (newkirk_cfg.get("multipliers") or [1])[0])
 
@@ -475,7 +500,11 @@ def _run_newkirk_spatial_product(
     spatial_df.to_csv(csv_path, index=False)
     print(f"[Newkirk Spatial] comparison table saved: {csv_path}")
 
-    skipped_rows = int((~spatial_df["geometry_valid"].map(_truthy)).sum()) if not spatial_df.empty else 0
+    skipped_rows = (
+        int((~spatial_df["geometry_valid"].map(_truthy)).sum())
+        if not spatial_df.empty
+        else 0
+    )
     skipped_reasons = summarize_invalid_reasons(
         spatial_df, "geometry_valid", "geometry_reason"
     )
@@ -558,7 +587,9 @@ def _load_or_create_drift_diagnostics(
     csv_path = Path(legacy._drift_output_path(cfg, "drift_rate_diagnostics_csv"))
     if csv_path.exists():
         drift_df = pd.read_csv(csv_path)
-        _save_drift_selection_products_from_cache(cfg, product_cfg, drift_df, csv_path.parent)
+        _save_drift_selection_products_from_cache(
+            cfg, product_cfg, drift_df, csv_path.parent
+        )
         return drift_df
     if not cfg.get("enable_drift_rate_overlay", False):
         return pd.DataFrame()
@@ -819,15 +850,25 @@ def _plot_drift_speed_comparison(df: pd.DataFrame, path: Path) -> None:
             for _, row in data.drop_duplicates(subset=["newkirk_case"]).iterrows()
         }
         drift_rates = (
-            data.assign(drift_rate_num=pd.to_numeric(data.get("drift_rate_mhz_s"), errors="coerce"))
+            data.assign(
+                drift_rate_num=pd.to_numeric(
+                    data.get("drift_rate_mhz_s"), errors="coerce"
+                )
+            )
             .drop_duplicates(subset=["label"])
             .set_index("label")["drift_rate_num"]
             .to_dict()
         )
-        speed_col = "newkirk_speed_km_s" if "newkirk_speed_km_s" in data.columns else "speed_km_s"
+        speed_col = (
+            "newkirk_speed_km_s"
+            if "newkirk_speed_km_s" in data.columns
+            else "speed_km_s"
+        )
         data["speed_km_s_num"] = pd.to_numeric(data[speed_col], errors="coerce")
         if "newkirk_speed_c" in data.columns:
-            data["speed_c_num"] = pd.to_numeric(data["newkirk_speed_c"], errors="coerce")
+            data["speed_c_num"] = pd.to_numeric(
+                data["newkirk_speed_c"], errors="coerce"
+            )
         else:
             data["speed_c_num"] = data["speed_km_s_num"] / 299792.458
         heatmap = data.pivot_table(
@@ -862,9 +903,11 @@ def _plot_drift_speed_comparison(df: pd.DataFrame, path: Path) -> None:
             ax.set_yticks(np.arange(len(heatmap.index)))
             ax.set_yticklabels(
                 [
-                    f"{label}\n{drift_rates[label]:.2f} MHz/s"
-                    if label in drift_rates and np.isfinite(drift_rates[label])
-                    else label
+                    (
+                        f"{label}\n{drift_rates[label]:.2f} MHz/s"
+                        if label in drift_rates and np.isfinite(drift_rates[label])
+                        else label
+                    )
                     for label in heatmap.index
                 ]
             )
@@ -876,7 +919,11 @@ def _plot_drift_speed_comparison(df: pd.DataFrame, path: Path) -> None:
                         ax.text(
                             x_idx,
                             y_idx,
-                            f"{value:.0f}\n{c_value:.2f}c" if np.isfinite(c_value) else f"{value:.0f}",
+                            (
+                                f"{value:.0f}\n{c_value:.2f}c"
+                                if np.isfinite(c_value)
+                                else f"{value:.0f}"
+                            ),
                             ha="center",
                             va="center",
                             color="white" if value > finite_mean else "black",
@@ -931,7 +978,9 @@ def _prepare_newkirk_spatial_dataframe(
     data["model_label"] = [
         _format_model_label(multiplier, harmonic)
         for multiplier, harmonic in zip(
-            data["newkirk_multiplier_num"], data["newkirk_harmonic_num"]
+            data["newkirk_multiplier_num"],
+            data["newkirk_harmonic_num"],
+            strict=False,
         )
     ]
     data["newkirk_geometry_valid_bool"] = data["newkirk_geometry_valid"].map(_truthy)
@@ -1121,7 +1170,7 @@ def _plot_newkirk_spatial_overlay_per_model(
 ) -> None:
     fig, axes = plt.subplots(2, 3, figsize=(12, 8), dpi=180, sharex=True, sharey=True)
     models = _ordered_model_labels(df)
-    for ax, label in zip(axes.ravel(), models):
+    for ax, label in zip(axes.ravel(), models, strict=False):
         _draw_aia_or_solar_context(ax, df, aia_config, solar_radius_arcsec)
         group = df[
             (df["model_label"] == label)
@@ -1213,7 +1262,9 @@ def _draw_aia_or_solar_context(
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
     ax.set_aspect("equal", adjustable="box")
-    ax.grid(True, linestyle=":", alpha=0.25, color="white" if image is not None else "0.6")
+    ax.grid(
+        True, linestyle=":", alpha=0.25, color="white" if image is not None else "0.6"
+    )
 
 
 def _load_aia171_context(aia_config: dict | None):
@@ -1260,8 +1311,12 @@ def _load_aia171_context(aia_config: dict | None):
         xmin, xmax = _pixel_to_arcsec([0, nx - 1], header, axis=1)
         ymin, ymax = _pixel_to_arcsec([0, ny - 1], header, axis=2)
 
-    x0, x1 = _arcsec_to_pixel_bounds(xmin, xmax, header, axis=1, max_size=image.shape[1])
-    y0, y1 = _arcsec_to_pixel_bounds(ymin, ymax, header, axis=2, max_size=image.shape[0])
+    x0, x1 = _arcsec_to_pixel_bounds(
+        xmin, xmax, header, axis=1, max_size=image.shape[1]
+    )
+    y0, y1 = _arcsec_to_pixel_bounds(
+        ymin, ymax, header, axis=2, max_size=image.shape[0]
+    )
     crop = image[y0:y1, x0:x1]
     if crop.size == 0:
         return None, None

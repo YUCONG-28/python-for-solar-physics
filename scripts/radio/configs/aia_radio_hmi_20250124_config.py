@@ -1,115 +1,12 @@
-"""User-editable AIA/HMI/radio overlay config for the 2025-01-24 event."""
+"""Compatibility config for the 2025-01-24 AIA/HMI/radio overlay.
 
-AIA_RADIO_HMI_CONFIG = {
-    "paths": {
-        "radio_base_dir": r"D:\spike_topping_type_III\2025\20250124\RS_0447-0450",
-        "aia_base_dir": r"D:\spike_topping_type_III\2025\20250124\SDO\AIA\171",
-        "hmi_base_dir": r"D:\spike_topping_type_III\2025\20250124\SDO\HMI\1",
-        "output_dir": r"D:\spike_topping_type_III\2025\20250124\test",
-    },
-    "aia": {
-        "wavelength": "171",
-        "aia_wavelength": "171",
-        "aia_file_start_idx": 392,
-        "aia_file_end_idx": 396,
-        "aia_vmin": 16,
-        "aia_vmax": 6666,
-        "aia_cmap": "sdoaia171",
-    },
-    "hmi": {
-        "overlay_hmi": True,
-        "hmi_time_threshold": 24,
-        "hmi_threshold_gauss": 0.0,
-        "hmi_sigma": 2,
-        "hmi_levels_gauss": [100.0],
-    },
-    "radio": {
-        "selected_bands": [
-            "149MHz",
-            "164MHz",
-            "190MHz",
-            "205MHz",
-            "223MHz",
-            "238MHz",
-        ],
-        "polarization_mode": "RR+LL",
-        "combine_polarizations": True,
-        "rr_dir_suffix": "RR",
-        "ll_dir_suffix": "LL",
-        "weighted_average": False,
-        "rr_weight": 0.5,
-        "ll_weight": 0.5,
-        "time_tolerance_seconds": 0.01,
-        "radio_time_threshold": 6,
-        "max_radio_per_band": 28,
-        "radio_use_float32": True,
-        "use_radec_maps": True,
-    },
-    "wcs_reproject": {
-        "roi_bottom_left": [600, -800],
-        "roi_top_right": [1600, 200],
-        "use_radec_maps": True,
-    },
-    "gaussian": {
-        "enable_gaussian_overlay": True,
-        "draw_low_quality_gaussian_contours": False,
-        "fit_use_source_mask": True,
-        "fit_snr_threshold": 5.0,
-        "fit_grow_snr_threshold": 3.0,
-        "fit_peak_fraction_threshold": 0.40,
-        "fit_grow_peak_fraction_threshold": 0.22,
-        "fit_mask_target_min_pixels": 18,
-        "fit_mask_target_max_pixels": 260,
-        "fit_peak_fraction_threshold_min": 0.25,
-        "fit_peak_fraction_threshold_max": 0.62,
-        "fit_peak_fraction_threshold_step": 0.03,
-        "fit_min_mask_pixels": 12,
-        "fit_mask_dilation_pixels": 1,
-        "gaussian_fit_use_roi": True,
-        "gaussian_fit_roi_padding_pixels": 4,
-        "gaussian_fit_max_pixels": 400,
-        "gaussian_fit_normalize_data": True,
-        "gaussian_fit_fallback_to_moment": True,
-        "gaussian_fit_maxfev": 8000,
-        "gaussian_fit_verbose": False,
-        "fit_background_model": "constant",
-        "max_sigma_fraction": 0.18,
-        "max_fwhm_arcsec": 1800.0,
-        "max_center_peak_distance_arcsec": 300.0,
-        "gaussian_max_center_peak_distance_fraction_of_fwhm": 0.5,
-        "gaussian_valid_only_for_overlay": True,
-        "gaussian_valid_only_for_trajectory": True,
-        "gaussian_allow_moment_fallback_for_trajectory": False,
-        "save_gaussian_diagnostics": True,
-        "gaussian_diagnostics_csv": "aia_radio_gaussian_fit_diagnostics.csv",
-    },
-    "display": {
-        "show_radio_contours": False,
-        "contour_levels_peak": [0.90],
-        "contour_linewidths": [2.0],
-        "contour_alpha": 0.90,
-        "contour_smooth_sigma": 0,
-        "mark_radio_center": True,
-        "radio_center_marker": "x",
-        "radio_center_size": 50,
-        "radio_center_linewidth": 1.8,
-        "label_radio_center": False,
-        "band_colors_dict": {
-            "149.0MHz": ("dodgerblue", "navy"),
-            "164.0MHz": ("orange", "darkorange"),
-            "190.0MHz": ("crimson", "darkred"),
-            "205.0MHz": ("mediumorchid", "purple"),
-            "223.0MHz": ("gold", "goldenrod"),
-            "238.0MHz": ("teal", "darkslategray"),
-        },
-    },
-    "output": {
-        "output_dir": r"D:\spike_topping_type_III\2025\20250124\AIA_RS_HMI\test",
-        "save_figure": True,
-        "dpi": 300,
-    },
-    "runtime": {
-        "debug_mode": True,
-        "save_individual_pols": False,
-    },
-}
+The event configuration now lives with the main 2025-01-24 radio config. This
+module keeps the historical config name importable without duplicating
+event-specific science parameters.
+"""
+
+from __future__ import annotations
+
+from .radio_20250124_config import AIA_RADIO_HMI_CONFIG
+
+__all__ = ["AIA_RADIO_HMI_CONFIG"]

@@ -1,141 +1,65 @@
 # Project Optimization Plan
 
-生成日期：2026-05-22
+Last updated: 2026-05-30
 
-本计划基于 `PROJECT_OVERVIEW.md`，用于第一阶段项目整理。目标是让仓库更适合 GitHub 展示、README 维护和后续代码重构，同时不改变任何科研算法。
+This plan describes the remaining conservative optimization path for the
+project. It is scoped to structure, documentation, tests, and safe cleanup. It
+does not authorize changes to scientific algorithms, FITS/WCS behavior,
+plotting defaults, matching thresholds, output names, or local research
+products.
 
-## 1. 本轮优化目标
+## Current Completed Direction
 
-- 明确 README 和文档中的推荐主入口脚本。
-- 把核心工作流、工具脚本、legacy/experimental 脚本和示例脚本区分清楚。
-- 新增模块化配置模板，为后续集中配置做准备。
-- 明确 `docs/assets/` 的 README 展示资产策略。
-- 建立 legacy 与人工确认文件清单，避免误删重要历史参数、实验脚本或科研结果。
-- 继续保留所有已有文件，不移动、不重命名、不删除核心代码和高风险文件。
+- AIA/HMI now follows a radio-style phased structure with a recommended
+  `run_*.py` entrypoint, `core/`, `configs/`, and `docs/`.
+- The historical AIA EUV processor path is kept as a compatibility wrapper.
+- Current documentation now separates recommended guidance from historical
+  reports through `docs/README.md`.
+- Cleanup and retention decisions are documented in
+  `PROJECT_CLEANUP_REPORT.md`, `FINAL_CODE_RETENTION_AND_REMOVAL_PLAN.md`, and
+  `LEGACY_AND_REVIEW_FILES.md`.
+- Lightweight tests check current documentation paths, local Markdown links,
+  recommended AIA entrypoints, and common mojibake markers.
 
-## 2. 不修改的文件清单
+## High-Priority Next Work
 
-以下文件本轮不移动、不重命名、不删除；除非未来人工确认，否则不要自动处理：
+1. Verify AIA/HMI output parity on real FITS data before claiming full
+   scientific equivalence of the wrapper/core refactor.
+2. Add a CSO `run_*.py` wrapper only after confirming the current legacy
+   spectrogram entrypoint behavior.
+3. Keep radio config work separate from this cleanup unless the user explicitly
+   asks to include it.
+4. Continue documenting non-empty ignored local folders instead of deleting
+   them automatically.
 
-- `scripts/radio/sdo_aia_radio_hmi_overlay_bgcorrected.py`
-- `scripts/radio/spectrogram_drift_rate_manual_selection.json`
-- `HXR.png`
-- `SXR.png`
-- `SXR to HXR.png`
-- `SXR to HXR enhance.png`
-- `AIA.xlsx`
-- `CSO.xlsx`
-- `examples/radio_aia_hmi/*`
+## Medium-Priority Next Work
 
-本轮也不修改以下科研算法相关逻辑：
+1. Review `scripts/radio/docs/` reports for stale status language and mark
+   older reports as historical when needed.
+2. Add lightweight tests for any new wrapper introduced around legacy scripts.
+3. Improve `docs/script_index.md` coverage for public entrypoints when new
+   wrappers are added.
+4. Consider moving README-ready root images into `docs/assets/images/` only
+   after confirming their source and compression policy.
 
-- AIA/HMI/radio 坐标变换逻辑
-- WCS、extent、origin 处理逻辑
-- 高斯拟合数学模型
-- 频漂率计算公式
-- AIA 差分图计算公式
-- HMI/radio 时间匹配逻辑
+## Low-Priority Next Work
 
-## 3. 核心入口脚本清单
+1. Reduce duplication between old reports after the current documentation set is
+   stable.
+2. Add small example assets only when they are explicitly reviewed and safe for
+   Git.
+3. Continue improving comments and docs around legacy code without changing
+   scientific defaults.
 
-| Workflow | 推荐入口 |
-| --- | --- |
-| AIA 图像与差分 | `scripts/aia_hmi/sdo_aia_euv_processor.py` |
-| 射电源图、高斯拟合、频漂率 | `scripts/radio/radio_source_map_plot_gaussian_overlay.py` |
-| AIA + radio + HMI 叠加 | `scripts/radio/sdo_aia_radio_hmi_overlay.py` |
-| CSO 动态频谱 | `scripts/radio/cso_radio_spectrogram_plot.py` |
-| 高斯拟合工具 | `scripts/tools/gaussian_source_fitting.py` |
+## Validation Expectations
 
-核心包：
+For safe structural work, keep using:
 
-- `solar_toolkit/path_config.py`
-- `solar_toolkit/solar_analysis_utils.py`
-- `solar_toolkit/__init__.py`
+```powershell
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'; D:\miniforge3\envs\solarphysics_env\python.exe -m pytest -q --basetemp outputs\pytest-tmp-codex tests\test_project_docs_current_paths.py tests\test_aia_hmi_radio_style_structure.py tests\test_imports.py tests\test_aia_difference_wrappers.py tests\test_aia_hmi_fits_rename.py
+D:\miniforge3\envs\solarphysics_env\python.exe -m ruff check --no-cache scripts\aia_hmi tests\test_aia_hmi_radio_style_structure.py tests\test_project_docs_current_paths.py
+D:\miniforge3\envs\solarphysics_env\python.exe -m compileall -q scripts\aia_hmi tests
+```
 
-## 4. 可整理但暂不删除的 Legacy 文件清单
-
-| 文件 | 当前判断 |
-| --- | --- |
-| `scripts/aia_hmi/sdo_aia_base_difference.py` | 与 AIA 主处理器的差分功能重复，暂保留 |
-| `scripts/aia_hmi/sdo_aia_running_difference.py` | 与 AIA 主处理器的差分功能重复，暂保留 |
-| `scripts/aia_hmi/sdo_aia_multichannel_panel.py` | 与 AIA mosaic 功能部分重复，暂保留 |
-| `scripts/radio/radio_source_map_plot.py` | 射电源基础绘图入口，可能被高级高斯版覆盖，暂保留 |
-| `scripts/radio/cso_spectrogram_class.py` | CSO 读取/绘图工具类，与正式频谱脚本和 GUI 重复，暂保留 |
-| `scripts/radio/cso_radio_spectra_gui.py` | 可选 GUI/历史交互工具，依赖额外 GUI 包，暂保留 |
-| `examples/radio_aia_hmi/aia_radio_overlay_variant0_example.py` | 历史叠加示例，可能含复现参数，暂保留 |
-| `examples/radio_aia_hmi/aia_radio_overlay_variant1_example.py` | 历史叠加示例，可能含复现参数，暂保留 |
-
-详细人工确认表见 `docs/LEGACY_AND_REVIEW_FILES.md`。
-
-## 5. 配置集中化建议
-
-第一阶段只新增模板，不强制现有脚本读取这些文件。
-
-- `configs/aia.example.yaml`：AIA 波段、模式、差分、色标、输出路径。
-- `configs/radio.example.yaml`：射电频率、偏振、阈值、高斯拟合、输出路径。
-- `configs/cso.example.yaml`：CSO FITS、时间/频率范围、强度裁剪、下采样、频漂率开关。
-- `configs/overlay.example.yaml`：AIA/HMI/radio 路径、叠加波段、等值线、时间容差、WCS 保持策略。
-
-后续建议：
-
-1. 保留脚本内默认值作为 fallback。
-2. 先统一路径和输出目录，再统一科学参数。
-3. 对会影响科学结果的参数，例如 WCS/origin、时间匹配阈值和高斯质量阈值，增加测试和文档后再迁移。
-
-## 6. README 展示结构建议
-
-README 推荐顺序：
-
-1. 项目定位和功能摘要。
-2. 推荐主入口脚本。
-3. 输入数据与输出产品说明。
-4. 本地路径配置。
-5. 推荐运行顺序。
-6. Quick Start。
-7. Radio Gaussian and Drift-Rate Workflow。
-8. Verification。
-9. Data Policy。
-10. Citation and License。
-
-建议展示图：
-
-- AIA 单波段或 mosaic。
-- AIA running/base difference。
-- AIA/radio/HMI overlay。
-- CSO dynamic spectrogram。
-- Radio Gaussian fitting example。
-
-展示图应放入 `docs/assets/images/`；短视频放入 `docs/assets/videos/`。
-
-## 7. GitHub 上传前检查清单
-
-- 不上传真实 FITS、JP2、NetCDF、NPY/NPZ、HDF5 数据。
-- 不上传批量 PNG/JPG 输出目录。
-- 不上传 MP4/AVI/MOV/GIF/MKV 批量视频。
-- 不上传 `configs/paths.local.yaml` 或个人路径。
-- 确认根目录 PNG 是否要保留、压缩或迁入 `docs/assets/images/`。
-- 确认 `AIA.xlsx`、`CSO.xlsx` 是否为可公开数据。
-- 确认 `spectrogram_drift_rate_manual_selection.json` 是示例还是本地结果。
-- 运行轻量测试：`python -m pytest tests`。
-- 运行编译检查：`python -m compileall solar_toolkit scripts tests`。
-- 检查 `git status --short`，不要混入临时输出。
-
-## 8. 第二阶段可执行的重构计划
-
-高优先级：
-
-1. 为 radio FITS `extent/origin/WCS` 坐标转换建立公共函数和单元测试。
-2. 为 AIA/HMI/radio 时间匹配建立统一诊断输出。
-3. 统一高斯拟合实现和质量判据，避免多脚本结果不一致。
-
-中优先级：
-
-1. 将路径、输出目录和非敏感显示参数迁移到统一配置加载。
-2. 把重复的 CSO FITS 读取逻辑合并到公共模块。
-3. 给 legacy 脚本增加文档标识或迁入明确的 legacy/example 区域。
-
-低优先级：
-
-1. 清理乱码注释和过长脚本头部说明。
-2. 增加 README 示例图和缩略图。
-3. 为 `docs/assets/` 增加来源说明和压缩规范。
+These checks prove import, wrapper, documentation, and syntax consistency. They
+do not prove scientific output equivalence on real observations.
