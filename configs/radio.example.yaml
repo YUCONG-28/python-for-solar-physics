@@ -25,6 +25,13 @@ radio:
 
   gaussian:
     gaussian_overlay: true
+    gaussian_source_mode: single   # single or multi
+    multi_gaussian_source_count: null  # null = auto detect when mode is multi
+    multi_gaussian_max_sources: 3
+    multi_gaussian_min_peak_fraction: 0.30
+    multi_gaussian_min_peak_distance_pixels: 6
+    multi_gaussian_use_watershed: true
+    multi_gaussian_diagnostics_csv: radio_multi_gaussian_fit_diagnostics.csv
     draw_center: true
     draw_fwhm: true
     max_fwhm_arcsec: 1800

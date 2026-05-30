@@ -51,6 +51,19 @@ from solar_toolkit.path_config import load_script_config
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.radio.core.radio_gaussian_fit import (  # noqa: E402
+    fit_multiple_gaussians_on_radio_image as _fit_multiple_gaussians_on_radio_image,
+)
+from scripts.radio.core.radio_gaussian_fit import (  # noqa: E402
+    multi_gaussian_diagnostics_rows as _multi_gaussian_diagnostics_rows,
+)
+from scripts.radio.core.radio_gaussian_fit import (  # noqa: E402
+    overlay_multi_gaussian_fit_on_axis as _overlay_multi_gaussian_fit_on_axis,
+)
+from scripts.radio.core.radio_gaussian_fit import (  # noqa: E402
+    save_multi_gaussian_diagnostics_row as _save_multi_gaussian_diagnostics_row,
+)
+
 BoolArray = NDArray[np.bool_]
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.intp]
@@ -298,6 +311,14 @@ DEFAULT_CONFIG = {
     "gaussian_fit_verbose": False,
     "max_sigma_fraction": 0.18,
     "gaussian_per_band_params": {},
+    "gaussian_source_mode": "single",
+    "multi_gaussian_source_count": None,
+    "multi_gaussian_max_sources": 3,
+    "multi_gaussian_min_peak_fraction": 0.30,
+    "multi_gaussian_min_peak_distance_pixels": 6,
+    "multi_gaussian_use_watershed": True,
+    "multi_gaussian_diagnostics_csv": "radio_multi_gaussian_fit_diagnostics.csv",
+    "draw_multi_gaussian_labels": True,
     "skip_low_quality_fit": True,
     "save_gaussian_diagnostics": True,
     "gaussian_diagnostics_csv": "radio_gaussian_fit_diagnostics.csv",
@@ -402,6 +423,16 @@ def build_config(user_config, default_config):
         "gaussian_fit_roi_padding_pixels": "gaussian_fit_roi_padding_pixels",
         "gaussian_fit_max_pixels": "gaussian_fit_max_pixels",
         "gaussian_diagnostics_csv": "gaussian_diagnostics_csv",
+        "gaussian_source_mode": "gaussian_source_mode",
+        "multi_gaussian_source_count": "multi_gaussian_source_count",
+        "multi_gaussian_max_sources": "multi_gaussian_max_sources",
+        "multi_gaussian_min_peak_fraction": "multi_gaussian_min_peak_fraction",
+        "multi_gaussian_min_peak_distance_pixels": (
+            "multi_gaussian_min_peak_distance_pixels"
+        ),
+        "multi_gaussian_use_watershed": "multi_gaussian_use_watershed",
+        "multi_gaussian_diagnostics_csv": "multi_gaussian_diagnostics_csv",
+        "draw_multi_gaussian_labels": "draw_multi_gaussian_labels",
         "max_sigma_fraction": "max_sigma_fraction",
         "fit_background_model": "fit_background_model",
         "max_fwhm_arcsec": "max_fwhm_arcsec",
@@ -783,6 +814,10 @@ def background_enabled_for_fit(cfg: dict) -> bool:
 
 def background_workflow_enabled(cfg: dict) -> bool:
     return resolve_background_workflow(cfg) != "off"
+
+
+def _gaussian_multi_source_enabled(cfg: dict) -> bool:
+    return str(cfg.get("gaussian_source_mode", "single")).strip().lower() == "multi"
 
 
 def _background_disabled_diag(source_file=None):
@@ -6305,6 +6340,7 @@ def plot_single_band(
         fit_input_type = "raw"
 
     fit_result = None
+    multi_fit_result = None
     radio_fit_data = None
     if cfg.get("enable_gaussian_overlay", False):
         if gaussian_cfg.get("gaussian_fit_verbose", False):
@@ -6314,19 +6350,32 @@ def plot_single_band(
                 "with local baseline model"
             )
         radio_fit_data = fit_base_data
-        fit_result = fit_elliptical_gaussian_on_radio_image(
-            radio_fit_data,
-            extent=extent,
-            cfg=gaussian_cfg,
-            source_file=file_path,
-            background_map=background_map_for_mask,
-            rms_map=rms_map_for_mask,
-            fit_input_type=fit_input_type,
-            image_origin=image_origin,
-        )
-        _attach_raw_peak_center(
-            fit_result, img_data, extent, gaussian_cfg, image_origin
-        )
+        if _gaussian_multi_source_enabled(gaussian_cfg):
+            multi_fit_result = _fit_multiple_gaussians_on_radio_image(
+                radio_fit_data,
+                extent=extent,
+                cfg=gaussian_cfg,
+                source_file=file_path,
+                background_map=background_map_for_mask,
+                rms_map=rms_map_for_mask,
+                fit_input_type=fit_input_type,
+                image_origin=image_origin,
+            )
+            fit_result = multi_fit_result.primary_result
+        else:
+            fit_result = fit_elliptical_gaussian_on_radio_image(
+                radio_fit_data,
+                extent=extent,
+                cfg=gaussian_cfg,
+                source_file=file_path,
+                background_map=background_map_for_mask,
+                rms_map=rms_map_for_mask,
+                fit_input_type=fit_input_type,
+                image_origin=image_origin,
+            )
+            _attach_raw_peak_center(
+                fit_result, img_data, extent, gaussian_cfg, image_origin
+            )
 
     # 将偏振显示名称
     if polar_display == "RR":
@@ -6381,7 +6430,11 @@ def plot_single_band(
 
     im = ax.imshow(display_data, **im_kwargs)
     add_radio_coordinate_corner_debug(ax, extent, img_data.shape, image_origin, cfg)
-    if fit_result is not None:
+    if multi_fit_result is not None:
+        _overlay_multi_gaussian_fit_on_axis(
+            ax, multi_fit_result, extent, img_data.shape, gaussian_cfg
+        )
+    elif fit_result is not None:
         overlay_gaussian_fit_on_axis(
             ax, fit_result, extent, img_data.shape, gaussian_cfg
         )
@@ -6395,6 +6448,11 @@ def plot_single_band(
             output_dir,
             cfg,
         )
+        if multi_fit_result is not None:
+            for row in _multi_gaussian_diagnostics_rows(
+                multi_fit_result, gaussian_cfg, freq, time_str, polar_display, bg_diag
+            ):
+                _save_multi_gaussian_diagnostics_row(row, output_dir, cfg)
     if cfg.get("save_background_diagnostics", True) and background_workflow_enabled(
         cfg
     ):
@@ -7092,6 +7150,7 @@ def plot_multi_band_slot(
                 all_origins[idx],
             )
         if cfg.get("enable_gaussian_overlay", False):
+            multi_fit_result = None
             if gaussian_cfg.get("background_use_for_fit", False):
                 fit_base_data = all_bg_sub_data[idx]
                 fit_input_type = "background_subtracted"
@@ -7104,24 +7163,45 @@ def plot_multi_band_slot(
                     f"{'background-subtracted radio image' if gaussian_cfg.get('background_use_for_fit', False) else 'raw radio image'} "
                     "with local baseline model"
                 )
-            fit_result = fit_elliptical_gaussian_on_radio_image(
-                fit_base_data,
-                extent=all_extents[idx],
-                cfg=gaussian_cfg,
-                source_file=all_source_files[idx],
-                background_map=all_background_mask_maps[idx],
-                rms_map=all_rms_mask_maps[idx],
-                fit_input_type=fit_input_type,
-                image_origin=all_origins[idx],
-            )
-            _attach_raw_peak_center(
-                fit_result,
-                all_data[idx],
-                all_extents[idx],
-                gaussian_cfg,
-                all_origins[idx],
-            )
-            if fit_result is not None:
+            if _gaussian_multi_source_enabled(gaussian_cfg):
+                multi_fit_result = _fit_multiple_gaussians_on_radio_image(
+                    fit_base_data,
+                    extent=all_extents[idx],
+                    cfg=gaussian_cfg,
+                    source_file=all_source_files[idx],
+                    background_map=all_background_mask_maps[idx],
+                    rms_map=all_rms_mask_maps[idx],
+                    fit_input_type=fit_input_type,
+                    image_origin=all_origins[idx],
+                )
+                fit_result = multi_fit_result.primary_result
+            else:
+                fit_result = fit_elliptical_gaussian_on_radio_image(
+                    fit_base_data,
+                    extent=all_extents[idx],
+                    cfg=gaussian_cfg,
+                    source_file=all_source_files[idx],
+                    background_map=all_background_mask_maps[idx],
+                    rms_map=all_rms_mask_maps[idx],
+                    fit_input_type=fit_input_type,
+                    image_origin=all_origins[idx],
+                )
+                _attach_raw_peak_center(
+                    fit_result,
+                    all_data[idx],
+                    all_extents[idx],
+                    gaussian_cfg,
+                    all_origins[idx],
+                )
+            if multi_fit_result is not None:
+                _overlay_multi_gaussian_fit_on_axis(
+                    ax,
+                    multi_fit_result,
+                    all_extents[idx],
+                    fit_base_data.shape,
+                    gaussian_cfg,
+                )
+            elif fit_result is not None:
                 overlay_gaussian_fit_on_axis(
                     ax, fit_result, all_extents[idx], fit_base_data.shape, gaussian_cfg
                 )
@@ -7138,6 +7218,16 @@ def plot_multi_band_slot(
                     output_dir,
                     cfg,
                 )
+                if multi_fit_result is not None:
+                    for row in _multi_gaussian_diagnostics_rows(
+                        multi_fit_result,
+                        gaussian_cfg,
+                        freq,
+                        band_time,
+                        polar,
+                        all_bg_diags[idx],
+                    ):
+                        _save_multi_gaussian_diagnostics_row(row, output_dir, cfg)
 
         ax.add_patch(
             patches.Circle(
