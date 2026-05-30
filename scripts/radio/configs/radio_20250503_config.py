@@ -39,8 +39,8 @@ USER_CONFIG = {
     },
     "display": {
         "use_custom_lim": True,
-        "custom_xlim": (-3000, 3000),
-        "custom_ylim": (-3000, 3000),
+        "custom_xlim": (-1500, 1500),
+        "custom_ylim": (-1500, 1500),
         "radio_cmap": "hot",
         "background_bad_color": "#000080",
         "use_per_band_colormap": True,
