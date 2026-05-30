@@ -20,7 +20,6 @@ from .radio_io import (
     write_json_file,
 )
 
-
 RAW_PREVIEW_NAME = "spectrogram_drift_rate_selection_preview_raw.png"
 ANNOTATED_PREVIEW_NAME = "spectrogram_drift_rate_selection_preview_annotated.png"
 SELECTION_CSV_NAME = "spectrogram_drift_rate_selection_points.csv"
@@ -170,7 +169,9 @@ def _prepare_display(spectrogram_data, time_axis, frequency_axis_mhz):
 
 def _plot_spectrogram(display, path, cfg, annotated_rows=None, title=""):
     saved = False
-    fig, ax = plt.subplots(figsize=cfg.get("figsize", (10, 6)), dpi=int(cfg.get("dpi", 200)))
+    fig, ax = plt.subplots(
+        figsize=cfg.get("figsize", (10, 6)), dpi=int(cfg.get("dpi", 200))
+    )
     im = ax.imshow(
         display["data"],
         extent=display["extent"],
@@ -184,7 +185,9 @@ def _plot_spectrogram(display, path, cfg, annotated_rows=None, title=""):
     ax.set_ylabel("Frequency (MHz)")
     ax.set_title(title)
     ax.xaxis_date()
-    ax.xaxis.set_major_formatter(mdates.DateFormatter(cfg.get("time_format", "%H:%M:%S")))
+    ax.xaxis.set_major_formatter(
+        mdates.DateFormatter(cfg.get("time_format", "%H:%M:%S"))
+    )
     fig.colorbar(im, ax=ax, label=cfg.get("colorbar_label", "Intensity"))
     if annotated_rows:
         _draw_selection_rows(ax, annotated_rows, cfg)
@@ -219,11 +222,15 @@ def _draw_selection_rows(ax, rows, cfg):
         t2 = _datetime_to_num(parse_datetime_value(row.get("t_end")))
         f1 = _float_or_nan(row.get("f_start_mhz"))
         f2 = _float_or_nan(row.get("f_end_mhz"))
-        if not (np.isfinite(t1) and np.isfinite(t2) and np.isfinite(f1) and np.isfinite(f2)):
+        if not (
+            np.isfinite(t1) and np.isfinite(t2) and np.isfinite(f1) and np.isfinite(f2)
+        ):
             continue
         ax.plot([t1, t2], [f1, f2], color=color, linewidth=1.6, zorder=4)
         if cfg.get("annotate_endpoints", True):
-            ax.scatter([t1, t2], [f1, f2], s=22, color=color, edgecolors="black", zorder=5)
+            ax.scatter(
+                [t1, t2], [f1, f2], s=22, color=color, edgecolors="black", zorder=5
+            )
         xm = 0.5 * (t1 + t2)
         ym = 0.5 * (f1 + f2)
         label = str(row.get("label") or f"drift_{idx + 1:03d}")
@@ -258,9 +265,13 @@ def _save_cutouts(display, rows, output_dir, cfg):
         t2 = _datetime_to_num(parse_datetime_value(row.get("t_end")))
         f1 = _float_or_nan(row.get("f_start_mhz"))
         f2 = _float_or_nan(row.get("f_end_mhz"))
-        if not (np.isfinite(t1) and np.isfinite(t2) and np.isfinite(f1) and np.isfinite(f2)):
+        if not (
+            np.isfinite(t1) and np.isfinite(t2) and np.isfinite(f1) and np.isfinite(f2)
+        ):
             continue
-        fig, ax = plt.subplots(figsize=cfg.get("cutout_figsize", (5, 3.5)), dpi=int(cfg.get("dpi", 200)))
+        fig, ax = plt.subplots(
+            figsize=cfg.get("cutout_figsize", (5, 3.5)), dpi=int(cfg.get("dpi", 200))
+        )
         ax.imshow(
             display["data"],
             extent=display["extent"],
@@ -271,13 +282,17 @@ def _save_cutouts(display, rows, output_dir, cfg):
             vmax=cfg.get("vmax"),
         )
         _draw_selection_rows(ax, [row], cfg)
-        ax.set_xlim(max(min(t1, t2) - time_pad_days, x0), min(max(t1, t2) + time_pad_days, x1))
+        ax.set_xlim(
+            max(min(t1, t2) - time_pad_days, x0), min(max(t1, t2) + time_pad_days, x1)
+        )
         ax.set_ylim(max(min(f1, f2) - freq_pad, y0), min(max(f1, f2) + freq_pad, y1))
         ax.set_xlabel("Time (UT)")
         ax.set_ylabel("Frequency (MHz)")
         ax.set_title(label)
         ax.xaxis_date()
-        ax.xaxis.set_major_formatter(mdates.DateFormatter(cfg.get("time_format", "%H:%M:%S")))
+        ax.xaxis.set_major_formatter(
+            mdates.DateFormatter(cfg.get("time_format", "%H:%M:%S"))
+        )
         fig.autofmt_xdate()
         fig.tight_layout()
         fig.savefig(path)
@@ -286,7 +301,9 @@ def _save_cutouts(display, rows, output_dir, cfg):
     return saved
 
 
-def _metadata_payload(display, rows, source_file, png_path, plot_meta, cfg, cutout_paths):
+def _metadata_payload(
+    display, rows, source_file, png_path, plot_meta, cfg, cutout_paths
+):
     x_start, x_end, f_min, f_max = display["extent"]
     return {
         "source_file": str(source_file or ""),
@@ -415,7 +432,11 @@ def _datetime_iso(value):
 def _num_to_iso(value):
     if not np.isfinite(value):
         return ""
-    return mdates.num2date(float(value)).replace(tzinfo=None).isoformat(timespec="milliseconds")
+    return (
+        mdates.num2date(float(value))
+        .replace(tzinfo=None)
+        .isoformat(timespec="milliseconds")
+    )
 
 
 def _float_or_nan(value):

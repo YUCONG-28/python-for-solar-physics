@@ -78,8 +78,8 @@ def test_20250503_config_has_real_event_paths_and_full_event_sections():
     assert user_config["spectrogram"]["file_path"] == (
         r"<PROJECT_ROOT>\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503071510_V01.01.fits"
     )
-    assert user_config["spectrogram"]["time_start"] == "2025-05-03T07:16:00"
-    assert user_config["spectrogram"]["time_end"] == "2025-05-03T07:26:00"
+    assert user_config["spectrogram"]["time_start"] == "2025-05-03T07:20:25"
+    assert user_config["spectrogram"]["time_end"] == "2025-05-03T07:22:25"
     assert user_config["output"]["output_dir"] == (
         r"<PROJECT_ROOT>\2025\20250503\RS_test"
     )

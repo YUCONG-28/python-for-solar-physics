@@ -1,6 +1,8 @@
 # Script Index
 
-This index describes the currently tracked runnable scripts and examples. Most
+This index describes the public runnable scripts, compatibility entrypoints, and
+selected examples that users are expected to run directly. It intentionally does
+not list every internal `core/` module or event-specific config module. Most
 workflows expect local observation data and should be configured through
 `configs/paths.local.yaml` or the `SOLAR_PHYSICS_CONFIG` environment variable.
 The bilingual `README.md` links to the main workflows listed here.
@@ -18,7 +20,7 @@ Status labels:
 
 | Status | Script | Purpose | Main inputs | Main outputs |
 | --- | --- | --- | --- | --- |
-| main | `scripts/aia_hmi/sdo_aia_euv_processor.py` | Main SDO/AIA EUV processor for single-band PNGs, multi-band mosaics, test previews, and optional base/running difference images. | AIA FITS files in wavelength folders; ROI, wavelength, scaling, and mosaic settings. | AIA PNG images, mosaics, and optional difference products. |
+| main | `scripts/aia_hmi/run_aia_euv_processor.py` | Main SDO/AIA EUV processor for single-band PNGs, multi-band mosaics, test previews, and optional base/running difference images. | AIA FITS files in wavelength folders; ROI, wavelength, scaling, and mosaic settings. | AIA PNG images, mosaics, and optional difference products. |
 | main | `scripts/radio/run_radio_burst_pipeline.py` | Full radio burst workflow with source maps, Gaussian diagnostics, CSO spectrogram/drift support, Newkirk height comparison, Gaussian-Newkirk height residuals, and optional illustrative AIA 171 plane-of-sky projection. | Radio source FITS files, optional CSO spectrogram FITS, Gaussian/drift/Newkirk settings, optional AIA 171 FITS. | Radio source maps, fitted centers, FWHM overlays, diagnostics CSV, Newkirk height tables, height-residual plots, optional drift-rate JSON/preview products, optional AIA 171 projection schematic. |
 | main | `scripts/radio/run_radio_source_map.py` | Quick radio source map workflow with Gaussian overlay through the compatibility source-map workflow. | Radio source FITS files, Gaussian settings. | Radio source maps, fitted centers, FWHM overlays, and diagnostics CSV. |
 | main | `scripts/radio/run_aia_radio_hmi_overlay.py` | Overlay radio source contours and optional HMI contours on AIA context images. | AIA FITS, radio source FITS, optional HMI FITS, matching and fit settings. | AIA-radio or AIA-radio-HMI diagnostic figures with contours and fitted source markers. |
@@ -34,7 +36,6 @@ Status labels:
 | utility | `scripts/aia_hmi/sdo_aia_hmi_fits_rename.py` | Normalize SDO/AIA and SDO/HMI FITS filenames recursively. | Raw or partially named AIA/HMI FITS files. | Renamed FITS files; dry-run summary when requested. |
 | utility | `scripts/aia_hmi/sdo_aia_lightcurve_extraction.py` | Extract AIA flux/light-curve data from a region of interest. | AIA FITS sequence and ROI settings. | CSV table with observation time and flux. |
 | utility | `scripts/aia_hmi/sdo_aia_lightcurve_plot.py` | Plot one or more AIA light-curve CSV files. | CSV products from light-curve extraction. | Publication-style light-curve figures. |
-| utility | `scripts/aia_hmi/sdo_aia_time_file_selector.py` | Select AIA files closest to a target time. | AIA FITS folders, target time, and tolerance. | Copied matching files organized for follow-up workflows. |
 | utility | `scripts/aia_hmi/sdo_hmi_magnetogram_plot.py` | Plot SDO/HMI magnetograms in a selected ROI. | HMI magnetogram FITS files. | HMI PNG context images. |
 | utility | `scripts/data_download/solo_eui_soar_query_download.py` | Query Solar Orbiter/EUI metadata and optionally download selected files. | SOAR TAP service; optional `--download`. | Metadata JSON and optional EUI FITS files. |
 | utility | `scripts/stereo_suvi/stereo_euvi_manifest_by_wavelength.py` | Create a wavelength manifest and by-wavelength symlink view for STEREO-A/EUVI data. | EUVI FTS files under `data/raw/stereo/euvi/20250124/`. | `manifest_by_wavelength.csv` and `by_wavelength/`. |
@@ -63,12 +64,9 @@ recommended as first entry points for new users.
 
 | Status | Script | Purpose | Main inputs | Main outputs |
 | --- | --- | --- | --- | --- |
-| deprecated | `scripts/aia_hmi/sdo_aia_multichannel_panel.py` | Build synchronized multi-wavelength AIA overview panels. | AIA FITS files across multiple wavelengths. | Multi-panel AIA figures with common ROI and labels. |
 | deprecated | `scripts/aia_hmi/sdo_aia_time_distance_diagram.py` | Demonstrate AIA time-distance analysis along a coordinate path. | AIA map sequence, currently using a SunPy/Fido example query. | Time-distance diagnostic figure. |
 | deprecated | `scripts/aia_hmi/sdo_aia_hmi_overlay.py` | Overlay HMI magnetic contours on AIA images. | AIA FITS, HMI FITS, time matching, contour levels. | AIA-HMI overlay PNG figures. |
-| deprecated | `scripts/radio/radio_source_map_plot.py` | Plot single-band or multi-band radio source FITS maps without the full Gaussian/drift workflow. | Radio FITS images organized by frequency and polarization. | Radio source maps, multi-frequency panels, contours, and optional polarization products. |
-| utility | `scripts/radio/cso_spectrogram_class.py` | Provide a reusable CSO spectrogram reader and plotting helper. | CSO FITS files and plotting ranges. | Dynamic spectrum plots from class/helper functions. |
-| deprecated | `scripts/radio/cso_radio_spectra_gui.py` | Optional PyQt5/pyqtgraph CSO radio-spectrum GUI and type-II fitting utilities. | CSO or DSRT-style spectrogram files; PyQt5/pyqtgraph. | Interactive plots, selected spectra, and optional saved products. |
+| deprecated | `scripts/aia_hmi/sdo_aia_euv_processor.py` | Compatibility entrypoint for the historical AIA EUV processor command; new work should use `run_aia_euv_processor.py`. | Same as the recommended AIA EUV entrypoint. | Same as the recommended AIA EUV entrypoint. |
 | utility | `scripts/xray_dem/goes_sxr_lightcurve_plot.py` | Plot GOES soft X-ray light curves. | GOES NetCDF products. | SXR time-series PNG figures. |
 | utility | `scripts/xray_dem/hessi_hxr_lightcurve_plot.py` | Plot HXR light curves from FITS event files. | HESSI/RHESSI-style HXR FITS files. | HXR time-series figures. |
 | utility | `scripts/xray_dem/asos_hxi_image_plot.py` | Plot ASO-S/HXI hard X-ray image maps. | HXI FITS image cube or map products. | HXI image figures. |

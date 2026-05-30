@@ -20,7 +20,7 @@ from .radio_coordinates import (
     pixel_to_data_coord,
     unravel_2d_index,
 )
-from .radio_io import BoolArray, FloatArray, GAUSSIAN_DIAGNOSTIC_FIELDS, IntArray
+from .radio_io import GAUSSIAN_DIAGNOSTIC_FIELDS, BoolArray, FloatArray
 from .radio_io import plot_output_subdir as _plot_output_subdir
 
 _unravel_2d_index = unravel_2d_index

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import datetime
-
 import numpy as np
 import pandas as pd
 
@@ -13,7 +11,7 @@ from .radio_coordinates import (
     compute_radial_unit_vector,
     rsun_to_arcsec,
 )
-from .radio_io import parse_datetime_value, safe_series, truthy
+from .radio_io import parse_datetime_value, truthy
 from .radio_newkirk_extrapolation import (
     newkirk_radius_from_frequency_mhz,
     plasma_density_from_frequency_mhz,
@@ -175,7 +173,9 @@ def compute_gaussian_newkirk_residuals(row):
 def _matches_window_and_frequency(time_value, freq, windows, freq_range) -> bool:
     if not windows and freq_range is None:
         return False
-    time_ok = not windows or any(_time_in_window(time_value, window) for window in windows)
+    time_ok = not windows or any(
+        _time_in_window(time_value, window) for window in windows
+    )
     freq_ok = _frequency_in_range(freq, freq_range)
     return bool(time_ok and freq_ok)
 

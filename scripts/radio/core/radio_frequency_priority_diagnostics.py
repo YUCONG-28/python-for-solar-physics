@@ -1,8 +1,9 @@
 """Frequency-priority diagnostic products for Gaussian/Newkirk comparisons."""
 
+# ruff: noqa: I001
+
 from __future__ import annotations
 
-import html
 import json
 import re
 from pathlib import Path
@@ -19,13 +20,12 @@ from .radio_io import ensure_output_dir, parse_datetime_value
 from .radio_newkirk_extrapolation import (
     SPEED_OF_LIGHT_KM_S,
     effective_density_factor,
+    newkirk_assumption_label,
     newkirk_height_from_frequency_mhz,
     newkirk_radius_from_frequency_mhz,
-    newkirk_assumption_label,
     newkirk_speed_from_drift_rate,
     plasma_density_from_frequency_mhz,
 )
-
 
 DEFAULT_COMPARISON_FREQUENCIES_MHZ = [149, 164, 190, 205, 223, 238]
 
@@ -68,13 +68,20 @@ def _format_newkirk_label_from_row(row, fallback="Newkirk model") -> str:
     if np.isfinite(multiplier) and np.isfinite(harmonic):
         return format_newkirk_case_label(multiplier, harmonic)
     text = str(row.get("newkirk_assumption_label") or fallback)
-    match = re.search(r"(?P<multiplier>\d+(?:\.\d+)?)x\s+Newkirk,\s+H=(?P<harmonic>\d+(?:\.\d+)?)", text)
+    match = re.search(
+        r"(?P<multiplier>\d+(?:\.\d+)?)x\s+Newkirk,\s+H=(?P<harmonic>\d+(?:\.\d+)?)",
+        text,
+    )
     if match:
-        return format_newkirk_case_label(match.group("multiplier"), match.group("harmonic"))
+        return format_newkirk_case_label(
+            match.group("multiplier"), match.group("harmonic")
+        )
     return text
 
 
-def build_frequency_priority_summary(height_df, gaussian_df, drift_df=None, config=None):
+def build_frequency_priority_summary(
+    height_df, gaussian_df, drift_df=None, config=None
+):
     """Build frequency-band summaries using only configured Gaussian bands."""
     cfg = dict(config or {})
     frequencies = resolve_comparison_frequencies(cfg, height_df, gaussian_df)
@@ -156,7 +163,10 @@ def apply_frequency_priority_drift_matching(gaussian_df, drift_df, config=None):
             out["drift_match_warning"] = ""
         else:
             candidates = sorted(candidates, key=lambda item: item["distance"])
-            if len(candidates) > 1 and abs(candidates[1]["distance"] - candidates[0]["distance"]) < 0.05:
+            if (
+                len(candidates) > 1
+                and abs(candidates[1]["distance"] - candidates[0]["distance"]) < 0.05
+            ):
                 out["drift_label"] = ""
                 out["source_type"] = _existing_source_type(row)
                 out["drift_match_warning"] = "ambiguous_drift_match"
@@ -174,7 +184,11 @@ def resolve_comparison_frequencies(config=None, height_df=None, gaussian_df=None
     raw = cfg.get("comparison_frequency_mhz")
     if raw:
         return [float(freq) for freq in raw]
-    for df, column in ((gaussian_df, "freq"), (gaussian_df, "frequency_mhz"), (height_df, "frequency_mhz")):
+    for df, column in (
+        (gaussian_df, "freq"),
+        (gaussian_df, "frequency_mhz"),
+        (height_df, "frequency_mhz"),
+    ):
         data = pd.DataFrame(df)
         if not data.empty and column in data.columns:
             values = pd.to_numeric(data[column], errors="coerce").dropna().unique()
@@ -184,36 +198,52 @@ def resolve_comparison_frequencies(config=None, height_df=None, gaussian_df=None
 
 
 def resolve_drift_frequency_tolerance(config, frequencies):
-    value = (config or {}).get("drift_frequency_tolerance_mhz", "adaptive_half_band_spacing")
+    value = (config or {}).get(
+        "drift_frequency_tolerance_mhz", "adaptive_half_band_spacing"
+    )
     if isinstance(value, str) and value == "adaptive_half_band_spacing":
         freqs = np.asarray(sorted(float(freq) for freq in frequencies), dtype=float)
         if freqs.size < 2:
-            return float((config or {}).get("min_adaptive_frequency_tolerance_mhz", 5.0))
+            return float(
+                (config or {}).get("min_adaptive_frequency_tolerance_mhz", 5.0)
+            )
         half_spacing = 0.5 * float(np.nanmin(np.diff(freqs)))
         min_tol = float((config or {}).get("min_adaptive_frequency_tolerance_mhz", 5.0))
-        max_tol = float((config or {}).get("max_adaptive_frequency_tolerance_mhz", 15.0))
+        max_tol = float(
+            (config or {}).get("max_adaptive_frequency_tolerance_mhz", 15.0)
+        )
         return min(max(half_spacing, min_tol), max_tol)
     return float(value)
 
 
-def plot_frequency_priority_summary(height_df, gaussian_df, drift_df, output_path, config=None):
+def plot_frequency_priority_summary(
+    height_df, gaussian_df, drift_df, output_path, config=None
+):
     cfg = dict(config or {})
     summary = build_frequency_priority_summary(height_df, gaussian_df, drift_df, cfg)
     height = _filter_to_comparison_frequencies(
-        _clean_height_table(height_df), summary["comparison_frequency_mhz"], "frequency_mhz"
+        _clean_height_table(height_df),
+        summary["comparison_frequency_mhz"],
+        "frequency_mhz",
     )
     if height.empty:
         return {"status": "skipped", "reason": "no_frequency_priority_height_rows"}
 
-    fig, axes = plt.subplots(2, 2, figsize=cfg.get("summary_figsize", (13, 9)), dpi=int(cfg.get("dpi", 170)))
+    fig, axes = plt.subplots(
+        2, 2, figsize=cfg.get("summary_figsize", (13, 9)), dpi=int(cfg.get("dpi", 170))
+    )
     ax_a, ax_b, ax_c, ax_d = axes.ravel()
     freqs = summary["comparison_frequency_mhz"]
     unique = height.drop_duplicates(
         subset=["time", "frequency_mhz", "gaussian_x_arcsec", "gaussian_y_arcsec"]
     )
     _plot_height_box_by_frequency(ax_a, unique, freqs)
-    _plot_newkirk_curves_with_band_samples(ax_b, height, freqs, summary["model_ranking"])
-    _plot_top_residual_summaries(ax_c, summary["residual_summary"], summary["model_ranking"], cfg)
+    _plot_newkirk_curves_with_band_samples(
+        ax_b, height, freqs, summary["model_ranking"]
+    )
+    _plot_top_residual_summaries(
+        ax_c, summary["residual_summary"], summary["model_ranking"], cfg
+    )
     _plot_model_ranking_heatmap(ax_d, summary["residual_summary"], freqs)
     fig.suptitle("Frequency-priority Gaussian/Newkirk diagnostics", y=0.995)
     _save(fig, output_path)
@@ -228,13 +258,17 @@ def plot_gaussian_center_by_frequency_facets(gaussian_df, output_path, config=No
     if gaussian.empty:
         return {"status": "skipped", "reason": "no_gaussian_centers"}
     solar_radius = _solar_radius_arcsec(cfg)
-    fig, axes = plt.subplots(2, 3, figsize=cfg.get("center_figsize", (12, 7.5)), dpi=int(cfg.get("dpi", 170)))
+    fig, axes = plt.subplots(
+        2, 3, figsize=cfg.get("center_figsize", (12, 7.5)), dpi=int(cfg.get("dpi", 170))
+    )
     scatter = None
-    for ax, freq in zip(axes.ravel(), freqs):
+    for ax, freq in zip(axes.ravel(), freqs, strict=False):
         group = gaussian[gaussian["frequency_mhz"].eq(float(freq))]
         ax.set_title(f"{freq:g} MHz")
         if group.empty:
-            ax.text(0.5, 0.5, "missing", transform=ax.transAxes, ha="center", va="center")
+            ax.text(
+                0.5, 0.5, "missing", transform=ax.transAxes, ha="center", va="center"
+            )
             continue
         time_num = _date_numbers_for_group(group)
         scatter = ax.scatter(
@@ -317,18 +351,27 @@ def plot_height_time_by_frequency_facets(height_df, output_path, config=None):
     )
     if unique.empty:
         return {"status": "skipped", "reason": "no_height_time_rows"}
-    fig, axes = plt.subplots(2, 3, figsize=cfg.get("height_time_figsize", (13, 7.5)), dpi=int(cfg.get("dpi", 170)), sharex=True, sharey=True)
+    fig, axes = plt.subplots(
+        2,
+        3,
+        figsize=cfg.get("height_time_figsize", (13, 7.5)),
+        dpi=int(cfg.get("dpi", 170)),
+        sharex=True,
+        sharey=True,
+    )
     cross_frequency_line_count = 0
     newkirk_reference_line_count = 0
     selected_multiplier, selected_harmonic = _selected_newkirk_model(cfg)
     selected_label = model_label(selected_multiplier, selected_harmonic)
-    for ax, freq in zip(axes.ravel(), freqs):
+    for ax, freq in zip(axes.ravel(), freqs, strict=False):
         group = unique[unique["frequency_mhz"].eq(float(freq))].dropna(
             subset=["time_dt", "gaussian_height_rsun"]
         )
         ax.set_title(f"{freq:g} MHz")
         if group.empty:
-            ax.text(0.5, 0.5, "missing", transform=ax.transAxes, ha="center", va="center")
+            ax.text(
+                0.5, 0.5, "missing", transform=ax.transAxes, ha="center", va="center"
+            )
             continue
         for source_type, part in group.groupby("source_type", dropna=False):
             ax.scatter(
@@ -343,8 +386,15 @@ def plot_height_time_by_frequency_facets(height_df, output_path, config=None):
                 label = str(drift_label).strip()
                 part = part.sort_values("time_dt")
                 if label and len(part) > 1:
-                    ax.plot(part["time_dt"], part["gaussian_height_rsun"], linewidth=1.0, alpha=0.75)
-        reference_height = _newkirk_reference_height(freq, selected_multiplier, selected_harmonic)
+                    ax.plot(
+                        part["time_dt"],
+                        part["gaussian_height_rsun"],
+                        linewidth=1.0,
+                        alpha=0.75,
+                    )
+        reference_height = _newkirk_reference_height(
+            freq, selected_multiplier, selected_harmonic
+        )
         if np.isfinite(reference_height):
             ax.axhline(
                 reference_height,
@@ -359,7 +409,7 @@ def plot_height_time_by_frequency_facets(height_df, output_path, config=None):
         ax.grid(True, linestyle=":", alpha=0.3)
         handles, labels = ax.get_legend_handles_labels()
         if handles:
-            by_label = dict(zip(labels, handles))
+            by_label = dict(zip(labels, handles, strict=False))
             ax.legend(by_label.values(), by_label.keys(), fontsize=7, loc="best")
     for ax in axes[-1, :]:
         ax.set_xlabel("Time (UT)")
@@ -385,7 +435,9 @@ def build_selected_band_newkirk_height_speed_table(drift_df=None, config=None):
     freq_tol = resolve_drift_frequency_tolerance(cfg, freqs)
     rows = []
     for freq in freqs:
-        density = _safe_newkirk_value(plasma_density_from_frequency_mhz, freq, harmonic=harmonic)
+        density = _safe_newkirk_value(
+            plasma_density_from_frequency_mhz, freq, harmonic=harmonic
+        )
         radius = _safe_newkirk_value(
             newkirk_radius_from_frequency_mhz,
             freq,
@@ -397,7 +449,9 @@ def build_selected_band_newkirk_height_speed_table(drift_df=None, config=None):
         row = {
             "frequency_mhz": float(freq),
             "newkirk_multiplier": float(multiplier),
-            "harmonic": int(harmonic) if float(harmonic).is_integer() else float(harmonic),
+            "harmonic": (
+                int(harmonic) if float(harmonic).is_integer() else float(harmonic)
+            ),
             "density_multiplier": float(multiplier),
             "emission_harmonic": float(harmonic),
             "effective_density_factor": effective_density_factor(multiplier, harmonic),
@@ -424,13 +478,17 @@ def build_selected_band_newkirk_height_speed_table(drift_df=None, config=None):
                         "drift_rate_mhz_s": drift_rate,
                         "dr_dt_rsun_s": speed["dr_dt_rsun_s"],
                         "speed_km_s": speed["speed_km_s"],
-                        "v_over_c": speed["speed_km_s"] / SPEED_OF_LIGHT_KM_S
-                        if np.isfinite(speed["speed_km_s"])
-                        else np.nan,
+                        "v_over_c": (
+                            speed["speed_km_s"] / SPEED_OF_LIGHT_KM_S
+                            if np.isfinite(speed["speed_km_s"])
+                            else np.nan
+                        ),
                         "newkirk_speed_km_s": speed["speed_km_s"],
-                        "newkirk_speed_c": speed["speed_km_s"] / SPEED_OF_LIGHT_KM_S
-                        if np.isfinite(speed["speed_km_s"])
-                        else np.nan,
+                        "newkirk_speed_c": (
+                            speed["speed_km_s"] / SPEED_OF_LIGHT_KM_S
+                            if np.isfinite(speed["speed_km_s"])
+                            else np.nan
+                        ),
                         "speed_status": "ok",
                     }
                 )
@@ -474,7 +532,10 @@ def plot_event_gaussian_newkirk_height_comparison(height_df, output_path, config
     if gaussian.empty and newkirk.empty:
         return {"status": "skipped", "reason": "no_plottable_height_rows"}
 
-    fig, ax = plt.subplots(figsize=cfg.get("event_height_figsize", (8.2, 5.4)), dpi=int(cfg.get("dpi", 180)))
+    fig, ax = plt.subplots(
+        figsize=cfg.get("event_height_figsize", (8.2, 5.4)),
+        dpi=int(cfg.get("dpi", 180)),
+    )
     positions = np.arange(len(freqs), dtype=float)
     pos_by_freq = {float(freq): idx for idx, freq in enumerate(freqs)}
 
@@ -487,7 +548,11 @@ def plot_event_gaussian_newkirk_height_comparison(height_df, output_path, config
         values = pd.to_numeric(valid["gaussian_height_rsun"], errors="coerce").dropna()
         if not values.empty:
             x = np.full(len(values), pos_by_freq[float(freq)], dtype=float)
-            jitter = np.linspace(-0.08, 0.08, len(values)) if len(values) > 1 else np.array([0.0])
+            jitter = (
+                np.linspace(-0.08, 0.08, len(values))
+                if len(values) > 1
+                else np.array([0.0])
+            )
             ax.scatter(
                 x + jitter,
                 values.to_numpy(dtype=float),
@@ -513,7 +578,9 @@ def plot_event_gaussian_newkirk_height_comparison(height_df, output_path, config
                 zorder=4,
             )
             plotted_gaussian_freqs.add(float(freq))
-        invalid_values = pd.to_numeric(invalid["gaussian_height_rsun"], errors="coerce").dropna()
+        invalid_values = pd.to_numeric(
+            invalid["gaussian_height_rsun"], errors="coerce"
+        ).dropna()
         if not invalid_values.empty:
             x = np.full(len(invalid_values), pos_by_freq[float(freq)], dtype=float)
             ax.scatter(
@@ -534,12 +601,18 @@ def plot_event_gaussian_newkirk_height_comparison(height_df, output_path, config
     for multiplier, harmonic in _model_pairs(height):
         key = f"{float(multiplier):g}xH{float(harmonic):g}"
         group = newkirk[
-            pd.to_numeric(newkirk["newkirk_multiplier"], errors="coerce").eq(float(multiplier))
+            pd.to_numeric(newkirk["newkirk_multiplier"], errors="coerce").eq(
+                float(multiplier)
+            )
             & pd.to_numeric(newkirk["harmonic"], errors="coerce").eq(float(harmonic))
         ].sort_values("frequency_mhz")
         if group.empty:
             continue
-        x = [pos_by_freq[float(freq)] for freq in group["frequency_mhz"] if float(freq) in pos_by_freq]
+        x = [
+            pos_by_freq[float(freq)]
+            for freq in group["frequency_mhz"]
+            if float(freq) in pos_by_freq
+        ]
         y = [
             float(row["newkirk_height_rsun"])
             for _, row in group.iterrows()
@@ -557,7 +630,11 @@ def plot_event_gaussian_newkirk_height_comparison(height_df, output_path, config
             linewidth=2.0 if is_reference else 0.9,
             markersize=5 if is_reference else 3.5,
             alpha=0.95 if is_reference else 0.58,
-            label="Reference Newkirk model" if is_reference and not newkirk_legend_added else None,
+            label=(
+                "Reference Newkirk model"
+                if is_reference and not newkirk_legend_added
+                else None
+            ),
             zorder=5 if is_reference else 3,
         )
         if is_reference:
@@ -567,7 +644,9 @@ def plot_event_gaussian_newkirk_height_comparison(height_df, output_path, config
             if abs(label_y - existing_y) < 0.035:
                 label_y = existing_y + 0.035
         label_y_positions.append(label_y)
-        label_x = x[-1] + (0.08 if not cfg.get("reverse_frequency_axis", False) else -0.08)
+        label_x = x[-1] + (
+            0.08 if not cfg.get("reverse_frequency_axis", False) else -0.08
+        )
         ax.text(
             label_x,
             label_y,
@@ -614,7 +693,10 @@ def plot_event_newkirk_speed_frequency(speed_df, output_path, config=None):
     if "newkirk_speed_km_s" not in df.columns and "speed_km_s" in df.columns:
         df["newkirk_speed_km_s"] = df["speed_km_s"]
     if "newkirk_speed_c" not in df.columns and "newkirk_speed_km_s" in df.columns:
-        df["newkirk_speed_c"] = pd.to_numeric(df["newkirk_speed_km_s"], errors="coerce") / SPEED_OF_LIGHT_KM_S
+        df["newkirk_speed_c"] = (
+            pd.to_numeric(df["newkirk_speed_km_s"], errors="coerce")
+            / SPEED_OF_LIGHT_KM_S
+        )
     required = {"frequency_mhz", "newkirk_speed_km_s", "speed_status"}
     if df.empty or not required.issubset(df.columns):
         return {"status": "skipped", "reason": "no_speed_rows"}
@@ -625,7 +707,11 @@ def plot_event_newkirk_speed_frequency(speed_df, output_path, config=None):
         df["drift_label"] = ""
     if "newkirk_assumption_label" not in df.columns:
         df["newkirk_assumption_label"] = "Newkirk assumption"
-    ok = df["speed_status"].astype(str).eq("ok") & df["frequency_mhz"].notna() & df["newkirk_speed_km_s"].notna()
+    ok = (
+        df["speed_status"].astype(str).eq("ok")
+        & df["frequency_mhz"].notna()
+        & df["newkirk_speed_km_s"].notna()
+    )
     plotted = df[ok].copy().sort_values("frequency_mhz")
     skipped_count = int((~ok).sum())
     unmatched = df[
@@ -634,17 +720,29 @@ def plot_event_newkirk_speed_frequency(speed_df, output_path, config=None):
         & df["speed_status"].astype(str).eq("no_matching_drift_rate")
     ].copy()
     if plotted.empty:
-        return {"status": "skipped", "reason": "no_matched_speed_rows", "skipped_frequency_count": skipped_count}
+        return {
+            "status": "skipped",
+            "reason": "no_matched_speed_rows",
+            "skipped_frequency_count": skipped_count,
+        }
 
-    fig, ax = plt.subplots(figsize=cfg.get("event_speed_figsize", (7.8, 5.2)), dpi=int(cfg.get("dpi", 180)))
+    fig, ax = plt.subplots(
+        figsize=cfg.get("event_speed_figsize", (7.8, 5.2)), dpi=int(cfg.get("dpi", 180))
+    )
     cross_drift_line_count = 0
     markers = ["o", "s", "^", "D", "P", "X"]
     model_label_text = _format_newkirk_label_from_row(plotted.iloc[0])
-    for idx, (assumption, group) in enumerate(plotted.groupby("newkirk_assumption_label", dropna=False)):
+    for idx, (assumption, group) in enumerate(
+        plotted.groupby("newkirk_assumption_label", dropna=False)
+    ):
         marker = markers[idx % len(markers)]
         for drift_label, part in group.groupby("drift_label", dropna=False):
             part = part.sort_values("frequency_mhz")
-            drift_rate_text = _format_drift_rate(part["drift_rate_mhz_s"].iloc[0]) if "drift_rate_mhz_s" in part else ""
+            drift_rate_text = (
+                _format_drift_rate(part["drift_rate_mhz_s"].iloc[0])
+                if "drift_rate_mhz_s" in part
+                else ""
+            )
             label_parts = [str(drift_label).strip() or str(assumption).strip()]
             if drift_rate_text:
                 label_parts.append(drift_rate_text)
@@ -676,7 +774,9 @@ def plot_event_newkirk_speed_frequency(speed_df, output_path, config=None):
     y_pad = y_span * 0.18
     missing_y = y_min - y_pad * 0.55
     if not unmatched.empty:
-        unmatched = unmatched.drop_duplicates(subset=["frequency_mhz"]).sort_values("frequency_mhz")
+        unmatched = unmatched.drop_duplicates(subset=["frequency_mhz"]).sort_values(
+            "frequency_mhz"
+        )
         ax.scatter(
             unmatched["frequency_mhz"],
             np.full(len(unmatched), missing_y, dtype=float),
@@ -698,7 +798,9 @@ def plot_event_newkirk_speed_frequency(speed_df, output_path, config=None):
                 fontsize=7,
                 color="0.35",
             )
-    all_freqs = pd.concat([plotted["frequency_mhz"], unmatched["frequency_mhz"]]).dropna()
+    all_freqs = pd.concat(
+        [plotted["frequency_mhz"], unmatched["frequency_mhz"]]
+    ).dropna()
     x_min = float(all_freqs.min())
     x_max = float(all_freqs.max())
     x_span = max(x_max - x_min, abs(x_max) * 0.04, 1.0)
@@ -738,9 +840,14 @@ def build_newkirk_physical_consistency_report(speed_df, height_summary_df, confi
     if "newkirk_speed_km_s" not in speed.columns and "speed_km_s" in speed.columns:
         speed["newkirk_speed_km_s"] = speed["speed_km_s"]
     if "newkirk_speed_c" not in speed.columns and "newkirk_speed_km_s" in speed.columns:
-        speed["newkirk_speed_c"] = pd.to_numeric(speed["newkirk_speed_km_s"], errors="coerce") / SPEED_OF_LIGHT_KM_S
+        speed["newkirk_speed_c"] = (
+            pd.to_numeric(speed["newkirk_speed_km_s"], errors="coerce")
+            / SPEED_OF_LIGHT_KM_S
+        )
 
-    speed_values = pd.to_numeric(speed.get("newkirk_speed_km_s"), errors="coerce").dropna()
+    speed_values = pd.to_numeric(
+        speed.get("newkirk_speed_km_s"), errors="coerce"
+    ).dropna()
     c_values = pd.to_numeric(speed.get("newkirk_speed_c"), errors="coerce").dropna()
     reference = str(cfg.get("reference_newkirk_assumption") or "2xH2")
     lines = [
@@ -776,7 +883,12 @@ def build_newkirk_physical_consistency_report(speed_df, height_summary_df, confi
             delta = _float_or_nan(row.get("abs_delta_reference_rsun"))
             q25 = _float_or_nan(row.get("gaussian_projected_height_q25_rsun"))
             q75 = _float_or_nan(row.get("gaussian_projected_height_q75_rsun"))
-            in_iqr = np.isfinite(ref_height) and np.isfinite(q25) and np.isfinite(q75) and q25 <= ref_height <= q75
+            in_iqr = (
+                np.isfinite(ref_height)
+                and np.isfinite(q25)
+                and np.isfinite(q75)
+                and q25 <= ref_height <= q75
+            )
             lines.append(
                 f"- {row.get('frequency_mhz', '')} MHz: Gaussian projected median="
                 f"{_fmt_float(gaussian)}, reference Newkirk radial height={_fmt_float(ref_height)}, "
@@ -810,11 +922,15 @@ def build_newkirk_physical_consistency_report(speed_df, height_summary_df, confi
     return "\n".join(lines) + "\n"
 
 
-def save_newkirk_physical_consistency_report(speed_df, height_summary_df, output_path, config=None):
+def save_newkirk_physical_consistency_report(
+    speed_df, height_summary_df, output_path, config=None
+):
     """Save the Newkirk physical consistency report as Markdown."""
     path = Path(output_path)
     ensure_output_dir(path.parent or ".")
-    content = build_newkirk_physical_consistency_report(speed_df, height_summary_df, config)
+    content = build_newkirk_physical_consistency_report(
+        speed_df, height_summary_df, config
+    )
     path.write_text(content, encoding="utf-8")
     return {"status": "saved", "path": str(path)}
 
@@ -831,7 +947,9 @@ def plot_drift_frequency_band_matching(
     drift = pd.DataFrame(drift_df).copy()
     if drift.empty:
         return {"status": "skipped", "reason": "no_drift_rows"}
-    data, time_nums, freqs, extent = _prepare_spectrogram(spectrogram_data, time_axis, frequency_axis_mhz)
+    data, time_nums, freqs, extent = _prepare_spectrogram(
+        spectrogram_data, time_axis, frequency_axis_mhz
+    )
     bands = resolve_comparison_frequencies(cfg, None, None)
     fig, (ax, table_ax) = plt.subplots(
         1,
@@ -840,7 +958,13 @@ def plot_drift_frequency_band_matching(
         dpi=int(cfg.get("dpi", 170)),
         gridspec_kw={"width_ratios": [4.4, 1.6]},
     )
-    ax.imshow(data, extent=extent, origin="lower", aspect="auto", cmap=cfg.get("cmap", "viridis"))
+    ax.imshow(
+        data,
+        extent=extent,
+        origin="lower",
+        aspect="auto",
+        cmap=cfg.get("cmap", "viridis"),
+    )
     for freq in bands:
         ax.axhspan(float(freq) - 1.5, float(freq) + 1.5, color="white", alpha=0.13)
         ax.axhline(float(freq), color="white", linewidth=0.7, alpha=0.75)
@@ -854,8 +978,19 @@ def plot_drift_frequency_band_matching(
         color = str(row.get("color") or "cyan")
         if t1 is None or t2 is None or not np.isfinite(f1) or not np.isfinite(f2):
             continue
-        ax.plot([mdates.date2num(t1), mdates.date2num(t2)], [f1, f2], color=color, linewidth=1.6)
-        ax.scatter([mdates.date2num(t1), mdates.date2num(t2)], [f1, f2], color=color, s=18, edgecolors="black")
+        ax.plot(
+            [mdates.date2num(t1), mdates.date2num(t2)],
+            [f1, f2],
+            color=color,
+            linewidth=1.6,
+        )
+        ax.scatter(
+            [mdates.date2num(t1), mdates.date2num(t2)],
+            [f1, f2],
+            color=color,
+            s=18,
+            edgecolors="black",
+        )
         lo, hi = sorted((f1, f2))
         matched = [f"{freq:g}" for freq in bands if lo <= float(freq) <= hi]
         rows.append([label, f"{f1:.0f}-{f2:.0f}", ", ".join(matched) or "-"])
@@ -879,11 +1014,15 @@ def plot_drift_frequency_band_matching(
     return {"status": "saved", "path": str(output_path)}
 
 
-def write_frequency_priority_dashboard(height_df, gaussian_df, drift_df, output_path, config=None):
+def write_frequency_priority_dashboard(
+    height_df, gaussian_df, drift_df, output_path, config=None
+):
     cfg = dict(config or {})
     summary = build_frequency_priority_summary(height_df, gaussian_df, drift_df, cfg)
     height = _filter_to_comparison_frequencies(
-        _clean_height_table(height_df), summary["comparison_frequency_mhz"], "frequency_mhz"
+        _clean_height_table(height_df),
+        summary["comparison_frequency_mhz"],
+        "frequency_mhz",
     )
     gaussian = apply_frequency_priority_drift_matching(gaussian_df, drift_df, cfg)
     payload = {
@@ -950,7 +1089,9 @@ def save_frequency_priority_summary_csv(summary, output_path):
 
 def _plot_height_box_by_frequency(ax, unique, freqs):
     data = [
-        unique.loc[unique["frequency_mhz"].eq(float(freq)), "gaussian_height_rsun"].dropna().to_numpy()
+        unique.loc[unique["frequency_mhz"].eq(float(freq)), "gaussian_height_rsun"]
+        .dropna()
+        .to_numpy()
         for freq in freqs
     ]
     positions = np.arange(len(freqs))
@@ -968,9 +1109,19 @@ def _plot_newkirk_curves_with_band_samples(ax, height, freqs, model_ranking):
     best = str(model_ranking.iloc[0]["model_label"]) if not model_ranking.empty else ""
     for multiplier, harmonic in _model_pairs(height):
         label = model_label(multiplier, harmonic)
-        curve = newkirk_height_from_frequency_mhz(grid, multiplier=multiplier, harmonic=harmonic)
-        sample = newkirk_height_from_frequency_mhz(np.asarray(freqs), multiplier=multiplier, harmonic=harmonic)
-        ax.plot(grid, curve, linewidth=2.2 if label == best else 1.0, alpha=0.9 if label == best else 0.55, label=label)
+        curve = newkirk_height_from_frequency_mhz(
+            grid, multiplier=multiplier, harmonic=harmonic
+        )
+        sample = newkirk_height_from_frequency_mhz(
+            np.asarray(freqs), multiplier=multiplier, harmonic=harmonic
+        )
+        ax.plot(
+            grid,
+            curve,
+            linewidth=2.2 if label == best else 1.0,
+            alpha=0.9 if label == best else 0.55,
+            label=label,
+        )
         ax.scatter(freqs, sample, s=20, alpha=0.85)
     for freq in freqs:
         ax.axvline(freq, color="0.8", linewidth=0.7, zorder=0)
@@ -984,7 +1135,14 @@ def _plot_newkirk_curves_with_band_samples(ax, height, freqs, model_ranking):
 
 def _plot_top_residual_summaries(ax, residual_summary, model_ranking, cfg):
     if residual_summary.empty or model_ranking.empty:
-        ax.text(0.5, 0.5, "No residual summary", transform=ax.transAxes, ha="center", va="center")
+        ax.text(
+            0.5,
+            0.5,
+            "No residual summary",
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+        )
         return
     top_n = int(cfg.get("top_residual_models", 3) or 3)
     labels = set(model_ranking.head(top_n)["model_label"])
@@ -1010,7 +1168,14 @@ def _plot_top_residual_summaries(ax, residual_summary, model_ranking, cfg):
 
 def _plot_model_ranking_heatmap(ax, residual_summary, freqs):
     if residual_summary.empty:
-        ax.text(0.5, 0.5, "No model ranking", transform=ax.transAxes, ha="center", va="center")
+        ax.text(
+            0.5,
+            0.5,
+            "No model ranking",
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+        )
         return
     matrix = residual_summary.pivot_table(
         index="model_label",
@@ -1022,7 +1187,9 @@ def _plot_model_ranking_heatmap(ax, residual_summary, freqs):
     matrix = matrix.loc[order]
     im = ax.imshow(matrix.to_numpy(dtype=float), aspect="auto", cmap="magma_r")
     ax.set_xticks(np.arange(len(matrix.columns)))
-    ax.set_xticklabels([f"{freq:g}" for freq in matrix.columns], rotation=35, ha="right")
+    ax.set_xticklabels(
+        [f"{freq:g}" for freq in matrix.columns], rotation=35, ha="right"
+    )
     ax.set_yticks(np.arange(len(matrix.index)))
     ax.set_yticklabels(matrix.index)
     ax.set_title("D. Median |residual| by model and band")
@@ -1069,11 +1236,15 @@ def _summary_row(freq, series, value_col):
 
 def _residual_summary(height, freqs):
     rows = []
-    for (multiplier, harmonic), model_group in height.groupby(["newkirk_multiplier", "harmonic"], dropna=False):
+    for (multiplier, harmonic), model_group in height.groupby(
+        ["newkirk_multiplier", "harmonic"], dropna=False
+    ):
         label = model_label(multiplier, harmonic)
         for freq in freqs:
             residual = pd.to_numeric(
-                model_group.loc[model_group["frequency_mhz"].eq(float(freq)), "height_residual_rsun"],
+                model_group.loc[
+                    model_group["frequency_mhz"].eq(float(freq)), "height_residual_rsun"
+                ],
                 errors="coerce",
             ).dropna()
             if residual.empty:
@@ -1109,8 +1280,12 @@ def _residual_summary(height, freqs):
 
 def _model_ranking(height):
     rows = []
-    for (multiplier, harmonic), group in height.groupby(["newkirk_multiplier", "harmonic"], dropna=False):
-        residual = pd.to_numeric(group["height_residual_rsun"], errors="coerce").dropna()
+    for (multiplier, harmonic), group in height.groupby(
+        ["newkirk_multiplier", "harmonic"], dropna=False
+    ):
+        residual = pd.to_numeric(
+            group["height_residual_rsun"], errors="coerce"
+        ).dropna()
         if residual.empty:
             continue
         rows.append(
@@ -1122,7 +1297,13 @@ def _model_ranking(height):
                 "median_abs_residual_rsun": float(residual.abs().median()),
             }
         )
-    return pd.DataFrame(rows).sort_values("median_abs_residual_rsun").reset_index(drop=True) if rows else pd.DataFrame()
+    return (
+        pd.DataFrame(rows)
+        .sort_values("median_abs_residual_rsun")
+        .reset_index(drop=True)
+        if rows
+        else pd.DataFrame()
+    )
 
 
 def _center_summary(gaussian, freqs):
@@ -1153,7 +1334,14 @@ def _drift_match_summary(matched_gaussian, freqs):
         else:
             group = matched_gaussian[matched_gaussian["frequency_mhz"].eq(float(freq))]
         if group.empty:
-            rows.append({"frequency_mhz": float(freq), "drift_label": "", "source_type": "missing", "n": 0})
+            rows.append(
+                {
+                    "frequency_mhz": float(freq),
+                    "drift_label": "",
+                    "source_type": "missing",
+                    "n": 0,
+                }
+            )
             continue
         counts = group.groupby(["drift_label", "source_type"], dropna=False).size()
         for (label, source_type), n in counts.items():
@@ -1202,8 +1390,14 @@ def _clean_height_table(height_df):
     ):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-    df["source_type"] = df["source_type"].fillna("unknown").astype(str) if "source_type" in df.columns else "unknown"
-    df["drift_label"] = df["drift_label"].fillna("").astype(str) if "drift_label" in df.columns else ""
+    df["source_type"] = (
+        df["source_type"].fillna("unknown").astype(str)
+        if "source_type" in df.columns
+        else "unknown"
+    )
+    df["drift_label"] = (
+        df["drift_label"].fillna("").astype(str) if "drift_label" in df.columns else ""
+    )
     df["time_dt"] = _parse_time_series(df.get("time"))
     return df
 
@@ -1217,12 +1411,25 @@ def _clean_gaussian_table(gaussian_df):
             df["frequency_mhz"] = pd.to_numeric(df["freq"], errors="coerce")
         elif "freq_mhz" in df.columns:
             df["frequency_mhz"] = pd.to_numeric(df["freq_mhz"], errors="coerce")
-    for src, dest in (("center_x_arcsec", "center_x_arcsec"), ("center_y_arcsec", "center_y_arcsec")):
+    for src, dest in (
+        ("center_x_arcsec", "center_x_arcsec"),
+        ("center_y_arcsec", "center_y_arcsec"),
+    ):
         if src in df.columns:
             df[dest] = pd.to_numeric(df[src], errors="coerce")
-    df["source_type"] = df["source_type"].fillna("unknown").astype(str) if "source_type" in df.columns else "unknown"
-    df["drift_label"] = df["drift_label"].fillna("").astype(str) if "drift_label" in df.columns else ""
-    df["drift_match_warning"] = df["drift_match_warning"].fillna("").astype(str) if "drift_match_warning" in df.columns else ""
+    df["source_type"] = (
+        df["source_type"].fillna("unknown").astype(str)
+        if "source_type" in df.columns
+        else "unknown"
+    )
+    df["drift_label"] = (
+        df["drift_label"].fillna("").astype(str) if "drift_label" in df.columns else ""
+    )
+    df["drift_match_warning"] = (
+        df["drift_match_warning"].fillna("").astype(str)
+        if "drift_match_warning" in df.columns
+        else ""
+    )
     df["time_dt"] = _parse_time_series(df.get("time"))
     return df
 
@@ -1232,7 +1439,12 @@ def _frequency_on_drift_line(row_time, drift_row, time_tolerance_s):
     t_end = parse_datetime_value(drift_row.get("t_end"))
     f_start = _float_or_nan(drift_row.get("f_start_mhz"))
     f_end = _float_or_nan(drift_row.get("f_end_mhz"))
-    if t_start is None or t_end is None or not np.isfinite(f_start) or not np.isfinite(f_end):
+    if (
+        t_start is None
+        or t_end is None
+        or not np.isfinite(f_start)
+        or not np.isfinite(f_end)
+    ):
         return None
     if t_end < t_start:
         t_start, t_end = t_end, t_start
@@ -1249,14 +1461,21 @@ def _frequency_on_drift_line(row_time, drift_row, time_tolerance_s):
 
 def _prepare_spectrogram(spectrogram_data, time_axis, frequency_axis_mhz):
     data = np.asarray(spectrogram_data, dtype=float)
-    time_nums = np.asarray([mdates.date2num(parse_datetime_value(t) or t) for t in time_axis], dtype=float)
+    time_nums = np.asarray(
+        [mdates.date2num(parse_datetime_value(t) or t) for t in time_axis], dtype=float
+    )
     freqs = np.asarray(frequency_axis_mhz, dtype=float)
     if data.shape[0] != freqs.size and data.shape[1] == freqs.size:
         data = data.T
     if freqs[0] > freqs[-1]:
         freqs = freqs[::-1]
         data = data[::-1, :]
-    extent = [float(np.nanmin(time_nums)), float(np.nanmax(time_nums)), float(np.nanmin(freqs)), float(np.nanmax(freqs))]
+    extent = [
+        float(np.nanmin(time_nums)),
+        float(np.nanmax(time_nums)),
+        float(np.nanmin(freqs)),
+        float(np.nanmax(freqs)),
+    ]
     return data, time_nums, freqs, extent
 
 
@@ -1384,7 +1603,10 @@ def _draw_solar_radius_reference(ax, solar_radius_arcsec):
 
 
 def _plot_single_frequency_time_trajectory(group, frequency_mhz, path, config):
-    fig, ax = plt.subplots(figsize=config.get("trajectory_figsize", (7, 6)), dpi=int(config.get("dpi", 180)))
+    fig, ax = plt.subplots(
+        figsize=config.get("trajectory_figsize", (7, 6)),
+        dpi=int(config.get("dpi", 180)),
+    )
     time_nums = _date_numbers_for_group(group)
     ax.plot(
         group["center_x_arcsec"],
@@ -1423,7 +1645,9 @@ def _plot_single_frequency_time_trajectory(group, frequency_mhz, path, config):
 
 
 def _selected_newkirk_model(config):
-    multiplier = config.get("selected_newkirk_multiplier", config.get("newkirk_multiplier", 2.0))
+    multiplier = config.get(
+        "selected_newkirk_multiplier", config.get("newkirk_multiplier", 2.0)
+    )
     harmonic = config.get("selected_newkirk_harmonic", config.get("harmonic", 2))
     return float(multiplier), float(harmonic)
 
@@ -1462,7 +1686,11 @@ def _match_drift_for_frequency(freq, drift, freq_tol):
         lo = min(f_start, f_end) - float(freq_tol)
         hi = max(f_start, f_end) + float(freq_tol)
         if lo <= freq <= hi:
-            distance = 0.0 if min(f_start, f_end) <= freq <= max(f_start, f_end) else min(abs(freq - f_start), abs(freq - f_end))
+            distance = (
+                0.0
+                if min(f_start, f_end) <= freq <= max(f_start, f_end)
+                else min(abs(freq - f_start), abs(freq - f_end))
+            )
             if distance < best_distance:
                 best = row
                 best_distance = distance
@@ -1481,7 +1709,12 @@ def _drift_rate_from_row(row):
         t_end = parse_datetime_value(row.get("t_end"))
         if t_start is not None and t_end is not None:
             duration = (t_end - t_start).total_seconds()
-    if np.isfinite(f_start) and np.isfinite(f_end) and np.isfinite(duration) and abs(duration) > 1e-12:
+    if (
+        np.isfinite(f_start)
+        and np.isfinite(f_end)
+        and np.isfinite(duration)
+        and abs(duration) > 1e-12
+    ):
         return (f_end - f_start) / duration
     return np.nan
 

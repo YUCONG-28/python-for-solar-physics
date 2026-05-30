@@ -1,226 +1,107 @@
 # Final Code Retention And Removal Plan
 
-Date: 2026-05-22
+Last updated: 2026-05-30
 
-## Scope
+This plan records the current retention and removal boundary after the AIA/HMI
+radio-style restructuring. It replaces the older Phase 4 snapshot, whose file
+lists still referenced paths that have since moved, been archived, or been
+deleted.
 
-This document records the Phase 4 retention/removal plan and the Phase 4B
-actions executed after explicit user confirmation. No staging, commit, or push
-was performed in this phase.
+## Retention Rules
 
-Deletion or additional archival actions must wait for the explicit user reply:
+1. Keep public entrypoints and compatibility wrappers until real-data output
+   parity has been verified.
+2. Keep historical scientific scripts when they may preserve ROI, color-limit,
+   contour, timing, FITS/WCS, or output-naming behavior.
+3. Remove only reproducible generated artifacts automatically: Python caches,
+   lint/test caches, temporary pytest products, and empty scratch directories.
+4. Do not delete local scientific products, manual selections, Excel workbooks,
+   root display images, ignored archive folders, or tool configuration without
+   explicit user confirmation. Generated-looking products may be untracked from
+   Git when they remain available as ignored local files.
+5. Treat the current radio config changes in the working tree as user work; do
+   not fold them into this cleanup plan.
 
-```text
-确认执行删除/归档
-```
+## Current Main Entrypoints
 
-## Final Retention List
-
-### AIA
-
-Keep:
-
-- `scripts/aia_hmi/sdo_aia_euv_processor.py`
-- `scripts/aia_hmi/sdo_aia_multichannel_panel.py`
-- `scripts/aia_hmi/sdo_aia_hmi_overlay.py`
-- `scripts/aia_hmi/sdo_aia_hmi_fits_rename.py`
-- `scripts/aia_hmi/sdo_aia_lightcurve_extraction.py`
-- `scripts/aia_hmi/sdo_aia_lightcurve_plot.py`
-- `scripts/aia_hmi/sdo_aia_time_distance_diagram.py`
-- `scripts/aia_hmi/sdo_aia_time_file_selector.py`
-- `scripts/aia_hmi/sdo_hmi_magnetogram_plot.py`
-
-Archived legacy compatibility wrappers:
-
-- `legacy/scripts/aia_hmi/sdo_aia_base_difference.py`
-- `legacy/scripts/aia_hmi/sdo_aia_running_difference.py`
-
-### Radio Source Map
-
-Keep:
-
-- `scripts/radio/radio_source_map_plot_gaussian_overlay.py`
-- `scripts/radio/radio_source_map_plot.py`
-
-Protected support/result-like file:
-
-- `scripts/radio/spectrogram_drift_rate_manual_selection.json`
-
-### AIA/Radio/HMI Overlay
-
-Keep:
-
-- `scripts/radio/sdo_aia_radio_hmi_overlay.py`
-- `scripts/radio/sdo_aia_radio_hmi_overlay_bgcorrected.py`
-- `examples/radio_aia_hmi/aia_radio_hmi_overlay_demo.py`
-
-### CSO Spectrogram
-
-Keep:
-
-- `scripts/radio/cso_radio_spectrogram_plot.py`
-- `scripts/radio/cso_spectrogram_class.py`
-- `scripts/radio/cso_radio_spectra_gui.py`
-
-### Gaussian Fitting
-
-Keep:
-
-- `solar_toolkit/gaussian.py`
-- `scripts/tools/gaussian_source_fitting.py`
-
-### Shared Utilities
-
-Keep:
-
-- `solar_toolkit/__init__.py`
-- `solar_toolkit/coordinates.py`
-- `solar_toolkit/cso.py`
-- `solar_toolkit/path_config.py`
-- `solar_toolkit/solar_analysis_utils.py`
-
-### Tools
-
-Keep:
-
-- `scripts/tools/image_sequence_to_video.py`
-- `scripts/tools/gaussian_source_fitting.py`
-
-### Examples
-
-Keep as current examples:
-
-- `examples/README.md`
-- `examples/aia_hmi/solar_limb_contour_example.py`
-- `examples/radio/fits_header_metadata_example.py`
-- `examples/radio_aia_hmi/aia_radio_hmi_overlay_demo.py`
-- `examples/output/.gitkeep`
-
-Deleted after manual confirmation in Phase 4B:
-
-- `examples/legacy/radio/cso_spectrogram_processing_example.py`
-- `examples/legacy/radio_aia_hmi/aia_radio_hmi_overlay_extended_example.py`
-- `examples/legacy/radio_aia_hmi/aia_radio_overlay_variant0_example.py`
-- `examples/legacy/radio_aia_hmi/aia_radio_overlay_variant1_example.py`
-
-## Final Basic Code List
-
-| Module | Basic script/example | Reason |
+| Area | Keep | Reason |
 | --- | --- | --- |
-| AIA | `scripts/aia_hmi/sdo_aia_multichannel_panel.py` | Shorter teaching example for multi-wavelength organization, synchronization, display ranges, and six-panel plotting. |
-| Radio source map | `scripts/radio/radio_source_map_plot.py` | Basic source-map reader/plotter without Gaussian, spectrogram panels, drift-rate selection, or frontend logic. |
-| AIA/radio/HMI overlay | `examples/radio_aia_hmi/aia_radio_hmi_overlay_demo.py` | Best bridge example for the formal overlay workflow while still showing AIA/radio/HMI behavior. |
-| CSO spectrogram | `scripts/radio/cso_spectrogram_class.py` | Basic reusable spectrogram container, reader wrapper, slicing, and simple plotting helper. |
-| Gaussian fitting | `scripts/tools/gaussian_source_fitting.py` | Compatibility utility entry point re-exporting shared `solar_toolkit.gaussian` helpers. |
+| AIA EUV processing | `scripts/aia_hmi/run_aia_euv_processor.py` | Recommended AIA entrypoint for single-band, mosaic, preview, and difference products. |
+| AIA EUV compatibility | `scripts/aia_hmi/sdo_aia_euv_processor.py` | Historical command/import path retained as a lightweight wrapper. |
+| Radio burst workflow | `scripts/radio/run_radio_burst_pipeline.py` | Recommended full radio source, Gaussian, drift, and Newkirk workflow. |
+| Radio source maps | `scripts/radio/run_radio_source_map.py` | Recommended quick source-map and Gaussian overlay workflow. |
+| AIA/radio/HMI overlay | `scripts/radio/run_aia_radio_hmi_overlay.py` | Recommended context overlay workflow. |
+| CSO spectrogram compatibility | `scripts/radio/legacy/cso_radio_spectrogram_plot.py` | Current CSO dynamic-spectrum entrypoint until a verified wrapper exists. |
+| FITS rename utility | `scripts/aia_hmi/sdo_aia_hmi_fits_rename.py` | Data-preparation utility covered by lightweight tests. |
+| Video utility | `scripts/tools/image_sequence_to_video.py` | General non-scientific media utility. |
 
-## Legacy Archive List
+## Current Core Modules To Keep
 
-Archived in `examples/legacy/` during earlier phases and deleted after Phase 4B
-manual confirmation:
+| Area | Keep | Reason |
+| --- | --- | --- |
+| Shared package | `solar_toolkit/` | Shared path, coordinate, CSO, Gaussian, and analysis helpers. |
+| AIA/HMI core | `scripts/aia_hmi/core/` | New AIA/HMI config, CLI, I/O, difference, mosaic, and dispatcher boundary. |
+| Radio core | `scripts/radio/core/` | Existing extracted Gaussian, spectrogram, drift, Newkirk, coordinate, and plotting helpers. |
+| Config templates | `configs/*.example.yaml` | Public examples for future path and workflow configuration. |
+| Tests | `tests/` | Lightweight data-independent regression tests. |
 
-- `examples/legacy/radio/cso_spectrogram_processing_example.py`
-- `examples/legacy/radio_aia_hmi/aia_radio_hmi_overlay_extended_example.py`
-- `examples/legacy/radio_aia_hmi/aia_radio_overlay_variant0_example.py`
-- `examples/legacy/radio_aia_hmi/aia_radio_overlay_variant1_example.py`
+## Historical Or Review Files To Keep
 
-Archived under `legacy/` after Phase 4B manual confirmation:
+| Path | Decision |
+| --- | --- |
+| `legacy/scripts/aia_hmi/sdo_aia_base_difference.py` | Keep for base-difference default comparison. |
+| `legacy/scripts/aia_hmi/sdo_aia_running_difference.py` | Keep for running-difference default comparison. |
+| `scripts/aia_hmi/sdo_aia_hmi_overlay.py` | Keep until HMI overlay behavior is compared with current workflows. |
+| `scripts/aia_hmi/sdo_aia_time_distance_diagram.py` | Keep as legacy-risk demonstration code. |
+| `scripts/radio/legacy/radio_source_map_plot_gaussian_overlay.py` | Keep as compatibility implementation behind the radio source-map wrapper. |
+| `scripts/radio/legacy/sdo_aia_radio_hmi_overlay.py` | Keep as compatibility implementation behind the overlay wrapper. |
+| `examples/radio_aia_hmi/aia_radio_hmi_overlay_demo.py` | Keep as the public overlay example. |
 
-- `legacy/scripts/aia_hmi/sdo_aia_base_difference.py`
-- `legacy/scripts/aia_hmi/sdo_aia_running_difference.py`
+## Automatic Removal Targets
 
-Reason: both AIA files are compatibility wrappers. Archiving removes the old
-active script entry-point paths while preserving legacy defaults for historical
-reference and lightweight tests.
+These may be deleted whenever they appear, because they are reproducible
+generated artifacts:
 
-Do not move to legacy automatically:
+- `__pycache__/`
+- `*.pyc`
+- `.pytest_cache/`
+- pytest temporary directories such as `outputs/pytest-tmp-codex*`
+- `.ruff_cache/`
+- `.mypy_cache/`
+- `pytest-cache-files-*`
+- `tmp/` and other empty scratch directories
+- empty stray marker files with no path references, such as the removed
+  `fit_min_mask_pixels` file
 
-- `scripts/radio/cso_radio_spectra_gui.py`
-- `scripts/radio/sdo_aia_radio_hmi_overlay_bgcorrected.py`
-- `scripts/radio/radio_source_map_plot.py`
-- `scripts/radio/spectrogram_drift_rate_manual_selection.json`
+## Manual Confirmation Required
 
-## Deletion Candidates
+Do not delete the following local files or folders without explicit user
+confirmation:
 
-Deletion/archival below was executed only after the user explicitly confirmed
-the Phase 4 plan.
-
-| File | Covered by main code | Unique function? | Deletion risk | Test coverage | Human confirmation needed |
-| --- | --- | --- | --- | --- | --- |
-| `legacy/scripts/aia_hmi/sdo_aia_base_difference.py` | `scripts/aia_hmi/sdo_aia_euv_processor.py` with `difference_method="base"` | Legacy entry-point name and preserved defaults only; no independent algorithm remains | Medium. Old scripts/notebooks may call the old active path; legacy ROI/color/output naming may matter for paper reproduction | Wrapper config covered by `tests/test_aia_difference_wrappers.py`; no real-data parity test | Confirmed; archived, not deleted |
-| `legacy/scripts/aia_hmi/sdo_aia_running_difference.py` | `scripts/aia_hmi/sdo_aia_euv_processor.py` with `difference_method="running"` | Legacy entry-point name and preserved defaults only; no independent algorithm remains | Medium. Old workflows may call the old active path; first-frame original-image legacy behavior may matter | Wrapper config covered by `tests/test_aia_difference_wrappers.py`; no real-data parity test | Confirmed; archived, not deleted |
-| `examples/legacy/radio_aia_hmi/aia_radio_overlay_variant0_example.py` | `scripts/radio/sdo_aia_radio_hmi_overlay.py` plus retained demo | Possible event-specific AIA/radio parameters | Medium. May preserve one-off alignment/ROI/contour defaults | No direct test | Yes |
-| `examples/legacy/radio_aia_hmi/aia_radio_overlay_variant1_example.py` | `scripts/radio/sdo_aia_radio_hmi_overlay.py` plus retained demo | Possible event-specific AIA/radio parameters | Medium. May preserve one-off alignment/ROI/contour defaults | No direct test | Yes |
-| `examples/legacy/radio_aia_hmi/aia_radio_hmi_overlay_extended_example.py` | `scripts/radio/sdo_aia_radio_hmi_overlay.py` plus retained demo | Yes, may contain exploratory reprojection modes and extended diagnostics | High. Could preserve unreproduced figure settings or experimental reprojection choices | No direct test | Yes |
-| `examples/legacy/radio/cso_spectrogram_processing_example.py` | `scripts/radio/cso_radio_spectrogram_plot.py` and `scripts/radio/cso_spectrogram_class.py` | Mostly historical duplicate, but may preserve old plotting defaults | Medium. LL/RR/sum/ratio defaults or publication plots may depend on it | Shared CSO reader covered by `tests/test_cso_utils.py`; example plotting not tested | Yes |
-
-## Cannot Delete List
-
-Do not delete automatically:
-
-- `scripts/radio/sdo_aia_radio_hmi_overlay_bgcorrected.py`
-  - Experimental background subtraction and robust/background Gaussian logic.
-- `scripts/radio/spectrogram_drift_rate_manual_selection.json`
-  - May contain manual drift-rate selections or local result metadata.
 - `AIA.xlsx`
-  - Possible research table or intermediate result.
 - `CSO.xlsx`
-  - Possible research table or intermediate result.
-- Root PNG files:
-  - `HXR.png`
-  - `SXR.png`
-  - `SXR to HXR.png`
-  - `SXR to HXR enhance.png`
-- Any real research result file, generated figure, FITS product, spreadsheet,
-  manual selection, or local-analysis output unless the user explicitly confirms
-  it can be removed.
-- `scripts/radio/cso_radio_spectra_gui.py`
-  - Optional GUI with interactive and type-II fitting behavior.
-- `scripts/radio/radio_source_map_plot.py`
-  - Retained basic radio source-map entry point.
-- `scripts/aia_hmi/sdo_aia_multichannel_panel.py`
-  - Retained AIA basic/teaching code.
-- `examples/radio_aia_hmi/aia_radio_hmi_overlay_demo.py`
-  - Retained basic overlay example.
+- `HXR.png`
+- `SXR.png`
+- `SXR to HXR.png`
+- `SXR to HXR enhance.png`
+- root `spectrogram_drift_rate_*` JSON/PNG products
+- `archive/`
+- `data dowload/`
+- `scripts/radio/outputs/`
+- `.automated-tool*`
+- `.vscode/`
+- any FITS, JP2, NetCDF, CSV, PNG, MP4, JSON selection, or local output that may
+  be part of a research run.
 
-## Required Checks Before Deletion Or Archival
+## Checks Before Any Future Deletion
 
-Before any deletion or additional move:
+Before deleting or moving a scientific file:
 
-1. Search README, docs, notebooks, scripts, and local notes for references to
-   the candidate path.
-2. Confirm no collaborator still runs the candidate directly.
-3. Confirm any unique ROI, color limits, contour levels, time ranges, output
-   naming, and local paths have been preserved in docs or config examples.
-4. For science plots, compare old and new real-data outputs manually before
-   deleting the old reproduction path.
-5. Stage changes only after the user explicitly says:
-
-```text
-确认执行删除/归档
-```
-
-## Phase 4B Execution Status
-
-Executed after explicit user confirmation:
-
-- Archived `scripts/aia_hmi/sdo_aia_base_difference.py` to
-  `legacy/scripts/aia_hmi/sdo_aia_base_difference.py`.
-- Archived `scripts/aia_hmi/sdo_aia_running_difference.py` to
-  `legacy/scripts/aia_hmi/sdo_aia_running_difference.py`.
-- Deleted the confirmed duplicate legacy examples:
-  - `examples/legacy/radio/cso_spectrogram_processing_example.py`
-  - `examples/legacy/radio_aia_hmi/aia_radio_hmi_overlay_extended_example.py`
-  - `examples/legacy/radio_aia_hmi/aia_radio_overlay_variant0_example.py`
-  - `examples/legacy/radio_aia_hmi/aia_radio_overlay_variant1_example.py`
-- Updated `tests/test_aia_difference_wrappers.py` to load archived AIA wrappers
-  from `legacy/scripts/aia_hmi/`.
-
-No protected files, real research outputs, GUI files, background-corrected
-overlay code, radio source-map basics, CSO main code, or scientific algorithms
-were changed by the deletion/archival step.
-
-Post-action checks:
-
-- `python -m pytest tests --basetemp pytest-cache-files-phase4b`: passed,
-  45 tests.
-- `python -m compileall solar_toolkit scripts tests legacy`: passed.
+1. Search current docs, tests, scripts, examples, and local notes for references
+   to the path.
+2. Confirm the user no longer runs the path directly.
+3. Preserve unique ROI, wavelength, frequency, color-limit, contour, timing,
+   WCS, output-name, and output-directory behavior in docs or config.
+4. Run lightweight import/compile tests and, for scientific plot paths, compare
+   real-data outputs before claiming parity.
+5. Stage only reviewed files explicitly; do not use broad staging commands.

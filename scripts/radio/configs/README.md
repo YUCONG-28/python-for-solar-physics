@@ -16,9 +16,9 @@ Daily edits should go in `configs/radio_20250124_config.py`. Do not put a new
 - `output`: output directory, plot display/save toggles, DPI.
 - `NEWKIRK_CONFIG`: Newkirk multipliers, fundamental/harmonic settings, solar
   radius in arcseconds, and output CSV names.
-- `aia_radio_hmi_20250124_config.py`: AIA/HMI/radio overlay paths, AIA file
-  range, AIA wavelength label, HMI matching, WCS/reproject ROI, and overlay
-  output settings.
+- `AIA_RADIO_HMI_CONFIG`: AIA/HMI/radio overlay paths, AIA file range, AIA
+  wavelength label, HMI matching, WCS/reproject ROI, and overlay output
+  settings. Keep this block in the same event config file as `USER_CONFIG`.
 
 ## Run Commands
 
@@ -30,8 +30,12 @@ $env:PYTHONPATH = "<PROJECT_ROOT>\Python"
 python scripts\radio\run_radio_source_map.py --config radio_20250124_config
 python scripts\radio\run_radio_burst_pipeline.py --config radio_20250124_config
 python scripts\radio\run_aia_radio_hmi_overlay.py --config radio_20250124_config
-python scripts\radio\run_aia_radio_hmi_overlay.py --config aia_radio_hmi_20250124_config
+python scripts\radio\run_aia_radio_hmi_overlay.py --config radio_20250503_config
 ```
+
+The historical `aia_radio_hmi_20250124_config` module remains importable as a
+compatibility shim, but new overlay runs should use the event config module
+directly.
 
 If `--config` is omitted, all three entrypoints default to
 `radio_20250124_config`.
