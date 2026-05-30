@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 import matplotlib.patches as patches
 import numpy as np
-from scipy.ndimage import binary_dilation, find_objects, label
+from scipy.ndimage import binary_dilation, find_objects, label, maximum_filter
 from scipy.optimize import curve_fit
 
 from .radio_coordinates import (
@@ -20,7 +20,12 @@ from .radio_coordinates import (
     pixel_to_data_coord,
     unravel_2d_index,
 )
-from .radio_io import GAUSSIAN_DIAGNOSTIC_FIELDS, BoolArray, FloatArray
+from .radio_io import (
+    GAUSSIAN_DIAGNOSTIC_FIELDS,
+    MULTI_GAUSSIAN_DIAGNOSTIC_FIELDS,
+    BoolArray,
+    FloatArray,
+)
 from .radio_io import plot_output_subdir as _plot_output_subdir
 
 _unravel_2d_index = unravel_2d_index
@@ -44,6 +49,30 @@ class GaussianFitResult:
     covariance: np.ndarray | None
     mask_pixel_count: int
     source_file: str | None = None
+
+
+@dataclass
+class GaussianSourceCandidate:
+    source_id: int
+    rank: int
+    peak_pixel: tuple[float, float]
+    peak_arcsec: tuple[float, float]
+    peak_value: float
+    detection_snr: float | None
+    mask_pixel_count: int
+    mask: np.ndarray
+
+
+@dataclass
+class MultiGaussianFitResult:
+    candidates: list[GaussianSourceCandidate]
+    fit_results: list[GaussianFitResult]
+    primary_result: GaussianFitResult | None
+    source_count_mode: str
+    requested_source_count: int | None
+    detected_source_count: int
+    missing_source_count: int
+    failure_rows: list[dict]
 
 
 def elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta):
@@ -412,6 +441,234 @@ def create_source_mask(
     return np.asarray(main_mask, dtype=np.bool_), diagnostics
 
 
+def _requested_multi_source_count(cfg):
+    raw = cfg.get("multi_gaussian_source_count")
+    if raw in (None, ""):
+        return None
+    try:
+        count = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return max(count, 1)
+
+
+def _multi_source_limit(cfg):
+    requested = _requested_multi_source_count(cfg)
+    if requested is not None:
+        return requested
+    return max(int(cfg.get("multi_gaussian_max_sources", 3)), 1)
+
+
+def _candidate_detection_masks(work, cfg, background_map=None, rms_map=None):
+    finite = np.isfinite(work)
+    finite_data = work[finite]
+    if finite_data.size == 0:
+        return None
+
+    peak = float(np.nanmax(finite_data))
+    min_peak_fraction = float(cfg.get("multi_gaussian_min_peak_fraction", 0.30))
+    grow_peak_fraction = float(cfg.get("fit_grow_peak_fraction_threshold", 0.20))
+    intensity_threshold = min_peak_fraction * peak
+    grow_intensity_threshold = min(grow_peak_fraction, min_peak_fraction) * peak
+
+    bg = None
+    rms = None
+    use_snr = False
+    if (
+        cfg.get("background_use_for_mask", True)
+        and background_map is not None
+        and rms_map is not None
+    ):
+        bg = np.asarray(background_map, dtype=np.float64)
+        rms = _safe_rms_map(rms_map)
+        use_snr = bg.shape == work.shape and rms.shape == work.shape
+
+    if use_snr:
+        snr_map = (work - bg) / rms
+        core_mask = (
+            finite
+            & np.isfinite(snr_map)
+            & (snr_map >= float(cfg.get("fit_snr_threshold", 5.0)))
+            & (work > intensity_threshold)
+        )
+        grow_mask = (
+            finite
+            & np.isfinite(snr_map)
+            & (snr_map >= float(cfg.get("fit_grow_snr_threshold", 3.0)))
+            & (work > grow_intensity_threshold)
+        )
+    else:
+        _, noise_sigma = estimate_background_noise(work)
+        if not np.isfinite(noise_sigma) or noise_sigma <= 0:
+            noise_sigma = max(float(np.nanstd(finite_data)), 1e-12)
+        snr_map = (work - float(np.nanmedian(finite_data))) / noise_sigma
+        core_threshold = max(
+            float(cfg.get("fit_snr_threshold", 5.0)) * noise_sigma,
+            intensity_threshold,
+        )
+        grow_threshold = max(
+            float(cfg.get("fit_grow_snr_threshold", 3.0)) * noise_sigma,
+            grow_intensity_threshold,
+        )
+        core_mask = finite & (work > core_threshold)
+        grow_mask = finite & (work > grow_threshold)
+
+    if not np.any(core_mask):
+        return None
+    return {
+        "peak": peak,
+        "core_mask": np.asarray(core_mask, dtype=np.bool_),
+        "grow_mask": np.asarray(grow_mask | core_mask, dtype=np.bool_),
+        "snr_map": snr_map,
+    }
+
+
+def _local_peak_coordinates(work, core_mask, min_distance, max_sources):
+    peak_image = np.where(core_mask & np.isfinite(work), work, -np.inf)
+    coords = None
+    try:
+        from skimage.feature import peak_local_max
+
+        coords = peak_local_max(
+            peak_image,
+            min_distance=max(int(min_distance), 1),
+            exclude_border=False,
+            labels=np.asarray(core_mask, dtype=np.uint8),
+            num_peaks=max(int(max_sources), 1),
+        )
+    except Exception:
+        size = max(2 * int(min_distance) + 1, 3)
+        local_max = core_mask & (peak_image == maximum_filter(peak_image, size=size))
+        coords = np.column_stack(np.nonzero(local_max))
+
+    if coords is None or len(coords) == 0:
+        if not np.any(core_mask):
+            return []
+        y, x = _unravel_2d_index(int(np.nanargmax(peak_image)), work.shape)
+        coords = np.asarray([[y, x]], dtype=np.intp)
+
+    coord_list = [
+        (int(y), int(x), float(work[int(y), int(x)]))
+        for y, x in np.asarray(coords, dtype=np.intp)
+        if np.isfinite(work[int(y), int(x)])
+    ]
+    coord_list.sort(key=lambda item: item[2], reverse=True)
+
+    min_dist2 = float(max(int(min_distance), 1) ** 2)
+    selected = []
+    for y, x, value in coord_list:
+        if all(
+            (y - kept[0]) ** 2 + (x - kept[1]) ** 2 >= min_dist2 for kept in selected
+        ):
+            selected.append((y, x, value))
+        if len(selected) >= int(max_sources):
+            break
+    return selected
+
+
+def _watershed_candidate_labels(work, grow_mask, peak_coords, use_watershed):
+    if len(peak_coords) == 0:
+        return None
+    if use_watershed and len(peak_coords) > 1:
+        try:
+            from skimage.segmentation import watershed
+
+            markers = np.zeros(work.shape, dtype=np.int32)
+            for idx, (y, x, _) in enumerate(peak_coords, start=1):
+                markers[int(y), int(x)] = idx
+            finite_work = np.where(
+                np.isfinite(work), work, np.nanmin(work[np.isfinite(work)])
+            )
+            return watershed(-finite_work, markers=markers, mask=grow_mask)
+        except Exception:
+            pass
+
+    labeled, _ = label(grow_mask)
+    labels_out = np.zeros(work.shape, dtype=np.int32)
+    used_component_labels = set()
+    out_label = 1
+    for y, x, _ in peak_coords:
+        component_label = int(labeled[int(y), int(x)])
+        if component_label <= 0 or component_label in used_component_labels:
+            continue
+        labels_out[labeled == component_label] = out_label
+        used_component_labels.add(component_label)
+        out_label += 1
+    return labels_out
+
+
+def detect_gaussian_source_candidates(
+    data,
+    extent,
+    cfg,
+    background_map=None,
+    rms_map=None,
+    image_origin=None,
+):
+    work = np.asarray(data, dtype=np.float64)
+    if work.ndim != 2:
+        return []
+    image_origin = image_origin or cfg.get("_current_radio_image_origin", "upper")
+    masks = _candidate_detection_masks(
+        work, cfg, background_map=background_map, rms_map=rms_map
+    )
+    if masks is None:
+        return []
+
+    max_sources = _multi_source_limit(cfg)
+    min_distance = int(cfg.get("multi_gaussian_min_peak_distance_pixels", 6))
+    peak_coords = _local_peak_coordinates(
+        work, masks["core_mask"], min_distance, max_sources
+    )
+    labels_map = _watershed_candidate_labels(
+        work,
+        masks["grow_mask"],
+        peak_coords,
+        bool(cfg.get("multi_gaussian_use_watershed", True)),
+    )
+    if labels_map is None:
+        return []
+
+    candidates = []
+    min_candidate_pixels = int(cfg.get("fit_min_mask_pixels", 20))
+    for rank, (peak_y, peak_x, peak_value) in enumerate(peak_coords, start=1):
+        label_value = int(labels_map[int(peak_y), int(peak_x)])
+        if label_value <= 0:
+            candidate_mask = np.zeros(work.shape, dtype=np.bool_)
+            candidate_mask[int(peak_y), int(peak_x)] = True
+        else:
+            candidate_mask = np.asarray(labels_map == label_value, dtype=np.bool_)
+        candidate_mask &= np.isfinite(work)
+        mask_count = int(np.count_nonzero(candidate_mask))
+        if mask_count < min_candidate_pixels:
+            continue
+        snr_value = masks["snr_map"][int(peak_y), int(peak_x)]
+        detection_snr = float(snr_value) if np.isfinite(snr_value) else None
+        peak_arcsec = pixel_to_data_coord(
+            float(peak_x), float(peak_y), extent, work.shape, origin=image_origin
+        )
+        candidates.append(
+            GaussianSourceCandidate(
+                source_id=rank,
+                rank=rank,
+                peak_pixel=(float(peak_x), float(peak_y)),
+                peak_arcsec=peak_arcsec,
+                peak_value=float(peak_value),
+                detection_snr=detection_snr,
+                mask_pixel_count=mask_count,
+                mask=candidate_mask,
+            )
+        )
+        if len(candidates) >= max_sources:
+            break
+
+    candidates.sort(key=lambda item: item.peak_value, reverse=True)
+    for rank, candidate in enumerate(candidates, start=1):
+        candidate.rank = rank
+        candidate.source_id = rank
+    return candidates
+
+
 def _fit_failure_warning(source_file, quality_flag, detail=""):
     key = str(quality_flag)
     _GAUSSIAN_WARNING_COUNTS[key] = _GAUSSIAN_WARNING_COUNTS.get(key, 0) + 1
@@ -714,6 +971,7 @@ def fit_elliptical_gaussian_on_radio_image(
     rms_map=None,
     fit_input_type="raw",
     image_origin=None,
+    source_mask_override=None,
 ):
     work = np.asarray(data, dtype=np.float64)
     image_origin = image_origin or cfg.get("_current_radio_image_origin", "upper")
@@ -751,6 +1009,28 @@ def fit_elliptical_gaussian_on_radio_image(
     source_mask, mask_diag = create_source_mask(
         work, cfg, background_map=background_map, rms_map=rms_map
     )
+    if source_mask_override is not None:
+        override_mask = np.asarray(source_mask_override, dtype=np.bool_)
+        if override_mask.shape != work.shape:
+            raise ValueError(
+                "source_mask_override shape must match the fitted radio image"
+            )
+        override_mask = np.asarray(override_mask & np.isfinite(work), dtype=np.bool_)
+        override_count = int(np.count_nonzero(override_mask))
+        source_mask = override_mask if override_count else None
+        mask_diag["mask_pixel_count"] = override_count
+        mask_diag["mask_method"] = (
+            f"{mask_diag.get('mask_method', '')}+source_override"
+            if mask_diag.get("mask_method")
+            else "source_override"
+        )
+        if override_count:
+            mask_values = work[override_mask]
+            mask_diag["peak"] = float(np.nanmax(mask_values))
+            if override_count >= int(cfg.get("fit_min_mask_pixels", 20)):
+                mask_diag["quality_flag"] = "ok"
+            else:
+                mask_diag["quality_flag"] = "mask_too_small"
     mask_diag["finite_pixel_count"] = int(finite_work.size)
     mask_diag["fit_input_type"] = fit_input_type
     mask_diag["background_use_for_mask"] = bool(
@@ -1121,6 +1401,184 @@ def fit_elliptical_gaussian_on_radio_image(
     )
 
 
+def _attach_candidate_metadata(
+    fit_result, candidate, source_count_mode, requested_count
+):
+    fit_result.source_id = candidate.source_id
+    fit_result.source_rank = candidate.rank
+    fit_result.source_is_primary = candidate.rank == 1
+    fit_result.source_count_mode = source_count_mode
+    fit_result.requested_source_count = requested_count
+    fit_result.source_peak_x_pixel = candidate.peak_pixel[0]
+    fit_result.source_peak_y_pixel = candidate.peak_pixel[1]
+    fit_result.source_peak_x_arcsec = candidate.peak_arcsec[0]
+    fit_result.source_peak_y_arcsec = candidate.peak_arcsec[1]
+    fit_result.source_detection_snr = candidate.detection_snr
+    fit_result.source_candidate_pixel_count = candidate.mask_pixel_count
+    fit_result.raw_center_arcsec = candidate.peak_arcsec
+    fit_result.raw_center_pixel = candidate.peak_pixel
+    fit_result.raw_peak_x_pixel = candidate.peak_pixel[0]
+    fit_result.raw_peak_y_pixel = candidate.peak_pixel[1]
+    fit_result.raw_peak_x_arcsec = candidate.peak_arcsec[0]
+    fit_result.raw_peak_y_arcsec = candidate.peak_arcsec[1]
+    fit_result.center_peak_distance_arcsec = _center_peak_distance_arcsec(fit_result)
+    return fit_result
+
+
+def _candidate_failure_row(candidate, fit_cfg, reason=None):
+    fail = dict(fit_cfg.get("_last_gaussian_failure_diag", {}) or {})
+    fail.setdefault("reason", reason or fail.get("quality_flag", "fit_failed"))
+    fail.setdefault("quality_flag", fail["reason"])
+    fail.update(
+        {
+            "source_id": candidate.source_id,
+            "source_rank": candidate.rank,
+            "source_is_primary": candidate.rank == 1,
+            "source_peak_x_pixel": candidate.peak_pixel[0],
+            "source_peak_y_pixel": candidate.peak_pixel[1],
+            "source_peak_x_arcsec": candidate.peak_arcsec[0],
+            "source_peak_y_arcsec": candidate.peak_arcsec[1],
+            "source_detection_snr": candidate.detection_snr,
+            "source_candidate_pixel_count": candidate.mask_pixel_count,
+        }
+    )
+    return fail
+
+
+def fit_multiple_gaussians_on_radio_image(
+    data,
+    extent,
+    cfg,
+    source_file=None,
+    background_map=None,
+    rms_map=None,
+    fit_input_type="raw",
+    image_origin=None,
+):
+    requested_count = _requested_multi_source_count(cfg)
+    source_count_mode = "requested" if requested_count is not None else "auto"
+    image_origin = image_origin or cfg.get("_current_radio_image_origin", "upper")
+
+    if requested_count == 1:
+        single_result = fit_elliptical_gaussian_on_radio_image(
+            data,
+            extent,
+            cfg,
+            source_file=source_file,
+            background_map=background_map,
+            rms_map=rms_map,
+            fit_input_type=fit_input_type,
+            image_origin=image_origin,
+        )
+        candidates = detect_gaussian_source_candidates(
+            data,
+            extent,
+            {**cfg, "multi_gaussian_max_sources": 1},
+            background_map=background_map,
+            rms_map=rms_map,
+            image_origin=image_origin,
+        )
+        if single_result is not None and candidates:
+            _attach_candidate_metadata(
+                single_result, candidates[0], source_count_mode, requested_count
+            )
+        return MultiGaussianFitResult(
+            candidates=candidates,
+            fit_results=[single_result] if single_result is not None else [],
+            primary_result=single_result,
+            source_count_mode=source_count_mode,
+            requested_source_count=requested_count,
+            detected_source_count=1 if single_result is not None else 0,
+            missing_source_count=0 if single_result is not None else 1,
+            failure_rows=[],
+        )
+
+    candidates = detect_gaussian_source_candidates(
+        data,
+        extent,
+        cfg,
+        background_map=background_map,
+        rms_map=rms_map,
+        image_origin=image_origin,
+    )
+    detected_count = len(candidates)
+    if requested_count is not None:
+        candidates = candidates[:requested_count]
+
+    if not candidates:
+        cfg["_last_gaussian_failure_diag"] = {
+            "source_file": source_file or "",
+            "reason": "no_multi_source_candidates",
+            "quality_flag": "no_multi_source_candidates",
+            "fit_input_type": fit_input_type,
+            "gaussian_fit_method": "skipped",
+        }
+        return MultiGaussianFitResult(
+            candidates=[],
+            fit_results=[],
+            primary_result=None,
+            source_count_mode=source_count_mode,
+            requested_source_count=requested_count,
+            detected_source_count=0,
+            missing_source_count=requested_count or 0,
+            failure_rows=[],
+        )
+
+    fit_results = []
+    failure_rows = []
+    for candidate in candidates:
+        fit_cfg = dict(cfg)
+        fit_result = fit_elliptical_gaussian_on_radio_image(
+            data,
+            extent,
+            fit_cfg,
+            source_file=source_file,
+            background_map=background_map,
+            rms_map=rms_map,
+            fit_input_type=fit_input_type,
+            image_origin=image_origin,
+            source_mask_override=candidate.mask,
+        )
+        if fit_result is None:
+            failure_rows.append(_candidate_failure_row(candidate, fit_cfg))
+            continue
+        fit_results.append(
+            _attach_candidate_metadata(
+                fit_result, candidate, source_count_mode, requested_count
+            )
+        )
+
+    missing_count = 0
+    if requested_count is not None and detected_count < requested_count:
+        missing_count = requested_count - detected_count
+        for rank in range(detected_count + 1, requested_count + 1):
+            failure_rows.append(
+                {
+                    "source_file": source_file or "",
+                    "reason": "missing_requested_source",
+                    "quality_flag": "missing_requested_source",
+                    "source_id": rank,
+                    "source_rank": rank,
+                    "source_is_primary": False,
+                }
+            )
+
+    primary_result = fit_results[0] if fit_results else None
+    if primary_result is None and failure_rows:
+        cfg["_last_gaussian_failure_diag"] = failure_rows[0]
+
+    return MultiGaussianFitResult(
+        candidates=candidates,
+        fit_results=fit_results,
+        primary_result=primary_result,
+        source_count_mode=source_count_mode,
+        requested_source_count=requested_count,
+        detected_source_count=detected_count,
+        missing_source_count=missing_count,
+        failure_rows=failure_rows,
+    )
+
+
 def overlay_gaussian_fit_on_axis(ax, fit_result, extent, img_shape, cfg):
     if fit_result is None:
         return
@@ -1313,6 +1771,29 @@ def overlay_gaussian_fit_on_axis(ax, fit_result, extent, img_shape, cfg):
         )
 
 
+def overlay_multi_gaussian_fit_on_axis(ax, multi_fit_result, extent, img_shape, cfg):
+    if multi_fit_result is None:
+        return
+    local_cfg = dict(cfg)
+    local_cfg["label_gaussian_center"] = False
+    for fit_result in multi_fit_result.fit_results:
+        overlay_gaussian_fit_on_axis(ax, fit_result, extent, img_shape, local_cfg)
+        if not cfg.get("draw_multi_gaussian_labels", True):
+            continue
+        if not getattr(fit_result, "overlay_valid", fit_result.quality_flag == "ok"):
+            continue
+        cx, cy = fit_result.center_arcsec
+        ax.annotate(
+            f"G{getattr(fit_result, 'source_rank', '')}",
+            xy=(cx, cy),
+            xytext=(8, 8),
+            textcoords="offset points",
+            color=cfg.get("gaussian_center_color", "red"),
+            fontsize=max(cfg.get("annotation_fontsize", 20) - 6, 8),
+            zorder=9,
+        )
+
+
 def _acquire_csv_lock(lock_path, timeout_seconds=60.0, stale_seconds=300.0):
     deadline = time.time() + float(timeout_seconds)
     fd = None
@@ -1354,6 +1835,232 @@ def save_gaussian_diagnostics_row(row, output_dir, cfg):
         cfg.get("gaussian_diagnostics_csv", "radio_gaussian_fit_diagnostics.csv"),
     )
     fieldnames = GAUSSIAN_DIAGNOSTIC_FIELDS
+    lock_path = f"{csv_path}.lock"
+    lock_fd = _acquire_csv_lock(lock_path)
+    try:
+        if os.path.exists(csv_path):
+            try:
+                with open(csv_path, newline="", encoding="utf-8") as handle:
+                    existing_header = next(csv.reader(handle), [])
+            except OSError:
+                existing_header = []
+            if existing_header and existing_header != fieldnames:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                root, ext = os.path.splitext(csv_path)
+                csv_path = f"{root}_{timestamp}{ext}"
+        write_header = not os.path.exists(csv_path)
+        with open(csv_path, "a", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(
+                handle, fieldnames=fieldnames, extrasaction="ignore"
+            )
+            if write_header:
+                writer.writeheader()
+            writer.writerow({name: row.get(name, "") for name in fieldnames})
+    finally:
+        _release_csv_lock(lock_path, lock_fd)
+
+
+def _gaussian_result_diagnostics_row(
+    fit_result, cfg, freq=None, time_str=None, polarization=None, bg_diag=None
+):
+    bg_diag = bg_diag or {}
+    fit_input_type = getattr(
+        fit_result,
+        "fit_input_type",
+        "background_subtracted" if cfg.get("background_use_for_fit", False) else "raw",
+    )
+    return {
+        "source_file": fit_result.source_file,
+        "time": time_str,
+        "freq": freq,
+        "polarization": polarization,
+        "reason": getattr(fit_result, "reason", ""),
+        "finite_pixel_count": "",
+        "center_x_arcsec": fit_result.center_arcsec[0],
+        "center_y_arcsec": fit_result.center_arcsec[1],
+        "center_x_pixel": fit_result.center_pixel[0],
+        "center_y_pixel": fit_result.center_pixel[1],
+        "raw_peak_x_arcsec": getattr(fit_result, "raw_peak_x_arcsec", ""),
+        "raw_peak_y_arcsec": getattr(fit_result, "raw_peak_y_arcsec", ""),
+        "raw_peak_x_pixel": getattr(fit_result, "raw_peak_x_pixel", ""),
+        "raw_peak_y_pixel": getattr(fit_result, "raw_peak_y_pixel", ""),
+        "center_peak_dx_arcsec": getattr(fit_result, "center_peak_dx_arcsec", ""),
+        "center_peak_dy_arcsec": getattr(fit_result, "center_peak_dy_arcsec", ""),
+        "center_peak_distance_arcsec": getattr(
+            fit_result, "center_peak_distance_arcsec", ""
+        ),
+        "sigma_x_pixel": fit_result.sigma_pixel[0],
+        "sigma_y_pixel": fit_result.sigma_pixel[1],
+        "fwhm_x_pixel": 2.355 * fit_result.sigma_pixel[0],
+        "fwhm_y_pixel": 2.355 * fit_result.sigma_pixel[1],
+        "fwhm_width_arcsec": getattr(fit_result, "fwhm_width_arcsec", ""),
+        "fwhm_height_arcsec": getattr(fit_result, "fwhm_height_arcsec", ""),
+        "fwhm_major_arcsec": getattr(fit_result, "fwhm_major_arcsec", ""),
+        "fwhm_minor_arcsec": getattr(fit_result, "fwhm_minor_arcsec", ""),
+        "max_fwhm_arcsec": getattr(
+            fit_result, "max_fwhm_arcsec", cfg.get("max_fwhm_arcsec", "")
+        ),
+        "fwhm_valid": getattr(fit_result, "fwhm_valid", ""),
+        "overlay_valid": getattr(fit_result, "overlay_valid", ""),
+        "trajectory_valid": getattr(fit_result, "trajectory_valid", ""),
+        "coordinate_roundtrip_error_pixel": getattr(
+            fit_result, "coordinate_roundtrip_error_pixel", ""
+        ),
+        "theta_rad": fit_result.theta_rad,
+        "amplitude": fit_result.amplitude,
+        "background_level": fit_result.background_level,
+        "noise_sigma": fit_result.noise_sigma,
+        "snr": fit_result.snr,
+        "residual_rms": fit_result.residual_rms,
+        "mask_pixel_count": fit_result.mask_pixel_count,
+        "quality_flag": fit_result.quality_flag,
+        "quality_flag_detail": getattr(fit_result, "quality_flag_detail", ""),
+        "background_strategy": getattr(
+            fit_result, "background_strategy", cfg.get("radio_background_strategy", "")
+        ),
+        "background_use_for_mask": getattr(
+            fit_result,
+            "background_use_for_mask",
+            cfg.get("background_use_for_mask", ""),
+        ),
+        "background_use_for_display": cfg.get("background_use_for_display", False),
+        "background_use_for_fit": getattr(
+            fit_result, "background_use_for_fit", cfg.get("background_use_for_fit", "")
+        ),
+        "display_input_type": cfg.get("display_input_type", "raw"),
+        "background_mesh_size": cfg.get("background_mesh_size", ""),
+        "background_rms_median": getattr(fit_result, "background_rms_median", ""),
+        "background_level_median": getattr(fit_result, "background_level_median", ""),
+        "source_snr_peak": getattr(fit_result, "source_snr_peak", ""),
+        "source_snr_mean": getattr(fit_result, "source_snr_mean", ""),
+        "mask_method": getattr(fit_result, "mask_method", ""),
+        "fit_peak_fraction_threshold_used": getattr(
+            fit_result, "fit_peak_fraction_threshold_used", ""
+        ),
+        "fit_peak_fraction_candidate_counts": getattr(
+            fit_result, "fit_peak_fraction_candidate_counts", ""
+        ),
+        "background_enabled": bg_diag.get("background_enabled", False),
+        "background_mode_requested": bg_diag.get("background_mode_requested", ""),
+        "background_mode_used": bg_diag.get("background_mode_used", ""),
+        "background_scale": bg_diag.get("background_scale", ""),
+        "use_background_subtracted_for_gaussian_fit": cfg.get(
+            "background_use_for_fit", False
+        ),
+        "fit_used_background_subtracted": cfg.get("background_use_for_fit", False),
+        "fit_input_type": fit_input_type,
+        "fit_background_model": cfg.get("fit_background_model", "constant"),
+        "gaussian_fit_method": getattr(fit_result, "gaussian_fit_method", ""),
+        "roi_used": getattr(fit_result, "roi_used", ""),
+        "roi_shape": getattr(fit_result, "roi_shape", ""),
+        "fit_pixel_count_before_limit": getattr(
+            fit_result, "fit_pixel_count_before_limit", ""
+        ),
+        "fit_pixel_count_after_limit": getattr(
+            fit_result, "fit_pixel_count_after_limit", ""
+        ),
+        "maxfev": getattr(fit_result, "maxfev", cfg.get("gaussian_fit_maxfev", "")),
+        "initial_center_pixel": getattr(fit_result, "initial_center_pixel", ""),
+        "initial_sigma_x_pixel": getattr(fit_result, "initial_sigma_x_pixel", ""),
+        "initial_sigma_y_pixel": getattr(fit_result, "initial_sigma_y_pixel", ""),
+        "normalization_scale": getattr(fit_result, "normalization_scale", ""),
+        "peak": getattr(fit_result, "peak", ""),
+        "threshold": getattr(fit_result, "threshold", ""),
+    }
+
+
+def multi_gaussian_diagnostics_rows(
+    multi_fit_result,
+    cfg,
+    freq=None,
+    time_str=None,
+    polarization=None,
+    bg_diag=None,
+):
+    if multi_fit_result is None:
+        return []
+    rows = []
+    for fit_result in multi_fit_result.fit_results:
+        row = _gaussian_result_diagnostics_row(
+            fit_result, cfg, freq, time_str, polarization, bg_diag
+        )
+        row.update(
+            {
+                "source_id": getattr(fit_result, "source_id", ""),
+                "source_rank": getattr(fit_result, "source_rank", ""),
+                "source_is_primary": getattr(fit_result, "source_is_primary", ""),
+                "source_count_mode": multi_fit_result.source_count_mode,
+                "requested_source_count": (
+                    multi_fit_result.requested_source_count
+                    if multi_fit_result.requested_source_count is not None
+                    else ""
+                ),
+                "detected_source_count": multi_fit_result.detected_source_count,
+                "source_peak_x_pixel": getattr(fit_result, "source_peak_x_pixel", ""),
+                "source_peak_y_pixel": getattr(fit_result, "source_peak_y_pixel", ""),
+                "source_peak_x_arcsec": getattr(fit_result, "source_peak_x_arcsec", ""),
+                "source_peak_y_arcsec": getattr(fit_result, "source_peak_y_arcsec", ""),
+                "source_detection_snr": getattr(fit_result, "source_detection_snr", ""),
+                "source_candidate_pixel_count": getattr(
+                    fit_result, "source_candidate_pixel_count", ""
+                ),
+            }
+        )
+        rows.append(row)
+
+    for fail in multi_fit_result.failure_rows:
+        row = {field: "" for field in MULTI_GAUSSIAN_DIAGNOSTIC_FIELDS}
+        row.update(
+            {
+                "source_file": fail.get("source_file", ""),
+                "time": time_str,
+                "freq": freq,
+                "polarization": polarization,
+                "reason": fail.get("reason", "fit_failed"),
+                "quality_flag": fail.get("quality_flag", fail.get("reason", "")),
+                "quality_flag_detail": fail.get("quality_flag_detail", ""),
+                "finite_pixel_count": fail.get("finite_pixel_count", ""),
+                "mask_pixel_count": fail.get("mask_pixel_count", ""),
+                "background_level": fail.get("background_level", ""),
+                "noise_sigma": fail.get("noise_sigma", ""),
+                "threshold": fail.get("threshold", ""),
+                "fit_input_type": fail.get("fit_input_type", ""),
+                "gaussian_fit_method": fail.get("gaussian_fit_method", "skipped"),
+                "source_id": fail.get("source_id", ""),
+                "source_rank": fail.get("source_rank", ""),
+                "source_is_primary": fail.get("source_is_primary", ""),
+                "source_count_mode": multi_fit_result.source_count_mode,
+                "requested_source_count": (
+                    multi_fit_result.requested_source_count
+                    if multi_fit_result.requested_source_count is not None
+                    else ""
+                ),
+                "detected_source_count": multi_fit_result.detected_source_count,
+                "source_peak_x_pixel": fail.get("source_peak_x_pixel", ""),
+                "source_peak_y_pixel": fail.get("source_peak_y_pixel", ""),
+                "source_peak_x_arcsec": fail.get("source_peak_x_arcsec", ""),
+                "source_peak_y_arcsec": fail.get("source_peak_y_arcsec", ""),
+                "source_detection_snr": fail.get("source_detection_snr", ""),
+                "source_candidate_pixel_count": fail.get(
+                    "source_candidate_pixel_count", ""
+                ),
+            }
+        )
+        rows.append(row)
+    return rows
+
+
+def save_multi_gaussian_diagnostics_row(row, output_dir, cfg):
+    diagnostics_dir = os.path.join(output_dir, _plot_output_subdir(cfg))
+    os.makedirs(diagnostics_dir, exist_ok=True)
+    csv_path = os.path.join(
+        diagnostics_dir,
+        cfg.get(
+            "multi_gaussian_diagnostics_csv",
+            "radio_multi_gaussian_fit_diagnostics.csv",
+        ),
+    )
+    fieldnames = MULTI_GAUSSIAN_DIAGNOSTIC_FIELDS
     lock_path = f"{csv_path}.lock"
     lock_fd = _acquire_csv_lock(lock_path)
     try:
