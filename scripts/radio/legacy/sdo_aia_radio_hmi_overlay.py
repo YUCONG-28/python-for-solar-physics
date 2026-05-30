@@ -2881,8 +2881,7 @@ def process_aia_group(
             except Exception as e:
                 print(f"  处理 HMI 失败: {e}")
 
-        legend_elements = []
-        bands_used = set()
+        legend_elements = _build_selected_band_legend_elements(cfg, color_cache)
         first_radio_time = None
 
         # --- 3. 提取并遍历当前切片的波段数据 ---
@@ -3003,22 +3002,6 @@ def process_aia_group(
                             va="center",
                             ha="left",
                         )
-
-                # 添加图例
-                disp_bl = band_label
-                if disp_bl not in bands_used:
-                    bands_used.add(disp_bl)
-                    if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL":
-                        lbl = (
-                            f"{disp_bl} (RR+LL sum)"
-                            if not cfg.weighted_average
-                            else f"{disp_bl} (RR+LL)"
-                        )
-                    else:
-                        lbl = f"{disp_bl} ({cfg.polarization_mode})"
-                    legend_elements.append(
-                        Line2D([0], [0], color=color_main, lw=2, label=lbl)
-                    )
 
         # --- 4. 标题、图例与保存 ---
         if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL":
@@ -3157,6 +3140,44 @@ def get_band_color(
         return cfg.band_colors_dict[band_label]
     idx = band_idx % len(cfg.default_colors)
     return cfg.default_colors[idx]
+
+
+def _build_selected_band_legend_elements(
+    cfg: Config, color_cache: list | None = None
+) -> list[Line2D]:
+    """Build legend handles for every user-selected band, independent of fits."""
+    legend_elements = []
+    for band_idx, band_label in enumerate(cfg.selected_bands):
+        color_label = _band_color_lookup_label(band_label, cfg)
+        color_main, _ = get_band_color(color_label, band_idx, cfg, color_cache)
+        legend_elements.append(
+            Line2D(
+                [0],
+                [0],
+                color=color_main,
+                lw=2,
+                label=_selected_band_legend_label(cfg, band_label),
+            )
+        )
+    return legend_elements
+
+
+def _band_color_lookup_label(band_label: str, cfg: Config) -> str:
+    if cfg.band_colors_dict and band_label in cfg.band_colors_dict:
+        return band_label
+    if "." in band_label:
+        return band_label
+    return band_label.replace("MHz", ".0MHz")
+
+
+def _selected_band_legend_label(cfg: Config, band_label: str) -> str:
+    if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL":
+        return (
+            f"{band_label} (RR+LL sum)"
+            if not cfg.weighted_average
+            else f"{band_label} (RR+LL)"
+        )
+    return f"{band_label} ({cfg.polarization_mode})"
 
 
 def test_gaussian_fit_synthetic_source():
