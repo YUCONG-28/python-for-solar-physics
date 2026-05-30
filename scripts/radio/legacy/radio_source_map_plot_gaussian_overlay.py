@@ -5756,14 +5756,19 @@ def _precreate_single_band_dirs(files: list, output_dir: str):
         os.makedirs(os.path.join(output_dir, subdir), exist_ok=True)
 
 
-def _precreate_multi_band_dir(output_dir: str, cfg: dict) -> str:
-    """Pre-create multi-band output subdirectory, return directory path."""
+def _resolve_multi_band_output_dir(output_dir: str, cfg: dict) -> Path:
+    """Resolve the actual multi-band output directory under the analysis subdir."""
     polarization = cfg.get("polarization", "RR")
     subdir_template = cfg.get("multi_band_output_subdir", "multi_band_{polar}")
     multi_output_subdir = subdir_template.format(polar=polarization)
-    multi_output_dir = os.path.join(output_dir, multi_output_subdir)
-    os.makedirs(multi_output_dir, exist_ok=True)
-    return multi_output_dir
+    return Path(output_dir) / _plot_output_subdir(cfg) / multi_output_subdir
+
+
+def _precreate_multi_band_dir(output_dir: str, cfg: dict) -> str:
+    """Pre-create the actual multi-band output subdirectory, return its path."""
+    multi_output_dir = _resolve_multi_band_output_dir(output_dir, cfg)
+    multi_output_dir.mkdir(parents=True, exist_ok=True)
+    return str(multi_output_dir)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -7334,19 +7339,14 @@ def plot_multi_band_slot(
     # 使用tight_layout确保布局紧凑，但保留足够的空间给标题
     # plt.tight_layout(rect=[0, 0, 1, 0.96])
 
-    # ★ 优化：输出目录已预创建，直接拼接文件名
-    polarization = cfg.get("polarization", "RR")
-    subdir_template = cfg.get("multi_band_output_subdir", "multi_band_{polar}")
-    multi_output_subdir = subdir_template.format(polar=polarization)
-    overlay_output_dir = os.path.join(
-        output_dir, _plot_output_subdir(cfg), multi_output_subdir
-    )
-    os.makedirs(overlay_output_dir, exist_ok=True)
-    output_path = os.path.join(
-        overlay_output_dir, f"multi_band_slot_{slot_idx:04d}{_output_suffix(cfg)}.png"
+    # Resolve the real save location lazily so unused root-level folders stay absent.
+    overlay_output_dir = _resolve_multi_band_output_dir(output_dir, cfg)
+    output_path = overlay_output_dir / (
+        f"multi_band_slot_{slot_idx:04d}{_output_suffix(cfg)}.png"
     )
 
     if cfg["save_plot"]:
+        overlay_output_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(output_path, dpi=cfg["dpi"], bbox_inches="tight")
 
     if cfg["show_plot"] and cfg.get("_interactive", False):
@@ -7360,7 +7360,7 @@ def plot_multi_band_slot(
             f"Slot {slot_idx}: Saved {len(individual_outputs)} individual polarization images"
         )
 
-    return output_path
+    return str(output_path)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -8143,10 +8143,8 @@ def main(user_config=None):
     else:
         print(f"Warning: unknown mode '{color_range_mode}', using auto‑adjust mode")
 
-    # ── 5. 预创建输出子目录（主进程统一完成，子进程免 makedirs）──
-    if mode == "multi_band":
-        _precreate_multi_band_dir(output_dir, cfg)
-    else:
+    # ── 5. 预创建单波段输出子目录（multi-band 保存时再创建实际目录）──
+    if mode != "multi_band":
         _precreate_single_band_dirs(files, output_dir)
 
     # ── 6. 绘图（多进程批量 / 单进程交互） ──────────────────────
