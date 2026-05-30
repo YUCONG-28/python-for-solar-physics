@@ -89,8 +89,7 @@ def newkirk_assumption_label(multiplier, harmonic):
     """Return a compact physical label for a density and emission assumption."""
     factor = effective_density_factor(multiplier, harmonic)
     return (
-        f"{float(multiplier):g}x Newkirk, H={float(harmonic):g}, "
-        f"N*s^2={factor:g}"
+        f"{float(multiplier):g}x Newkirk, H={float(harmonic):g}, " f"N*s^2={factor:g}"
     )
 
 
@@ -98,8 +97,6 @@ def attach_newkirk_height_to_gaussian(
     df,
     multiplier,
     harmonic,
-    solar_radius_arcsec,
-    los_sign,
 ):
     data = _valid_gaussian_rows(pd.DataFrame(df).copy())
     if data.empty:
@@ -112,16 +109,6 @@ def attach_newkirk_height_to_gaussian(
         ),
         dtype=float,
     )
-    x_arcsec = pd.to_numeric(data["center_x_arcsec"], errors="coerce").to_numpy(
-        dtype=float
-    )
-    y_arcsec = pd.to_numeric(data["center_y_arcsec"], errors="coerce").to_numpy(
-        dtype=float
-    )
-    projected_r = np.sqrt(x_arcsec**2 + y_arcsec**2) / float(solar_radius_arcsec)
-    z_squared = r_model**2 - projected_r**2
-    z_rsun = float(los_sign) * np.sqrt(np.where(z_squared >= 0, z_squared, np.nan))
-
     data["newkirk_multiplier"] = float(multiplier)
     data["newkirk_harmonic"] = (
         int(harmonic) if float(harmonic).is_integer() else float(harmonic)
@@ -135,15 +122,6 @@ def attach_newkirk_height_to_gaussian(
     )
     data["newkirk_r_rsun"] = r_model
     data["newkirk_height_rsun"] = r_model - 1.0
-    data["projected_r_rsun"] = projected_r
-    data["newkirk_z_rsun"] = z_rsun
-    data["newkirk_z_arcsec"] = z_rsun * float(solar_radius_arcsec)
-    data["newkirk_geometry_valid"] = np.isfinite(z_rsun)
-    data["newkirk_geometry_reason"] = np.where(
-        data["newkirk_geometry_valid"],
-        "ok",
-        "projected_position_exceeds_newkirk_radius",
-    )
     return data[np.isfinite(data["newkirk_r_rsun"])].reset_index(drop=True)
 
 

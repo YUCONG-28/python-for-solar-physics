@@ -35,9 +35,6 @@ This cleanup is intentionally conservative:
   while retaining the implementation under `scripts/aia_hmi/core/`.
 - Added the recommended AIA entrypoint
   `scripts/aia_hmi/run_aia_euv_processor.py`.
-- Restored `scripts/radio/configs/aia_radio_hmi_20250124_config.py` as a
-  compatibility shim that re-exports the consolidated 2025-01-24 overlay
-  config without duplicating event parameters.
 - Updated the public documentation set to point at current recommended
   entrypoints and to describe the AIA/HMI radio-style phased structure.
 

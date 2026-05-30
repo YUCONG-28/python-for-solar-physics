@@ -17,7 +17,7 @@
     `aia_difference.py` 与 `aia_mosaic.py` 提供轻量 helper，
     `aia_processor.py` 负责延迟加载原始科研实现。
 - `scripts/radio/run_radio_burst_pipeline.py`
-  - 射电源图、高斯拟合、CSO 频谱/频漂率、Newkirk 高度比较、Gaussian-Newkirk 高度残差和可选 AIA 171 平面投影示意的完整推荐主入口。
+  - 射电源图、高斯拟合、CSO 频谱/频漂率、Newkirk 高度比较、Gaussian-Newkirk 高度残差和频漂速度诊断的完整推荐主入口。
 - `scripts/radio/run_radio_source_map.py`
   - 快速射电源图和 Gaussian 叠加的推荐入口。
 - `scripts/radio/run_aia_radio_hmi_overlay.py`

@@ -29,9 +29,13 @@ def test_frequency_height_uses_harmonic_density_relation():
     fundamental = newkirk_radius_from_frequency_mhz(150.0, multiplier=1.0, harmonic=1)
     harmonic = newkirk_radius_from_frequency_mhz(150.0, multiplier=1.0, harmonic=2)
 
-    assert plasma_density_from_frequency_mhz(150.0, harmonic=2) < plasma_density_from_frequency_mhz(150.0, harmonic=1)
+    assert plasma_density_from_frequency_mhz(
+        150.0, harmonic=2
+    ) < plasma_density_from_frequency_mhz(150.0, harmonic=1)
     assert harmonic > fundamental
-    assert newkirk_height_from_frequency_mhz(150.0, multiplier=1.0, harmonic=1) == pytest_approx(fundamental - 1.0)
+    assert newkirk_height_from_frequency_mhz(
+        150.0, multiplier=1.0, harmonic=1
+    ) == pytest_approx(fundamental - 1.0)
 
 
 def test_newkirk_speed_from_negative_drift_is_positive_outward():
@@ -69,13 +73,13 @@ def test_attach_newkirk_height_filters_invalid_gaussian_rows():
         df,
         multiplier=1.0,
         harmonic=1,
-        solar_radius_arcsec=960.0,
-        los_sign=1,
     )
 
     assert len(out) == 1
     assert out.iloc[0]["newkirk_r_rsun"] > 1.0
-    assert math.isfinite(out.iloc[0]["newkirk_z_arcsec"])
+    assert math.isfinite(out.iloc[0]["newkirk_height_rsun"])
+    assert "newkirk_z_arcsec" not in out.columns
+    assert "newkirk_geometry_valid" not in out.columns
 
 
 def test_extrapolate_drift_line_with_newkirk_maps_midpoint_speed():
@@ -102,15 +106,23 @@ def test_newkirk_harmonic_density_degeneracy_and_speed_aliases():
     }
 
     harmonic = extrapolate_drift_line_with_newkirk(row, multiplier=1.0, harmonic=2)
-    dense_fundamental = extrapolate_drift_line_with_newkirk(row, multiplier=4.0, harmonic=1)
+    dense_fundamental = extrapolate_drift_line_with_newkirk(
+        row, multiplier=4.0, harmonic=1
+    )
 
     assert harmonic["density_multiplier"] == pytest_approx(1.0)
     assert harmonic["emission_harmonic"] == pytest_approx(2.0)
     assert harmonic["effective_density_factor"] == pytest_approx(4.0)
     assert dense_fundamental["effective_density_factor"] == pytest_approx(4.0)
-    assert harmonic["newkirk_height_rsun"] == pytest_approx(dense_fundamental["newkirk_height_rsun"])
-    assert harmonic["newkirk_speed_km_s"] == pytest_approx(dense_fundamental["newkirk_speed_km_s"])
-    assert harmonic["newkirk_speed_c"] == pytest_approx(harmonic["newkirk_speed_km_s"] / 299792.458)
+    assert harmonic["newkirk_height_rsun"] == pytest_approx(
+        dense_fundamental["newkirk_height_rsun"]
+    )
+    assert harmonic["newkirk_speed_km_s"] == pytest_approx(
+        dense_fundamental["newkirk_speed_km_s"]
+    )
+    assert harmonic["newkirk_speed_c"] == pytest_approx(
+        harmonic["newkirk_speed_km_s"] / 299792.458
+    )
     assert harmonic["newkirk_assumption_label"] == "1x Newkirk, H=2, N*s^2=4"
 
 
@@ -118,6 +130,7 @@ def pytest_approx(value):
     try:
         import pytest
     except ModuleNotFoundError:
+
         class Approx:
             def __eq__(self, other):
                 return math.isclose(other, value, rel_tol=1e-12, abs_tol=1e-12)

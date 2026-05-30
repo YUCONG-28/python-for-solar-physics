@@ -1,6 +1,7 @@
 # 模块用途: 生成 AIA、射电源和可选 HMI 的多仪器叠加图。
 # 主要输入: AIA/HMI FITS 图像、射电源数据、偏振信息和配准参数。
 # 主要输出/运行说明: 输出带等值线和偏振标记的综合诊断图，适合耀斑源区对比。
+# ruff: noqa: E402, I001
 """
 Created on Sat Apr 25 19:57:54 2026
 
@@ -53,6 +54,9 @@ from scipy.ndimage import (  # noqa: E402
 )
 from scipy.optimize import curve_fit  # noqa: E402
 
+from scripts.radio.core.radio_coordinates import (
+    normalize_roi_bounds_arcsec,
+)  # noqa: E402
 from solar_toolkit.path_config import apply_config_to_object  # noqa: E402
 
 IntArray = NDArray[np.intp]
@@ -357,6 +361,7 @@ class Config:
     aia_vmin: float = 16
     aia_vmax: float = 6666
     aia_cmap: str = "sdoaia171"
+    roi_bounds_arcsec: dict | None = None
     roi_bottom_left: list[float] = field(default_factory=lambda: [600, -800])
     roi_top_right: list[float] = field(default_factory=lambda: [1600, 200])
 
@@ -2570,14 +2575,15 @@ def _get_padded_aia_map(
     彻底解决 sunpy.map.submap 在图像边缘的自动截断问题，
     允许在 AIA 没有数据的外太空区域继续绘制射电和 HMI。
     """
+    roi = normalize_roi_bounds_arcsec(cfg)
     bl = SkyCoord(
-        cfg.roi_bottom_left[0] * u.arcsec,
-        cfg.roi_bottom_left[1] * u.arcsec,
+        roi["left"] * u.arcsec,
+        roi["bottom"] * u.arcsec,
         frame=aia_map.coordinate_frame,
     )
     tr = SkyCoord(
-        cfg.roi_top_right[0] * u.arcsec,
-        cfg.roi_top_right[1] * u.arcsec,
+        roi["right"] * u.arcsec,
+        roi["top"] * u.arcsec,
         frame=aia_map.coordinate_frame,
     )
 

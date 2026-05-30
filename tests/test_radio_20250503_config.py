@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import importlib
+import sys
+import types
 from pathlib import Path
 
 from scripts.radio.configs import (
     load_drift_selection_product_config,
     load_newkirk_height_comparison_config,
-    load_newkirk_spatial_config,
     load_radio_config_module,
     load_radio_diagnostic_presentation_config,
     load_radio_user_config,
 )
+from scripts.radio.core.radio_coordinates import normalize_roi_bounds_arcsec
 
 
 def test_20250503_config_is_independent_from_20250124_config():
@@ -30,17 +33,17 @@ def test_20250503_config_has_real_event_paths_and_full_event_sections():
     presentation_config = load_radio_diagnostic_presentation_config(
         "radio_20250503_config"
     )
-    spatial_config = load_newkirk_spatial_config("radio_20250503_config")
-
     assert set(module.EVENT_CONFIG) >= {
         "user",
+        "output",
         "newkirk",
         "newkirk_height_comparison",
         "drift_selection_products",
         "diagnostic_presentation",
-        "newkirk_spatial",
     }
+    assert "newkirk_spatial" not in module.EVENT_CONFIG
     assert user_config == module.EVENT_CONFIG["user"]
+    assert module.OUTPUT_CONFIG == module.EVENT_CONFIG["output"]
     assert newkirk_config["solar_radius_arcsec"] == 959.63
     assert (
         height_config["output_table_name"]
@@ -55,7 +58,6 @@ def test_20250503_config_has_real_event_paths_and_full_event_sections():
         223,
         238,
     ]
-    assert spatial_config["enable"] is False
 
     assert not _contains_todo(module.EVENT_CONFIG)
     assert user_config["data"]["multi_band_freqs"] == [149, 164, 190, 205, 223, 238]
@@ -69,8 +71,8 @@ def test_20250503_config_has_real_event_paths_and_full_event_sections():
     assert user_config["data"]["data_dir"] == (
         r"D:\spike_topping_type_III\2025\20250503\20250503UT071600-072600\149MHz\RR"
     )
-    assert user_config["data"]["start_idx"] == 0
-    assert user_config["data"]["end_idx"] == 1467
+    assert user_config["data"]["start_idx"] == 648
+    assert user_config["data"]["end_idx"] == 944
     assert user_config["spectrogram"]["file_paths"] == [
         r"D:\spike_topping_type_III\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503071510_V01.01.fits",
         r"D:\spike_topping_type_III\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503072013_V01.01.fits",
@@ -80,13 +82,108 @@ def test_20250503_config_has_real_event_paths_and_full_event_sections():
     )
     assert user_config["spectrogram"]["time_start"] == "2025-05-03T07:20:25"
     assert user_config["spectrogram"]["time_end"] == "2025-05-03T07:22:25"
-    assert user_config["output"]["output_dir"] == (
-        r"D:\spike_topping_type_III\2025\20250503\RS_test"
+    assert user_config["output"]["output_dir"] == module.OUTPUT_CONFIG["output_dir"]
+    assert module.OUTPUT_CONFIG["output_dir"] == (
+        r"D:\spike_topping_type_III\2025\20250503\output"
     )
-    assert spatial_config["aia171_path"] == (
-        r"D:\spike_topping_type_III\2025\20250503\AIA\171"
-        r"\aia.lev1_euv_12s.2025-05-03T071558Z.171.image_lev1.fits"
+
+
+def test_radio_event_configs_expose_central_output_config_without_spatial():
+    for config_name in ("radio_20250124_config", "radio_20250503_config"):
+        module = load_radio_config_module(config_name)
+        user_config, newkirk_config = load_radio_user_config(config_name)
+
+        assert "newkirk_spatial" not in module.EVENT_CONFIG
+        assert hasattr(module, "OUTPUT_CONFIG")
+        assert user_config["output"]["output_dir"] == module.OUTPUT_CONFIG["output_dir"]
+        assert newkirk_config["output_csv"] == module.OUTPUT_CONFIG["newkirk_csv"]
+        assert (
+            newkirk_config["drift_speed_csv"] == module.OUTPUT_CONFIG["drift_speed_csv"]
+        )
+
+
+def test_radio_event_configs_expose_event_specific_spectrogram_display_range():
+    for config_name in ("radio_20250124_config", "radio_20250503_config"):
+        user_config, _newkirk_config = load_radio_user_config(config_name)
+        spectrogram = user_config["spectrogram"]
+
+        assert spectrogram["vmin"] == 2.5
+        assert spectrogram["vmax"] == 4.5
+        assert spectrogram["use_log10"] is True
+        assert spectrogram["cmap"] == "jet"
+
+
+def test_legacy_build_config_maps_nested_spectrogram_display_range():
+    legacy = _import_legacy_source_map_with_optional_stubs()
+
+    cfg = legacy.build_config(
+        {
+            "spectrogram": {
+                "vmin": 2.1,
+                "vmax": 4.9,
+                "use_log10": False,
+                "cmap": "magma",
+                "colorbar_label": "raw intensity",
+            }
+        },
+        {},
     )
+
+    assert cfg["spectrogram_vmin"] == 2.1
+    assert cfg["spectrogram_vmax"] == 4.9
+    assert cfg["spectrogram_use_log10"] is False
+    assert cfg["spectrogram_cmap"] == "magma"
+    assert cfg["spectrogram_colorbar_label"] == "raw intensity"
+
+
+def test_aia_radio_hmi_roi_uses_explicit_bounds_with_legacy_fallback():
+    expected = {
+        "radio_20250124_config": {
+            "left": 600.0,
+            "bottom": -800.0,
+            "right": 1600.0,
+            "top": 200.0,
+        },
+        "radio_20250503_config": {
+            "left": -800.0,
+            "bottom": -200.0,
+            "right": 0.0,
+            "top": 400.0,
+        },
+    }
+
+    for config_name, expected_bounds in expected.items():
+        module = load_radio_config_module(config_name)
+        wcs_config = module.AIA_RADIO_HMI_CONFIG["wcs_reproject"]
+
+        assert "roi_bounds_arcsec" in wcs_config
+        assert "roi_bottom_left" not in wcs_config
+        assert "roi_top_right" not in wcs_config
+        assert normalize_roi_bounds_arcsec(wcs_config) == expected_bounds
+
+    legacy_bounds = normalize_roi_bounds_arcsec(
+        {
+            "roi_bottom_left": [-800, -200],
+            "roi_top_right": [0, 400],
+        }
+    )
+    assert legacy_bounds == {
+        "left": -800.0,
+        "bottom": -200.0,
+        "right": 0.0,
+        "top": 400.0,
+    }
+
+
+def test_aia_radio_hmi_roi_rejects_inverted_bounds():
+    try:
+        normalize_roi_bounds_arcsec(
+            {"roi_bounds_arcsec": {"left": 1, "right": 0, "bottom": -1, "top": 1}}
+        )
+    except ValueError as exc:
+        assert "left < right" in str(exc)
+    else:
+        raise AssertionError("Expected inverted ROI bounds to raise ValueError")
 
 
 def _contains_todo(value):
@@ -97,3 +194,41 @@ def _contains_todo(value):
     if isinstance(value, (list, tuple)):
         return any(_contains_todo(item) for item in value)
     return False
+
+
+def _import_legacy_source_map_with_optional_stubs():
+    module_name = "scripts.radio.legacy.radio_source_map_plot_gaussian_overlay"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+
+    scipy = types.ModuleType("scipy")
+    scipy_ndimage = types.ModuleType("scipy.ndimage")
+    scipy_optimize = types.ModuleType("scipy.optimize")
+    tqdm_module = types.ModuleType("tqdm")
+    for name in ("binary_dilation", "find_objects", "label", "median_filter"):
+        setattr(scipy_ndimage, name, lambda *args, **kwargs: None)
+    scipy_optimize.curve_fit = lambda *args, **kwargs: None
+    tqdm_module.tqdm = lambda iterable=None, *args, **kwargs: iterable
+    stubs = {
+        "scipy": scipy,
+        "scipy.ndimage": scipy_ndimage,
+        "scipy.optimize": scipy_optimize,
+        "tqdm": tqdm_module,
+    }
+    created = []
+    for name, module in stubs.items():
+        if name not in sys.modules and not _module_available(name):
+            sys.modules[name] = module
+            created.append(name)
+    try:
+        return importlib.import_module(module_name)
+    finally:
+        for name in reversed(created):
+            sys.modules.pop(name, None)
+
+
+def _module_available(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False

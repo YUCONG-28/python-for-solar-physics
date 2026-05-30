@@ -13,6 +13,25 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from .radio_output_paths import (
+    background_enabled_for_display as background_enabled_for_display,
+)
+from .radio_output_paths import (
+    background_enabled_for_fit as background_enabled_for_fit,
+)
+from .radio_output_paths import (
+    drift_output_path as drift_output_path,
+)
+from .radio_output_paths import (
+    plot_output_subdir as plot_output_subdir,
+)
+from .radio_output_paths import (
+    resolve_background_workflow as resolve_background_workflow,
+)
+from .radio_output_paths import (
+    spectrogram_panel_enabled as spectrogram_panel_enabled,
+)
+
 BoolArray = NDArray[np.bool_]
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.intp]
@@ -110,7 +129,9 @@ DRIFT_RATE_DIAGNOSTIC_FIELDS = [
 ]
 
 
-def normalize_path(path: str | os.PathLike | None, base_dir: str | os.PathLike | None = None) -> str | None:
+def normalize_path(
+    path: str | os.PathLike | None, base_dir: str | os.PathLike | None = None
+) -> str | None:
     if path is None:
         return None
     text = str(path).strip()
@@ -144,14 +165,18 @@ def write_json_file(path: str | os.PathLike, payload: Any) -> Path:
     return candidate
 
 
-def read_csv_dataframe(path: str | os.PathLike, default: pd.DataFrame | None = None) -> pd.DataFrame:
+def read_csv_dataframe(
+    path: str | os.PathLike, default: pd.DataFrame | None = None
+) -> pd.DataFrame:
     candidate = Path(path)
     if not candidate.exists():
         return pd.DataFrame() if default is None else default.copy()
     return pd.read_csv(candidate)
 
 
-def write_csv_rows(path: str | os.PathLike, rows: list[dict], fieldnames: list[str]) -> Path:
+def write_csv_rows(
+    path: str | os.PathLike, rows: list[dict], fieldnames: list[str]
+) -> Path:
     candidate = Path(path)
     ensure_output_dir(candidate.parent or ".")
     with candidate.open("w", newline="", encoding="utf-8") as handle:
@@ -173,7 +198,9 @@ def log_skipped_row(prefix: str, index, reason: str) -> str:
     return message
 
 
-def summarize_invalid_reasons(df: pd.DataFrame, valid_column: str, reason_column: str) -> dict[str, int]:
+def summarize_invalid_reasons(
+    df: pd.DataFrame, valid_column: str, reason_column: str
+) -> dict[str, int]:
     if df.empty or valid_column not in df.columns or reason_column not in df.columns:
         return {}
     invalid = df[~df[valid_column].map(truthy)]
@@ -231,77 +258,13 @@ def index_range_from_values(
     return int(idx[0]), int(idx[-1])
 
 
-def index_range_from_time_values(arr: np.ndarray, lo: float, hi: float) -> tuple[int, int] | None:
+def index_range_from_time_values(
+    arr: np.ndarray, lo: float, hi: float
+) -> tuple[int, int] | None:
     return index_range_from_values(arr, lo, hi, allow_full_fallback=False)
-
-
-def spectrogram_panel_enabled(cfg: dict) -> bool:
-    return bool(cfg.get("enable_spectrogram_panel", False))
-
-
-def background_enabled_for_display(cfg: dict) -> bool:
-    return resolve_background_workflow(cfg) in {"display_only", "display_and_fit"}
-
-
-def background_enabled_for_fit(cfg: dict) -> bool:
-    return resolve_background_workflow(cfg) in {"fit_only", "display_and_fit"}
-
-
-def resolve_background_workflow(cfg: dict) -> str:
-    workflow = str(cfg.get("radio_background_workflow", "off") or "off").lower()
-    if workflow in {"off", "display_only", "fit_only", "display_and_fit"}:
-        return workflow
-    display = bool(cfg.get("background_use_for_display", False))
-    fit = bool(cfg.get("background_use_for_fit", False))
-    if display and fit:
-        return "display_and_fit"
-    if display:
-        return "display_only"
-    if fit:
-        return "fit_only"
-    return "off"
-
-
-def plot_output_subdir(cfg: dict) -> str:
-    use_gaussian = cfg.get("enable_gaussian_overlay", False)
-    use_spec = spectrogram_panel_enabled(cfg)
-    show_bgsub = background_enabled_for_display(cfg)
-    bgfit = background_enabled_for_fit(cfg) and use_gaussian and not show_bgsub
-    if show_bgsub:
-        parts = []
-        if use_gaussian:
-            parts.append("gaussian")
-        if use_spec:
-            parts.append("spectrogram")
-        parts.append("background_subtracted")
-        return "_".join(parts)
-    if bgfit:
-        return "gaussian_bgfit_overlay"
-    if use_gaussian and use_spec:
-        return "gaussian_spectrogram_overlay"
-    if use_spec:
-        return cfg.get("spectrogram_output_subdir", "radio_spectrogram_composite")
-    if use_gaussian:
-        return "gaussian_overlay"
-    return "radio_source_maps"
-
-
-def drift_output_path(cfg: dict, key: str) -> str:
-    if key == "drift_rate_diagnostics_csv" and key not in cfg:
-        key = "drift_diagnostics_csv"
-    path = str(cfg.get(key, "") or "")
-    if not path:
-        path = str(key)
-    if os.path.isabs(path):
-        return path
-    if key == "drift_rate_selection_json":
-        return os.path.abspath(path)
-    output_dir = cfg.get("output_dir") or os.getcwd()
-    return os.path.join(output_dir, plot_output_subdir(cfg), path)
 
 
 def truthy(value) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y", "ok"}
     return bool(value)
-

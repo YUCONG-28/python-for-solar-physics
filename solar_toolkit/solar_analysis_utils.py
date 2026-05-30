@@ -22,6 +22,7 @@ import gc  # noqa: E402
 import re  # noqa: E402
 import time  # noqa: E402
 import warnings  # noqa: E402
+from functools import lru_cache  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import TYPE_CHECKING, Any  # noqa: E402
 
@@ -34,6 +35,9 @@ if TYPE_CHECKING:
 # ==============================================================================
 
 
+# Filename timestamps are parsed repeatedly during directory scans; caching by
+# filename avoids repeated regex/strptime work without changing parser order.
+@lru_cache(maxsize=8192)
 def extract_time_from_filename(filename: str) -> datetime.datetime:
     """
     从文件名提取时间信息，支持多种格式

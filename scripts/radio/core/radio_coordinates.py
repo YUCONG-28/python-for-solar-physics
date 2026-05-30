@@ -102,6 +102,59 @@ def validate_plot_extent_and_origin(extent, origin):
     return {"valid": True, "reason": "ok"}
 
 
+def normalize_roi_bounds_arcsec(source) -> dict[str, float]:
+    """Return ROI bounds as left/bottom/right/top arcsec values."""
+    bounds = _get_config_value(source, "roi_bounds_arcsec")
+    if bounds is not None:
+        if not isinstance(bounds, dict):
+            raise ValueError("roi_bounds_arcsec must be a dict")
+        missing = {"left", "bottom", "right", "top"} - set(bounds)
+        if missing:
+            raise ValueError(f"roi_bounds_arcsec missing keys: {sorted(missing)}")
+        left = bounds["left"]
+        bottom = bounds["bottom"]
+        right = bounds["right"]
+        top = bounds["top"]
+    else:
+        bottom_left = _get_config_value(source, "roi_bottom_left")
+        top_right = _get_config_value(source, "roi_top_right")
+        if bottom_left is None or top_right is None:
+            raise ValueError(
+                "ROI requires roi_bounds_arcsec or legacy roi_bottom_left/roi_top_right"
+            )
+        if len(bottom_left) != 2 or len(top_right) != 2:
+            raise ValueError(
+                "legacy ROI coordinates must be [x, y] pairs: "
+                "roi_bottom_left=[left, bottom], roi_top_right=[right, top]"
+            )
+        left, bottom = bottom_left
+        right, top = top_right
+
+    try:
+        normalized = {
+            "left": float(left),
+            "bottom": float(bottom),
+            "right": float(right),
+            "top": float(top),
+        }
+    except (TypeError, ValueError) as exc:
+        raise ValueError("ROI bounds must be finite numeric arcsec values") from exc
+
+    if not _finite(*normalized.values()):
+        raise ValueError("ROI bounds must be finite numeric arcsec values")
+    if normalized["left"] >= normalized["right"]:
+        raise ValueError("ROI bounds must satisfy left < right")
+    if normalized["bottom"] >= normalized["top"]:
+        raise ValueError("ROI bounds must satisfy bottom < top")
+    return normalized
+
+
+def _get_config_value(source, key: str, default=None):
+    if isinstance(source, dict):
+        return source.get(key, default)
+    return getattr(source, key, default)
+
+
 def compute_position_residual(x1, y1, x2, y2):
     if not _finite(x1, y1, x2, y2):
         return {"residual": np.nan, "valid": False, "reason": "nonfinite_coordinate"}
@@ -154,7 +207,8 @@ def coordinate_roundtrip_error_pixel(
     return float(math.hypot(float(x_pix) - x_back, float(y_pix) - y_back))
 
 
-def unravel_2d_index(flat_index: int | np.integer, shape: tuple[int, ...]) -> tuple[int, int]:
+def unravel_2d_index(
+    flat_index: int | np.integer, shape: tuple[int, ...]
+) -> tuple[int, int]:
     coords = np.asarray(np.unravel_index(int(flat_index), shape), dtype=np.intp)
     return int(coords[0]), int(coords[1])
-
