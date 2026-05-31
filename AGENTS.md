@@ -33,6 +33,21 @@ D:\miniforge3\Scripts\conda.exe run -n solarphysics_env python -m pytest
 
 - Do not rely on bare `python`, `pip`, or `pytest` unless they have first been verified to resolve to `D:\miniforge3\envs\solarphysics_env`.
 
+## Codex agent behavior
+
+Use these behavioral guidelines when writing, reviewing, or refactoring code in
+this repository. Project-specific instructions above take priority if any
+guideline conflicts with them.
+
+- Think before coding: state assumptions explicitly, surface tradeoffs, and ask
+  for clarification when the task has multiple plausible interpretations.
+- Simplicity first: prefer the smallest implementation that solves the stated
+  problem, without speculative features or unnecessary abstractions.
+- Surgical changes: touch only what the task requires, match the surrounding
+  style, and avoid unrelated refactors or formatting churn.
+- Goal-driven execution: define concrete success criteria, verify them with the
+  appropriate checks, and do not claim completion without fresh evidence.
+
 ## Branch completion workflow
 
 - If a branch is created while working on this project, do not silently leave it behind at the end of the task.
