@@ -13,7 +13,9 @@ _CORE_REEXPORTS = {
     "radio_drift_rate": "scripts.radio.core.radio_drift_rate",
     "radio_gaussian_fit": "scripts.radio.core.radio_gaussian_fit",
     "radio_newkirk_extrapolation": "scripts.radio.core.radio_newkirk_extrapolation",
+    "radio_raw_quality": "scripts.radio.core.radio_raw_quality",
     "radio_spectrogram": "scripts.radio.core.radio_spectrogram",
+    "run_radio_raw_quality": "scripts.radio.run_radio_raw_quality",
 }
 
 __all__ = sorted(_CORE_REEXPORTS)

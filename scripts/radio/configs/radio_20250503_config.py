@@ -28,6 +28,7 @@ USER_CONFIG = {
         "data_dir": r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600\149MHz\RR",
         "start_idx": 648,
         "end_idx": 944,
+        "multi_band_time_tolerance_seconds": 0.1,
     },
     "features": {
         "gaussian_overlay": True,
@@ -36,6 +37,7 @@ USER_CONFIG = {
         "save_gaussian_diagnostics": True,
         "save_background_products": False,
         "save_individual_pols": False,
+        "raw_quality_filter": True,
     },
     "display": {
         "use_custom_lim": True,
@@ -58,9 +60,17 @@ USER_CONFIG = {
         "fit_grow_peak_fraction_threshold": 0.22,
         "fit_mask_target_min_pixels": 18,
         "fit_mask_target_max_pixels": 260,
+        "fit_min_mask_pixels": 8,
         "fit_peak_fraction_threshold_min": 0.25,
         "fit_peak_fraction_threshold_max": 0.62,
         "fit_peak_fraction_threshold_step": 0.03,
+        "gaussian_source_mode": "multi",
+        "multi_gaussian_source_count": None,
+        "multi_gaussian_max_sources": 2,
+        "multi_gaussian_min_peak_fraction": 0.16,
+        "multi_gaussian_min_peak_distance_pixels": 2,
+        "multi_gaussian_use_watershed": True,
+        "draw_multi_gaussian_labels": True,
         "gaussian_per_band_params": {
             149: {
                 "fit_peak_fraction_threshold": 0.38,
@@ -73,6 +83,7 @@ USER_CONFIG = {
                 "max_sigma_fraction": 0.17,
                 "fit_background_model": "constant",
                 "fit_mask_dilation_pixels": 1,
+                "gaussian_max_center_peak_distance_fraction_of_fwhm": 0.65,
             },
             164: {
                 "fit_peak_fraction_threshold": 0.38,
@@ -83,6 +94,7 @@ USER_CONFIG = {
                 "gaussian_fit_roi_padding_pixels": 4,
                 "gaussian_fit_max_pixels": 350,
                 "max_sigma_fraction": 0.17,
+                "max_fwhm_arcsec": 400.0,
                 "fit_background_model": "constant",
                 "fit_mask_dilation_pixels": 1,
             },
@@ -97,6 +109,7 @@ USER_CONFIG = {
                 "max_sigma_fraction": 0.18,
                 "fit_background_model": "constant",
                 "fit_mask_dilation_pixels": 1,
+                "multi_gaussian_min_peak_distance_pixels": 1,
             },
             205: {
                 "fit_peak_fraction_threshold": 0.40,
@@ -133,6 +146,7 @@ USER_CONFIG = {
                 "max_sigma_fraction": 0.16,
                 "fit_background_model": "plane",
                 "fit_mask_dilation_pixels": 1,
+                "multi_gaussian_min_peak_fraction": 0.10,
             },
         },
         "max_fwhm_arcsec": 1800.0,
