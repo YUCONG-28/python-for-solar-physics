@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import matplotlib.patches as patches
 import numpy as np
 from scipy.ndimage import binary_dilation, find_objects, label, maximum_filter
-from scipy.optimize import curve_fit
+from scipy.optimize import OptimizeWarning, curve_fit
 
 from .radio_coordinates import (
     coordinate_roundtrip_error_pixel,
@@ -1235,6 +1235,7 @@ def fit_elliptical_gaussian_on_radio_image(
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
+            warnings.simplefilter("ignore", OptimizeWarning)
             popt, pcov = curve_fit(
                 model_func,
                 xy_fit,

@@ -117,6 +117,7 @@ DEFAULT_CONFIG = {
     "ll_weight": 0.5,  # 左旋权重（加权平均时使用）
     "save_individual_pols": False,  # 是否同时保存单独的RR、LL图像
     "time_tolerance_seconds": 0.001,  # 时间对齐容差（秒）
+    "enable_raw_quality_filter": False,
     # ---------- Single-band mode configuration ----------
     # Single-file mode: if you only want to plot a single file, fill in the full absolute path here
     "single_file_path": r"D:\spike_topping_type_III\2025\20250124\RS_0447-0450\149MHz\RR\149MHz_2025124_045710_093.fits",
@@ -131,6 +132,7 @@ DEFAULT_CONFIG = {
     "band_dir_pattern": "{freq}MHz/{polar}",
     "multi_band_output_subdir": "multi_band_{polar}",
     "multi_band_layout": "auto",
+    "multi_band_time_tolerance_seconds": 0.1,
     # ---------- 多波段颜色范围 ----------
     # True: 每个波段使用独立的颜色范围
     # False: 所有波段使用统一的全局颜色范围
@@ -391,6 +393,7 @@ def build_config(user_config, default_config):
         "spectrogram_panel": "enable_spectrogram_panel",
         "save_gaussian_diagnostics": "save_gaussian_diagnostics",
         "save_individual_pols": "save_individual_pols",
+        "raw_quality_filter": "enable_raw_quality_filter",
     }
     for user_key, flat_key in feature_map.items():
         if user_key in features:
@@ -400,6 +403,12 @@ def build_config(user_config, default_config):
         save_bg = bool(features["save_background_products"])
         cfg["save_background_subtracted_image"] = save_bg
         cfg["save_estimated_background_map"] = save_bg
+
+    raw_quality = user_config.get("raw_quality", {})
+    if "enabled" in raw_quality:
+        cfg["enable_raw_quality_filter"] = bool(raw_quality["enabled"])
+    if "filter_bad_fits" in raw_quality:
+        cfg["enable_raw_quality_filter"] = bool(raw_quality["filter_bad_fits"])
 
     for key, value in user_config.get("display", {}).items():
         cfg[key] = value
@@ -416,6 +425,7 @@ def build_config(user_config, default_config):
         "fit_grow_peak_fraction_threshold": "fit_grow_peak_fraction_threshold",
         "fit_mask_target_min_pixels": "fit_mask_target_min_pixels",
         "fit_mask_target_max_pixels": "fit_mask_target_max_pixels",
+        "fit_min_mask_pixels": "fit_min_mask_pixels",
         "fit_peak_fraction_threshold_min": "fit_peak_fraction_threshold_min",
         "fit_peak_fraction_threshold_max": "fit_peak_fraction_threshold_max",
         "fit_peak_fraction_threshold_step": "fit_peak_fraction_threshold_step",
@@ -583,6 +593,25 @@ def _gaussian_band_key(freq):
     return f"{freq_float:g}"
 
 
+_BAND_GAUSSIAN_QUALITY_KEYS = {
+    "max_fwhm_arcsec": "max_fwhm_arcsec",
+    "max_center_peak_distance_arcsec": "max_center_peak_distance_arcsec",
+    "fit_snr_threshold": "min_snr",
+}
+
+
+def _merge_band_gaussian_quality_config(band_cfg: dict, overrides: dict) -> None:
+    quality_cfg = dict(band_cfg.get("gaussian_quality_requirements", {}) or {})
+    nested_quality = overrides.get("gaussian_quality_requirements", {})
+    if isinstance(nested_quality, dict):
+        quality_cfg.update(nested_quality)
+    for override_key, quality_key in _BAND_GAUSSIAN_QUALITY_KEYS.items():
+        if override_key in overrides:
+            quality_cfg[quality_key] = overrides[override_key]
+    if quality_cfg:
+        band_cfg["gaussian_quality_requirements"] = quality_cfg
+
+
 def config_for_gaussian_band(cfg: dict, freq) -> dict:
     band_cfg = dict(cfg)
     per_band = cfg.get("gaussian_per_band_params", {}) or {}
@@ -597,7 +626,9 @@ def config_for_gaussian_band(cfg: dict, freq) -> dict:
         pass
     for candidate in candidates:
         if candidate in per_band and isinstance(per_band[candidate], dict):
-            band_cfg.update(per_band[candidate])
+            overrides = per_band[candidate]
+            band_cfg.update(overrides)
+            _merge_band_gaussian_quality_config(band_cfg, overrides)
             break
     band_cfg["_gaussian_band_freq"] = freq
     return band_cfg
@@ -5071,6 +5102,37 @@ def _sorted_fits_for_band(band_dir: str, start_idx: int, end_idx) -> list:
     return selected
 
 
+def _raw_quality_filter_enabled(cfg: dict) -> bool:
+    return bool(cfg.get("enable_raw_quality_filter", False))
+
+
+def _filter_bad_radio_files(files: list, freq, polarization: str, cfg: dict) -> list:
+    """Remove raw FITS files flagged as bad before building plot slots."""
+    if not _raw_quality_filter_enabled(cfg):
+        return files
+    if not files:
+        return files
+
+    from scripts.radio.core.radio_raw_quality import filter_bad_radio_fits_files
+
+    result = filter_bad_radio_fits_files(
+        files,
+        frequency_mhz=float(freq),
+        polarization=str(polarization),
+    )
+    rejected = result.rejected_rows
+    if rejected:
+        print(
+            f"  Raw-quality filter {freq}MHz/{polarization}: "
+            f"kept {len(result.accepted_files)}/{len(files)}, rejected {len(rejected)}"
+        )
+        for row in rejected[:5]:
+            print(f"    reject {os.path.basename(row.source_file)}: {row.reason}")
+        if len(rejected) > 5:
+            print(f"    ... {len(rejected) - 5} more rejected files")
+    return result.accepted_files
+
+
 # ──────────────────────────────────────────────────────────────
 # 时间解析工具
 # ──────────────────────────────────────────────────────────────
@@ -5411,6 +5473,103 @@ def _match_rr_ll_by_time(
     return matched_pairs
 
 
+def _radio_item_time_key(item, parser):
+    path = item[0] if isinstance(item, tuple) else item
+    return parser.parse_time_from_filename(os.path.basename(path))
+
+
+def _build_slots_by_common_time(per_band: list, cfg: dict) -> list | None:
+    """Build multi-band slots by matching nearest parsed times across all bands."""
+    parser = create_time_parser(cfg)
+    per_band_entries = []
+    for band_items in per_band:
+        entries = []
+        for item in band_items:
+            key = _radio_item_time_key(item, parser)
+            if key is None:
+                return None
+            entries.append((key, item))
+        per_band_entries.append(entries)
+
+    if not per_band_entries:
+        return []
+    if any(not entries for entries in per_band_entries):
+        return []
+
+    tolerance_ms = float(cfg.get("multi_band_time_tolerance_seconds", 0.1)) * 1000.0
+    reference_index = min(
+        range(len(per_band_entries)), key=lambda index: len(per_band_entries[index])
+    )
+    reference_entries = sorted(
+        per_band_entries[reference_index], key=lambda entry: (entry[0][0], entry[0][1])
+    )
+    used_by_band = [set() for _entries in per_band_entries]
+    slots = []
+    for ref_key, _ref_item in reference_entries:
+        slot = []
+        matched_indices = []
+        for band_index, entries in enumerate(per_band_entries):
+            match_index = _nearest_time_entry_index(
+                entries, ref_key, used_by_band[band_index], tolerance_ms
+            )
+            if match_index is None:
+                slot = []
+                matched_indices = []
+                break
+            matched_indices.append(match_index)
+            slot.append(entries[match_index][1])
+        if slot:
+            slot_times = [
+                per_band_entries[band_index][match_index][0][1]
+                for band_index, match_index in enumerate(matched_indices)
+            ]
+            if max(slot_times) - min(slot_times) > tolerance_ms:
+                continue
+            for band_index, match_index in enumerate(matched_indices):
+                used_by_band[band_index].add(match_index)
+            slots.append(slot)
+
+    used_count = sum(len(used) for used in used_by_band)
+    total_count = sum(len(entries) for entries in per_band_entries)
+    dropped = total_count - used_count
+    if dropped:
+        print(
+            "Dropped "
+            f"{dropped} band-time entries because not every band has a usable match."
+        )
+    return slots
+
+
+def _nearest_time_entry_index(entries: list, ref_key, used_indices: set, tolerance_ms):
+    ref_date, ref_ms = ref_key
+    best_index = None
+    best_diff = float("inf")
+    for index, (key, _item) in enumerate(entries):
+        if index in used_indices:
+            continue
+        date_key, total_ms = key
+        if date_key != ref_date:
+            continue
+        diff = abs(float(total_ms) - float(ref_ms))
+        if diff < best_diff:
+            best_index = index
+            best_diff = diff
+    if best_index is not None and best_diff <= tolerance_ms:
+        return best_index
+    return None
+
+
+def _build_slots_by_position(per_band: list) -> list:
+    lengths = [len(f) for f in per_band]
+    if len(set(lengths)) > 1:
+        min_len = min(lengths)
+        print(
+            f"Warning: number of files per band inconsistent, using the minimum count {min_len}"
+        )
+        per_band = [f[:min_len] for f in per_band]
+    return [list(band_files) for band_files in zip(*per_band, strict=False)]
+
+
 def _build_multi_band_slots(cfg: dict) -> list:
     """
     Build multi-band synthesis time slots (each slot contains files of each band at the same time).
@@ -5442,6 +5601,12 @@ def _build_multi_band_slots(cfg: dict) -> list:
 
             rr_files = _sorted_fits_for_band(rr_dir, start_idx, end_idx)
             ll_files = _sorted_fits_for_band(ll_dir, start_idx, end_idx)
+            rr_files = _filter_bad_radio_files(
+                rr_files, freq, cfg["rr_dir_suffix"], cfg
+            )
+            ll_files = _filter_bad_radio_files(
+                ll_files, freq, cfg["ll_dir_suffix"], cfg
+            )
 
             # ── 基于文件名时间戳做精确匹配（毫秒级） ──────────────
             tolerance_ms = time_tolerance * 1000  # 秒 → 毫秒
@@ -5462,18 +5627,17 @@ def _build_multi_band_slots(cfg: dict) -> list:
             # 普通模式：只读取指定偏振的文件
             band_dir = os.path.join(root, pattern.format(freq=freq, polar=polarization))
             files = _sorted_fits_for_band(band_dir, start_idx, end_idx)
+            files = _filter_bad_radio_files(files, freq, polarization, cfg)
             per_band.append(files)
 
-    lengths = [len(f) for f in per_band]
-    if len(set(lengths)) > 1:
-        min_len = min(lengths)
-        print(
-            f"Warning: number of files per band inconsistent, using the minimum count {min_len}"
-        )
-        per_band = [f[:min_len] for f in per_band]
-
     # ★ 优化：zip 直接转置二维列表，替代双层 for 循环
-    slots = [list(band_files) for band_files in zip(*per_band, strict=False)]
+    slots = _build_slots_by_common_time(per_band, cfg)
+    if slots is None:
+        print(
+            "Warning: could not parse all radio times; "
+            "falling back to positional slots."
+        )
+        slots = _build_slots_by_position(per_band)
 
     print(f"Built {len(slots)} time slots, each slot contains {len(freqs)} bands")
     print(f"Polarization: {polarization}")
@@ -5963,7 +6127,13 @@ def _compute_fixed_band_ranges(cfg: dict) -> tuple:
             # ── 基于文件名时间戳做精确匹配 ─────────────────────────
             time_tolerance = cfg.get("time_tolerance_seconds", 1.0)
             tolerance_ms = time_tolerance * 1000
-            matched_pairs = _match_rr_ll_by_time(rr_files, ll_files, tolerance_ms)
+            rr_files = _filter_bad_radio_files(
+                rr_files, freq, cfg["rr_dir_suffix"], cfg
+            )
+            ll_files = _filter_bad_radio_files(
+                ll_files, freq, cfg["ll_dir_suffix"], cfg
+            )
+            matched_pairs = _match_rr_ll_by_time(rr_files, ll_files, tolerance_ms, cfg)
 
             if not matched_pairs:
                 warnings.warn(
@@ -6001,6 +6171,7 @@ def _compute_fixed_band_ranges(cfg: dict) -> tuple:
             # 普通模式：只读取指定偏振的文件
             band_dir = os.path.join(root, pattern.format(freq=freq, polar=polarization))
             files = _sorted_fits_for_band(band_dir, start_idx, end_idx)
+            files = _filter_bad_radio_files(files, freq, polarization, cfg)
 
             # 读取所有文件的数据
             for file_path in files:
@@ -6449,10 +6620,10 @@ def plot_single_band(
             cfg,
         )
         if multi_fit_result is not None:
-            for row in _multi_gaussian_diagnostics_rows(
+            for diagnostic_row in _multi_gaussian_diagnostics_rows(
                 multi_fit_result, gaussian_cfg, freq, time_str, polar_display, bg_diag
             ):
-                _save_multi_gaussian_diagnostics_row(row, output_dir, cfg)
+                _save_multi_gaussian_diagnostics_row(diagnostic_row, output_dir, cfg)
     if cfg.get("save_background_diagnostics", True) and background_workflow_enabled(
         cfg
     ):
@@ -7219,7 +7390,7 @@ def plot_multi_band_slot(
                     cfg,
                 )
                 if multi_fit_result is not None:
-                    for row in _multi_gaussian_diagnostics_rows(
+                    for diagnostic_row in _multi_gaussian_diagnostics_rows(
                         multi_fit_result,
                         gaussian_cfg,
                         freq,
@@ -7227,7 +7398,9 @@ def plot_multi_band_slot(
                         polar,
                         all_bg_diags[idx],
                     ):
-                        _save_multi_gaussian_diagnostics_row(row, output_dir, cfg)
+                        _save_multi_gaussian_diagnostics_row(
+                            diagnostic_row, output_dir, cfg
+                        )
 
         ax.add_patch(
             patches.Circle(

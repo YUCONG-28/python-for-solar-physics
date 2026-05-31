@@ -13,6 +13,7 @@ from scripts.radio.configs import (
     load_radio_user_config,
 )
 from scripts.radio.core.radio_coordinates import normalize_roi_bounds_arcsec
+from scripts.radio.core.radio_gaussian_fit import _gaussian_quality_config
 
 
 def test_20250503_config_is_independent_from_20250124_config():
@@ -73,6 +74,32 @@ def test_20250503_config_has_real_event_paths_and_full_event_sections():
     )
     assert user_config["data"]["start_idx"] == 648
     assert user_config["data"]["end_idx"] == 944
+    assert user_config["data"]["multi_band_time_tolerance_seconds"] == 0.1
+    assert user_config["features"]["raw_quality_filter"] is True
+    gaussian = user_config["gaussian"]
+    assert gaussian["gaussian_source_mode"] == "multi"
+    assert gaussian["multi_gaussian_source_count"] is None
+    assert gaussian["multi_gaussian_max_sources"] == 2
+    assert gaussian["multi_gaussian_min_peak_fraction"] == 0.16
+    assert gaussian["multi_gaussian_min_peak_distance_pixels"] == 2
+    assert gaussian["fit_min_mask_pixels"] == 8
+    assert (
+        gaussian["gaussian_per_band_params"][149][
+            "gaussian_max_center_peak_distance_fraction_of_fwhm"
+        ]
+        == 0.65
+    )
+    assert gaussian["gaussian_per_band_params"][164]["max_fwhm_arcsec"] == 400.0
+    assert (
+        gaussian["gaussian_per_band_params"][190][
+            "multi_gaussian_min_peak_distance_pixels"
+        ]
+        == 1
+    )
+    assert (
+        gaussian["gaussian_per_band_params"][238]["multi_gaussian_min_peak_fraction"]
+        == 0.10
+    )
     assert user_config["spectrogram"]["file_paths"] == [
         r"D:\spike_topping_type_III\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503071510_V01.01.fits",
         r"D:\spike_topping_type_III\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503072013_V01.01.fits",
@@ -103,12 +130,16 @@ def test_radio_event_configs_expose_central_output_config_without_spatial():
 
 
 def test_radio_event_configs_expose_event_specific_spectrogram_display_range():
-    for config_name in ("radio_20250124_config", "radio_20250503_config"):
+    expected_ranges = {
+        "radio_20250124_config": (2.5, 4.5),
+        "radio_20250503_config": (1.9, 3.6),
+    }
+    for config_name, (expected_vmin, expected_vmax) in expected_ranges.items():
         user_config, _newkirk_config = load_radio_user_config(config_name)
         spectrogram = user_config["spectrogram"]
 
-        assert spectrogram["vmin"] == 2.5
-        assert spectrogram["vmax"] == 4.5
+        assert spectrogram["vmin"] == expected_vmin
+        assert spectrogram["vmax"] == expected_vmax
         assert spectrogram["use_log10"] is True
         assert spectrogram["cmap"] == "jet"
 
@@ -134,6 +165,60 @@ def test_legacy_build_config_maps_nested_spectrogram_display_range():
     assert cfg["spectrogram_use_log10"] is False
     assert cfg["spectrogram_cmap"] == "magma"
     assert cfg["spectrogram_colorbar_label"] == "raw intensity"
+
+
+def test_legacy_build_config_maps_raw_quality_filter():
+    legacy = _import_legacy_source_map_with_optional_stubs()
+
+    cfg = legacy.build_config(
+        {
+            "features": {"raw_quality_filter": True},
+            "raw_quality": {"filter_bad_fits": True},
+        },
+        legacy.DEFAULT_CONFIG,
+    )
+
+    assert cfg["enable_raw_quality_filter"] is True
+
+
+def test_legacy_build_config_maps_multi_source_gaussian_tuning():
+    legacy = _import_legacy_source_map_with_optional_stubs()
+
+    cfg = legacy.build_config(
+        {
+            "gaussian": {
+                "gaussian_source_mode": "multi",
+                "multi_gaussian_source_count": None,
+                "multi_gaussian_max_sources": 2,
+                "multi_gaussian_min_peak_fraction": 0.16,
+                "multi_gaussian_min_peak_distance_pixels": 2,
+                "fit_min_mask_pixels": 8,
+                "gaussian_per_band_params": {
+                    149: {"gaussian_max_center_peak_distance_fraction_of_fwhm": 0.65},
+                    164: {"max_fwhm_arcsec": 400.0},
+                    190: {"multi_gaussian_min_peak_distance_pixels": 1},
+                    238: {"multi_gaussian_min_peak_fraction": 0.10},
+                },
+            }
+        },
+        legacy.DEFAULT_CONFIG,
+    )
+
+    assert cfg["gaussian_source_mode"] == "multi"
+    assert cfg["multi_gaussian_source_count"] is None
+    assert cfg["multi_gaussian_max_sources"] == 2
+    assert cfg["multi_gaussian_min_peak_fraction"] == 0.16
+    assert cfg["multi_gaussian_min_peak_distance_pixels"] == 2
+    assert cfg["fit_min_mask_pixels"] == 8
+    cfg_149 = legacy.config_for_gaussian_band(cfg, 149)
+    cfg_164 = legacy.config_for_gaussian_band(cfg, 164)
+    cfg_190 = legacy.config_for_gaussian_band(cfg, 190)
+    cfg_238 = legacy.config_for_gaussian_band(cfg, 238)
+    assert cfg_149["gaussian_max_center_peak_distance_fraction_of_fwhm"] == 0.65
+    assert cfg_164["max_fwhm_arcsec"] == 400.0
+    assert _gaussian_quality_config(cfg_164)["max_fwhm_arcsec"] == 400.0
+    assert cfg_190["multi_gaussian_min_peak_distance_pixels"] == 1
+    assert cfg_238["multi_gaussian_min_peak_fraction"] == 0.10
 
 
 def test_aia_radio_hmi_roi_uses_explicit_bounds_with_legacy_fallback():

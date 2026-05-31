@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import ast
+import inspect
+
 import numpy as np
 
 from scripts.radio.core.radio_gaussian_fit import (
@@ -13,6 +16,7 @@ from scripts.radio.core.radio_io import (
     GAUSSIAN_DIAGNOSTIC_FIELDS,
     MULTI_GAUSSIAN_DIAGNOSTIC_FIELDS,
 )
+from scripts.radio.legacy import radio_source_map_plot_gaussian_overlay as legacy
 
 
 def _cfg(**overrides):
@@ -155,6 +159,55 @@ def test_candidate_detection_splits_nearby_peaks_until_min_distance_merges_them(
     assert len(merged_candidates) == 1
 
 
+def test_auto_multi_source_fit_keeps_weak_secondary_source():
+    data = _image(
+        sources=[
+            (10.0, 20.0, 30.0, 3.0, 2.8, 0.0),
+            (1.1, 44.0, 34.0, 3.2, 2.6, 0.0),
+        ]
+    )
+
+    result = fit_multiple_gaussians_on_radio_image(
+        data,
+        extent=(0.0, 64.0, 0.0, 64.0),
+        cfg=_cfg(
+            multi_gaussian_max_sources=2,
+            multi_gaussian_min_peak_fraction=0.10,
+            multi_gaussian_min_peak_distance_pixels=2,
+        ),
+        source_file="weak_secondary.fits",
+        image_origin="lower",
+    )
+
+    assert result.source_count_mode == "auto"
+    assert result.detected_source_count == 2
+    centers = sorted(
+        (fit.center_pixel for fit in result.fit_results), key=lambda xy: xy[0]
+    )
+    np.testing.assert_allclose(centers[0], (20.0, 30.0), atol=1.25)
+    np.testing.assert_allclose(centers[1], (44.0, 34.0), atol=1.25)
+
+
+def test_auto_multi_source_fit_keeps_single_source_single_with_weak_threshold():
+    data = _image(sources=[(10.0, 31.0, 32.0, 4.2, 3.4, 0.2)])
+
+    result = fit_multiple_gaussians_on_radio_image(
+        data,
+        extent=(0.0, 64.0, 0.0, 64.0),
+        cfg=_cfg(
+            multi_gaussian_max_sources=2,
+            multi_gaussian_min_peak_fraction=0.16,
+            multi_gaussian_min_peak_distance_pixels=2,
+        ),
+        source_file="single_with_weak_threshold.fits",
+        image_origin="lower",
+    )
+
+    assert result.source_count_mode == "auto"
+    assert result.detected_source_count == 1
+    assert len(result.fit_results) == 1
+
+
 def test_multi_gaussian_fields_extend_legacy_gaussian_fields():
     assert MULTI_GAUSSIAN_DIAGNOSTIC_FIELDS[: len(GAUSSIAN_DIAGNOSTIC_FIELDS)] == (
         GAUSSIAN_DIAGNOSTIC_FIELDS
@@ -197,3 +250,22 @@ def test_multi_gaussian_csv_uses_extended_header(tmp_path):
     header = csv_path.read_text(encoding="utf-8").splitlines()[0].split(",")
     assert header == MULTI_GAUSSIAN_DIAGNOSTIC_FIELDS
     assert header[: len(GAUSSIAN_DIAGNOSTIC_FIELDS)] == GAUSSIAN_DIAGNOSTIC_FIELDS
+
+
+def test_multi_band_plot_does_not_shadow_subplot_row_with_diagnostics_row():
+    tree = ast.parse(inspect.getsource(legacy.plot_multi_band_slot))
+    bad_targets = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.For):
+            continue
+        iterator = node.iter
+        if not (
+            isinstance(iterator, ast.Call)
+            and isinstance(iterator.func, ast.Name)
+            and iterator.func.id == "_multi_gaussian_diagnostics_rows"
+        ):
+            continue
+        if isinstance(node.target, ast.Name):
+            bad_targets.append(node.target.id)
+
+    assert "row" not in bad_targets

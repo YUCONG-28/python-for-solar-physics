@@ -96,19 +96,33 @@ def _install_aia_overlay_stubs() -> None:
     sunpy.coordinates = sunpy_coordinates
     sunpy.map = sunpy_map
 
-    scipy_interpolate = types.ModuleType("scipy.interpolate")
-    scipy_ndimage = sys.modules["scipy.ndimage"]
-    scipy_ndimage.gaussian_filter = lambda *args, **kwargs: None
-    scipy_interpolate.RegularGridInterpolator = lambda *args, **kwargs: None
+    scipy_ndimage = _import_or_stub_module("scipy.ndimage")
+    if not hasattr(scipy_ndimage, "gaussian_filter"):
+        scipy_ndimage.gaussian_filter = lambda *args, **kwargs: None
+    scipy_interpolate = _import_or_stub_module("scipy.interpolate")
+    if not hasattr(scipy_interpolate, "RegularGridInterpolator"):
+        scipy_interpolate.RegularGridInterpolator = lambda *args, **kwargs: None
 
     _install_missing_modules(
         {
             "sunpy": sunpy,
             "sunpy.coordinates": sunpy_coordinates,
             "sunpy.map": sunpy_map,
+            "scipy.ndimage": scipy_ndimage,
             "scipy.interpolate": scipy_interpolate,
         }
     )
+
+
+def _import_or_stub_module(name: str) -> types.ModuleType:
+    if name in sys.modules:
+        return sys.modules[name]
+    if _module_available(name):
+        return importlib.import_module(name)
+    module = types.ModuleType(name)
+    module.__spec__ = importlib.machinery.ModuleSpec(name, loader=None)
+    sys.modules[name] = module
+    return module
 
 
 def _install_missing_modules(modules: dict[str, types.ModuleType]) -> None:
