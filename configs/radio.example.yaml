@@ -17,6 +17,10 @@ radio:
   polarization: RR+LL
   radio_cmap: hot
 
+  raw_quality:
+    enabled: false
+    bad_frame_output_subdir: raw_quality_bad_frames
+
   contours:
     contour_levels:
       - 0.9
