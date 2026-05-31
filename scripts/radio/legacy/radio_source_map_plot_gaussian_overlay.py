@@ -118,6 +118,7 @@ DEFAULT_CONFIG = {
     "save_individual_pols": False,  # 是否同时保存单独的RR、LL图像
     "time_tolerance_seconds": 0.001,  # 时间对齐容差（秒）
     "enable_raw_quality_filter": False,
+    "raw_quality_bad_frame_output_subdir": "raw_quality_bad_frames",
     # ---------- Single-band mode configuration ----------
     # Single-file mode: if you only want to plot a single file, fill in the full absolute path here
     "single_file_path": r"D:\spike_topping_type_III\2025\20250124\RS_0447-0450\149MHz\RR\149MHz_2025124_045710_093.fits",
@@ -409,6 +410,10 @@ def build_config(user_config, default_config):
         cfg["enable_raw_quality_filter"] = bool(raw_quality["enabled"])
     if "filter_bad_fits" in raw_quality:
         cfg["enable_raw_quality_filter"] = bool(raw_quality["filter_bad_fits"])
+    if "bad_frame_output_subdir" in raw_quality:
+        cfg["raw_quality_bad_frame_output_subdir"] = str(
+            raw_quality["bad_frame_output_subdir"]
+        )
 
     for key, value in user_config.get("display", {}).items():
         cfg[key] = value
@@ -5106,8 +5111,72 @@ def _raw_quality_filter_enabled(cfg: dict) -> bool:
     return bool(cfg.get("enable_raw_quality_filter", False))
 
 
-def _filter_bad_radio_files(files: list, freq, polarization: str, cfg: dict) -> list:
-    """Remove raw FITS files flagged as bad before building plot slots."""
+_RAW_QUALITY_BAD_REASONS_KEY = "_raw_quality_bad_file_reasons"
+_RAW_QUALITY_FILE_FLAGS_KEY = "_raw_quality_file_quality_flags"
+
+
+def _raw_quality_path_key(path) -> str:
+    return os.path.normcase(os.path.abspath(os.fspath(path)))
+
+
+def _iter_raw_quality_item_paths(item) -> list[str]:
+    if isinstance(item, (tuple, list)):
+        paths: list[str] = []
+        for part in item:
+            paths.extend(_iter_raw_quality_item_paths(part))
+        return paths
+    text = os.fspath(item)
+    if "|" in text:
+        return [part for part in text.split("|") if part]
+    return [text]
+
+
+def _remember_raw_quality_rows(cfg: dict, rows: list) -> None:
+    bad_reasons = dict(cfg.get(_RAW_QUALITY_BAD_REASONS_KEY, {}) or {})
+    file_flags = dict(cfg.get(_RAW_QUALITY_FILE_FLAGS_KEY, {}) or {})
+    for row in rows:
+        raw_path = str(row.source_file)
+        path_key = _raw_quality_path_key(raw_path)
+        file_flags[path_key] = str(row.quality_flag)
+        if row.quality_flag == "bad":
+            bad_reasons[path_key] = str(row.reason)
+        else:
+            bad_reasons.pop(path_key, None)
+    cfg[_RAW_QUALITY_BAD_REASONS_KEY] = bad_reasons
+    cfg[_RAW_QUALITY_FILE_FLAGS_KEY] = file_flags
+
+
+def _raw_quality_bad_reasons_for_item(item, cfg: dict) -> list[str]:
+    bad_reasons = cfg.get(_RAW_QUALITY_BAD_REASONS_KEY, {}) or {}
+    reasons: list[str] = []
+    seen = set()
+    for path in _iter_raw_quality_item_paths(item):
+        for key in (path, _raw_quality_path_key(path)):
+            reason = bad_reasons.get(key)
+            if reason and key not in seen:
+                reasons.append(str(reason))
+                seen.add(key)
+    return reasons
+
+
+def _raw_quality_item_is_bad(item, cfg: dict) -> bool:
+    return bool(_raw_quality_bad_reasons_for_item(item, cfg))
+
+
+def _raw_quality_bad_frame_output_dir(output_dir: str, cfg: dict, *parts) -> Path:
+    bad_subdir = str(
+        cfg.get("raw_quality_bad_frame_output_subdir", "raw_quality_bad_frames")
+        or "raw_quality_bad_frames"
+    ).strip()
+    if not bad_subdir:
+        bad_subdir = "raw_quality_bad_frames"
+    return Path(output_dir) / _plot_output_subdir(cfg) / bad_subdir / Path(*parts)
+
+
+def _filter_bad_radio_files(
+    files: list, freq, polarization: str, cfg: dict, *, drop_bad: bool = False
+) -> list:
+    """Classify raw FITS quality, optionally dropping bad files for statistics only."""
     if not _raw_quality_filter_enabled(cfg):
         return files
     if not files:
@@ -5120,17 +5189,20 @@ def _filter_bad_radio_files(files: list, freq, polarization: str, cfg: dict) -> 
         frequency_mhz=float(freq),
         polarization=str(polarization),
     )
+    _remember_raw_quality_rows(cfg, result.file_rows)
     rejected = result.rejected_rows
     if rejected:
         print(
             f"  Raw-quality filter {freq}MHz/{polarization}: "
-            f"kept {len(result.accepted_files)}/{len(files)}, rejected {len(rejected)}"
+            f"flagged {len(rejected)}/{len(files)} bad"
         )
         for row in rejected[:5]:
             print(f"    reject {os.path.basename(row.source_file)}: {row.reason}")
         if len(rejected) > 5:
             print(f"    ... {len(rejected) - 5} more rejected files")
-    return result.accepted_files
+    if drop_bad:
+        return result.accepted_files
+    return list(files)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -5957,10 +6029,13 @@ def _precreate_single_band_dirs(files: list, output_dir: str):
 
 def _resolve_multi_band_output_dir(output_dir: str, cfg: dict) -> Path:
     """Resolve the actual multi-band output directory under the analysis subdir."""
+    return Path(output_dir) / _plot_output_subdir(cfg) / _multi_band_output_subdir(cfg)
+
+
+def _multi_band_output_subdir(cfg: dict) -> str:
     polarization = cfg.get("polarization", "RR")
     subdir_template = cfg.get("multi_band_output_subdir", "multi_band_{polar}")
-    multi_output_subdir = subdir_template.format(polar=polarization)
-    return Path(output_dir) / _plot_output_subdir(cfg) / multi_output_subdir
+    return str(subdir_template).format(polar=polarization)
 
 
 def _precreate_multi_band_dir(output_dir: str, cfg: dict) -> str:
@@ -6128,10 +6203,10 @@ def _compute_fixed_band_ranges(cfg: dict) -> tuple:
             time_tolerance = cfg.get("time_tolerance_seconds", 1.0)
             tolerance_ms = time_tolerance * 1000
             rr_files = _filter_bad_radio_files(
-                rr_files, freq, cfg["rr_dir_suffix"], cfg
+                rr_files, freq, cfg["rr_dir_suffix"], cfg, drop_bad=True
             )
             ll_files = _filter_bad_radio_files(
-                ll_files, freq, cfg["ll_dir_suffix"], cfg
+                ll_files, freq, cfg["ll_dir_suffix"], cfg, drop_bad=True
             )
             matched_pairs = _match_rr_ll_by_time(rr_files, ll_files, tolerance_ms, cfg)
 
@@ -6171,7 +6246,9 @@ def _compute_fixed_band_ranges(cfg: dict) -> tuple:
             # 普通模式：只读取指定偏振的文件
             band_dir = os.path.join(root, pattern.format(freq=freq, polar=polarization))
             files = _sorted_fits_for_band(band_dir, start_idx, end_idx)
-            files = _filter_bad_radio_files(files, freq, polarization, cfg)
+            files = _filter_bad_radio_files(
+                files, freq, polarization, cfg, drop_bad=True
+            )
 
             # 读取所有文件的数据
             for file_path in files:
@@ -6403,6 +6480,10 @@ def plot_single_band(
     gaussian_cfg["_current_radio_image_origin"] = image_origin
     file_name = os.path.basename(file_path)
     current_frame_time = radio_datetime_from_header_or_path(header, file_path, cfg)
+    source_file_for_quality = file_path
+    if combine_polarizations and "rr_path" in locals() and "ll_path" in locals():
+        source_file_for_quality = f"{rr_path}|{ll_path}"
+    raw_quality_bad_frame = _raw_quality_item_is_bad(source_file_for_quality, cfg)
     bg_sub_data = img_data
     background_map = None
     bg_diag = {}
@@ -6513,7 +6594,7 @@ def plot_single_band(
     fit_result = None
     multi_fit_result = None
     radio_fit_data = None
-    if cfg.get("enable_gaussian_overlay", False):
+    if cfg.get("enable_gaussian_overlay", False) and not raw_quality_bad_frame:
         if gaussian_cfg.get("gaussian_fit_verbose", False):
             print(
                 "[Gaussian input] using "
@@ -6609,8 +6690,10 @@ def plot_single_band(
         overlay_gaussian_fit_on_axis(
             ax, fit_result, extent, img_data.shape, gaussian_cfg
         )
-    if cfg.get("enable_gaussian_overlay", False) and cfg.get(
-        "save_gaussian_diagnostics", True
+    if (
+        cfg.get("enable_gaussian_overlay", False)
+        and not raw_quality_bad_frame
+        and cfg.get("save_gaussian_diagnostics", True)
     ):
         save_gaussian_diagnostics_row(
             _gaussian_diagnostics_row(
@@ -6814,7 +6897,10 @@ def plot_single_band(
 
     # ★ 优化：输出目录已预创建，直接拼接路径
     subdir = f"{int(freq)}MHz" if isinstance(freq, (int, float)) else "unknown"
-    overlay_dir = os.path.join(output_dir, _plot_output_subdir(cfg), subdir)
+    if raw_quality_bad_frame:
+        overlay_dir = str(_raw_quality_bad_frame_output_dir(output_dir, cfg, subdir))
+    else:
+        overlay_dir = os.path.join(output_dir, _plot_output_subdir(cfg), subdir)
     os.makedirs(overlay_dir, exist_ok=True)
     out_path = os.path.join(
         overlay_dir, f"{os.path.splitext(file_name)[0]}{_output_suffix(cfg)}.png"
@@ -6948,6 +7034,7 @@ def plot_multi_band_slot(
     all_background_mask_maps = []
     all_rms_mask_maps = []
     all_bg_diags = []
+    all_raw_quality_bad = []
 
     # 存储每个波段的对数化数据
     all_log_data = []
@@ -7135,6 +7222,7 @@ def plot_multi_band_slot(
         all_extents.append(extent)
         all_origins.append(image_origin)
         all_source_files.append(source_file_for_diag)
+        all_raw_quality_bad.append(_raw_quality_item_is_bad(source_file_for_diag, cfg))
         band_info.append(
             (
                 get_freq_from_header(header) or "Unknown",
@@ -7320,7 +7408,7 @@ def plot_multi_band_slot(
                 cfg,
                 all_origins[idx],
             )
-        if cfg.get("enable_gaussian_overlay", False):
+        if cfg.get("enable_gaussian_overlay", False) and not all_raw_quality_bad[idx]:
             multi_fit_result = None
             if gaussian_cfg.get("background_use_for_fit", False):
                 fit_base_data = all_bg_sub_data[idx]
@@ -7603,7 +7691,14 @@ def plot_multi_band_slot(
     # plt.tight_layout(rect=[0, 0, 1, 0.96])
 
     # Resolve the real save location lazily so unused root-level folders stay absent.
-    overlay_output_dir = _resolve_multi_band_output_dir(output_dir, cfg)
+    if any(all_raw_quality_bad):
+        overlay_output_dir = _raw_quality_bad_frame_output_dir(
+            output_dir,
+            cfg,
+            _multi_band_output_subdir(cfg),
+        )
+    else:
+        overlay_output_dir = _resolve_multi_band_output_dir(output_dir, cfg)
     output_path = overlay_output_dir / (
         f"multi_band_slot_{slot_idx:04d}{_output_suffix(cfg)}.png"
     )

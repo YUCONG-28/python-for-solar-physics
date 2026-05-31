@@ -173,12 +173,16 @@ def test_legacy_build_config_maps_raw_quality_filter():
     cfg = legacy.build_config(
         {
             "features": {"raw_quality_filter": True},
-            "raw_quality": {"filter_bad_fits": True},
+            "raw_quality": {
+                "filter_bad_fits": True,
+                "bad_frame_output_subdir": "bad_frame_compare",
+            },
         },
         legacy.DEFAULT_CONFIG,
     )
 
     assert cfg["enable_raw_quality_filter"] is True
+    assert cfg["raw_quality_bad_frame_output_subdir"] == "bad_frame_compare"
 
 
 def test_legacy_build_config_maps_multi_source_gaussian_tuning():

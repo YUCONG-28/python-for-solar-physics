@@ -104,7 +104,7 @@ def test_raw_quality_keeps_distributed_pixels_without_extreme_high_tail():
     assert result.distributed_bright_pixels is True
 
 
-def test_multi_band_slot_builder_filters_bad_fits_and_drops_incomplete_time(
+def test_multi_band_slot_builder_marks_bad_fits_without_dropping_times(
     tmp_path: Path,
 ):
     root = tmp_path / "radio"
@@ -143,11 +143,148 @@ def test_multi_band_slot_builder_filters_bad_fits_and_drops_incomplete_time(
 
     slots = legacy._build_multi_band_slots(cfg)
 
-    assert len(slots) == 1
-    kept_slot = slots[0]
-    assert len(kept_slot) == 2
-    assert all("072001_000" in item[0] for item in kept_slot)
-    assert all("072001_000" in item[1] for item in kept_slot)
+    assert len(slots) == 2
+    bad_slot = slots[0]
+    good_slot = slots[1]
+    assert all("072000_000" in item[0] for item in bad_slot)
+    assert all("072001_000" in item[0] for item in good_slot)
+    assert legacy._raw_quality_item_is_bad(bad_slot[0], cfg) is True
+    assert legacy._raw_quality_item_is_bad(good_slot[0], cfg) is False
+
+
+def test_multi_band_bad_frame_saves_to_comparison_folder_and_skips_gaussian(
+    tmp_path: Path,
+    monkeypatch,
+):
+    good_path = tmp_path / "149MHz" / "RR" / "149MHz_202553_072000_000.fits"
+    bad_path = tmp_path / "164MHz" / "RR" / "164MHz_202553_072000_000.fits"
+    _write_fits(
+        good_path,
+        _compact_source((24, 24)),
+        dateobs="20250503072000000",
+        freq=149.0,
+    )
+    _write_fits(
+        bad_path,
+        _striped_bad_source((24, 24)),
+        dateobs="20250503072000000",
+        freq=164.0,
+    )
+
+    fit_calls = []
+
+    def fake_fit(*args, **kwargs):
+        fit_calls.append(kwargs["source_file"])
+        return None
+
+    monkeypatch.setattr(legacy, "fit_elliptical_gaussian_on_radio_image", fake_fit)
+
+    bad_key = str(bad_path)
+    cfg = dict(legacy.DEFAULT_CONFIG)
+    cfg.update(
+        {
+            "enable_raw_quality_filter": True,
+            "_raw_quality_bad_file_reasons": {
+                bad_key: "test_bad_frame",
+                str(bad_path.resolve()): "test_bad_frame",
+            },
+            "analysis_subdir": "gaussian_overlay",
+            "polarization": "RR+LL",
+            "multi_band_output_subdir": "multi_band_{polar}",
+            "multi_band_layout": "auto",
+            "multi_band_zero_gap": False,
+            "enable_gaussian_overlay": True,
+            "save_gaussian_diagnostics": False,
+            "save_background_diagnostics": False,
+            "save_plot": True,
+            "show_plot": False,
+            "enable_spectrogram_panel": False,
+            "fig_size": (4, 3),
+            "dpi": 60,
+            "title_fontsize": 8,
+            "label_fontsize": 7,
+            "tick_fontsize": 7,
+            "legend_fontsize": 6,
+            "annotation_fontsize": 6,
+            "use_custom_lim": True,
+            "custom_xlim": [-20, 20],
+            "custom_ylim": [-20, 20],
+            "x_tick_step": 20,
+            "y_tick_step": 20,
+        }
+    )
+
+    out_path = legacy.plot_multi_band_slot(
+        0,
+        [str(good_path), str(bad_path)],
+        str(tmp_path / "plots"),
+        cfg,
+    )
+
+    assert Path(out_path).is_file()
+    assert "raw_quality_bad_frames" in Path(out_path).parts
+    assert "multi_band_RR+LL" in Path(out_path).parts
+    assert "multi_band_{polar}" not in Path(out_path).parts
+    assert fit_calls == [str(good_path)]
+
+
+def test_single_bad_frame_saves_to_comparison_folder_and_skips_gaussian(
+    tmp_path: Path,
+    monkeypatch,
+):
+    bad_path = tmp_path / "149MHz" / "RR" / "149MHz_202553_072000_000.fits"
+    _write_fits(
+        bad_path,
+        _striped_bad_source((24, 24)),
+        dateobs="20250503072000000",
+        freq=149.0,
+    )
+
+    fit_calls = []
+
+    def fake_fit(*args, **kwargs):
+        fit_calls.append(kwargs["source_file"])
+        return None
+
+    monkeypatch.setattr(legacy, "fit_elliptical_gaussian_on_radio_image", fake_fit)
+
+    cfg = dict(legacy.DEFAULT_CONFIG)
+    cfg.update(
+        {
+            "enable_raw_quality_filter": True,
+            "_raw_quality_bad_file_reasons": {
+                str(bad_path): "test_bad_frame",
+                str(bad_path.resolve()): "test_bad_frame",
+            },
+            "analysis_subdir": "gaussian_overlay",
+            "combine_polarizations": False,
+            "polarization": "RR",
+            "enable_gaussian_overlay": True,
+            "save_gaussian_diagnostics": False,
+            "save_background_diagnostics": False,
+            "save_plot": True,
+            "show_plot": False,
+            "enable_spectrogram_panel": False,
+            "fig_size": (4, 3),
+            "dpi": 60,
+            "title_fontsize": 8,
+            "label_fontsize": 7,
+            "tick_fontsize": 7,
+            "legend_fontsize": 6,
+            "annotation_fontsize": 6,
+            "use_custom_lim": True,
+            "custom_xlim": [-20, 20],
+            "custom_ylim": [-20, 20],
+            "x_tick_step": 20,
+            "y_tick_step": 20,
+        }
+    )
+
+    out_path = legacy.plot_single_band(str(bad_path), str(tmp_path / "plots"), cfg)
+
+    assert Path(out_path).is_file()
+    assert "raw_quality_bad_frames" in Path(out_path).parts
+    assert fit_calls == []
 
 
 def test_fixed_band_ranges_use_raw_quality_filtered_files(monkeypatch):
@@ -166,9 +303,11 @@ def test_fixed_band_ranges_use_raw_quality_filtered_files(monkeypatch):
     monkeypatch.setattr(
         legacy,
         "_filter_bad_radio_files",
-        lambda files, freq, polarization, cfg: [
-            item for item in files if "072000_000" not in item
-        ],
+        lambda files, freq, polarization, cfg, drop_bad=False: (
+            [item for item in files if "072000_000" not in item]
+            if drop_bad
+            else list(files)
+        ),
     )
     monkeypatch.setattr(
         legacy,
