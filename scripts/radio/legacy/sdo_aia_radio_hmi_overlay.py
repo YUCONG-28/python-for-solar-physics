@@ -45,7 +45,7 @@ from astropy.coordinates import SkyCoord  # noqa: E402
 from astropy.io import fits  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 from numpy.typing import NDArray  # noqa: E402
-from scipy.interpolate import RegularGridInterpolator  # noqa: E402
+from scipy.interpolate import RegularGridInterpolator, griddata  # noqa: E402
 from scipy.ndimage import (  # noqa: E402
     binary_dilation,
     find_objects,
@@ -204,6 +204,40 @@ class Config:
 
     radio_time_threshold: int = 6  # 射电与 AIA 时间匹配阈值（秒）
     max_radio_per_band: int = 28
+
+    # AIA radio overlay mode. "gaussian" preserves the historical fit path;
+    # "raw" directly maps the radio image onto the AIA cutout grid.
+    radio_overlay_mode: str = "gaussian"
+    raw_reproject_interpolation_method: str = "linear"
+
+    # Optional spectrogram panel below the AIA/radio overlay.
+    enable_spectrogram_panel: bool = False
+    spectrogram_file_paths: list[str] | None = None
+    spectrogram_file_path: str | None = None
+    spectrogram_time_display_mode: str = "auto"
+    spectrogram_time_start: str | None = None
+    spectrogram_time_end: str | None = None
+    spectrogram_time_margin_seconds: float = 30.0
+    spectrogram_f_start: float = 80.0
+    spectrogram_f_end: float = 340.0
+    spectrogram_polarization: str = "sum"
+    spectrogram_vmin: float | None = None
+    spectrogram_vmax: float | None = None
+    spectrogram_use_log10: bool = True
+    spectrogram_cmap: str = "jet"
+    spectrogram_title: str | None = None
+    spectrogram_colorbar_label: str | None = None
+    spectrogram_panel_height_ratio: float = 0.34
+    spectrogram_hspace: float = 0.08
+    spectrogram_draw_colorbar: bool = True
+    spectrogram_xtick_format: str = "%H:%M:%S"
+
+    # Optional MP4 generation from saved PNG frames.
+    make_animation: bool = False
+    animation_fps: int = 10
+    animation_name: str = "aia_radio_overlay.mp4"
+    animation_quality: str = "high"
+    animation_output_dir: str | None = None
 
     # ── 等值线配置 ─────────────────────────────────────────────
     show_radio_contours: bool = False
@@ -405,6 +439,42 @@ class Config:
         apply_config_to_object(self, "sdo_aia_radio_hmi_overlay")
 
 
+_SPECTROGRAM_CONFIG_MAP = {
+    "enabled": "enable_spectrogram_panel",
+    "file_paths": "spectrogram_file_paths",
+    "file_path": "spectrogram_file_path",
+    "time_display_mode": "spectrogram_time_display_mode",
+    "time_start": "spectrogram_time_start",
+    "time_end": "spectrogram_time_end",
+    "time_margin_seconds": "spectrogram_time_margin_seconds",
+    "f_start": "spectrogram_f_start",
+    "f_end": "spectrogram_f_end",
+    "polarization": "spectrogram_polarization",
+    "vmin": "spectrogram_vmin",
+    "vmax": "spectrogram_vmax",
+    "use_log10": "spectrogram_use_log10",
+    "cmap": "spectrogram_cmap",
+    "title": "spectrogram_title",
+    "colorbar_label": "spectrogram_colorbar_label",
+    "panel_height_ratio": "spectrogram_panel_height_ratio",
+    "hspace": "spectrogram_hspace",
+    "draw_colorbar": "spectrogram_draw_colorbar",
+    "xtick_format": "spectrogram_xtick_format",
+}
+
+_ANIMATION_CONFIG_MAP = {
+    "make_animation": "make_animation",
+    "fps": "animation_fps",
+    "animation_fps": "animation_fps",
+    "name": "animation_name",
+    "animation_name": "animation_name",
+    "quality": "animation_quality",
+    "animation_quality": "animation_quality",
+    "output_dir": "animation_output_dir",
+    "animation_output_dir": "animation_output_dir",
+}
+
+
 def _apply_values_to_config(cfg: Config, values: dict | None) -> Config:
     for key, value in (values or {}).items():
         if key == "style" and isinstance(value, dict):
@@ -413,6 +483,16 @@ def _apply_values_to_config(cfg: Config, values: dict | None) -> Config:
                     setattr(cfg.style, style_key, style_value)
         elif hasattr(cfg, key):
             setattr(cfg, key, value)
+    return cfg
+
+
+def _apply_mapped_values_to_config(
+    cfg: Config, values: dict | None, key_map: dict[str, str]
+) -> Config:
+    for key, value in (values or {}).items():
+        target = key_map.get(key)
+        if target and hasattr(cfg, target):
+            setattr(cfg, target, value)
     return cfg
 
 
@@ -432,6 +512,15 @@ def apply_aia_radio_hmi_user_config(cfg: Config, user_config: dict | None) -> Co
         "runtime",
     ):
         _apply_values_to_config(cfg, user_config.get(section))
+    _apply_mapped_values_to_config(
+        cfg, user_config.get("spectrogram"), _SPECTROGRAM_CONFIG_MAP
+    )
+    _apply_mapped_values_to_config(
+        cfg, user_config.get("animation"), _ANIMATION_CONFIG_MAP
+    )
+    features = user_config.get("features")
+    if isinstance(features, dict) and "spectrogram_panel" in features:
+        cfg.enable_spectrogram_panel = bool(features["spectrogram_panel"])
     _apply_values_to_config(
         cfg,
         {
@@ -483,6 +572,16 @@ class GaussianReprojectResult:
     center_peak_distance_arcsec: float | None = None
     source_file: str | None = None
     radio_fit_result: GaussianFitResult | None = None
+
+
+@dataclass
+class RawRadioReprojectResult:
+    model: np.ndarray
+    peak_pixel: tuple[float, float]
+    peak_arcsec: tuple[float, float]
+    amplitude: float
+    source_file: str | None = None
+    overlay_valid: bool = True
 
 
 # ============================================================
@@ -2304,6 +2403,221 @@ def _gaussian_diagnostics_row(
 # ============================================================
 
 
+def _radio_overlay_mode(cfg: Config) -> str:
+    mode = str(getattr(cfg, "radio_overlay_mode", "gaussian") or "gaussian").lower()
+    if mode in {"raw", "direct", "direct_overlay", "raw_overlay"}:
+        return "raw"
+    return "gaussian"
+
+
+def _build_radio_pixel_to_aia_pixel_mapper(
+    radio_shape: tuple[int, int],
+    ra_map: np.ndarray | None,
+    dec_map: np.ndarray | None,
+    aia_cutout_map: sunpy.map.GenericMap,
+    cfg: Config,
+    radio_header: fits.Header | None = None,
+):
+    ny_r, nx_r = radio_shape
+    x_pix = np.arange(nx_r, dtype=float)
+    y_pix = np.arange(ny_r, dtype=float)
+    use_radec = cfg.use_radec_maps and (ra_map is not None) and (dec_map is not None)
+
+    if use_radec:
+        ra_abs = ra_map.copy().astype(np.float64)
+        dec_abs = dec_map.copy().astype(np.float64)
+        invalid_mask = (ra_abs == 0.0) & (dec_abs == 0.0)
+        ra_abs[invalid_mask] = np.nan
+        dec_abs[invalid_mask] = np.nan
+
+        interp_ra = RegularGridInterpolator(
+            (y_pix, x_pix), ra_abs, bounds_error=False, fill_value=np.nan
+        )
+        interp_dec = RegularGridInterpolator(
+            (y_pix, x_pix), dec_abs, bounds_error=False, fill_value=np.nan
+        )
+    elif radio_header is not None:
+        crpix1 = radio_header.get("CRPIX1", 0)
+        crpix2 = radio_header.get("CRPIX2", 0)
+        crval1 = radio_header.get("CRVAL1", 0)
+        crval2 = radio_header.get("CRVAL2", 0)
+        cdelt1 = radio_header.get("CDELT1", 1)
+        cdelt2 = radio_header.get("CDELT2", 1)
+    else:
+        return None
+
+    def radio_pix_to_aia_pix(xp, yp):
+        if use_radec:
+            ra_val = float(interp_ra((yp, xp)))
+            dec_val = float(interp_dec((yp, xp)))
+            if np.isnan(ra_val) or np.isnan(dec_val):
+                iy = np.clip(int(round(yp)), 0, ny_r - 1)
+                ix = np.clip(int(round(xp)), 0, nx_r - 1)
+                ra_val = ra_abs[iy, ix]
+                dec_val = dec_abs[iy, ix]
+                if np.isnan(ra_val) or np.isnan(dec_val):
+                    return np.nan, np.nan
+            tx_arcsec = ra_val * 3600.0
+            ty_arcsec = dec_val * 3600.0
+        else:
+            tx_arcsec = crval1 + (xp + 1 - crpix1) * cdelt1
+            ty_arcsec = crval2 + (yp + 1 - crpix2) * cdelt2
+
+        coord_target = SkyCoord(
+            Tx=tx_arcsec * u.arcsec,
+            Ty=ty_arcsec * u.arcsec,
+            frame=aia_cutout_map.coordinate_frame,
+        )
+        px, py = aia_cutout_map.wcs.world_to_pixel(coord_target)
+        return float(px), float(py)
+
+    return radio_pix_to_aia_pix
+
+
+def _aia_pixel_to_arcsec(
+    aia_cutout_map: sunpy.map.GenericMap, pixel_x: float, pixel_y: float
+) -> tuple[float, float]:
+    try:
+        center_world = aia_cutout_map.pixel_to_world(
+            pixel_x * u.pixel, pixel_y * u.pixel
+        )
+        return (
+            float(center_world.Tx.to_value(u.arcsec)),
+            float(center_world.Ty.to_value(u.arcsec)),
+        )
+    except Exception:
+        return float(pixel_x), float(pixel_y)
+
+
+def reproject_raw_radio_to_aia(
+    radio_data: np.ndarray,
+    ra_map: np.ndarray | None,
+    dec_map: np.ndarray | None,
+    aia_cutout_map: sunpy.map.GenericMap,
+    cfg: Config,
+    radio_header: fits.Header | None = None,
+    source_file: str | None = None,
+    band_label: str | None = None,
+    polarization: str | None = None,
+    radio_time: datetime | None = None,
+) -> RawRadioReprojectResult | None:
+    del band_label, polarization, radio_time
+    if radio_data is None or np.ndim(radio_data) != 2:
+        return None
+    ny_a, nx_a = aia_cutout_map.data.shape
+    radio_values = np.asarray(radio_data, dtype=np.float64)
+    finite_mask = np.isfinite(radio_values)
+    if not finite_mask.any():
+        return None
+
+    radio_pix_to_aia_pix = _build_radio_pixel_to_aia_pixel_mapper(
+        radio_values.shape, ra_map, dec_map, aia_cutout_map, cfg, radio_header
+    )
+    if radio_pix_to_aia_pix is None:
+        return None
+
+    y_idx, x_idx = np.indices(radio_values.shape, dtype=np.float64)
+    source_x = x_idx[finite_mask]
+    source_y = y_idx[finite_mask]
+    values = radio_values[finite_mask]
+    points = []
+    mapped_values = []
+    for xp, yp, value in zip(source_x, source_y, values, strict=False):
+        aia_x, aia_y = radio_pix_to_aia_pix(float(xp), float(yp))
+        if not (np.isfinite(aia_x) and np.isfinite(aia_y)):
+            continue
+        points.append((aia_x, aia_y))
+        mapped_values.append(float(value))
+    if not points:
+        return None
+
+    points_arr = np.asarray(points, dtype=np.float64)
+    values_arr = np.asarray(mapped_values, dtype=np.float64)
+    grid_y, grid_x = np.mgrid[0:ny_a, 0:nx_a]
+    method = str(
+        getattr(cfg, "raw_reproject_interpolation_method", "linear") or "linear"
+    ).lower()
+    if method not in {"linear", "nearest", "cubic"}:
+        method = "linear"
+    if method in {"linear", "cubic"} and len(points_arr) < 3:
+        method = "nearest"
+    try:
+        model = griddata(
+            points_arr,
+            values_arr,
+            (grid_x, grid_y),
+            method=method,
+            fill_value=np.nan,
+        )
+    except Exception:
+        model = griddata(
+            points_arr,
+            values_arr,
+            (grid_x, grid_y),
+            method="nearest",
+            fill_value=np.nan,
+        )
+    if np.all(~np.isfinite(model)):
+        model = griddata(
+            points_arr,
+            values_arr,
+            (grid_x, grid_y),
+            method="nearest",
+            fill_value=np.nan,
+        )
+    if np.all(~np.isfinite(model)):
+        return None
+
+    peak_y, peak_x = np.unravel_index(np.nanargmax(model), model.shape)
+    peak_arcsec = _aia_pixel_to_arcsec(aia_cutout_map, float(peak_x), float(peak_y))
+    return RawRadioReprojectResult(
+        model=np.asarray(model, dtype=np.float32),
+        peak_pixel=(float(peak_x), float(peak_y)),
+        peak_arcsec=peak_arcsec,
+        amplitude=float(np.nanmax(model)),
+        source_file=source_file,
+    )
+
+
+def reproject_radio_for_overlay(
+    radio_data: np.ndarray,
+    ra_map: np.ndarray | None,
+    dec_map: np.ndarray | None,
+    aia_cutout_map: sunpy.map.GenericMap,
+    cfg: Config,
+    radio_header: fits.Header | None = None,
+    source_file: str | None = None,
+    band_label: str | None = None,
+    polarization: str | None = None,
+    radio_time: datetime | None = None,
+) -> GaussianReprojectResult | RawRadioReprojectResult | None:
+    if _radio_overlay_mode(cfg) == "raw":
+        return reproject_raw_radio_to_aia(
+            radio_data,
+            ra_map,
+            dec_map,
+            aia_cutout_map,
+            cfg,
+            radio_header,
+            source_file=source_file,
+            band_label=band_label,
+            polarization=polarization,
+            radio_time=radio_time,
+        )
+    return reproject_radio_via_gaussian_fit(
+        radio_data,
+        ra_map,
+        dec_map,
+        aia_cutout_map,
+        cfg,
+        radio_header,
+        source_file=source_file,
+        band_label=band_label,
+        polarization=polarization,
+        radio_time=radio_time,
+    )
+
+
 def reproject_radio_via_gaussian_fit(
     radio_data: np.ndarray,
     ra_map: np.ndarray | None,
@@ -2780,6 +3094,71 @@ def build_matched_pairs(cfg: Config) -> list[tuple[str, str | None, list]]:
 # ============================================================
 
 
+def _spectrogram_config_dict(cfg: Config) -> dict:
+    spectrogram_cfg = dict(vars(cfg))
+    spectrogram_cfg["tick_color"] = cfg.style.tick_color
+    spectrogram_cfg.setdefault("title_fontsize", 20)
+    spectrogram_cfg.setdefault("label_fontsize", 18)
+    spectrogram_cfg.setdefault("tick_fontsize", 14)
+    return spectrogram_cfg
+
+
+def _matched_radio_time_range(matched_pairs) -> tuple[datetime, datetime] | None:
+    times = []
+    for _aia_file, _hmi_file, sub_tasks in matched_pairs:
+        for _sub_index, single_slice_bands in sub_tasks:
+            for file_list in single_slice_bands.values():
+                for _file_item, _polarization, radio_time in file_list:
+                    if radio_time is not None:
+                        times.append(radio_time)
+    if not times:
+        return None
+    return min(times), max(times)
+
+
+def _build_aia_spectrogram_cache(cfg: Config, matched_pairs):
+    if not cfg.enable_spectrogram_panel:
+        return None
+    try:
+        from scripts.radio.core.radio_spectrogram import build_spectrogram_cache
+
+        return build_spectrogram_cache(
+            _spectrogram_config_dict(cfg),
+            radio_time_range=_matched_radio_time_range(matched_pairs),
+        )
+    except Exception as exc:
+        print(f"  [Spectrogram] failed to build cache: {exc}")
+        return None
+
+
+def _write_animation_from_frames(frame_paths: list[str], cfg: Config) -> str | None:
+    if not cfg.make_animation or not frame_paths:
+        return None
+    output_dir = cfg.animation_output_dir or cfg.output_dir
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, cfg.animation_name)
+    quality = (
+        cfg.animation_quality if cfg.animation_quality in {"high", "low"} else "high"
+    )
+    try:
+        from scripts.tools.image_sequence_to_video import write_video_from_paths
+
+        ok = write_video_from_paths(
+            frame_paths,
+            output_path,
+            fps=int(cfg.animation_fps),
+            quality=quality,
+        )
+    except Exception as exc:
+        print(f"  [Animation] failed to write MP4: {exc}")
+        return None
+    if ok:
+        print(f"  [Animation] saved MP4: {output_path}")
+        return output_path
+    print("  [Animation] MP4 generation failed")
+    return None
+
+
 def process_aia_group(
     aia_file: str,
     hmi_file: str | None,
@@ -2788,6 +3167,7 @@ def process_aia_group(
     total_tasks: int,
     cfg: Config,
     color_cache: list,
+    spectrogram_cache=None,
 ):
     """
     处理单个 AIA 文件及其对应的所有时间切片绘图任务。
@@ -2818,11 +3198,13 @@ def process_aia_group(
     """
     print(f"\n处理 AIA 文件 [{task_index}/{total_tasks}]: {os.path.basename(aia_file)}")
 
+    saved_paths: list[str] = []
+
     try:
         aia_map = sunpy.map.Map(aia_file)
     except Exception as e:
         print(f"  读取 AIA 失败: {e}")
-        return
+        return saved_paths
 
     aia_cutout = _get_padded_aia_map(aia_map, cfg)
     aia_data = aia_cutout.data
@@ -2837,7 +3219,20 @@ def process_aia_group(
     for sub_index, single_slice_bands in sub_tasks:
         print(f"  -> 绘制序列帧 {sub_index + 1}/{len(sub_tasks)}")
 
-        fig, ax = plt.subplots(figsize=(10, 10))
+        spectrogram_ax = None
+        if cfg.enable_spectrogram_panel:
+            panel_ratio = max(float(cfg.spectrogram_panel_height_ratio), 0.15)
+            fig = plt.figure(figsize=(10, 10 * (1.0 + panel_ratio)))
+            gs = fig.add_gridspec(
+                2,
+                1,
+                height_ratios=[1.0, panel_ratio],
+                hspace=float(cfg.spectrogram_hspace),
+            )
+            ax = fig.add_subplot(gs[0, 0])
+            spectrogram_ax = fig.add_subplot(gs[1, 0])
+        else:
+            fig, ax = plt.subplots(figsize=(10, 10))
 
         # --- 1. 绘制 AIA 底图 ---
         # 提取当前的 colormap，并强制将无数据的 NaN 区域（即扩充的深空画布）渲染为纯黑
@@ -2938,7 +3333,7 @@ def process_aia_group(
                 else:
                     source_file_for_fit = str(file_item)
 
-                fit_result = reproject_radio_via_gaussian_fit(
+                fit_result = reproject_radio_for_overlay(
                     radio_data,
                     ra_map,
                     dec_map,
@@ -2981,7 +3376,9 @@ def process_aia_group(
                         origin="lower",
                     )
 
-                if cfg.mark_radio_center:
+                if cfg.mark_radio_center and isinstance(
+                    fit_result, GaussianReprojectResult
+                ):
                     center_x, center_y = fit_result.center_arcsec
                     ax.scatter(
                         [center_x],
@@ -3033,6 +3430,19 @@ def process_aia_group(
                 framealpha=cfg.style.legend_alpha,
             )
 
+        if spectrogram_ax is not None:
+            from scripts.radio.core.radio_spectrogram import overlay_spectrogram_panel
+
+            spectrogram_cfg = _spectrogram_config_dict(cfg)
+            if spectrogram_cache is None:
+                spectrogram_cfg["enable_spectrogram_panel"] = False
+            overlay_spectrogram_panel(
+                spectrogram_ax,
+                spectrogram_cfg,
+                first_radio_time,
+                cache=spectrogram_cache,
+            )
+
         if cfg.save_figure:
             if first_radio_time:
                 ts_str = first_radio_time.strftime("%Y%m%d_%H%M%S")
@@ -3062,7 +3472,12 @@ def process_aia_group(
             )
             print(f"  保存图像: {saved_path}")
 
+        if cfg.save_figure:
+            saved_paths.append(saved_path)
+
         plt.close(fig)
+
+    return saved_paths
 
 
 # ============================================================
@@ -3214,19 +3629,27 @@ def main(user_config=None):
 
     # 构建匹配对
     matched = build_matched_pairs(cfg)
+    spectrogram_cache = _build_aia_spectrogram_cache(cfg, matched)
+    frame_paths: list[str] = []
     print(f"共构建 {len(matched)} 个 AIA 任务")
 
     # 串行处理（或可用线程池，但可能导致 FITS 读取冲突）
     for i, (aia_file, hmi_file, sub_tasks) in enumerate(matched):
-        process_aia_group(
-            aia_file,
-            hmi_file,
-            sub_tasks,
-            i + 1,
-            len(matched),
-            cfg,
-            color_cache,
+        frame_paths.extend(
+            process_aia_group(
+                aia_file,
+                hmi_file,
+                sub_tasks,
+                i + 1,
+                len(matched),
+                cfg,
+                color_cache,
+                spectrogram_cache=spectrogram_cache,
+            )
         )
+
+    _write_animation_from_frames(frame_paths, cfg)
+    return frame_paths
 
 
 if __name__ == "__main__":
