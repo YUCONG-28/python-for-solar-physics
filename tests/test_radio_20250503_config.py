@@ -144,6 +144,24 @@ def test_radio_event_configs_expose_event_specific_spectrogram_display_range():
         assert spectrogram["cmap"] == "jet"
 
 
+def test_20250503_aia_overlay_config_enables_raw_spectrogram_animation():
+    module = load_radio_config_module("radio_20250503_config")
+    config = module.AIA_RADIO_HMI_CONFIG
+
+    assert config["radio"]["radio_overlay_mode"] == "raw"
+    assert config["display"]["show_radio_contours"] is True
+    assert config["display"]["mark_radio_center"] is False
+    assert config["spectrogram"]["enabled"] is True
+    assert (
+        config["spectrogram"]["file_paths"]
+        == module.USER_CONFIG["spectrogram"]["file_paths"]
+    )
+    assert config["spectrogram"]["time_start"] == "2025-05-03T07:20:25"
+    assert config["spectrogram"]["time_end"] == "2025-05-03T07:22:25"
+    assert config["animation"]["make_animation"] is True
+    assert config["animation"]["animation_name"].endswith(".mp4")
+
+
 def test_legacy_build_config_maps_nested_spectrogram_display_range():
     legacy = _import_legacy_source_map_with_optional_stubs()
 
