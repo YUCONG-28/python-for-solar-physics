@@ -283,20 +283,26 @@ def sample_image_sizes(paths: Sequence[str], sample_size: int) -> list[tuple[int
     return sample_sizes
 
 
-def determine_target_size(paths: Sequence[str]) -> tuple[int, int, int, int]:
+def determine_target_size_for_paths(
+    paths: Sequence[str], requested_size: tuple[int, int] | None = None
+) -> tuple[int, int, int, int]:
     """Return target width/height and sample statistics."""
     sample_size = min(30, len(paths))
     sample_sizes = sample_image_sizes(paths, sample_size)
     if not sample_sizes:
         raise RuntimeError("Sampling failed, cannot determine target size")
 
-    if target_size is not None:
-        tw, th = align_even(int(target_size[0])), align_even(int(target_size[1]))
+    if requested_size is not None:
+        tw, th = align_even(int(requested_size[0])), align_even(int(requested_size[1]))
         native_count = sample_sizes.count((tw, th))
     else:
         (tw, th), native_count = Counter(sample_sizes).most_common(1)[0]
         tw, th = align_even(tw), align_even(th)
     return tw, th, sample_size, native_count
+
+
+def determine_target_size(paths: Sequence[str]) -> tuple[int, int, int, int]:
+    return determine_target_size_for_paths(paths, target_size)
 
 
 # ============================================================================
@@ -498,14 +504,90 @@ def select_frame_range(entries):
     return entries[start - 1 : end], start, end
 
 
-def make_frame_iter(paths: Sequence[str], stats: FrameStats, size: tuple[int, int]):
+def make_frame_iter_from_paths(
+    paths: Sequence[str],
+    stats: FrameStats,
+    size: tuple[int, int],
+    workers: int = 1,
+    batch_size: int = 8,
+):
     return iter_processed_frames(
         paths,
         size,
         stats=stats,
+        workers=workers,
+        batch_size=batch_size,
+    )
+
+
+def make_frame_iter(paths: Sequence[str], stats: FrameStats, size: tuple[int, int]):
+    return make_frame_iter_from_paths(
+        paths,
+        stats,
+        size,
         workers=prefetch_workers,
         batch_size=prefetch_batch_size,
     )
+
+
+def write_video_from_paths(
+    paths: Sequence[str],
+    output_path: str,
+    fps: int,
+    quality: str = "high",
+    target_size_tuple: tuple[int, int] | None = None,
+    workers: int = 8,
+    batch_size: int = 8,
+) -> bool:
+    selected_paths = list(paths)
+    if not selected_paths:
+        print("No frames selected")
+        return False
+    if quality not in ("high", "low"):
+        print(f"[WARN] Invalid video quality '{quality}', using 'high'")
+        quality = "high"
+    output_folder = os.path.dirname(output_path)
+    if output_folder:
+        os.makedirs(output_folder, exist_ok=True)
+
+    tw, th, _sample_size, _native_count = determine_target_size_for_paths(
+        selected_paths, requested_size=target_size_tuple
+    )
+    stats = FrameStats()
+    frame_iter = make_frame_iter_from_paths(
+        selected_paths,
+        stats,
+        (tw, th),
+        workers=workers,
+        batch_size=batch_size,
+    )
+    ok = write_video_ffmpeg_stream(frame_iter, output_path, fps, tw, th, quality)
+    if ok:
+        return True
+
+    print("[INFO] Falling back to imageio streaming writer")
+    stats = FrameStats()
+    frame_iter = make_frame_iter_from_paths(
+        selected_paths,
+        stats,
+        (tw, th),
+        workers=workers,
+        batch_size=batch_size,
+    )
+    ok = write_video_imageio_stream(frame_iter, output_path, fps, quality)
+    if ok:
+        return True
+
+    print("[INFO] Falling back to OpenCV streaming writer")
+    stats = FrameStats()
+    frame_iter = make_frame_iter_from_paths(
+        selected_paths,
+        stats,
+        (tw, th),
+        workers=workers,
+        batch_size=batch_size,
+    )
+    return write_video_opencv_stream(frame_iter, output_path, fps, tw, th)
 
 
 def main():
