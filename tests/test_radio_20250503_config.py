@@ -175,6 +175,28 @@ def test_aia_radio_hmi_roi_uses_explicit_bounds_with_legacy_fallback():
     }
 
 
+def test_20250503_default_aia_overlay_stays_gaussian_and_raw_animation_is_optional():
+    module = load_radio_config_module("radio_20250503_config")
+    default_config = module.AIA_RADIO_HMI_CONFIG
+    raw_config = module.AIA_RAW_RADIO_SPECTROGRAM_CONFIG
+
+    assert default_config["paths"]["output_dir"].endswith("AIA_Gaussian_Overlay")
+    assert default_config["output"]["output_dir"].endswith("AIA_Gaussian_Overlay")
+    assert default_config["radio"].get("radio_overlay_mode", "gaussian") == "gaussian"
+    assert default_config["display"]["show_radio_contours"] is False
+    assert default_config["display"]["mark_radio_center"] is True
+    assert default_config.get("spectrogram", {}).get("enabled", False) is False
+    assert default_config.get("animation", {}).get("make_animation", False) is False
+
+    assert raw_config["paths"]["output_dir"].endswith("AIA_Raw_Radio_Spectrogram")
+    assert raw_config["output"]["output_dir"].endswith("AIA_Raw_Radio_Spectrogram")
+    assert raw_config["radio"]["radio_overlay_mode"] == "raw"
+    assert raw_config["display"]["show_radio_contours"] is True
+    assert raw_config["display"]["mark_radio_center"] is False
+    assert raw_config["spectrogram"]["enabled"] is True
+    assert raw_config["animation"]["make_animation"] is True
+
+
 def test_aia_radio_hmi_roi_rejects_inverted_bounds():
     try:
         normalize_roi_bounds_arcsec(
