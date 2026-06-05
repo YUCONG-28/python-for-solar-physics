@@ -111,6 +111,21 @@ GAUSSIAN_DIAGNOSTIC_FIELDS = [
     "threshold",
 ]
 
+MULTI_GAUSSIAN_DIAGNOSTIC_FIELDS = GAUSSIAN_DIAGNOSTIC_FIELDS + [
+    "source_id",
+    "source_rank",
+    "source_is_primary",
+    "source_count_mode",
+    "requested_source_count",
+    "detected_source_count",
+    "source_peak_x_pixel",
+    "source_peak_y_pixel",
+    "source_peak_x_arcsec",
+    "source_peak_y_arcsec",
+    "source_detection_snr",
+    "source_candidate_pixel_count",
+]
+
 DRIFT_RATE_DIAGNOSTIC_FIELDS = [
     "source_file",
     "label",

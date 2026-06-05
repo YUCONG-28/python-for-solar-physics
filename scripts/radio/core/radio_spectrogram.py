@@ -537,9 +537,15 @@ def _spectrogram_display_data_extent(cache):
     return data, [x_start, x_end, f_min, f_max], f_min, f_max
 
 
-def overlay_spectrogram_panel(ax, cfg: dict, current_time: datetime.datetime | None):
+def overlay_spectrogram_panel(
+    ax,
+    cfg: dict,
+    current_time: datetime.datetime | None,
+    cache: SpectrogramCache | None = None,
+):
     """Draw cached dynamic spectrum and the current-time vertical dashed line."""
-    cache = get_spectrogram_cache(cfg)
+    if cache is None:
+        cache = get_spectrogram_cache(cfg)
     if cache is None:
         ax.axis("off")
         ax.text(0.5, 0.5, "Spectrogram unavailable", ha="center", va="center")

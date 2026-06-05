@@ -28,6 +28,7 @@ USER_CONFIG = {
         "data_dir": r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600\149MHz\RR",
         "start_idx": 648,
         "end_idx": 944,
+        "multi_band_time_tolerance_seconds": 0.1,
     },
     "features": {
         "gaussian_overlay": True,
@@ -36,6 +37,7 @@ USER_CONFIG = {
         "save_gaussian_diagnostics": True,
         "save_background_products": False,
         "save_individual_pols": False,
+        "raw_quality_filter": True,
     },
     "display": {
         "use_custom_lim": True,
@@ -58,9 +60,17 @@ USER_CONFIG = {
         "fit_grow_peak_fraction_threshold": 0.22,
         "fit_mask_target_min_pixels": 18,
         "fit_mask_target_max_pixels": 260,
+        "fit_min_mask_pixels": 8,
         "fit_peak_fraction_threshold_min": 0.25,
         "fit_peak_fraction_threshold_max": 0.62,
         "fit_peak_fraction_threshold_step": 0.03,
+        "gaussian_source_mode": "multi",
+        "multi_gaussian_source_count": None,
+        "multi_gaussian_max_sources": 2,
+        "multi_gaussian_min_peak_fraction": 0.16,
+        "multi_gaussian_min_peak_distance_pixels": 2,
+        "multi_gaussian_use_watershed": True,
+        "draw_multi_gaussian_labels": True,
         "gaussian_per_band_params": {
             149: {
                 "fit_peak_fraction_threshold": 0.38,
@@ -73,6 +83,7 @@ USER_CONFIG = {
                 "max_sigma_fraction": 0.17,
                 "fit_background_model": "constant",
                 "fit_mask_dilation_pixels": 1,
+                "gaussian_max_center_peak_distance_fraction_of_fwhm": 0.65,
             },
             164: {
                 "fit_peak_fraction_threshold": 0.38,
@@ -83,6 +94,7 @@ USER_CONFIG = {
                 "gaussian_fit_roi_padding_pixels": 4,
                 "gaussian_fit_max_pixels": 350,
                 "max_sigma_fraction": 0.17,
+                "max_fwhm_arcsec": 400.0,
                 "fit_background_model": "constant",
                 "fit_mask_dilation_pixels": 1,
             },
@@ -97,6 +109,7 @@ USER_CONFIG = {
                 "max_sigma_fraction": 0.18,
                 "fit_background_model": "constant",
                 "fit_mask_dilation_pixels": 1,
+                "multi_gaussian_min_peak_distance_pixels": 1,
             },
             205: {
                 "fit_peak_fraction_threshold": 0.40,
@@ -133,6 +146,7 @@ USER_CONFIG = {
                 "max_sigma_fraction": 0.16,
                 "fit_background_model": "plane",
                 "fit_mask_dilation_pixels": 1,
+                "multi_gaussian_min_peak_fraction": 0.10,
             },
         },
         "max_fwhm_arcsec": 1800.0,
@@ -241,6 +255,7 @@ AIA_RADIO_HMI_CONFIG = {
         "hmi_levels_gauss": [100.0],
     },
     "radio": {
+        "radio_overlay_mode": "gaussian",
         "selected_bands": [
             "149MHz",
             "164MHz",
@@ -324,6 +339,29 @@ AIA_RADIO_HMI_CONFIG = {
             "238.0MHz": ("teal", "darkslategray"),
         },
     },
+    "spectrogram": {
+        "enabled": False,
+        "file_paths": USER_CONFIG["spectrogram"]["file_paths"],
+        "file_path": USER_CONFIG["spectrogram"]["file_path"],
+        "time_display_mode": USER_CONFIG["spectrogram"]["time_display_mode"],
+        "time_start": USER_CONFIG["spectrogram"]["time_start"],
+        "time_end": USER_CONFIG["spectrogram"]["time_end"],
+        "f_start": USER_CONFIG["spectrogram"]["f_start"],
+        "f_end": USER_CONFIG["spectrogram"]["f_end"],
+        "polarization": USER_CONFIG["spectrogram"]["polarization"],
+        "vmin": USER_CONFIG["spectrogram"]["vmin"],
+        "vmax": USER_CONFIG["spectrogram"]["vmax"],
+        "use_log10": USER_CONFIG["spectrogram"]["use_log10"],
+        "cmap": USER_CONFIG["spectrogram"]["cmap"],
+        "draw_colorbar": True,
+        "panel_height_ratio": 0.34,
+    },
+    "animation": {
+        "make_animation": False,
+        "animation_fps": 10,
+        "animation_name": "aia_raw_radio_spectrogram.mp4",
+        "animation_quality": "high",
+    },
     "output": {
         "output_dir": r"<PROJECT_ROOT>\2025\20250503\AIA_RS_HMI\output\AIA_Gaussian_Overlay",
         "save_figure": True,
@@ -332,6 +370,35 @@ AIA_RADIO_HMI_CONFIG = {
     "runtime": {
         "debug_mode": True,
         "save_individual_pols": False,
+    },
+}
+
+AIA_RAW_RADIO_SPECTROGRAM_CONFIG = {
+    **AIA_RADIO_HMI_CONFIG,
+    "paths": {
+        **AIA_RADIO_HMI_CONFIG["paths"],
+        "output_dir": r"<PROJECT_ROOT>\2025\20250503\output\AIA_Raw_Radio_Spectrogram",
+    },
+    "radio": {
+        **AIA_RADIO_HMI_CONFIG["radio"],
+        "radio_overlay_mode": "raw",
+    },
+    "display": {
+        **AIA_RADIO_HMI_CONFIG["display"],
+        "show_radio_contours": True,
+        "mark_radio_center": False,
+    },
+    "spectrogram": {
+        **AIA_RADIO_HMI_CONFIG["spectrogram"],
+        "enabled": True,
+    },
+    "animation": {
+        **AIA_RADIO_HMI_CONFIG["animation"],
+        "make_animation": True,
+    },
+    "output": {
+        **AIA_RADIO_HMI_CONFIG["output"],
+        "output_dir": r"<PROJECT_ROOT>\2025\20250503\AIA_RS_HMI\output\AIA_Raw_Radio_Spectrogram",
     },
 }
 
@@ -433,6 +500,7 @@ EVENT_CONFIG = {
     "user": USER_CONFIG,
     "output": OUTPUT_CONFIG,
     "aia_radio_hmi": AIA_RADIO_HMI_CONFIG,
+    "aia_raw_radio_spectrogram": AIA_RAW_RADIO_SPECTROGRAM_CONFIG,
     "newkirk": NEWKIRK_CONFIG,
     "newkirk_height_comparison": NEWKIRK_HEIGHT_COMPARISON_CONFIG,
     "drift_selection_products": DRIFT_SELECTION_PRODUCT_CONFIG,
@@ -442,6 +510,7 @@ EVENT_CONFIG = {
 USER_CONFIG = EVENT_CONFIG["user"]
 OUTPUT_CONFIG = EVENT_CONFIG["output"]
 AIA_RADIO_HMI_CONFIG = EVENT_CONFIG["aia_radio_hmi"]
+AIA_RAW_RADIO_SPECTROGRAM_CONFIG = EVENT_CONFIG["aia_raw_radio_spectrogram"]
 NEWKIRK_CONFIG = EVENT_CONFIG["newkirk"]
 NEWKIRK_HEIGHT_COMPARISON_CONFIG = EVENT_CONFIG["newkirk_height_comparison"]
 DRIFT_SELECTION_PRODUCT_CONFIG = EVENT_CONFIG["drift_selection_products"]
