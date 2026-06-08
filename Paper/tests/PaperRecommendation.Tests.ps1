@@ -76,3 +76,25 @@ Describe "New-GaussianMethodReviewContent" {
         $content | Should Match "observed apparent size"
     }
 }
+
+Describe "Get-GitAutoPushPlan" {
+    It "commits and pushes when generated files changed" {
+        $plan = Get-GitAutoPushPlan -AsOfDate "2026-06-08" -RemoteName "origin" -BranchName "main" -StatusPorcelain " M paper_master_index.csv"
+
+        $plan.HasChanges | Should Be $true
+        $plan.CommitMessage | Should Be "Update paper recommendations for 2026-06-08"
+        ($plan.Commands -join "`n") | Should Match "git add -A"
+        ($plan.Commands -join "`n") | Should Match "git commit -m"
+        ($plan.Commands -join "`n") | Should Match "git push origin HEAD:main"
+        ($plan.Commands -join "`n") | Should Match "git lfs push origin main"
+    }
+
+    It "still pushes when there are no generated file changes" {
+        $plan = Get-GitAutoPushPlan -AsOfDate "2026-06-08" -RemoteName "origin" -BranchName "main" -StatusPorcelain ""
+
+        $plan.HasChanges | Should Be $false
+        ($plan.Commands -join "`n") | Should Not Match "git commit"
+        ($plan.Commands -join "`n") | Should Match "git push origin HEAD:main"
+        ($plan.Commands -join "`n") | Should Match "git lfs push origin main"
+    }
+}

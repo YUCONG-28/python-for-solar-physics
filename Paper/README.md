@@ -41,18 +41,38 @@ git lfs pull
 
 ## 手动运行
 
-在 PowerShell 中执行：
+在 PowerShell 中执行。默认情况下，脚本会在生成日报后自动提交生成文件并推送到 `origin/main`：
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\scripts\paper_daily_recommendation.ps1
 ```
 
-如果只想先用内置种子库离线生成文件，不访问在线 API：
+如果只想先用内置种子库离线生成文件，不访问在线 API，但仍自动提交和推送：
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\scripts\paper_daily_recommendation.ps1 -SkipLiveSearch
+```
+
+如果只想本地生成文件，不提交也不推送：
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\paper_daily_recommendation.ps1 -SkipLiveSearch -SkipGitPush
+```
+
+默认 Git 推送参数为：
+
+```text
+GitRemote = origin
+GitBranch = main
+```
+
+可按需覆盖：
+
+```powershell
+.\scripts\paper_daily_recommendation.ps1 -GitRemote origin -GitBranch main
 ```
 
 ## 自动检索说明
@@ -60,6 +80,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 - 当前脚本会优先读取 `data\seed_papers.json` 中的核心文献。
 - 若本地网络可用，且未加 `-SkipLiveSearch`，脚本会尝试访问 arXiv 和 Crossref。
 - 若某个 API 请求失败，脚本会保留已有种子库并继续生成日报，不会删除已有索引。
+- 若未加 `-SkipGitPush`，脚本会要求运行前工作区干净；生成后若有变化，会自动 `git add -A`、提交 `Update paper recommendations for YYYY-MM-DD`，并推送到远端。
 - 当前实现没有声称已经在此环境中“每日后台运行”；若需要每日执行，请用下面的 Windows 任务计划配置。
 
 ## Windows 任务计划

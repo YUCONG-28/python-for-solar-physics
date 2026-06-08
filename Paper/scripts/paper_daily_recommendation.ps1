@@ -2,6 +2,9 @@
 param(
     [string]$AsOfDate = (Get-Date -Format "yyyy-MM-dd"),
     [switch]$SkipLiveSearch,
+    [switch]$SkipGitPush,
+    [string]$GitRemote = "origin",
+    [string]$GitBranch = "main",
     [string]$ConfigPath = (Join-Path $PSScriptRoot "..\config\paper_search_config.json"),
     [string]$SeedPath = (Join-Path $PSScriptRoot "..\data\seed_papers.json")
 )
@@ -10,6 +13,18 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 Import-Module (Join-Path $PSScriptRoot "PaperRecommendation\PaperRecommendation.psm1") -Force
+
+$projectRoot = Get-ProjectRoot
+$initialGitStatus = ""
+if (-not $SkipGitPush) {
+    $insideRepo = (& git -C $projectRoot rev-parse --is-inside-work-tree 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $insideRepo -eq "true") {
+        $initialGitStatus = ((& git -C $projectRoot status --porcelain) -join "`n")
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to read initial Git working tree status."
+        }
+    }
+}
 
 function Write-Utf8BomFile {
     param(
@@ -230,7 +245,6 @@ $RunDate
 }
 
 $config = Get-PaperSearchConfig -ConfigPath $ConfigPath
-$projectRoot = Get-ProjectRoot
 
 $dailyDir = Join-Path $projectRoot (($config.output_paths.daily) -replace '/', '\')
 $gaussianDir = Join-Path $projectRoot (($config.output_paths.gaussian) -replace '/', '\')
@@ -331,3 +345,14 @@ Write-Utf8BomFile -Path $statePath -Content ($state | ConvertTo-Json -Depth 4)
 Write-Host "Generated daily report: $dailyReportPath"
 Write-Host "Total indexed papers: $(@($orderedRecords).Count)"
 Write-Host "Gaussian-method papers: $(@($gaussianRecords).Count)"
+
+if ($SkipGitPush) {
+    Write-Host "Git auto-push skipped because -SkipGitPush was specified."
+}
+else {
+    $gitPushResult = Invoke-GitAutoCommitPush -ProjectRoot $projectRoot -AsOfDate $AsOfDate -RemoteName $GitRemote -BranchName $GitBranch -InitialStatusPorcelain $initialGitStatus
+    if ($gitPushResult.HasCommittedChanges) {
+        Write-Host "Committed generated changes: $($gitPushResult.CommitMessage)"
+    }
+    Write-Host "Pushed daily workflow updates to $($gitPushResult.RemoteName)/$($gitPushResult.BranchName)"
+}

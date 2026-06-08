@@ -927,4 +927,101 @@ function ConvertTo-GaussianCsvFriendlyRecords {
     return @($records)
 }
 
-Export-ModuleMember -Function Get-PaperSearchConfig, Merge-StringArray, Get-NormalizedTitle, Get-RelevanceRank, ConvertTo-ScoredPaperRecord, Merge-PaperRecords, New-DailyReportContent, New-GaussianMethodReviewContent, New-MasterIndexMarkdown, New-GaussianIndexMarkdown, New-GaussianImplementationNotesContent, New-GaussianQualityControlContent, New-GaussianUncertaintyNotesContent, New-GaussianDailyContent, New-CodeSuggestionContent, ConvertTo-CsvFriendlyRecords, ConvertTo-GaussianCsvFriendlyRecords, Get-ProjectRoot
+function Get-GitAutoPushPlan {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$AsOfDate,
+        [string]$RemoteName = "origin",
+        [string]$BranchName = "main",
+        [AllowEmptyString()]
+        [string]$StatusPorcelain = ""
+    )
+
+    $hasChanges = -not [string]::IsNullOrWhiteSpace($StatusPorcelain)
+    $commitMessage = "Update paper recommendations for $AsOfDate"
+    $commands = New-Object System.Collections.Generic.List[string]
+
+    if ($hasChanges) {
+        [void]$commands.Add("git add -A")
+        [void]$commands.Add("git commit -m `"$commitMessage`"")
+    }
+
+    [void]$commands.Add("git push $RemoteName HEAD:$BranchName")
+    [void]$commands.Add("git lfs push $RemoteName $BranchName")
+
+    return [pscustomobject]@{
+        HasChanges = $hasChanges
+        CommitMessage = $commitMessage
+        Commands = $commands.ToArray()
+    }
+}
+
+function Invoke-GitAutoCommitPush {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$AsOfDate,
+        [string]$RemoteName = "origin",
+        [string]$BranchName = "main",
+        [AllowEmptyString()]
+        [string]$InitialStatusPorcelain = ""
+    )
+
+    $insideRepo = (& git -C $ProjectRoot rev-parse --is-inside-work-tree 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $insideRepo -ne "true") {
+        throw "Git auto-push requires '$ProjectRoot' to be inside a Git repository."
+    }
+
+    $remoteNames = @(& git -C $ProjectRoot remote)
+    if ($LASTEXITCODE -ne 0 -or ($remoteNames -notcontains $RemoteName)) {
+        throw "Git auto-push requires remote '$RemoteName' to be configured."
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($InitialStatusPorcelain)) {
+        throw "Working tree had changes before report generation. Commit or stash them first, or rerun with -SkipGitPush."
+    }
+
+    $statusPorcelain = ((& git -C $ProjectRoot status --porcelain) -join "`n")
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to read Git working tree status."
+    }
+
+    $plan = Get-GitAutoPushPlan -AsOfDate $AsOfDate -RemoteName $RemoteName -BranchName $BranchName -StatusPorcelain $statusPorcelain
+
+    if ($plan.HasChanges) {
+        & git -C $ProjectRoot add -A
+        if ($LASTEXITCODE -ne 0) {
+            throw "Git add failed during auto-push."
+        }
+
+        & git -C $ProjectRoot commit -m $plan.CommitMessage
+        if ($LASTEXITCODE -ne 0) {
+            throw "Git commit failed during auto-push."
+        }
+    }
+    else {
+        Write-Host "No generated changes to commit."
+    }
+
+    & git -C $ProjectRoot push $RemoteName "HEAD:$BranchName"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Git push failed during auto-push."
+    }
+
+    & git -C $ProjectRoot lfs push $RemoteName $BranchName
+    if ($LASTEXITCODE -ne 0) {
+        throw "Git LFS push failed during auto-push."
+    }
+
+    return [pscustomobject]@{
+        HasCommittedChanges = $plan.HasChanges
+        CommitMessage = $plan.CommitMessage
+        RemoteName = $RemoteName
+        BranchName = $BranchName
+    }
+}
+
+Export-ModuleMember -Function Get-PaperSearchConfig, Merge-StringArray, Get-NormalizedTitle, Get-RelevanceRank, ConvertTo-ScoredPaperRecord, Merge-PaperRecords, New-DailyReportContent, New-GaussianMethodReviewContent, New-MasterIndexMarkdown, New-GaussianIndexMarkdown, New-GaussianImplementationNotesContent, New-GaussianQualityControlContent, New-GaussianUncertaintyNotesContent, New-GaussianDailyContent, New-CodeSuggestionContent, ConvertTo-CsvFriendlyRecords, ConvertTo-GaussianCsvFriendlyRecords, Get-GitAutoPushPlan, Invoke-GitAutoCommitPush, Get-ProjectRoot

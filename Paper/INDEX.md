@@ -41,6 +41,7 @@
 
 ## 最新更新摘要
 
+- `2026-06-08`：日报脚本新增运行后自动提交并推送 `origin/main`；本地-only 运行可使用 `-SkipGitPush`。
 - `2026-06-08`：新增 5 篇高价值漏收文献，其中 4 篇进入 Gaussian / centroid / source-size / propagation 方法链条；校正 1 篇 2026 Solar Physics 文献元数据。
 - `2026-06-01`：建立可本地运行的 PowerShell 日报生成流程、总索引和 Gaussian fitting 方法库。
 - `2026-05-31`：补录 `Imaging spectroscopy reveals spike-like repeating radio burst pairs in the solar corona`。
