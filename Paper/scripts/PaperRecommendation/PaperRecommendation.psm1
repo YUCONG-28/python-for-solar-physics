@@ -970,6 +970,26 @@ function Invoke-GitAutoCommitPush {
         [string]$InitialStatusPorcelain = ""
     )
 
+    function Invoke-GitAutoPushCommand {
+        param(
+            [Parameter(Mandatory = $true)]
+            [string[]]$Arguments,
+            [Parameter(Mandatory = $true)]
+            [string]$FailureMessage
+        )
+
+        $output = @(& git -C $ProjectRoot @Arguments 2>&1)
+        $exitCode = $LASTEXITCODE
+        foreach ($line in $output) {
+            if ($line) {
+                Write-Host $line
+            }
+        }
+        if ($exitCode -ne 0) {
+            throw $FailureMessage
+        }
+    }
+
     $insideRepo = (& git -C $ProjectRoot rev-parse --is-inside-work-tree 2>$null)
     if ($LASTEXITCODE -ne 0 -or $insideRepo -ne "true") {
         throw "Git auto-push requires '$ProjectRoot' to be inside a Git repository."
@@ -992,29 +1012,15 @@ function Invoke-GitAutoCommitPush {
     $plan = Get-GitAutoPushPlan -AsOfDate $AsOfDate -RemoteName $RemoteName -BranchName $BranchName -StatusPorcelain $statusPorcelain
 
     if ($plan.HasChanges) {
-        & git -C $ProjectRoot add -A
-        if ($LASTEXITCODE -ne 0) {
-            throw "Git add failed during auto-push."
-        }
-
-        & git -C $ProjectRoot commit -m $plan.CommitMessage
-        if ($LASTEXITCODE -ne 0) {
-            throw "Git commit failed during auto-push."
-        }
+        Invoke-GitAutoPushCommand -Arguments @("add", "-A") -FailureMessage "Git add failed during auto-push."
+        Invoke-GitAutoPushCommand -Arguments @("commit", "-m", $plan.CommitMessage) -FailureMessage "Git commit failed during auto-push."
     }
     else {
         Write-Host "No generated changes to commit."
     }
 
-    & git -C $ProjectRoot push $RemoteName "HEAD:$BranchName"
-    if ($LASTEXITCODE -ne 0) {
-        throw "Git push failed during auto-push."
-    }
-
-    & git -C $ProjectRoot lfs push $RemoteName $BranchName
-    if ($LASTEXITCODE -ne 0) {
-        throw "Git LFS push failed during auto-push."
-    }
+    Invoke-GitAutoPushCommand -Arguments @("push", $RemoteName, "HEAD:$BranchName") -FailureMessage "Git push failed during auto-push."
+    Invoke-GitAutoPushCommand -Arguments @("lfs", "push", $RemoteName, $BranchName) -FailureMessage "Git LFS push failed during auto-push."
 
     return [pscustomobject]@{
         HasCommittedChanges = $plan.HasChanges
