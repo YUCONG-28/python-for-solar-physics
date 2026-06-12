@@ -37,6 +37,7 @@ import matplotlib  # noqa: E402
 
 matplotlib.use("Agg")  # 非交互后端，子进程安全，节省内存
 import matplotlib.colors as mcolors  # noqa: E402
+import matplotlib.patheffects as mpath_effects  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import sunpy.coordinates  # noqa: E402
@@ -81,7 +82,7 @@ _RE_AIA_PATS = [
     re.compile(r"(\d{4}\d{2}\d{2}T\d{2}\d{2}\d{2})"),
 ]
 _RE_HMI_PAT = re.compile(r"(\d{8})_(\d{6})")
-_RE_RADIO_PAT_YYYYJJJ = re.compile(r"(\d{7})_(\d{6})_(\d{1,3})")
+_RE_RADIO_PAT_YYYYJJJ = re.compile(r"(\d{6,7})_(\d{6})_(\d{1,3})")
 _RE_RADIO_PAT_YYYYMMDD = re.compile(r"(\d{8})_(\d{6})")
 _RE_AIA_NEW_PAT = re.compile(
     r"aia\.lev1_euv_12s\.(\d{4}-\d{2}-\d{2}T\d{6}Z)\.\d+\.image_lev1\.fits"
@@ -166,12 +167,37 @@ class Config:
     hmi_base_dir: str = r"<PROJECT_ROOT>\2025\20250124\AIA\hmi\1"
     output_dir: str = r"<PROJECT_ROOT>\2025\20250124\AIA_RS_HMI\test"
     aia_wavelength: str = "171"
+    aia_panel_base_dir_template: str | None = None
 
     # ── 文件处理配置 ───────────────────────────────────────────
     save_figure: bool = True
     dpi: int = 300
     aia_file_start_idx: int = 392
     aia_file_end_idx: int | None = 396
+    aia_panel_wavelengths: list[int] | None = None
+    aia_panel_ncols: int = 3
+    aia_time_threshold_seconds: float = 12.0
+    aia_panel_layout_style: str = "separate"
+    aia_panel_base_width: float = 4.8
+    aia_panel_wspace: float = 0.10
+    aia_panel_hspace: float = 0.18
+    aia_panel_left: float = 0.055
+    aia_panel_right: float = 0.985
+    aia_panel_top: float = 0.94
+    aia_panel_title_y: float = 0.975
+    aia_panel_spectrogram_bottom: float = 0.065
+    aia_panel_spectrogram_gap: float = 0.05
+    aia_panel_show_per_panel_titles: bool = True
+    aia_panel_show_axis_labels: bool = True
+    aia_panel_show_tick_labels: bool = True
+    aia_panel_global_axis_labels: bool = False
+    aia_panel_show_grid: bool = False
+    aia_panel_label_mode: str = "none"
+    aia_panel_label_x: float = 0.02
+    aia_panel_label_y: float = 0.035
+    aia_panel_label_y_last_row: float = 0.08
+    aia_panel_label_fontsize: float = 8.0
+    aia_panel_save_tight: bool = True
 
     # ── 射电波段配置 ───────────────────────────────────────────
     selected_bands: list[str] = field(
@@ -204,6 +230,9 @@ class Config:
 
     radio_time_threshold: int = 6  # 射电与 AIA 时间匹配阈值（秒）
     max_radio_per_band: int = 28
+    radio_start_idx: int | None = None
+    radio_end_idx: int | None = None
+    multi_band_time_tolerance_seconds: float = 0.1
 
     # AIA radio overlay mode. "gaussian" preserves the historical fit path;
     # "raw" directly maps the radio image onto the AIA cutout grid.
@@ -231,6 +260,42 @@ class Config:
     spectrogram_hspace: float = 0.08
     spectrogram_draw_colorbar: bool = True
     spectrogram_xtick_format: str = "%H:%M:%S"
+    spectrogram_rebin_t_target: int = 1000
+    spectrogram_rebin_f_target: int = 700
+    spectrogram_chunk_mem_mb: int = 64
+    spectrogram_line_color: str = "white"
+    spectrogram_line_style: str = "--"
+    spectrogram_line_width: float = 1.6
+    spectrogram_line_alpha: float = 0.95
+    spectrogram_major_tick_seconds: int = 10
+    spectrogram_auto_time_locator: bool = True
+    spectrogram_max_time_ticks: int = 8
+    spectrogram_disable_on_time_mismatch: bool = True
+    spectrogram_clip_current_time_line: bool = True
+    spectrogram_show_out_of_range_time_note: bool = True
+    annotation_fontsize: int = 20
+
+    # Optional drift-rate annotations drawn on the shared spectrogram panel.
+    enable_drift_rate_overlay: bool = False
+    drift_rate_mode: str = "off"
+    drift_rate_interactive: dict = field(default_factory=dict)
+    drift_rate_selection_json: str = "spectrogram_drift_rate_manual_selection.json"
+    drift_rate_selection_preview_png: str = (
+        "spectrogram_drift_rate_selection_preview.png"
+    )
+    drift_rate_selection_metadata_json: str = (
+        "spectrogram_drift_rate_selection_metadata.json"
+    )
+    draw_drift_rate_lines: bool = True
+    draw_drift_rate_endpoints: bool = True
+    draw_drift_rate_label: bool = True
+    draw_drift_rate_selected_id: bool = True
+    drift_rate_label_format: str = "{label}: df/dt={drift_rate:.2f} MHz/s"
+    drift_rate_line_width: float = 2.2
+    drift_rate_endpoint_marker: str = "o"
+    drift_rate_endpoint_size: float = 30.0
+    save_drift_rate_diagnostics: bool = False
+    drift_rate_diagnostics_csv: str = "radio_spectrogram_drift_rate_diagnostics.csv"
 
     # Optional MP4 generation from saved PNG frames.
     make_animation: bool = False
@@ -460,6 +525,38 @@ _SPECTROGRAM_CONFIG_MAP = {
     "hspace": "spectrogram_hspace",
     "draw_colorbar": "spectrogram_draw_colorbar",
     "xtick_format": "spectrogram_xtick_format",
+    "rebin_t_target": "spectrogram_rebin_t_target",
+    "rebin_f_target": "spectrogram_rebin_f_target",
+    "chunk_mem_mb": "spectrogram_chunk_mem_mb",
+    "line_color": "spectrogram_line_color",
+    "line_style": "spectrogram_line_style",
+    "line_width": "spectrogram_line_width",
+    "line_alpha": "spectrogram_line_alpha",
+    "major_tick_seconds": "spectrogram_major_tick_seconds",
+    "auto_time_locator": "spectrogram_auto_time_locator",
+    "max_time_ticks": "spectrogram_max_time_ticks",
+    "disable_on_time_mismatch": "spectrogram_disable_on_time_mismatch",
+    "clip_current_time_line": "spectrogram_clip_current_time_line",
+    "show_out_of_range_time_note": "spectrogram_show_out_of_range_time_note",
+}
+
+_DRIFT_RATE_CONFIG_MAP = {
+    "enabled": "enable_drift_rate_overlay",
+    "mode": "drift_rate_mode",
+    "interactive": "drift_rate_interactive",
+    "selection_json": "drift_rate_selection_json",
+    "selection_preview_png": "drift_rate_selection_preview_png",
+    "selection_metadata_json": "drift_rate_selection_metadata_json",
+    "draw_lines": "draw_drift_rate_lines",
+    "draw_endpoints": "draw_drift_rate_endpoints",
+    "draw_label": "draw_drift_rate_label",
+    "draw_selected_id": "draw_drift_rate_selected_id",
+    "label_format": "drift_rate_label_format",
+    "line_width": "drift_rate_line_width",
+    "endpoint_marker": "drift_rate_endpoint_marker",
+    "endpoint_size": "drift_rate_endpoint_size",
+    "save_drift_diagnostics": "save_drift_rate_diagnostics",
+    "drift_diagnostics_csv": "drift_rate_diagnostics_csv",
 }
 
 _ANIMATION_CONFIG_MAP = {
@@ -514,6 +611,9 @@ def apply_aia_radio_hmi_user_config(cfg: Config, user_config: dict | None) -> Co
         _apply_values_to_config(cfg, user_config.get(section))
     _apply_mapped_values_to_config(
         cfg, user_config.get("spectrogram"), _SPECTROGRAM_CONFIG_MAP
+    )
+    _apply_mapped_values_to_config(
+        cfg, user_config.get("drift_rate"), _DRIFT_RATE_CONFIG_MAP
     )
     _apply_mapped_values_to_config(
         cfg, user_config.get("animation"), _ANIMATION_CONFIG_MAP
@@ -613,13 +713,21 @@ def _parse_flexible_datetime(date_str: str) -> datetime | None:
         parts = date_str.split("_")
         if len(parts) >= 2:
             date_part, time_part = parts[0], parts[1]
-            if len(date_part) == 7:
+            if len(date_part) in {6, 7}:
                 year = int(date_part[:4])
                 parsed_date = None
+                if len(date_part) == 6:
+                    try:
+                        parsed_date = datetime(
+                            year, int(date_part[4:5]), int(date_part[5:6])
+                        )
+                    except ValueError:
+                        pass
                 try:
-                    parsed_date = datetime(
-                        year, int(date_part[4:5]), int(date_part[5:7])
-                    )
+                    if parsed_date is None and len(date_part) == 7:
+                        parsed_date = datetime(
+                            year, int(date_part[4:5]), int(date_part[5:7])
+                        )
                 except ValueError:
                     pass
                 if parsed_date is None:
@@ -632,7 +740,7 @@ def _parse_flexible_datetime(date_str: str) -> datetime | None:
                 if parsed_date is not None and len(time_part) == 6:
                     microsecond = 0
                     if len(parts) > 2 and parts[2]:
-                        microsecond = int(parts[2].strip().ljust(3, "0")[:3]) * 1000
+                        microsecond = _parse_millisecond_suffix(parts[2]) * 1000
                     return datetime(
                         parsed_date.year,
                         parsed_date.month,
@@ -686,6 +794,14 @@ def _parse_flexible_datetime(date_str: str) -> datetime | None:
             pass
 
     return None
+
+
+def _parse_millisecond_suffix(ms_str: str) -> int:
+    """Parse a radio filename suffix as integer milliseconds."""
+    ms = int(str(ms_str).strip()[:3])
+    if not 0 <= ms <= 999:
+        raise ValueError(f"Invalid millisecond suffix: {ms_str!r}")
+    return ms
 
 
 def parse_radio_time_from_filename(filename: str) -> datetime | None:
@@ -786,7 +902,7 @@ def _parse_time_from_filename(filename: str) -> tuple[str, int] | None:
       - total_ms  : 当天从0点起的毫秒数，用于数值比较
     """
     # 匹配: _日期(7-8位)_时间(6位)_毫秒(1-3位)
-    pattern = r"_(\d{7,8})_(\d{6})_(\d{1,3})"
+    pattern = r"_(\d{6,8})_(\d{6})_(\d{1,3})"
     match = re.search(pattern, filename)
     if match:
         date_part = match.group(1)  # e.g. "2025124"
@@ -796,14 +912,14 @@ def _parse_time_from_filename(filename: str) -> tuple[str, int] | None:
         hh = int(time_part[0:2])
         mm = int(time_part[2:4])
         ss = int(time_part[4:6])
-        # 对齐到毫秒：不足3位的补零到3位再取整数
-        ms = int(ms_str.ljust(3, "0"))
+        # Parse suffix as integer milliseconds: _13 means 13 ms, not 130 ms.
+        ms = _parse_millisecond_suffix(ms_str)
 
         total_ms = (hh * 3600 + mm * 60 + ss) * 1000 + ms
         return (date_part, total_ms)
 
     # 降级：仅匹配 _日期_时间（无毫秒字段）
-    pattern_no_ms = r"_(\d{7,8})_(\d{6})"
+    pattern_no_ms = r"_(\d{6,8})_(\d{6})"
     match2 = re.search(pattern_no_ms, filename)
     if match2:
         date_part = match2.group(1)
@@ -922,6 +1038,397 @@ def _match_rr_ll_by_time(
         print(f"  时间匹配结果: 全部 {len(matched_pairs)} 对成功匹配。")
 
     return matched_pairs
+
+
+def _multi_wave_overlay_enabled(cfg: Config) -> bool:
+    wavelengths = getattr(cfg, "aia_panel_wavelengths", None)
+    return bool(wavelengths and len(wavelengths) > 1)
+
+
+def _slice_file_list(files: list[str], start_idx=None, end_idx=None) -> list[str]:
+    start = int(start_idx) if start_idx is not None else 0
+    end = int(end_idx) if end_idx is not None else None
+    return files[start:end]
+
+
+def _fits_files_in_dir(path: str, start_idx=None, end_idx=None) -> list[str]:
+    files = sorted(glob.glob(os.path.join(path, "*.fits")))
+    return _slice_file_list(files, start_idx, end_idx)
+
+
+def _radio_time_key_from_item(item) -> tuple[str, int] | None:
+    path = item[0] if isinstance(item, tuple) else item
+    return _parse_time_from_filename(os.path.basename(path))
+
+
+def _nearest_radio_entry_index(
+    entries: list[tuple[tuple[str, int], object]],
+    ref_key: tuple[str, int],
+    used_indices: set[int],
+    tolerance_ms: float,
+) -> int | None:
+    ref_date, ref_ms = ref_key
+    best_index = None
+    best_diff = float("inf")
+    for index, (key, _item) in enumerate(entries):
+        if index in used_indices:
+            continue
+        date_key, total_ms = key
+        if date_key != ref_date:
+            continue
+        diff = abs(float(total_ms) - float(ref_ms))
+        if diff < best_diff:
+            best_index = index
+            best_diff = diff
+    if best_index is not None and best_diff <= tolerance_ms:
+        return best_index
+    return None
+
+
+def _build_common_radio_slots_from_entries(
+    per_band_entries: list[list[tuple[tuple[str, int], object]]],
+    tolerance_ms: float,
+) -> list[list[object]]:
+    if not per_band_entries or any(not entries for entries in per_band_entries):
+        return []
+    reference_index = min(
+        range(len(per_band_entries)), key=lambda index: len(per_band_entries[index])
+    )
+    reference_entries = sorted(
+        per_band_entries[reference_index], key=lambda entry: (entry[0][0], entry[0][1])
+    )
+    used_by_band = [set() for _entries in per_band_entries]
+    slots = []
+    for ref_key, _ref_item in reference_entries:
+        slot = []
+        matched_indices = []
+        for band_index, entries in enumerate(per_band_entries):
+            match_index = _nearest_radio_entry_index(
+                entries, ref_key, used_by_band[band_index], tolerance_ms
+            )
+            if match_index is None:
+                slot = []
+                matched_indices = []
+                break
+            matched_indices.append(match_index)
+            slot.append(entries[match_index][1])
+        if not slot:
+            continue
+        slot_times = [
+            per_band_entries[band_index][match_index][0][1]
+            for band_index, match_index in enumerate(matched_indices)
+        ]
+        if max(slot_times) - min(slot_times) > tolerance_ms:
+            continue
+        for band_index, match_index in enumerate(matched_indices):
+            used_by_band[band_index].add(match_index)
+        slots.append(slot)
+    return slots
+
+
+def build_radio_time_slots_for_overlay(cfg: Config) -> list[tuple[int, dict]]:
+    """Build radio-first multi-frequency slots for raw AIA overlay frames."""
+    per_band_entries = []
+    tolerance_ms = float(getattr(cfg, "multi_band_time_tolerance_seconds", 0.1)) * 1000
+    for band in cfg.selected_bands:
+        band_dir = os.path.join(cfg.radio_base_dir, band)
+        if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL":
+            rr_dir = os.path.join(band_dir, cfg.rr_dir_suffix)
+            ll_dir = os.path.join(band_dir, cfg.ll_dir_suffix)
+            rr_files = _fits_files_in_dir(
+                rr_dir, cfg.radio_start_idx, cfg.radio_end_idx
+            )
+            ll_files = _fits_files_in_dir(
+                ll_dir, cfg.radio_start_idx, cfg.radio_end_idx
+            )
+            matched_items = _match_rr_ll_by_time(
+                rr_files, ll_files, cfg.time_tolerance_seconds * 1000
+            )
+            polarization = "RR+LL"
+        else:
+            pol_dir = os.path.join(band_dir, cfg.polarization_mode)
+            search_dir = pol_dir if os.path.isdir(pol_dir) else band_dir
+            matched_items = _fits_files_in_dir(
+                search_dir, cfg.radio_start_idx, cfg.radio_end_idx
+            )
+            polarization = cfg.polarization_mode
+
+        entries = []
+        for item in matched_items:
+            key = _radio_time_key_from_item(item)
+            path_for_time = item[0] if isinstance(item, tuple) else item
+            radio_time = parse_radio_time_from_filename(path_for_time)
+            if key is None or radio_time is None:
+                continue
+            entries.append((key, (band, item, polarization, radio_time)))
+        per_band_entries.append(entries)
+
+    common_slots = _build_common_radio_slots_from_entries(
+        per_band_entries, tolerance_ms
+    )
+    output_slots = []
+    for slot_index, slot_items in enumerate(common_slots):
+        single_slice_bands = {}
+        for band, file_item, polarization, radio_time in slot_items:
+            single_slice_bands[band] = [(file_item, polarization, radio_time)]
+        output_slots.append((slot_index, single_slice_bands))
+    return output_slots
+
+
+def _aia_panel_wavelengths(cfg: Config) -> list[int]:
+    return [int(wave) for wave in (cfg.aia_panel_wavelengths or [])]
+
+
+def _aia_panel_dir(cfg: Config, wavelength: int) -> str:
+    template = cfg.aia_panel_base_dir_template
+    if template:
+        return str(template).format(wave=wavelength, wavelength=wavelength)
+    if str(cfg.aia_wavelength) == str(wavelength):
+        return cfg.aia_base_dir
+    return os.path.join(os.path.dirname(cfg.aia_base_dir), str(wavelength))
+
+
+def _nearest_file_by_time(
+    files: list[str],
+    parser,
+    target_time: datetime,
+    threshold_seconds: float,
+) -> str | None:
+    candidates = []
+    for path in files:
+        parsed_time = parser(path)
+        if parsed_time is None:
+            parsed_time = parser(os.path.basename(path))
+        if parsed_time is None:
+            continue
+        dt = abs((parsed_time - target_time).total_seconds())
+        if dt <= threshold_seconds:
+            candidates.append((dt, path))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][1]
+
+
+def _slot_reference_time(single_slice_bands: dict) -> datetime | None:
+    times = []
+    for file_list in single_slice_bands.values():
+        for _file_item, _polarization, radio_time in file_list:
+            if radio_time is not None:
+                times.append(radio_time)
+    if not times:
+        return None
+    return min(times) + (max(times) - min(times)) / 2
+
+
+def build_multi_wave_matched_pairs(
+    cfg: Config,
+) -> list[tuple[dict[int, str], str | None, list]]:
+    """Match radio-first slots to the nearest six-wave AIA files and HMI file."""
+    wavelengths = _aia_panel_wavelengths(cfg)
+    if not wavelengths:
+        return []
+
+    aia_files_by_wave = {
+        wave: _fits_files_in_dir(
+            _aia_panel_dir(cfg, wave),
+            cfg.aia_file_start_idx,
+            cfg.aia_file_end_idx,
+        )
+        for wave in wavelengths
+    }
+    if any(not files for files in aia_files_by_wave.values()):
+        missing = [wave for wave, files in aia_files_by_wave.items() if not files]
+        raise FileNotFoundError(f"Missing AIA FITS files for wavelengths: {missing}")
+
+    hmi_files = (
+        sorted(glob.glob(os.path.join(cfg.hmi_base_dir, "*.fits")))
+        if cfg.overlay_hmi
+        else []
+    )
+    radio_slots = build_radio_time_slots_for_overlay(cfg)
+    matched_pairs = []
+    for slot_index, single_slice_bands in radio_slots:
+        reference_time = _slot_reference_time(single_slice_bands)
+        if reference_time is None:
+            continue
+        matched_aia = {}
+        for wave, files in aia_files_by_wave.items():
+            aia_file = _nearest_file_by_time(
+                files,
+                parse_aia_time_from_filename,
+                reference_time,
+                float(cfg.aia_time_threshold_seconds),
+            )
+            if aia_file is None:
+                matched_aia = {}
+                break
+            matched_aia[wave] = aia_file
+        if not matched_aia:
+            continue
+        hmi_file = None
+        if hmi_files:
+            hmi_file = _nearest_file_by_time(
+                hmi_files,
+                parse_hmi_time_from_filename,
+                reference_time,
+                float(cfg.hmi_time_threshold) * 3600.0,
+            )
+        matched_pairs.append(
+            (matched_aia, hmi_file, [(slot_index, single_slice_bands)])
+        )
+    return matched_pairs
+
+
+def _multi_wave_mosaic_enabled(cfg: Config) -> bool:
+    return str(getattr(cfg, "aia_panel_layout_style", "separate") or "").lower() in {
+        "mosaic",
+        "multi_band",
+    }
+
+
+def _valid_panel_aspect(panel_aspect_ratio: float | None) -> float:
+    try:
+        aspect = float(panel_aspect_ratio)
+    except (TypeError, ValueError):
+        aspect = 1.0
+    if not np.isfinite(aspect) or aspect <= 0:
+        return 1.0
+    return aspect
+
+
+def _roi_panel_aspect(cfg: Config) -> float:
+    try:
+        left, bottom = [float(v) for v in cfg.roi_bottom_left]
+        right, top = [float(v) for v in cfg.roi_top_right]
+    except Exception:
+        return 1.0
+    width = abs(right - left)
+    height = abs(top - bottom)
+    return height / width if width > 0 else 1.0
+
+
+def _extent_panel_aspect(extent_arcsec: list[float]) -> float:
+    left, right, bottom, top = [float(v) for v in extent_arcsec]
+    width = abs(right - left)
+    height = abs(top - bottom)
+    return height / width if width > 0 else 1.0
+
+
+def _create_mosaic_multi_wave_figure(
+    cfg: Config,
+    wavelengths: list[int],
+    nrows: int,
+    ncols: int,
+    panel_aspect_ratio: float | None,
+):
+    aspect = _valid_panel_aspect(panel_aspect_ratio or _roi_panel_aspect(cfg))
+    panel_ratio = max(float(cfg.spectrogram_panel_height_ratio), 0.15)
+    spectrogram_enabled = bool(cfg.enable_spectrogram_panel)
+
+    panel_width_in = max(float(getattr(cfg, "aia_panel_base_width", 4.8)), 2.5)
+    panel_height_in = panel_width_in * aspect
+    left_margin_in = 0.85
+    right_margin_in = 0.35
+    top_margin_in = 0.70
+    bottom_margin_in = 0.70
+    spectrum_gap_in = max(float(getattr(cfg, "aia_panel_spectrogram_gap", 0.05)), 0.0)
+    spectrum_height_in = panel_height_in * panel_ratio if spectrogram_enabled else 0.0
+    if spectrogram_enabled:
+        spectrum_gap_in = max(spectrum_gap_in, 0.45)
+
+    mosaic_width_in = panel_width_in * ncols
+    mosaic_height_in = panel_height_in * nrows
+    fig_width = mosaic_width_in + left_margin_in + right_margin_in
+    fig_height = (
+        top_margin_in
+        + mosaic_height_in
+        + (spectrum_gap_in + spectrum_height_in if spectrogram_enabled else 0.0)
+        + bottom_margin_in
+    )
+    fig = plt.figure(figsize=(fig_width, fig_height), facecolor=cfg.style.figure_bg)
+
+    left = left_margin_in / fig_width
+    right = 1.0 - right_margin_in / fig_width
+    mosaic_top = 1.0 - top_margin_in / fig_height
+    mosaic_height = mosaic_height_in / fig_height
+    mosaic_bottom = mosaic_top - mosaic_height
+    panel_w = (right - left) / ncols
+    panel_h = mosaic_height / nrows
+
+    axes_by_wave = {}
+    for index, wavelength in enumerate(wavelengths):
+        row, col = divmod(index, ncols)
+        axes_by_wave[int(wavelength)] = fig.add_axes(
+            [
+                left + col * panel_w,
+                mosaic_top - (row + 1) * panel_h,
+                panel_w,
+                panel_h,
+            ]
+        )
+
+    spectrogram_ax = None
+    if spectrogram_enabled:
+        spectrum_bottom = bottom_margin_in / fig_height
+        spectrogram_ax = fig.add_axes(
+            [left, spectrum_bottom, right - left, spectrum_height_in / fig_height]
+        )
+
+    if getattr(cfg, "aia_panel_global_axis_labels", False):
+        fig.text(
+            (left + right) / 2.0,
+            max(mosaic_bottom - 0.022, 0.02),
+            "Helioprojective Longitude (Solar-X)",
+            ha="center",
+            va="center",
+            fontsize=9,
+        )
+        fig.text(
+            max(left - 0.035, 0.01),
+            mosaic_bottom + mosaic_height / 2.0,
+            "Helioprojective Latitude (Solar-Y)",
+            ha="center",
+            va="center",
+            rotation="vertical",
+            fontsize=9,
+        )
+
+    return fig, axes_by_wave, spectrogram_ax
+
+
+def create_multi_wave_figure(
+    cfg: Config,
+    wavelengths: list[int],
+    panel_aspect_ratio: float | None = None,
+):
+    """Create a 2-D AIA panel grid plus an optional shared spectrogram axis."""
+    n_panels = max(len(wavelengths), 1)
+    ncols = max(1, min(int(getattr(cfg, "aia_panel_ncols", 3) or 3), n_panels))
+    nrows = int(math.ceil(n_panels / ncols))
+    if _multi_wave_mosaic_enabled(cfg):
+        return _create_mosaic_multi_wave_figure(
+            cfg, wavelengths, nrows, ncols, panel_aspect_ratio
+        )
+
+    spectrogram_enabled = bool(cfg.enable_spectrogram_panel)
+    panel_ratio = max(float(cfg.spectrogram_panel_height_ratio), 0.15)
+    height_ratios = [1.0] * nrows + ([panel_ratio] if spectrogram_enabled else [])
+    fig_height = 3.6 * nrows + (2.2 if spectrogram_enabled else 0.2)
+    fig = plt.figure(figsize=(4.4 * ncols, fig_height))
+    gs = fig.add_gridspec(
+        nrows + (1 if spectrogram_enabled else 0),
+        ncols,
+        height_ratios=height_ratios,
+        hspace=float(getattr(cfg, "aia_panel_hspace", 0.18)),
+        wspace=float(getattr(cfg, "aia_panel_wspace", 0.10)),
+    )
+    axes_by_wave = {}
+    for index, wavelength in enumerate(wavelengths):
+        row, col = divmod(index, ncols)
+        axes_by_wave[int(wavelength)] = fig.add_subplot(gs[row, col])
+    spectrogram_ax = fig.add_subplot(gs[nrows, :]) if spectrogram_enabled else None
+    return fig, axes_by_wave, spectrogram_ax
 
 
 def _combine_polarization_data(
@@ -3159,6 +3666,430 @@ def _write_animation_from_frames(frame_paths: list[str], cfg: Config) -> str | N
     return None
 
 
+def _aia_display_config_for_wave(wavelength: int) -> tuple[str, float, float]:
+    try:
+        from scripts.aia_hmi.core.aia_config import AIA_CONFIG
+
+        wave_cfg = AIA_CONFIG.get(int(wavelength), {})
+    except Exception:
+        wave_cfg = {}
+    return (
+        str(wave_cfg.get("cmap", f"sdoaia{int(wavelength)}")),
+        float(wave_cfg.get("vmin", 1.0)),
+        float(wave_cfg.get("vmax", 1000.0)),
+    )
+
+
+def _aia_cutout_extent_arcsec(aia_cutout) -> list[float]:
+    return [
+        aia_cutout.bottom_left_coord.Tx.value,
+        aia_cutout.top_right_coord.Tx.value,
+        aia_cutout.bottom_left_coord.Ty.value,
+        aia_cutout.top_right_coord.Ty.value,
+    ]
+
+
+def _draw_aia_base_panel(ax, aia_cutout, wavelength: int, cfg: Config) -> list[float]:
+    extent_arcsec = _aia_cutout_extent_arcsec(aia_cutout)
+    cmap_name, vmin, vmax = _aia_display_config_for_wave(wavelength)
+    my_cmap = plt.get_cmap(cmap_name).copy()
+    my_cmap.set_bad(color="black")
+    ax.imshow(
+        aia_cutout.data,
+        cmap=my_cmap,
+        norm=mcolors.LogNorm(vmin=vmin, vmax=vmax),
+        origin="lower",
+        extent=extent_arcsec,
+    )
+    ax.set_facecolor("black")
+    ax.set_xlim([extent_arcsec[0], extent_arcsec[1]])
+    ax.set_ylim([extent_arcsec[2], extent_arcsec[3]])
+    ax.set_aspect("equal", adjustable="box")
+    if _multi_wave_mosaic_enabled(cfg):
+        show_ticks = bool(getattr(cfg, "aia_panel_show_tick_labels", True))
+        ax.tick_params(
+            colors=cfg.style.tick_color,
+            labelsize=7,
+            length=2 if show_ticks else 0,
+            labelbottom=show_ticks,
+            labelleft=show_ticks,
+        )
+        if not show_ticks:
+            ax.set_xticklabels([])
+            ax.set_yticklabels([])
+        ax.set_xlabel("" if not cfg.aia_panel_show_axis_labels else "Solar X (arcsec)")
+        ax.set_ylabel("" if not cfg.aia_panel_show_axis_labels else "Solar Y (arcsec)")
+        if cfg.aia_panel_show_grid:
+            ax.grid(color="white", alpha=0.22, linewidth=0.35, linestyle="-")
+        for spine in ax.spines.values():
+            spine.set_color("black")
+            spine.set_linewidth(0.4)
+    else:
+        ax.tick_params(colors=cfg.style.tick_color, labelsize=7)
+        ax.set_xlabel("Solar X (arcsec)", fontsize=8)
+        ax.set_ylabel("Solar Y (arcsec)", fontsize=8)
+    try:
+        rsun_pix = aia_cutout.rsun_obs.to(u.arcsec).value
+        circle = plt.Circle(
+            (aia_cutout.center.Tx.value, aia_cutout.center.Ty.value),
+            rsun_pix,
+            fill=False,
+            color=cfg.style.limb_color,
+            lw=cfg.style.limb_lw,
+            alpha=cfg.style.limb_alpha,
+        )
+        ax.add_patch(circle)
+    except Exception:
+        pass
+    return extent_arcsec
+
+
+def _format_aia_panel_time(aia_cutout) -> str:
+    obs_time = getattr(aia_cutout, "date", None)
+    if obs_time is None:
+        return ""
+    for attr in ("isot", "iso"):
+        value = getattr(obs_time, attr, None)
+        if value:
+            text = str(value)
+            return text.replace(" ", "T")
+    if isinstance(obs_time, datetime):
+        return obs_time.isoformat(timespec="milliseconds")
+    return str(obs_time).replace(" ", "T")
+
+
+def _add_multi_wave_panel_label(
+    ax,
+    aia_cutout,
+    wavelength: int,
+    row: int,
+    nrows: int,
+    cfg: Config,
+) -> None:
+    if str(getattr(cfg, "aia_panel_label_mode", "none") or "").lower() != "inside":
+        return
+    label_y = (
+        cfg.aia_panel_label_y_last_row if row == nrows - 1 else cfg.aia_panel_label_y
+    )
+    time_label = _format_aia_panel_time(aia_cutout)
+    label = f"{time_label} AIA {wavelength}" if time_label else f"AIA {wavelength}"
+    ax.text(
+        cfg.aia_panel_label_x,
+        label_y,
+        label,
+        transform=ax.transAxes,
+        fontsize=cfg.aia_panel_label_fontsize,
+        va="bottom",
+        ha="left",
+        color="white",
+        path_effects=[
+            mpath_effects.withStroke(linewidth=1.8, foreground="black", alpha=0.7)
+        ],
+    )
+
+
+def _multi_wave_figure_title(
+    first_radio_time: datetime | None,
+    aia_cutouts: dict[int, object],
+    wavelengths: list[int],
+) -> str:
+    if first_radio_time is not None:
+        return first_radio_time.strftime("%Y-%m-%d")
+    for wavelength in wavelengths:
+        cutout = aia_cutouts.get(wavelength)
+        label = _format_aia_panel_time(cutout) if cutout is not None else ""
+        if len(label) >= 10:
+            return label[:10]
+    return ""
+
+
+def _radio_file_item_label(file_item) -> str:
+    if isinstance(file_item, tuple):
+        return f"{file_item[0]}|{file_item[1]}"
+    return str(file_item)
+
+
+def _load_overlay_radio_data(file_item, polarization: str, cfg: Config):
+    if (
+        cfg.combine_polarizations
+        and polarization == "RR+LL"
+        and isinstance(file_item, tuple)
+    ):
+        rr_path, ll_path = file_item
+        rr_data, ra_map, dec_map, rr_header, _ = extract_radio_2d_data(
+            rr_path, cfg.radio_use_float32, cfg
+        )
+        ll_data, _, _, _, _ = extract_radio_2d_data(ll_path, cfg.radio_use_float32, cfg)
+        if rr_data is None or ll_data is None:
+            return None, None, None, None
+        return (
+            _combine_polarization_data(rr_data, ll_data, cfg),
+            ra_map,
+            dec_map,
+            rr_header,
+        )
+    radio_data, ra_map, dec_map, radio_header, _ = extract_radio_2d_data(
+        file_item, cfg.radio_use_float32, cfg
+    )
+    return radio_data, ra_map, dec_map, radio_header
+
+
+def _draw_radio_contours_on_axis(
+    ax,
+    aia_cutout,
+    extent_arcsec: list[float],
+    single_slice_bands: dict,
+    cfg: Config,
+    color_cache: list,
+) -> datetime | None:
+    first_radio_time = None
+
+    def _band_freq(item):
+        m = re.search(r"(\d+\.?\d*)MHz", item[0])
+        return float(m.group(1)) if m else 0.0
+
+    for band_label, file_list in sorted(single_slice_bands.items(), key=_band_freq):
+        band_idx = (
+            cfg.selected_bands.index(band_label)
+            if band_label in cfg.selected_bands
+            else 0
+        )
+        search_bl = (
+            band_label if "." in band_label else band_label.replace("MHz", ".0MHz")
+        )
+        color_main, _ = get_band_color(search_bl, band_idx, cfg, color_cache)
+        for file_item, polarization, radio_time in file_list:
+            if first_radio_time is None and radio_time:
+                first_radio_time = radio_time
+            radio_data, ra_map, dec_map, radio_header = _load_overlay_radio_data(
+                file_item, polarization, cfg
+            )
+            if radio_data is None:
+                continue
+            result = reproject_radio_for_overlay(
+                radio_data,
+                ra_map,
+                dec_map,
+                aia_cutout,
+                cfg,
+                radio_header,
+                source_file=_radio_file_item_label(file_item),
+                band_label=band_label,
+                polarization=polarization,
+                radio_time=radio_time,
+            )
+            if result is None:
+                continue
+            if (
+                not getattr(result, "overlay_valid", True)
+                and not cfg.draw_low_quality_gaussian_contours
+            ):
+                continue
+
+            if cfg.show_radio_contours:
+                contour_data = result.model
+                if cfg.contour_smooth_sigma > 0:
+                    contour_data = smooth_for_contour(
+                        contour_data, cfg.contour_smooth_sigma
+                    )
+                levels = compute_contour_levels(contour_data, cfg)
+                if levels:
+                    ax.contour(
+                        contour_data,
+                        levels=levels,
+                        extent=extent_arcsec,
+                        colors=[color_main],
+                        linewidths=cfg.contour_linewidths,
+                        alpha=cfg.contour_alpha,
+                        origin="lower",
+                    )
+
+            if cfg.mark_radio_center and isinstance(result, GaussianReprojectResult):
+                center_x, center_y = result.center_arcsec
+                ax.scatter(
+                    [center_x],
+                    [center_y],
+                    marker=cfg.radio_center_marker,
+                    s=cfg.radio_center_size,
+                    color=color_main,
+                    linewidths=cfg.radio_center_linewidth,
+                )
+                if cfg.label_radio_center:
+                    ax.annotate(
+                        "Gaussian-fit center",
+                        xy=(center_x, center_y),
+                        xytext=(4, 0),
+                        textcoords="offset points",
+                        fontsize=8,
+                        color=color_main,
+                        va="center",
+                        ha="left",
+                    )
+    return first_radio_time
+
+
+def _draw_raw_radio_contours_on_axis(
+    ax,
+    aia_cutout,
+    extent_arcsec: list[float],
+    single_slice_bands: dict,
+    cfg: Config,
+    color_cache: list,
+) -> datetime | None:
+    return _draw_radio_contours_on_axis(
+        ax, aia_cutout, extent_arcsec, single_slice_bands, cfg, color_cache
+    )
+
+
+def _multi_wave_panel_title(
+    wavelength: int,
+    cfg: Config,
+    hmi_file: str | None,
+    radio_time: datetime | None,
+) -> str:
+    radio_label = (
+        "Gaussian Radio" if _radio_overlay_mode(cfg) == "gaussian" else "Raw Radio"
+    )
+    layers = [f"AIA {wavelength}"]
+    if hmi_file and cfg.overlay_hmi:
+        layers.append("HMI")
+    layers.append(radio_label)
+    title_time = radio_time.strftime("%H:%M:%S UT") if radio_time else "Unknown time"
+    return f"{' + '.join(layers)}\n{title_time}"
+
+
+def process_multi_wave_aia_group(
+    aia_files_by_wave: dict[int, str],
+    hmi_file: str | None,
+    sub_tasks: list[tuple[int, dict]],
+    task_index: int,
+    total_tasks: int,
+    cfg: Config,
+    color_cache: list,
+    spectrogram_cache=None,
+):
+    """Draw one or more radio-first frames as six AIA wave panels plus spectrum."""
+    wavelengths = _aia_panel_wavelengths(cfg)
+    saved_paths: list[str] = []
+    aia_cutouts = {}
+    for wavelength in wavelengths:
+        aia_file = aia_files_by_wave.get(wavelength)
+        if not aia_file:
+            continue
+        try:
+            aia_cutouts[wavelength] = _get_padded_aia_map(sunpy.map.Map(aia_file), cfg)
+        except Exception as exc:
+            print(f"  [AIA {wavelength}] read failed: {exc}")
+            return saved_paths
+    if len(aia_cutouts) != len(wavelengths):
+        return saved_paths
+
+    first_extent = _aia_cutout_extent_arcsec(aia_cutouts[wavelengths[0]])
+    panel_aspect_ratio = _extent_panel_aspect(first_extent)
+    ncols = max(1, min(int(getattr(cfg, "aia_panel_ncols", 3) or 3), len(wavelengths)))
+    nrows = int(math.ceil(len(wavelengths) / ncols))
+
+    for sub_index, single_slice_bands in sub_tasks:
+        fig, axes_by_wave, spectrogram_ax = create_multi_wave_figure(
+            cfg, wavelengths, panel_aspect_ratio=panel_aspect_ratio
+        )
+        first_radio_time = None
+        for panel_index, wavelength in enumerate(wavelengths):
+            row, _col = divmod(panel_index, ncols)
+            ax = axes_by_wave[wavelength]
+            aia_cutout = aia_cutouts[wavelength]
+            extent_arcsec = _draw_aia_base_panel(ax, aia_cutout, wavelength, cfg)
+            if _multi_wave_mosaic_enabled(cfg):
+                _add_multi_wave_panel_label(ax, aia_cutout, wavelength, row, nrows, cfg)
+            if hmi_file and cfg.overlay_hmi:
+                try:
+                    process_hmi_for_overlay(hmi_file, aia_cutout.wcs, cfg, ax)
+                except Exception as exc:
+                    print(f"  [HMI] overlay failed on AIA {wavelength}: {exc}")
+            panel_radio_time = _draw_radio_contours_on_axis(
+                ax, aia_cutout, extent_arcsec, single_slice_bands, cfg, color_cache
+            )
+            if first_radio_time is None and panel_radio_time is not None:
+                first_radio_time = panel_radio_time
+            if (
+                not _multi_wave_mosaic_enabled(cfg)
+                or cfg.aia_panel_show_per_panel_titles
+            ):
+                ax.set_title(
+                    _multi_wave_panel_title(
+                        wavelength,
+                        cfg,
+                        hmi_file=hmi_file,
+                        radio_time=first_radio_time,
+                    ),
+                    fontsize=9,
+                )
+
+        if _multi_wave_mosaic_enabled(cfg):
+            figure_title = _multi_wave_figure_title(
+                first_radio_time, aia_cutouts, wavelengths
+            )
+            if figure_title:
+                fig.suptitle(
+                    figure_title,
+                    fontsize=20,
+                    y=float(getattr(cfg, "aia_panel_title_y", 0.975)),
+                    fontweight="medium",
+                )
+
+        legend_elements = _build_selected_band_legend_elements(cfg, color_cache)
+        if legend_elements and wavelengths:
+            axes_by_wave[wavelengths[0]].legend(
+                handles=legend_elements,
+                loc="upper right",
+                facecolor=cfg.style.legend_face,
+                edgecolor="none",
+                labelcolor=cfg.style.legend_text,
+                framealpha=cfg.style.legend_alpha,
+                fontsize=7,
+            )
+
+        if spectrogram_ax is not None:
+            from scripts.radio.core.radio_spectrogram import overlay_spectrogram_panel
+
+            spectrogram_cfg = _spectrogram_config_dict(cfg)
+            if spectrogram_cache is None:
+                spectrogram_cfg["enable_spectrogram_panel"] = False
+            overlay_spectrogram_panel(
+                spectrogram_ax,
+                spectrogram_cfg,
+                first_radio_time,
+                cache=spectrogram_cache,
+            )
+
+        if cfg.save_figure:
+            if first_radio_time:
+                ts_str = first_radio_time.strftime("%Y%m%d_%H%M%S")
+            else:
+                ts_str = f"task_{task_index:03d}"
+            polar_suffix = (
+                "RR_LL_sum"
+                if cfg.combine_polarizations and cfg.polarization_mode == "RR+LL"
+                else cfg.polarization_mode
+            )
+            out_name = f"{ts_str}_{polar_suffix}_6band_seq{sub_index + 1:02d}.png"
+            saved_path = os.path.join(cfg.output_dir, out_name)
+            save_tight = not _multi_wave_mosaic_enabled(cfg) or bool(
+                getattr(cfg, "aia_panel_save_tight", True)
+            )
+            plt.savefig(
+                saved_path,
+                dpi=cfg.dpi,
+                bbox_inches="tight" if save_tight else None,
+                pad_inches=0.0 if not save_tight else 0.1,
+                facecolor=cfg.style.figure_bg,
+            )
+            print(f"  saved multi-wave image: {saved_path}")
+            saved_paths.append(saved_path)
+        plt.close(fig)
+    return saved_paths
+
+
 def process_aia_group(
     aia_file: str,
     hmi_file: str | None,
@@ -3628,25 +4559,44 @@ def main(user_config=None):
     color_cache = []
 
     # 构建匹配对
-    matched = build_matched_pairs(cfg)
+    matched = (
+        build_multi_wave_matched_pairs(cfg)
+        if _multi_wave_overlay_enabled(cfg)
+        else build_matched_pairs(cfg)
+    )
     spectrogram_cache = _build_aia_spectrogram_cache(cfg, matched)
     frame_paths: list[str] = []
     print(f"共构建 {len(matched)} 个 AIA 任务")
 
     # 串行处理（或可用线程池，但可能导致 FITS 读取冲突）
-    for i, (aia_file, hmi_file, sub_tasks) in enumerate(matched):
-        frame_paths.extend(
-            process_aia_group(
-                aia_file,
-                hmi_file,
-                sub_tasks,
-                i + 1,
-                len(matched),
-                cfg,
-                color_cache,
-                spectrogram_cache=spectrogram_cache,
+    if _multi_wave_overlay_enabled(cfg):
+        for i, (aia_files_by_wave, hmi_file, sub_tasks) in enumerate(matched):
+            frame_paths.extend(
+                process_multi_wave_aia_group(
+                    aia_files_by_wave,
+                    hmi_file,
+                    sub_tasks,
+                    i + 1,
+                    len(matched),
+                    cfg,
+                    color_cache,
+                    spectrogram_cache=spectrogram_cache,
+                )
             )
-        )
+    else:
+        for i, (aia_file, hmi_file, sub_tasks) in enumerate(matched):
+            frame_paths.extend(
+                process_aia_group(
+                    aia_file,
+                    hmi_file,
+                    sub_tasks,
+                    i + 1,
+                    len(matched),
+                    cfg,
+                    color_cache,
+                    spectrogram_cache=spectrogram_cache,
+                )
+            )
 
     _write_animation_from_frames(frame_paths, cfg)
     return frame_paths

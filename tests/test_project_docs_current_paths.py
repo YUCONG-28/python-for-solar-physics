@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -76,6 +76,12 @@ def _extract_local_markdown_links(text: str) -> set[str]:
     return links
 
 
+def _local_markdown_target_exists(base_dir: Path, target: str) -> bool:
+    normalized_target = target.replace("\\", "/")
+    target_path = Path(*PurePosixPath(normalized_target).parts)
+    return (base_dir / target_path).resolve().exists()
+
+
 @pytest.mark.parametrize("doc_path", CURRENT_DOCS)
 def test_current_doc_script_paths_exist(doc_path):
     text = (REPO_ROOT / doc_path).read_text(encoding="utf-8")
@@ -95,8 +101,8 @@ def test_current_doc_local_markdown_links_exist(doc_path):
     missing = sorted(
         link
         for link in links
-        if not (doc_dir / link.replace("/", "\\")).resolve().exists()
-        and not (REPO_ROOT / link.replace("/", "\\")).resolve().exists()
+        if not _local_markdown_target_exists(doc_dir, link)
+        and not _local_markdown_target_exists(REPO_ROOT, link)
     )
 
     assert missing == []
