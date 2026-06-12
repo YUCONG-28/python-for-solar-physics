@@ -54,6 +54,23 @@ def test_multi_band_output_dir_resolves_inside_analysis_subdir_without_creating_
         assert not (output_dir / "multi_band_RR+LL").exists()
 
 
+def test_source_map_short_millisecond_suffixes_are_integer_ms():
+    source_map = _import_source_map_with_optional_stubs()
+
+    assert source_map._parse_time_from_filename("149MHz_202553_071604_367.fits") == (
+        "202553",
+        26164367,
+    )
+    assert source_map._parse_time_from_filename("149MHz_202553_071614_0.fits") == (
+        "202553",
+        26174000,
+    )
+    assert source_map._parse_time_from_filename("149MHz_202553_071618_13.fits") == (
+        "202553",
+        26178013,
+    )
+
+
 def _import_source_map_with_optional_stubs():
     _install_source_map_stubs()
     return importlib.import_module(

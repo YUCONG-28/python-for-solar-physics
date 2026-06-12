@@ -156,12 +156,27 @@ def load_radio_user_config(config_name: str | None = None):
     return user_config, newkirk_config
 
 
-def load_aia_radio_hmi_user_config(config_name: str | None = None):
-    """Load AIA/HMI/radio overlay config from a config module."""
+def _legacy_overlay_config_name(section: str) -> str:
+    name = (section or "aia_radio_hmi").strip()
+    if name == "aia_radio_hmi":
+        return "AIA_RADIO_HMI_CONFIG"
+    return f"{name.upper()}_CONFIG"
+
+
+def load_aia_radio_overlay_user_config(
+    config_name: str | None = None, *, section: str = "aia_radio_hmi"
+):
+    """Load a named AIA/HMI/radio overlay config section."""
     module = load_radio_config_module(config_name)
+    section_name = (section or "aia_radio_hmi").strip()
     return copy.deepcopy(
-        _event_section(module, "aia_radio_hmi", "AIA_RADIO_HMI_CONFIG")
+        _event_section(module, section_name, _legacy_overlay_config_name(section_name))
     )
+
+
+def load_aia_radio_hmi_user_config(config_name: str | None = None):
+    """Load the default AIA/HMI/radio overlay config from a config module."""
+    return load_aia_radio_overlay_user_config(config_name, section="aia_radio_hmi")
 
 
 def load_newkirk_height_comparison_config(config_name: str | None = None):

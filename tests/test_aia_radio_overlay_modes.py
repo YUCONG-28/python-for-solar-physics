@@ -6,6 +6,7 @@ import importlib.util
 import sys
 import types
 from datetime import datetime
+from pathlib import Path
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
@@ -69,6 +70,74 @@ def test_aia_overlay_user_config_maps_raw_spectrogram_and_animation_options():
     assert cfg.animation_fps == 12
     assert cfg.animation_name == "aia_raw_overlay.mp4"
     assert cfg.animation_quality == "low"
+
+
+def test_aia_overlay_user_config_maps_drift_and_spectrogram_style_options():
+    overlay = _import_aia_overlay_with_optional_stubs()
+
+    cfg = overlay.apply_aia_radio_hmi_user_config(
+        overlay.Config(),
+        {
+            "aia": {
+                "aia_panel_layout_style": "mosaic",
+                "aia_panel_global_axis_labels": True,
+            },
+            "spectrogram": {
+                "enabled": True,
+                "panel_height_ratio": 0.72,
+                "hspace": 0.04,
+                "major_tick_seconds": 2,
+                "auto_time_locator": True,
+                "max_time_ticks": 34,
+                "clip_current_time_line": True,
+                "show_out_of_range_time_note": True,
+            },
+            "drift_rate": {
+                "enabled": True,
+                "mode": "manual_json",
+                "selection_json": "spectrogram_drift_rate_manual_selection.json",
+                "draw_lines": True,
+                "draw_endpoints": True,
+                "draw_label": True,
+                "label_format": "{label}: df/dt={drift_rate:.2f} MHz/s",
+                "line_width": 2.2,
+                "endpoint_marker": "o",
+                "endpoint_size": 30,
+                "save_drift_diagnostics": True,
+                "drift_diagnostics_csv": "radio_spectrogram_drift_rate_diagnostics.csv",
+            },
+        },
+    )
+
+    assert cfg.aia_panel_layout_style == "mosaic"
+    assert cfg.aia_panel_global_axis_labels is True
+    assert cfg.spectrogram_panel_height_ratio == pytest.approx(0.72)
+    assert cfg.spectrogram_hspace == pytest.approx(0.04)
+    assert cfg.spectrogram_major_tick_seconds == 2
+    assert cfg.spectrogram_max_time_ticks == 34
+    assert cfg.spectrogram_clip_current_time_line is True
+    assert cfg.spectrogram_show_out_of_range_time_note is True
+    assert cfg.enable_drift_rate_overlay is True
+    assert cfg.drift_rate_mode == "manual_json"
+    assert (
+        cfg.drift_rate_selection_json == "spectrogram_drift_rate_manual_selection.json"
+    )
+    assert cfg.draw_drift_rate_lines is True
+    assert cfg.draw_drift_rate_endpoints is True
+    assert cfg.draw_drift_rate_label is True
+    assert cfg.drift_rate_line_width == pytest.approx(2.2)
+    assert cfg.drift_rate_endpoint_marker == "o"
+    assert cfg.drift_rate_endpoint_size == pytest.approx(30)
+    assert cfg.save_drift_rate_diagnostics is True
+
+    spectrogram_cfg = overlay._spectrogram_config_dict(cfg)
+    assert spectrogram_cfg["enable_drift_rate_overlay"] is True
+    assert spectrogram_cfg["drift_rate_mode"] == "manual_json"
+    assert spectrogram_cfg["drift_rate_selection_json"].endswith(
+        "spectrogram_drift_rate_manual_selection.json"
+    )
+    assert spectrogram_cfg["spectrogram_major_tick_seconds"] == 2
+    assert spectrogram_cfg["spectrogram_max_time_ticks"] == 34
 
 
 def test_raw_overlay_mode_does_not_call_gaussian_reproject(monkeypatch):
@@ -242,6 +311,277 @@ def test_spectrogram_panel_accepts_prebuilt_cache():
         plt.close(fig)
 
 
+def test_radio_filename_short_millisecond_suffixes_are_integer_ms():
+    overlay = _import_aia_overlay_with_optional_stubs()
+
+    examples = [
+        (
+            "149MHz_202553_071604_367.fits",
+            datetime(2025, 5, 3, 7, 16, 4, 367000),
+            ("202553", 26164367),
+        ),
+        (
+            "149MHz_202553_071614_0.fits",
+            datetime(2025, 5, 3, 7, 16, 14, 0),
+            ("202553", 26174000),
+        ),
+        (
+            "149MHz_202553_071618_13.fits",
+            datetime(2025, 5, 3, 7, 16, 18, 13000),
+            ("202553", 26178013),
+        ),
+    ]
+
+    for filename, expected_time, expected_key in examples:
+        assert overlay.parse_radio_time_from_filename(filename) == expected_time
+        assert overlay._parse_time_from_filename(filename) == expected_key
+
+
+def test_multi_wave_radio_slots_match_all_bands_by_common_time(tmp_path):
+    overlay = _import_aia_overlay_with_optional_stubs()
+    cfg = overlay.Config()
+    cfg.radio_base_dir = str(tmp_path / "radio")
+    cfg.selected_bands = [
+        "149MHz",
+        "164MHz",
+        "190MHz",
+        "205MHz",
+        "223MHz",
+        "238MHz",
+    ]
+    cfg.combine_polarizations = True
+    cfg.polarization_mode = "RR+LL"
+    cfg.multi_band_time_tolerance_seconds = 0.1
+
+    for offset_ms, band in enumerate(cfg.selected_bands):
+        _touch_radio_pair(
+            tmp_path / "radio",
+            band,
+            f"{band}_202553_072025_{100 + offset_ms:03d}.fits",
+        )
+
+    slots = overlay.build_radio_time_slots_for_overlay(cfg)
+
+    assert len(slots) == 1
+    slot_index, single_slice_bands = slots[0]
+    assert slot_index == 0
+    assert list(single_slice_bands) == cfg.selected_bands
+    ref_time = datetime(2025, 5, 3, 7, 20, 25, 100000)
+    for band in cfg.selected_bands:
+        file_item, polarization, radio_time = single_slice_bands[band][0]
+        assert isinstance(file_item, tuple)
+        assert polarization == "RR+LL"
+        assert abs((radio_time - ref_time).total_seconds()) <= 0.1
+
+
+def test_multi_wave_radio_slots_reject_cross_band_time_mismatch(tmp_path):
+    overlay = _import_aia_overlay_with_optional_stubs()
+    cfg = overlay.Config()
+    cfg.radio_base_dir = str(tmp_path / "radio")
+    cfg.selected_bands = ["149MHz", "164MHz"]
+    cfg.combine_polarizations = True
+    cfg.polarization_mode = "RR+LL"
+    cfg.multi_band_time_tolerance_seconds = 0.1
+
+    _touch_radio_pair(tmp_path / "radio", "149MHz", "149MHz_202553_072025_100.fits")
+    _touch_radio_pair(tmp_path / "radio", "164MHz", "164MHz_202553_072026_100.fits")
+
+    assert overlay.build_radio_time_slots_for_overlay(cfg) == []
+
+
+def test_multi_wave_matching_uses_radio_slot_then_nearest_aia_and_hmi(tmp_path):
+    overlay = _import_aia_overlay_with_optional_stubs()
+    cfg = overlay.Config()
+    cfg.radio_base_dir = str(tmp_path / "radio")
+    cfg.hmi_base_dir = str(tmp_path / "AIA" / "hmi")
+    cfg.aia_panel_wavelengths = [94, 131, 171, 193, 211, 304]
+    cfg.aia_panel_base_dir_template = str(tmp_path / "AIA" / "{wave}")
+    cfg.selected_bands = ["149MHz", "164MHz"]
+    cfg.combine_polarizations = True
+    cfg.polarization_mode = "RR+LL"
+    cfg.multi_band_time_tolerance_seconds = 0.1
+    cfg.aia_time_threshold_seconds = 12.0
+    cfg.aia_file_start_idx = 0
+    cfg.aia_file_end_idx = None
+    cfg.hmi_time_threshold = 1
+
+    _touch_radio_pair(tmp_path / "radio", "149MHz", "149MHz_202553_072025_100.fits")
+    _touch_radio_pair(tmp_path / "radio", "164MHz", "164MHz_202553_072025_120.fits")
+    for wave in cfg.aia_panel_wavelengths:
+        _touch(
+            tmp_path
+            / "AIA"
+            / str(wave)
+            / f"aia.lev1_euv_12s.2025-05-03T072025Z.{wave}.image_lev1.fits"
+        )
+    hmi_file = _touch(
+        tmp_path / "AIA" / "hmi" / "hmi.M_45s.20250503_072030_TAI.2.magnetogram.fits"
+    )
+
+    matched = overlay.build_multi_wave_matched_pairs(cfg)
+
+    assert len(matched) == 1
+    aia_files_by_wave, matched_hmi, sub_tasks = matched[0]
+    assert set(aia_files_by_wave) == set(cfg.aia_panel_wavelengths)
+    assert matched_hmi == str(hmi_file)
+    assert len(sub_tasks) == 1
+    _slot_index, single_slice_bands = sub_tasks[0]
+    assert list(single_slice_bands) == cfg.selected_bands
+
+
+def test_multi_wave_figure_creates_six_aia_axes_and_shared_spectrogram_axis():
+    overlay = _import_aia_overlay_with_optional_stubs()
+    cfg = overlay.Config()
+    cfg.aia_panel_wavelengths = [94, 131, 171, 193, 211, 304]
+    cfg.enable_spectrogram_panel = True
+
+    fig, axes_by_wave, spectrogram_ax = overlay.create_multi_wave_figure(
+        cfg, cfg.aia_panel_wavelengths
+    )
+    try:
+        assert list(axes_by_wave) == cfg.aia_panel_wavelengths
+        assert len(axes_by_wave) == 6
+        assert spectrogram_ax is not None
+        assert len(fig.axes) == 7
+    finally:
+        plt.close(fig)
+
+
+def test_multi_wave_figure_mosaic_style_uses_adaptive_canvas_and_global_labels():
+    overlay = _import_aia_overlay_with_optional_stubs()
+    cfg = overlay.Config()
+    cfg.aia_panel_wavelengths = [94, 131, 171, 193, 211, 304]
+    cfg.enable_spectrogram_panel = True
+    cfg.aia_panel_layout_style = "mosaic"
+    cfg.aia_panel_global_axis_labels = True
+    cfg.spectrogram_panel_height_ratio = 0.72
+
+    fig, axes_by_wave, spectrogram_ax = overlay.create_multi_wave_figure(
+        cfg,
+        cfg.aia_panel_wavelengths,
+        panel_aspect_ratio=0.75,
+    )
+    try:
+        assert list(axes_by_wave) == cfg.aia_panel_wavelengths
+        assert spectrogram_ax is not None
+        assert len(fig.axes) == 7
+        assert fig.get_figheight() > 11.0
+        text_values = [text.get_text() for text in fig.texts]
+        assert "Helioprojective Longitude (Solar-X)" in text_values
+        assert "Helioprojective Latitude (Solar-Y)" in text_values
+
+        first = axes_by_wave[94].get_position()
+        second = axes_by_wave[131].get_position()
+        assert first.x1 == pytest.approx(second.x0)
+        assert spectrogram_ax.get_position().height > 0.16
+    finally:
+        plt.close(fig)
+
+
+def test_multi_wave_gaussian_overlay_uses_configured_reproject_and_marks_center(
+    monkeypatch,
+):
+    overlay = _import_aia_overlay_with_optional_stubs()
+    cfg = overlay.Config()
+    cfg.selected_bands = ["149MHz"]
+    cfg.combine_polarizations = False
+    cfg.polarization_mode = "RR"
+    cfg.radio_overlay_mode = "gaussian"
+    cfg.show_radio_contours = True
+    cfg.mark_radio_center = True
+    cfg.contour_levels_peak = [0.5]
+    cfg.contour_linewidths = [1.0]
+
+    calls = {}
+    expected_time = datetime(2025, 1, 24, 4, 48, 30, 93000)
+
+    monkeypatch.setattr(
+        overlay,
+        "extract_radio_2d_data",
+        lambda *args, **kwargs: (
+            np.ones((3, 3), dtype=float),
+            None,
+            None,
+            fits.Header(),
+            None,
+        ),
+    )
+
+    def fail_raw_reproject(*args, **kwargs):
+        raise AssertionError("Gaussian six-wave overlay must not call raw reproject")
+
+    def fake_reproject(
+        radio_data,
+        ra_map,
+        dec_map,
+        aia_cutout,
+        cfg_arg,
+        radio_header,
+        *,
+        source_file,
+        band_label,
+        polarization,
+        radio_time,
+    ):
+        calls["mode"] = cfg_arg.radio_overlay_mode
+        calls["source_file"] = source_file
+        calls["band_label"] = band_label
+        calls["polarization"] = polarization
+        calls["radio_time"] = radio_time
+        return overlay.GaussianReprojectResult(
+            model=np.asarray([[0.0, 1.0], [1.0, 2.0]], dtype=np.float32),
+            center_pixel=(1.0, 1.0),
+            center_arcsec=(12.0, 34.0),
+            sigma_pixel=(1.0, 1.0),
+            theta_rad=0.0,
+            amplitude=2.0,
+            covariance=None,
+        )
+
+    monkeypatch.setattr(overlay, "reproject_raw_radio_to_aia", fail_raw_reproject)
+    monkeypatch.setattr(overlay, "reproject_radio_for_overlay", fake_reproject)
+
+    fig, ax = plt.subplots(figsize=(3, 3))
+    try:
+        first_time = overlay._draw_radio_contours_on_axis(
+            ax,
+            _FakeAiaMap(shape=(2, 2)),
+            [0.0, 2.0, 0.0, 2.0],
+            {"149MHz": [("radio.fits", "RR", expected_time)]},
+            cfg,
+            color_cache=[],
+        )
+
+        assert first_time == expected_time
+        assert calls == {
+            "mode": "gaussian",
+            "source_file": "radio.fits",
+            "band_label": "149MHz",
+            "polarization": "RR",
+            "radio_time": expected_time,
+        }
+        assert any(
+            collection.__class__.__name__ == "PathCollection"
+            for collection in ax.collections
+        )
+    finally:
+        plt.close(fig)
+
+
+def test_multi_wave_panel_title_reflects_gaussian_mode_without_hmi():
+    overlay = _import_aia_overlay_with_optional_stubs()
+    cfg = overlay.Config()
+    cfg.radio_overlay_mode = "gaussian"
+    cfg.overlay_hmi = False
+
+    title = overlay._multi_wave_panel_title(
+        94, cfg, hmi_file=None, radio_time=datetime(2025, 1, 24, 4, 48, 30)
+    )
+
+    assert title == "AIA 94 + Gaussian Radio\n04:48:30 UT"
+    assert "HMI" not in title
+
+
 def test_write_video_from_paths_uses_explicit_frame_order(monkeypatch, tmp_path):
     video = importlib.import_module("scripts.tools.image_sequence_to_video")
     observed = {}
@@ -313,6 +653,17 @@ class _FakeAiaMap:
 
 def _install_fake_skycoord(monkeypatch, overlay):
     monkeypatch.setattr(overlay, "SkyCoord", lambda Tx, Ty, frame: _FakeCoord(Tx, Ty))
+
+
+def _touch(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"")
+    return path
+
+
+def _touch_radio_pair(root: Path, band: str, name: str) -> None:
+    _touch(root / band / "RR" / name)
+    _touch(root / band / "LL" / name)
 
 
 def _import_aia_overlay_with_optional_stubs():

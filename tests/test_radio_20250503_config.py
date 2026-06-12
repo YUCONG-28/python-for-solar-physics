@@ -6,6 +6,7 @@ import types
 from pathlib import Path
 
 from scripts.radio.configs import (
+    load_aia_radio_overlay_user_config,
     load_drift_selection_product_config,
     load_newkirk_height_comparison_config,
     load_radio_config_module,
@@ -282,26 +283,186 @@ def test_aia_radio_hmi_roi_uses_explicit_bounds_with_legacy_fallback():
     }
 
 
-def test_20250503_default_aia_overlay_stays_gaussian_and_raw_animation_is_optional():
+def test_20250503_default_aia_overlay_uses_raw_radio_without_radec_maps():
     module = load_radio_config_module("radio_20250503_config")
     default_config = module.AIA_RADIO_HMI_CONFIG
     raw_config = module.AIA_RAW_RADIO_SPECTROGRAM_CONFIG
 
-    assert default_config["paths"]["output_dir"].endswith("AIA_Gaussian_Overlay")
-    assert default_config["output"]["output_dir"].endswith("AIA_Gaussian_Overlay")
-    assert default_config["radio"].get("radio_overlay_mode", "gaussian") == "gaussian"
-    assert default_config["display"]["show_radio_contours"] is False
-    assert default_config["display"]["mark_radio_center"] is True
+    assert default_config["paths"]["output_dir"].endswith("AIA_Raw_Radio_Overlay")
+    assert default_config["output"]["output_dir"].endswith("AIA_Raw_Radio_Overlay")
+    assert "Gaussian" not in default_config["paths"]["output_dir"]
+    assert "Gaussian" not in default_config["output"]["output_dir"]
+    assert default_config["radio"]["radio_overlay_mode"] == "raw"
+    assert default_config["radio"]["use_radec_maps"] is False
+    assert default_config["wcs_reproject"]["use_radec_maps"] is False
+    assert default_config["gaussian"]["enable_gaussian_overlay"] is False
+    assert default_config["gaussian"]["save_gaussian_diagnostics"] is False
+    assert default_config["display"]["show_radio_contours"] is True
+    assert default_config["display"]["mark_radio_center"] is False
     assert default_config.get("spectrogram", {}).get("enabled", False) is False
     assert default_config.get("animation", {}).get("make_animation", False) is False
 
     assert raw_config["paths"]["output_dir"].endswith("AIA_Raw_Radio_Spectrogram")
     assert raw_config["output"]["output_dir"].endswith("AIA_Raw_Radio_Spectrogram")
     assert raw_config["radio"]["radio_overlay_mode"] == "raw"
+    assert raw_config["radio"]["use_radec_maps"] is False
+    assert raw_config["wcs_reproject"]["use_radec_maps"] is False
+    assert raw_config["gaussian"]["enable_gaussian_overlay"] is False
+    assert raw_config["gaussian"]["save_gaussian_diagnostics"] is False
     assert raw_config["display"]["show_radio_contours"] is True
     assert raw_config["display"]["mark_radio_center"] is False
     assert raw_config["spectrogram"]["enabled"] is True
     assert raw_config["animation"]["make_animation"] is True
+
+
+def test_20250503_multi_wave_raw_radio_spectrogram_config_is_opt_in():
+    module = load_radio_config_module("radio_20250503_config")
+    default_config = module.AIA_RADIO_HMI_CONFIG
+    multi_wave = module.AIA_MULTI_WAVE_RAW_RADIO_SPECTROGRAM_CONFIG
+
+    assert module.EVENT_CONFIG["aia_radio_hmi"] is default_config
+    assert module.EVENT_CONFIG["aia_multi_wave_raw_radio_spectrogram"] is multi_wave
+    assert default_config["radio"]["radio_overlay_mode"] == "raw"
+    assert default_config["radio"]["use_radec_maps"] is False
+    assert default_config["wcs_reproject"]["use_radec_maps"] is False
+    assert default_config.get("spectrogram", {}).get("enabled", False) is False
+
+    assert multi_wave["aia"]["aia_panel_wavelengths"] == [
+        94,
+        131,
+        171,
+        193,
+        211,
+        304,
+    ]
+    assert multi_wave["paths"]["aia_panel_base_dir_template"].endswith(r"AIA\{wave}")
+    assert multi_wave["hmi"]["overlay_hmi"] is True
+    assert multi_wave["radio"]["radio_overlay_mode"] == "raw"
+    assert multi_wave["radio"]["use_radec_maps"] is False
+    assert multi_wave["wcs_reproject"]["use_radec_maps"] is False
+    assert multi_wave["gaussian"]["enable_gaussian_overlay"] is False
+    assert multi_wave["gaussian"]["save_gaussian_diagnostics"] is False
+    assert multi_wave["display"]["show_radio_contours"] is True
+    assert multi_wave["display"]["mark_radio_center"] is False
+    assert multi_wave["spectrogram"]["enabled"] is True
+    assert multi_wave["spectrogram"]["time_display_mode"] == "user"
+    expected_output = r"D:\spike_topping_type_III\2025\20250503\output"
+    assert multi_wave["paths"]["output_dir"] == expected_output
+    assert multi_wave["output"]["output_dir"] == expected_output
+
+
+def test_20250124_multi_wave_gaussian_spectrogram_config_is_opt_in():
+    module = load_radio_config_module("radio_20250124_config")
+    default_config = module.AIA_RADIO_HMI_CONFIG
+    multi_wave = module.AIA_MULTI_WAVE_GAUSSIAN_SPECTROGRAM_CONFIG
+
+    assert module.EVENT_CONFIG["aia_radio_hmi"] is default_config
+    assert module.EVENT_CONFIG["aia_multi_wave_gaussian_spectrogram"] is multi_wave
+    assert "aia_panel_wavelengths" not in default_config["aia"]
+    assert default_config["hmi"]["overlay_hmi"] is True
+
+    assert multi_wave["aia"]["aia_panel_wavelengths"] == [
+        94,
+        131,
+        171,
+        193,
+        211,
+        304,
+    ]
+    assert multi_wave["paths"]["aia_panel_base_dir_template"].endswith(
+        r"SDO\AIA\{wave}"
+    )
+    assert multi_wave["hmi"]["overlay_hmi"] is False
+    assert multi_wave["radio"]["radio_overlay_mode"] == "gaussian"
+    assert multi_wave["radio"]["selected_bands"] == [
+        "149MHz",
+        "164MHz",
+        "190MHz",
+        "205MHz",
+        "223MHz",
+        "238MHz",
+    ]
+    assert multi_wave["gaussian"]["enable_gaussian_overlay"] is True
+    assert multi_wave["display"]["show_radio_contours"] is True
+    assert multi_wave["display"]["mark_radio_center"] is True
+    assert multi_wave["spectrogram"]["enabled"] is True
+    assert multi_wave["spectrogram"]["time_display_mode"] == "user"
+    expected_output = (
+        r"D:\spike_topping_type_III\2025\20250124"
+        r"\output\AIA_6band_GaussianRadio_Spectrogram"
+    )
+    assert multi_wave["paths"]["output_dir"] == expected_output
+    assert multi_wave["output"]["output_dir"] == expected_output
+    assert multi_wave["aia"]["aia_panel_layout_style"] == "mosaic"
+    assert multi_wave["aia"]["aia_panel_global_axis_labels"] is True
+    assert multi_wave["spectrogram"]["panel_height_ratio"] > 0.6
+    assert multi_wave["spectrogram"]["major_tick_seconds"] == 2
+    assert multi_wave["spectrogram"]["max_time_ticks"] == 34
+    assert multi_wave["drift_rate"]["enabled"] is True
+    assert multi_wave["drift_rate"]["selection_json"] == (
+        "spectrogram_drift_rate_manual_selection.json"
+    )
+
+
+def test_aia_overlay_loader_can_select_multi_wave_raw_section():
+    default_config = load_aia_radio_overlay_user_config("radio_20250503_config")
+    multi_wave = load_aia_radio_overlay_user_config(
+        "radio_20250503_config",
+        section="aia_multi_wave_raw_radio_spectrogram",
+    )
+
+    assert default_config["radio"]["radio_overlay_mode"] == "raw"
+    assert default_config["radio"]["use_radec_maps"] is False
+    assert default_config["wcs_reproject"]["use_radec_maps"] is False
+    assert "aia_panel_wavelengths" not in default_config["aia"]
+    assert multi_wave["aia"]["aia_panel_wavelengths"] == [
+        94,
+        131,
+        171,
+        193,
+        211,
+        304,
+    ]
+    assert multi_wave["radio"]["radio_overlay_mode"] == "raw"
+    assert multi_wave["radio"]["use_radec_maps"] is False
+    assert multi_wave["wcs_reproject"]["use_radec_maps"] is False
+    assert multi_wave["gaussian"]["enable_gaussian_overlay"] is False
+
+
+def test_20250503_aia_overlay_user_config_applies_raw_no_radec_to_legacy_config():
+    legacy = _import_aia_overlay_with_optional_stubs()
+    user_config = load_aia_radio_overlay_user_config("radio_20250503_config")
+
+    cfg = legacy.apply_aia_radio_hmi_user_config(legacy.Config(), user_config)
+
+    assert cfg.radio_overlay_mode == "raw"
+    assert cfg.use_radec_maps is False
+    assert cfg.enable_gaussian_overlay is False
+    assert cfg.save_gaussian_diagnostics is False
+    assert cfg.show_radio_contours is True
+    assert cfg.mark_radio_center is False
+
+
+def test_aia_overlay_loader_can_select_20250124_multi_wave_gaussian_section():
+    default_config = load_aia_radio_overlay_user_config("radio_20250124_config")
+    multi_wave = load_aia_radio_overlay_user_config(
+        "radio_20250124_config",
+        section="aia_multi_wave_gaussian_spectrogram",
+    )
+
+    assert "aia_panel_wavelengths" not in default_config["aia"]
+    assert default_config["hmi"]["overlay_hmi"] is True
+    assert multi_wave["aia"]["aia_panel_wavelengths"] == [
+        94,
+        131,
+        171,
+        193,
+        211,
+        304,
+    ]
+    assert multi_wave["hmi"]["overlay_hmi"] is False
+    assert multi_wave["radio"]["radio_overlay_mode"] == "gaussian"
+    assert multi_wave["spectrogram"]["enabled"] is True
 
 
 def test_aia_radio_hmi_roi_rejects_inverted_bounds():
@@ -343,6 +504,35 @@ def _import_legacy_source_map_with_optional_stubs():
         "scipy.ndimage": scipy_ndimage,
         "scipy.optimize": scipy_optimize,
         "tqdm": tqdm_module,
+    }
+    created = []
+    for name, module in stubs.items():
+        if name not in sys.modules and not _module_available(name):
+            sys.modules[name] = module
+            created.append(name)
+    try:
+        return importlib.import_module(module_name)
+    finally:
+        for name in reversed(created):
+            sys.modules.pop(name, None)
+
+
+def _import_aia_overlay_with_optional_stubs():
+    module_name = "scripts.radio.legacy.sdo_aia_radio_hmi_overlay"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+
+    sunpy = types.ModuleType("sunpy")
+    sunpy_coordinates = types.ModuleType("sunpy.coordinates")
+    sunpy_map = types.ModuleType("sunpy.map")
+    sunpy_map.GenericMap = type("GenericMap", (), {})
+    sunpy_map.Map = lambda *args, **kwargs: None
+    sunpy.coordinates = sunpy_coordinates
+    sunpy.map = sunpy_map
+    stubs = {
+        "sunpy": sunpy,
+        "sunpy.coordinates": sunpy_coordinates,
+        "sunpy.map": sunpy_map,
     }
     created = []
     for name, module in stubs.items():

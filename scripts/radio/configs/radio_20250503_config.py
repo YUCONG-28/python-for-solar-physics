@@ -236,7 +236,7 @@ AIA_RADIO_HMI_CONFIG = {
         "radio_base_dir": r"D:\spike_topping_type_III\2025\20250503\20250503UT071600-072600",
         "aia_base_dir": r"D:\spike_topping_type_III\2025\20250503\AIA\171",
         "hmi_base_dir": r"D:\spike_topping_type_III\2025\20250503\AIA\hmi",
-        "output_dir": r"D:\spike_topping_type_III\2025\20250503\output\AIA_Gaussian_Overlay",
+        "output_dir": r"D:\spike_topping_type_III\2025\20250503\output\AIA_Raw_Radio_Overlay",
     },
     "aia": {
         "wavelength": "171",
@@ -255,7 +255,7 @@ AIA_RADIO_HMI_CONFIG = {
         "hmi_levels_gauss": [100.0],
     },
     "radio": {
-        "radio_overlay_mode": "gaussian",
+        "radio_overlay_mode": "raw",
         "selected_bands": [
             "149MHz",
             "164MHz",
@@ -275,7 +275,7 @@ AIA_RADIO_HMI_CONFIG = {
         "radio_time_threshold": 6,
         "max_radio_per_band": 28,
         "radio_use_float32": True,
-        "use_radec_maps": True,
+        "use_radec_maps": False,
     },
     "wcs_reproject": {
         "roi_bounds_arcsec": {
@@ -284,10 +284,10 @@ AIA_RADIO_HMI_CONFIG = {
             "right": 0,
             "top": 400,
         },
-        "use_radec_maps": True,
+        "use_radec_maps": False,
     },
     "gaussian": {
-        "enable_gaussian_overlay": True,
+        "enable_gaussian_overlay": False,
         "draw_low_quality_gaussian_contours": False,
         "fit_use_source_mask": True,
         "fit_snr_threshold": 5.0,
@@ -316,16 +316,16 @@ AIA_RADIO_HMI_CONFIG = {
         "gaussian_valid_only_for_overlay": True,
         "gaussian_valid_only_for_trajectory": True,
         "gaussian_allow_moment_fallback_for_trajectory": False,
-        "save_gaussian_diagnostics": True,
+        "save_gaussian_diagnostics": False,
         "gaussian_diagnostics_csv": "aia_radio_gaussian_fit_diagnostics.csv",
     },
     "display": {
-        "show_radio_contours": False,
+        "show_radio_contours": True,
         "contour_levels_peak": [0.90],
         "contour_linewidths": [2.0],
         "contour_alpha": 0.90,
         "contour_smooth_sigma": 0,
-        "mark_radio_center": True,
+        "mark_radio_center": False,
         "radio_center_marker": "x",
         "radio_center_size": 50,
         "radio_center_linewidth": 1.8,
@@ -363,7 +363,7 @@ AIA_RADIO_HMI_CONFIG = {
         "animation_quality": "high",
     },
     "output": {
-        "output_dir": r"D:\spike_topping_type_III\2025\20250503\AIA_RS_HMI\output\AIA_Gaussian_Overlay",
+        "output_dir": r"D:\spike_topping_type_III\2025\20250503\AIA_RS_HMI\output\AIA_Raw_Radio_Overlay",
         "save_figure": True,
         "dpi": 300,
     },
@@ -382,6 +382,16 @@ AIA_RAW_RADIO_SPECTROGRAM_CONFIG = {
     "radio": {
         **AIA_RADIO_HMI_CONFIG["radio"],
         "radio_overlay_mode": "raw",
+        "use_radec_maps": False,
+    },
+    "wcs_reproject": {
+        **AIA_RADIO_HMI_CONFIG["wcs_reproject"],
+        "use_radec_maps": False,
+    },
+    "gaussian": {
+        **AIA_RADIO_HMI_CONFIG["gaussian"],
+        "enable_gaussian_overlay": False,
+        "save_gaussian_diagnostics": False,
     },
     "display": {
         **AIA_RADIO_HMI_CONFIG["display"],
@@ -399,6 +409,61 @@ AIA_RAW_RADIO_SPECTROGRAM_CONFIG = {
     "output": {
         **AIA_RADIO_HMI_CONFIG["output"],
         "output_dir": r"D:\spike_topping_type_III\2025\20250503\AIA_RS_HMI\output\AIA_Raw_Radio_Spectrogram",
+    },
+}
+
+AIA_MULTI_WAVE_RAW_RADIO_SPECTROGRAM_CONFIG = {
+    **AIA_RADIO_HMI_CONFIG,
+    "paths": {
+        **AIA_RADIO_HMI_CONFIG["paths"],
+        "aia_panel_base_dir_template": r"D:\spike_topping_type_III\2025\20250503\AIA\{wave}",
+        "output_dir": r"D:\spike_topping_type_III\2025\20250503\output",
+    },
+    "aia": {
+        **AIA_RADIO_HMI_CONFIG["aia"],
+        "aia_panel_wavelengths": [94, 131, 171, 193, 211, 304],
+        "aia_time_threshold_seconds": 12.0,
+    },
+    "hmi": {
+        **AIA_RADIO_HMI_CONFIG["hmi"],
+        "overlay_hmi": True,
+    },
+    "radio": {
+        **AIA_RADIO_HMI_CONFIG["radio"],
+        "radio_overlay_mode": "raw",
+        "enable_gaussian_overlay": False,
+        "use_radec_maps": False,
+        "radio_start_idx": USER_CONFIG["data"]["start_idx"],
+        "radio_end_idx": USER_CONFIG["data"]["end_idx"],
+        "multi_band_time_tolerance_seconds": USER_CONFIG["data"][
+            "multi_band_time_tolerance_seconds"
+        ],
+    },
+    "wcs_reproject": {
+        **AIA_RADIO_HMI_CONFIG["wcs_reproject"],
+        "use_radec_maps": False,
+    },
+    "gaussian": {
+        **AIA_RADIO_HMI_CONFIG["gaussian"],
+        "enable_gaussian_overlay": False,
+        "save_gaussian_diagnostics": False,
+    },
+    "display": {
+        **AIA_RADIO_HMI_CONFIG["display"],
+        "show_radio_contours": True,
+        "mark_radio_center": False,
+    },
+    "spectrogram": {
+        **AIA_RADIO_HMI_CONFIG["spectrogram"],
+        "enabled": True,
+    },
+    "animation": {
+        **AIA_RADIO_HMI_CONFIG["animation"],
+        "animation_name": "aia_6band_hmi_raw_radio_spectrogram.mp4",
+    },
+    "output": {
+        **AIA_RADIO_HMI_CONFIG["output"],
+        "output_dir": r"D:\spike_topping_type_III\2025\20250503\output",
     },
 }
 
@@ -501,6 +566,7 @@ EVENT_CONFIG = {
     "output": OUTPUT_CONFIG,
     "aia_radio_hmi": AIA_RADIO_HMI_CONFIG,
     "aia_raw_radio_spectrogram": AIA_RAW_RADIO_SPECTROGRAM_CONFIG,
+    "aia_multi_wave_raw_radio_spectrogram": AIA_MULTI_WAVE_RAW_RADIO_SPECTROGRAM_CONFIG,
     "newkirk": NEWKIRK_CONFIG,
     "newkirk_height_comparison": NEWKIRK_HEIGHT_COMPARISON_CONFIG,
     "drift_selection_products": DRIFT_SELECTION_PRODUCT_CONFIG,
@@ -511,6 +577,9 @@ USER_CONFIG = EVENT_CONFIG["user"]
 OUTPUT_CONFIG = EVENT_CONFIG["output"]
 AIA_RADIO_HMI_CONFIG = EVENT_CONFIG["aia_radio_hmi"]
 AIA_RAW_RADIO_SPECTROGRAM_CONFIG = EVENT_CONFIG["aia_raw_radio_spectrogram"]
+AIA_MULTI_WAVE_RAW_RADIO_SPECTROGRAM_CONFIG = EVENT_CONFIG[
+    "aia_multi_wave_raw_radio_spectrogram"
+]
 NEWKIRK_CONFIG = EVENT_CONFIG["newkirk"]
 NEWKIRK_HEIGHT_COMPARISON_CONFIG = EVENT_CONFIG["newkirk_height_comparison"]
 DRIFT_SELECTION_PRODUCT_CONFIG = EVENT_CONFIG["drift_selection_products"]

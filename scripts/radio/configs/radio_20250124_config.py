@@ -330,6 +330,120 @@ AIA_RADIO_HMI_CONFIG = {
     },
 }
 
+AIA_MULTI_WAVE_GAUSSIAN_SPECTROGRAM_CONFIG = {
+    **AIA_RADIO_HMI_CONFIG,
+    "paths": {
+        **AIA_RADIO_HMI_CONFIG["paths"],
+        "aia_panel_base_dir_template": r"D:\spike_topping_type_III\2025\20250124\SDO\AIA\{wave}",
+        "output_dir": (
+            r"D:\spike_topping_type_III\2025\20250124"
+            r"\output\AIA_6band_GaussianRadio_Spectrogram"
+        ),
+    },
+    "aia": {
+        **AIA_RADIO_HMI_CONFIG["aia"],
+        "aia_panel_wavelengths": [94, 131, 171, 193, 211, 304],
+        "aia_time_threshold_seconds": 12.0,
+        "aia_panel_layout_style": "mosaic",
+        "aia_panel_base_width": 4.9,
+        "aia_panel_wspace": 0.0,
+        "aia_panel_hspace": 0.0,
+        "aia_panel_show_per_panel_titles": False,
+        "aia_panel_show_axis_labels": False,
+        "aia_panel_show_tick_labels": False,
+        "aia_panel_global_axis_labels": True,
+        "aia_panel_show_grid": True,
+        "aia_panel_label_mode": "inside",
+        "aia_panel_label_fontsize": 8.5,
+        "aia_panel_save_tight": False,
+    },
+    "hmi": {
+        **AIA_RADIO_HMI_CONFIG["hmi"],
+        "overlay_hmi": False,
+    },
+    "radio": {
+        **AIA_RADIO_HMI_CONFIG["radio"],
+        "radio_overlay_mode": "gaussian",
+        "selected_bands": [
+            "149MHz",
+            "164MHz",
+            "190MHz",
+            "205MHz",
+            "223MHz",
+            "238MHz",
+        ],
+        "radio_start_idx": USER_CONFIG["data"]["start_idx"],
+        "radio_end_idx": USER_CONFIG["data"]["end_idx"],
+        "multi_band_time_tolerance_seconds": USER_CONFIG["data"].get(
+            "multi_band_time_tolerance_seconds", 0.1
+        ),
+    },
+    "gaussian": {
+        **AIA_RADIO_HMI_CONFIG["gaussian"],
+        "enable_gaussian_overlay": True,
+    },
+    "display": {
+        **AIA_RADIO_HMI_CONFIG["display"],
+        "show_radio_contours": True,
+        "mark_radio_center": True,
+    },
+    "spectrogram": {
+        "enabled": True,
+        "file_path": USER_CONFIG["spectrogram"]["file_path"],
+        "time_display_mode": USER_CONFIG["spectrogram"]["time_display_mode"],
+        "time_start": USER_CONFIG["spectrogram"]["time_start"],
+        "time_end": USER_CONFIG["spectrogram"]["time_end"],
+        "f_start": USER_CONFIG["spectrogram"]["f_start"],
+        "f_end": USER_CONFIG["spectrogram"]["f_end"],
+        "polarization": USER_CONFIG["spectrogram"]["polarization"],
+        "vmin": USER_CONFIG["spectrogram"]["vmin"],
+        "vmax": USER_CONFIG["spectrogram"]["vmax"],
+        "use_log10": USER_CONFIG["spectrogram"]["use_log10"],
+        "cmap": USER_CONFIG["spectrogram"]["cmap"],
+        "colorbar_label": r"log$_{10}$ intensity",
+        "draw_colorbar": True,
+        "panel_height_ratio": 0.72,
+        "hspace": 0.04,
+        "rebin_t_target": 1000,
+        "rebin_f_target": 700,
+        "chunk_mem_mb": 64,
+        "xtick_format": "%H:%M:%S",
+        "major_tick_seconds": 2,
+        "auto_time_locator": True,
+        "max_time_ticks": 34,
+        "line_color": "white",
+        "line_style": "--",
+        "line_width": 1.6,
+        "line_alpha": 0.95,
+        "disable_on_time_mismatch": True,
+        "clip_current_time_line": True,
+        "show_out_of_range_time_note": True,
+    },
+    "drift_rate": {
+        **USER_CONFIG["drift_rate"],
+        "mode": "manual_json",
+        "interactive": {
+            **USER_CONFIG["drift_rate"]["interactive"],
+            "launch_policy": "cli_only",
+            "auto_open_browser": False,
+            "block_until_done": False,
+        },
+    },
+    "animation": {
+        "make_animation": False,
+        "animation_fps": 10,
+        "animation_name": "aia_6band_gaussian_radio_spectrogram.mp4",
+        "animation_quality": "high",
+    },
+    "output": {
+        **AIA_RADIO_HMI_CONFIG["output"],
+        "output_dir": (
+            r"D:\spike_topping_type_III\2025\20250124"
+            r"\output\AIA_6band_GaussianRadio_Spectrogram"
+        ),
+    },
+}
+
 NEWKIRK_CONFIG = {
     "enabled": True,
     "multipliers": [1, 2, 4],
@@ -428,6 +542,7 @@ EVENT_CONFIG = {
     "user": USER_CONFIG,
     "output": OUTPUT_CONFIG,
     "aia_radio_hmi": AIA_RADIO_HMI_CONFIG,
+    "aia_multi_wave_gaussian_spectrogram": AIA_MULTI_WAVE_GAUSSIAN_SPECTROGRAM_CONFIG,
     "newkirk": NEWKIRK_CONFIG,
     "newkirk_height_comparison": NEWKIRK_HEIGHT_COMPARISON_CONFIG,
     "drift_selection_products": DRIFT_SELECTION_PRODUCT_CONFIG,
@@ -437,6 +552,9 @@ EVENT_CONFIG = {
 USER_CONFIG = EVENT_CONFIG["user"]
 OUTPUT_CONFIG = EVENT_CONFIG["output"]
 AIA_RADIO_HMI_CONFIG = EVENT_CONFIG["aia_radio_hmi"]
+AIA_MULTI_WAVE_GAUSSIAN_SPECTROGRAM_CONFIG = EVENT_CONFIG[
+    "aia_multi_wave_gaussian_spectrogram"
+]
 NEWKIRK_CONFIG = EVENT_CONFIG["newkirk"]
 NEWKIRK_HEIGHT_COMPARISON_CONFIG = EVENT_CONFIG["newkirk_height_comparison"]
 DRIFT_SELECTION_PRODUCT_CONFIG = EVENT_CONFIG["drift_selection_products"]

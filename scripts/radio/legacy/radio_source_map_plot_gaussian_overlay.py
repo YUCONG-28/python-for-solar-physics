@@ -5272,8 +5272,8 @@ class TimeParser:
             mm = int(time_part[2:4])
             ss = int(time_part[4:6])
 
-            # 处理毫秒：不足3位的补零到3位
-            ms = int(ms_str.ljust(3, "0"))
+            # Parse suffix as integer milliseconds: _13 means 13 ms, not 130 ms.
+            ms = int(ms_str[:3])
 
             total_ms = (hh * 3600 + mm * 60 + ss) * 1000 + ms
 
