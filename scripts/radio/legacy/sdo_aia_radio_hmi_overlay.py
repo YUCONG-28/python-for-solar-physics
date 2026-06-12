@@ -3744,6 +3744,25 @@ def _draw_aia_base_panel(ax, aia_cutout, wavelength: int, cfg: Config) -> list[f
     return extent_arcsec
 
 
+def _apply_multi_wave_row_axis_labels(
+    ax,
+    row: int,
+    nrows: int,
+    cfg: Config,
+    col: int | None = None,
+) -> None:
+    is_last_row = row == nrows - 1
+    show_tick_labels = bool(getattr(cfg, "aia_panel_show_tick_labels", True))
+    ax.tick_params(labelbottom=is_last_row and show_tick_labels)
+    if _multi_wave_mosaic_enabled(cfg) and col is not None:
+        ax.tick_params(labelleft=col == 0 and show_tick_labels)
+    if not bool(getattr(cfg, "aia_panel_show_axis_labels", True)):
+        ax.set_xlabel("")
+        ax.set_ylabel("")
+        return
+    ax.set_xlabel("Solar X (arcsec)" if is_last_row else "")
+
+
 def _format_aia_panel_time(aia_cutout) -> str:
     obs_time = getattr(aia_cutout, "date", None)
     if obs_time is None:
@@ -3834,6 +3853,83 @@ def _load_overlay_radio_data(file_item, polarization: str, cfg: Config):
     return radio_data, ra_map, dec_map, radio_header
 
 
+def _header_unit_to_arcsec_scale(unit_value) -> float:
+    unit = str(unit_value or "arcsec").strip().lower()
+    if unit in {"deg", "degree", "degrees"}:
+        return 3600.0
+    if unit in {"arcmin", "arcminute", "arcminutes"}:
+        return 60.0
+    return 1.0
+
+
+def _raw_header_arcsec_axes(
+    radio_shape: tuple[int, int], radio_header: fits.Header | None
+) -> tuple[np.ndarray, np.ndarray] | None:
+    if radio_header is None or len(radio_shape) != 2:
+        return None
+    required = ("CRPIX1", "CRPIX2", "CRVAL1", "CRVAL2", "CDELT1", "CDELT2")
+    if any(key not in radio_header for key in required):
+        return None
+    try:
+        crpix1 = float(radio_header["CRPIX1"])
+        crpix2 = float(radio_header["CRPIX2"])
+        crval1 = float(radio_header["CRVAL1"])
+        crval2 = float(radio_header["CRVAL2"])
+        cdelt1 = float(radio_header["CDELT1"])
+        cdelt2 = float(radio_header["CDELT2"])
+    except (TypeError, ValueError):
+        return None
+    values = (crpix1, crpix2, crval1, crval2, cdelt1, cdelt2)
+    if not all(np.isfinite(value) for value in values):
+        return None
+
+    ny, nx = radio_shape
+    x_scale = _header_unit_to_arcsec_scale(radio_header.get("CUNIT1", "arcsec"))
+    y_scale = _header_unit_to_arcsec_scale(radio_header.get("CUNIT2", "arcsec"))
+    x_axis = (crval1 + (np.arange(nx, dtype=float) + 1.0 - crpix1) * cdelt1) * x_scale
+    y_axis = (crval2 + (np.arange(ny, dtype=float) + 1.0 - crpix2) * cdelt2) * y_scale
+    if not (np.all(np.isfinite(x_axis)) and np.all(np.isfinite(y_axis))):
+        return None
+    return x_axis, y_axis
+
+
+def _draw_direct_raw_header_contours(
+    ax,
+    radio_data: np.ndarray,
+    radio_header: fits.Header | None,
+    cfg: Config,
+    color_main: str,
+) -> bool:
+    if _radio_overlay_mode(cfg) != "raw" or bool(getattr(cfg, "use_radec_maps", True)):
+        return False
+    radio_values = np.asarray(radio_data, dtype=np.float64)
+    if radio_values.ndim != 2 or not np.isfinite(radio_values).any():
+        return False
+    axes = _raw_header_arcsec_axes(radio_values.shape, radio_header)
+    if axes is None:
+        return False
+    if not cfg.show_radio_contours:
+        return True
+
+    x_axis, y_axis = axes
+    contour_data = radio_values
+    if cfg.contour_smooth_sigma > 0:
+        contour_data = smooth_for_contour(contour_data, cfg.contour_smooth_sigma)
+    levels = compute_contour_levels(contour_data, cfg)
+    if levels:
+        ax.contour(
+            x_axis,
+            y_axis,
+            contour_data,
+            levels=levels,
+            colors=[color_main],
+            linewidths=cfg.contour_linewidths,
+            alpha=cfg.contour_alpha,
+            origin="lower",
+        )
+    return True
+
+
 def _draw_radio_contours_on_axis(
     ax,
     aia_cutout,
@@ -3865,6 +3961,10 @@ def _draw_radio_contours_on_axis(
                 file_item, polarization, cfg
             )
             if radio_data is None:
+                continue
+            if _draw_direct_raw_header_contours(
+                ax, radio_data, radio_header, cfg, color_main
+            ):
                 continue
             result = reproject_radio_for_overlay(
                 radio_data,
@@ -3990,15 +4090,21 @@ def process_multi_wave_aia_group(
     nrows = int(math.ceil(len(wavelengths) / ncols))
 
     for sub_index, single_slice_bands in sub_tasks:
+        print(
+            f"multi-wave frame {task_index}/{total_tasks}, "
+            f"sequence {sub_index + 1}/{len(sub_tasks)}",
+            flush=True,
+        )
         fig, axes_by_wave, spectrogram_ax = create_multi_wave_figure(
             cfg, wavelengths, panel_aspect_ratio=panel_aspect_ratio
         )
         first_radio_time = None
         for panel_index, wavelength in enumerate(wavelengths):
-            row, _col = divmod(panel_index, ncols)
+            row, col = divmod(panel_index, ncols)
             ax = axes_by_wave[wavelength]
             aia_cutout = aia_cutouts[wavelength]
             extent_arcsec = _draw_aia_base_panel(ax, aia_cutout, wavelength, cfg)
+            _apply_multi_wave_row_axis_labels(ax, row, nrows, cfg, col=col)
             if _multi_wave_mosaic_enabled(cfg):
                 _add_multi_wave_panel_label(ax, aia_cutout, wavelength, row, nrows, cfg)
             if hmi_file and cfg.overlay_hmi:

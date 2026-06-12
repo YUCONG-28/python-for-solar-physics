@@ -234,8 +234,8 @@ USER_CONFIG = {
 AIA_RADIO_HMI_CONFIG = {
     "paths": {
         "radio_base_dir": r"D:\spike_topping_type_III\2025\20250503\20250503UT071600-072600",
-        "aia_base_dir": r"D:\spike_topping_type_III\2025\20250503\AIA\171",
-        "hmi_base_dir": r"D:\spike_topping_type_III\2025\20250503\AIA\hmi",
+        "aia_base_dir": r"D:\spike_topping_type_III\2025\20250503\SDO\AIA\171",
+        "hmi_base_dir": r"D:\spike_topping_type_III\2025\20250503\SDO\HMI",
         "output_dir": r"D:\spike_topping_type_III\2025\20250503\output\AIA_Raw_Radio_Overlay",
     },
     "aia": {
@@ -282,7 +282,7 @@ AIA_RADIO_HMI_CONFIG = {
             "left": -800,
             "bottom": -200,
             "right": 0,
-            "top": 400,
+            "top": 600,
         },
         "use_radec_maps": False,
     },
@@ -416,13 +416,26 @@ AIA_MULTI_WAVE_RAW_RADIO_SPECTROGRAM_CONFIG = {
     **AIA_RADIO_HMI_CONFIG,
     "paths": {
         **AIA_RADIO_HMI_CONFIG["paths"],
-        "aia_panel_base_dir_template": r"D:\spike_topping_type_III\2025\20250503\AIA\{wave}",
+        "aia_panel_base_dir_template": r"D:\spike_topping_type_III\2025\20250503\SDO\AIA\{wave}",
         "output_dir": r"D:\spike_topping_type_III\2025\20250503\output",
     },
     "aia": {
         **AIA_RADIO_HMI_CONFIG["aia"],
         "aia_panel_wavelengths": [94, 131, 171, 193, 211, 304],
         "aia_time_threshold_seconds": 12.0,
+        "aia_panel_layout_style": "mosaic",
+        "aia_panel_base_width": 4.9,
+        "aia_panel_wspace": 0.0,
+        "aia_panel_hspace": 0.0,
+        "aia_panel_spectrogram_gap": 0.85,
+        "aia_panel_show_per_panel_titles": False,
+        "aia_panel_show_axis_labels": False,
+        "aia_panel_show_tick_labels": True,
+        "aia_panel_global_axis_labels": False,
+        "aia_panel_show_grid": True,
+        "aia_panel_label_mode": "inside",
+        "aia_panel_label_fontsize": 8.5,
+        "aia_panel_save_tight": False,
     },
     "hmi": {
         **AIA_RADIO_HMI_CONFIG["hmi"],
@@ -451,11 +464,14 @@ AIA_MULTI_WAVE_RAW_RADIO_SPECTROGRAM_CONFIG = {
     "display": {
         **AIA_RADIO_HMI_CONFIG["display"],
         "show_radio_contours": True,
+        "contour_smooth_sigma": 1.5,
         "mark_radio_center": False,
     },
     "spectrogram": {
         **AIA_RADIO_HMI_CONFIG["spectrogram"],
         "enabled": True,
+        "panel_height_ratio": 0.55,
+        "hspace": 0.04,
     },
     "animation": {
         **AIA_RADIO_HMI_CONFIG["animation"],

@@ -478,6 +478,110 @@ def test_multi_wave_figure_mosaic_style_uses_adaptive_canvas_and_global_labels()
         plt.close(fig)
 
 
+def test_multi_wave_mosaic_layout_keeps_spectrogram_title_clear_of_aia_ticks():
+    overlay = _import_aia_overlay_with_optional_stubs()
+    cfg = overlay.Config()
+    cfg.aia_panel_wavelengths = [94, 131, 171, 193, 211, 304]
+    cfg.enable_spectrogram_panel = True
+    cfg.aia_panel_layout_style = "mosaic"
+    cfg.aia_panel_show_axis_labels = False
+    cfg.aia_panel_show_tick_labels = True
+    cfg.aia_panel_spectrogram_gap = 0.8
+    cfg.spectrogram_panel_height_ratio = 0.55
+
+    fig, axes_by_wave, spectrogram_ax = overlay.create_multi_wave_figure(
+        cfg,
+        cfg.aia_panel_wavelengths,
+        panel_aspect_ratio=1.0,
+    )
+    try:
+        ncols = cfg.aia_panel_ncols
+        bottom_row_axes = [
+            axes_by_wave[wave] for wave in cfg.aia_panel_wavelengths[ncols:]
+        ]
+        gap = (
+            min(ax.get_position().y0 for ax in bottom_row_axes)
+            - spectrogram_ax.get_position().y1
+        )
+
+        assert gap > 0.05
+        assert spectrogram_ax.get_position().height > 0.16
+
+        for index, wave in enumerate(cfg.aia_panel_wavelengths):
+            row, _col = divmod(index, ncols)
+            ax = axes_by_wave[wave]
+            ax.set_xlabel("Solar X (arcsec)")
+            ax.set_xticks([0, 1])
+            overlay._apply_multi_wave_row_axis_labels(ax, row=row, nrows=2, cfg=cfg)
+
+        for ax in axes_by_wave.values():
+            assert ax.get_xlabel() == ""
+        assert any(
+            label.get_visible()
+            for label in axes_by_wave[cfg.aia_panel_wavelengths[-1]].get_xticklabels()
+        )
+    finally:
+        plt.close(fig)
+
+
+def test_multi_wave_row_axis_labels_keep_x_label_only_on_last_row():
+    overlay = _import_aia_overlay_with_optional_stubs()
+    cfg = overlay.Config()
+    cfg.aia_panel_show_axis_labels = True
+    cfg.aia_panel_show_tick_labels = True
+
+    fig, axes = plt.subplots(2, 1)
+    try:
+        for ax in axes:
+            ax.set_xlabel("Solar X (arcsec)")
+            ax.set_xticks([0, 1])
+
+        overlay._apply_multi_wave_row_axis_labels(axes[0], row=0, nrows=2, cfg=cfg)
+        overlay._apply_multi_wave_row_axis_labels(axes[1], row=1, nrows=2, cfg=cfg)
+
+        assert axes[0].get_xlabel() == ""
+        assert axes[1].get_xlabel() == "Solar X (arcsec)"
+        assert not any(label.get_visible() for label in axes[0].get_xticklabels())
+        assert any(label.get_visible() for label in axes[1].get_xticklabels())
+    finally:
+        plt.close(fig)
+
+
+def test_multi_wave_mosaic_row_axis_labels_show_outer_ticks_only():
+    overlay = _import_aia_overlay_with_optional_stubs()
+    cfg = overlay.Config()
+    cfg.aia_panel_layout_style = "mosaic"
+    cfg.aia_panel_show_axis_labels = False
+    cfg.aia_panel_show_tick_labels = True
+
+    fig, axes = plt.subplots(2, 2)
+    try:
+        for ax in axes.ravel():
+            ax.set_xlabel("Solar X (arcsec)")
+            ax.set_ylabel("Solar Y (arcsec)")
+            ax.set_xticks([0, 1])
+            ax.set_yticks([0, 1])
+
+        for row in range(2):
+            for col in range(2):
+                overlay._apply_multi_wave_row_axis_labels(
+                    axes[row, col],
+                    row=row,
+                    nrows=2,
+                    cfg=cfg,
+                    col=col,
+                )
+
+        assert not any(label.get_visible() for label in axes[0, 0].get_xticklabels())
+        assert any(label.get_visible() for label in axes[1, 0].get_xticklabels())
+        assert any(label.get_visible() for label in axes[0, 0].get_yticklabels())
+        assert not any(label.get_visible() for label in axes[0, 1].get_yticklabels())
+        assert all(ax.get_xlabel() == "" for ax in axes.ravel())
+        assert all(ax.get_ylabel() == "" for ax in axes.ravel())
+    finally:
+        plt.close(fig)
+
+
 def test_multi_wave_gaussian_overlay_uses_configured_reproject_and_marks_center(
     monkeypatch,
 ):
@@ -566,6 +670,70 @@ def test_multi_wave_gaussian_overlay_uses_configured_reproject_and_marks_center(
         )
     finally:
         plt.close(fig)
+
+
+def test_raw_no_radec_header_overlay_draws_direct_contours_without_reproject(
+    monkeypatch,
+):
+    overlay = _import_aia_overlay_with_optional_stubs()
+    cfg = overlay.Config()
+    cfg.selected_bands = ["149MHz"]
+    cfg.combine_polarizations = False
+    cfg.polarization_mode = "RR"
+    cfg.radio_overlay_mode = "raw"
+    cfg.use_radec_maps = False
+    cfg.show_radio_contours = True
+    cfg.mark_radio_center = False
+    cfg.contour_levels_peak = [0.5]
+    cfg.contour_linewidths = [1.0]
+
+    radio_data = np.asarray([[0.0, 2.0], [4.0, 8.0]], dtype=float)
+    header = fits.Header()
+    header["CRPIX1"] = 1.0
+    header["CRPIX2"] = 1.0
+    header["CRVAL1"] = -800.0
+    header["CRVAL2"] = -200.0
+    header["CDELT1"] = 10.0
+    header["CDELT2"] = 20.0
+    header["CUNIT1"] = "arcsec"
+    header["CUNIT2"] = "arcsec"
+
+    monkeypatch.setattr(
+        overlay,
+        "extract_radio_2d_data",
+        lambda *args, **kwargs: (radio_data, None, None, header, None),
+    )
+
+    def fail_reproject(*args, **kwargs):
+        raise AssertionError("raw header contour should not call slow reproject")
+
+    monkeypatch.setattr(overlay, "reproject_radio_for_overlay", fail_reproject)
+
+    contour_calls = []
+
+    class CapturingAxis:
+        def contour(self, *args, **kwargs):
+            contour_calls.append((args, kwargs))
+            return object()
+
+    expected_time = datetime(2025, 5, 3, 7, 20, 26, 64000)
+    first_time = overlay._draw_radio_contours_on_axis(
+        CapturingAxis(),
+        _FakeAiaMap(shape=(2, 2)),
+        [-800.0, 0.0, -200.0, 400.0],
+        {"149MHz": [("radio.fits", "RR", expected_time)]},
+        cfg,
+        color_cache=[],
+    )
+
+    assert first_time == expected_time
+    assert len(contour_calls) == 1
+    args, kwargs = contour_calls[0]
+    assert np.asarray(args[0]).tolist() == [-800.0, -790.0]
+    assert np.asarray(args[1]).tolist() == [-200.0, -180.0]
+    assert np.asarray(args[2]).tolist() == radio_data.tolist()
+    assert kwargs["levels"] == [4.0]
+    assert kwargs["origin"] == "lower"
 
 
 def test_multi_wave_panel_title_reflects_gaussian_mode_without_hmi():

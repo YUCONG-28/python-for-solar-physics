@@ -256,7 +256,7 @@ def test_aia_radio_hmi_roi_uses_explicit_bounds_with_legacy_fallback():
             "left": -800.0,
             "bottom": -200.0,
             "right": 0.0,
-            "top": 400.0,
+            "top": 600.0,
         },
     }
 
@@ -326,6 +326,12 @@ def test_20250503_multi_wave_raw_radio_spectrogram_config_is_opt_in():
     assert default_config["radio"]["use_radec_maps"] is False
     assert default_config["wcs_reproject"]["use_radec_maps"] is False
     assert default_config.get("spectrogram", {}).get("enabled", False) is False
+    assert default_config["paths"]["aia_base_dir"] == (
+        r"D:\spike_topping_type_III\2025\20250503\SDO\AIA\171"
+    )
+    assert default_config["paths"]["hmi_base_dir"] == (
+        r"D:\spike_topping_type_III\2025\20250503\SDO\HMI"
+    )
 
     assert multi_wave["aia"]["aia_panel_wavelengths"] == [
         94,
@@ -335,7 +341,23 @@ def test_20250503_multi_wave_raw_radio_spectrogram_config_is_opt_in():
         211,
         304,
     ]
-    assert multi_wave["paths"]["aia_panel_base_dir_template"].endswith(r"AIA\{wave}")
+    assert multi_wave["paths"]["aia_panel_base_dir_template"] == (
+        r"D:\spike_topping_type_III\2025\20250503\SDO\AIA\{wave}"
+    )
+    assert multi_wave["paths"]["hmi_base_dir"] == (
+        r"D:\spike_topping_type_III\2025\20250503\SDO\HMI"
+    )
+    assert multi_wave["aia"]["aia_panel_layout_style"] == "mosaic"
+    assert multi_wave["aia"]["aia_panel_wspace"] == 0.0
+    assert multi_wave["aia"]["aia_panel_hspace"] == 0.0
+    assert multi_wave["aia"]["aia_panel_spectrogram_gap"] >= 0.75
+    assert multi_wave["aia"]["aia_panel_show_per_panel_titles"] is False
+    assert multi_wave["aia"]["aia_panel_show_axis_labels"] is False
+    assert multi_wave["aia"]["aia_panel_show_tick_labels"] is True
+    assert multi_wave["aia"]["aia_panel_global_axis_labels"] is False
+    assert multi_wave["aia"]["aia_panel_show_grid"] is True
+    assert multi_wave["aia"]["aia_panel_label_mode"] == "inside"
+    assert multi_wave["aia"]["aia_panel_save_tight"] is False
     assert multi_wave["hmi"]["overlay_hmi"] is True
     assert multi_wave["radio"]["radio_overlay_mode"] == "raw"
     assert multi_wave["radio"]["use_radec_maps"] is False
@@ -343,9 +365,11 @@ def test_20250503_multi_wave_raw_radio_spectrogram_config_is_opt_in():
     assert multi_wave["gaussian"]["enable_gaussian_overlay"] is False
     assert multi_wave["gaussian"]["save_gaussian_diagnostics"] is False
     assert multi_wave["display"]["show_radio_contours"] is True
+    assert multi_wave["display"]["contour_smooth_sigma"] == 1.5
     assert multi_wave["display"]["mark_radio_center"] is False
     assert multi_wave["spectrogram"]["enabled"] is True
     assert multi_wave["spectrogram"]["time_display_mode"] == "user"
+    assert multi_wave["spectrogram"]["panel_height_ratio"] >= 0.5
     expected_output = r"D:\spike_topping_type_III\2025\20250503\output"
     assert multi_wave["paths"]["output_dir"] == expected_output
     assert multi_wave["output"]["output_dir"] == expected_output
@@ -394,8 +418,17 @@ def test_20250124_multi_wave_gaussian_spectrogram_config_is_opt_in():
     assert multi_wave["paths"]["output_dir"] == expected_output
     assert multi_wave["output"]["output_dir"] == expected_output
     assert multi_wave["aia"]["aia_panel_layout_style"] == "mosaic"
-    assert multi_wave["aia"]["aia_panel_global_axis_labels"] is True
-    assert multi_wave["spectrogram"]["panel_height_ratio"] > 0.6
+    assert multi_wave["aia"]["aia_panel_wspace"] == 0.0
+    assert multi_wave["aia"]["aia_panel_hspace"] == 0.0
+    assert multi_wave["aia"]["aia_panel_spectrogram_gap"] >= 0.75
+    assert multi_wave["aia"]["aia_panel_show_per_panel_titles"] is False
+    assert multi_wave["aia"]["aia_panel_show_axis_labels"] is False
+    assert multi_wave["aia"]["aia_panel_show_tick_labels"] is True
+    assert multi_wave["aia"]["aia_panel_global_axis_labels"] is False
+    assert multi_wave["aia"]["aia_panel_show_grid"] is True
+    assert multi_wave["aia"]["aia_panel_label_mode"] == "inside"
+    assert multi_wave["aia"]["aia_panel_save_tight"] is False
+    assert multi_wave["spectrogram"]["panel_height_ratio"] >= 0.5
     assert multi_wave["spectrogram"]["major_tick_seconds"] == 2
     assert multi_wave["spectrogram"]["max_time_ticks"] == 34
     assert multi_wave["drift_rate"]["enabled"] is True
