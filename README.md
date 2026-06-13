@@ -217,14 +217,38 @@ Python/
 
 ### Example Outputs
 
-Example output placeholders live under `docs/assets/`, `examples/images/`, and
-`examples/videos/`.
-`examples/images/` and `examples/videos/` currently only contain `.gitkeep`
-placeholders.
-Curated example images or videos can be added later after size reduction and
-source documentation.
-The current repository does not fabricate example outputs, and full research
-products should remain local.
+Curated example figures live under `docs/assets/images/` after size reduction
+and source documentation. Full research products remain local and are not
+uploaded to the repository.
+
+![2025-01-24 multi-band radio Gaussian centers over CSO dynamic spectrum](docs/assets/images/20250124-radio-gaussian-spectrogram-overlay.jpg)
+
+Figure: multi-band DART/DSRT radio-source Gaussian centers aligned with a CSO
+dynamic spectrum near 2025-01-24 04:48:37 UT.
+
+![2025-01-24 SDO AIA six-band context with DART/DSRT radio-source contours and CSO spectrum](docs/assets/images/20250124-aia-radio-spectrogram-sixband.jpg)
+
+Figure: SDO/AIA six-band EUV context with DART/DSRT radio-source contours and
+the matching CSO dynamic spectrum.
+
+Data provenance:
+
+- **SDO**: AIA extreme-ultraviolet images and HMI magnetic context are from the
+  NASA Solar Dynamics Observatory mission, with instrument/data references from
+  [SDO/NASA](https://sdo.gsfc.nasa.gov/),
+  [AIA/LMSAL](https://aia.lmsal.com/),
+  [HMI/Stanford](https://hmi.stanford.edu/), and
+  [JSOC](https://jsoc.stanford.edu/).
+- **DART / DSRT (Daocheng)**: radio-source spatial data are attributed to the
+  DAocheng Radio Telescope / Daocheng Solar Radio Telescope system in Daocheng,
+  Sichuan; public sources use both DART and DSRT naming. References:
+  [NSSC DART note](https://www.nssc.ac.cn/xwdt2015/kydt2015/202603/t20260327_8178611.html)
+  and
+  [Gov.cn DSRT completion report](https://english.www.gov.cn/news/202309/28/content_WS6514cd8ec6d0868f4e8dfcfc.html).
+- **CSO / CBSm**: dynamic-spectrum data are attributed to the Chashan
+  Observatory broadband solar radio spectrometer, associated with Shandong
+  University LEAD/ISS and supported by the Chinese Meridian Project Phase II.
+  Reference: [CESRA CBSm data release](https://cesra.net/?p=3773).
 
 ### Documentation
 
@@ -479,10 +503,37 @@ Python/
 
 ### 示例输出
 
-示例输出占位目录位于 `docs/assets/`、`examples/images/` 和 `examples/videos/`。
-目前 `examples/images/` 与 `examples/videos/` 仅保留 `.gitkeep`，还没有精选示例文件。
-后续可在压缩体积并补充来源说明后加入代表性示例图片或视频。
-当前仓库不虚构示例输出，完整科研产品应保留在本地。
+精选示例图在压缩体积并补充来源说明后放入 `docs/assets/images/`。完整科研
+产品仍保留在本地输出目录，不直接上传到仓库。
+
+![2025-01-24 多频段射电高斯中心与 CSO 动态频谱图](docs/assets/images/20250124-radio-gaussian-spectrogram-overlay.jpg)
+
+图示：2025-01-24 04:48:37 UT 附近，多频段 DART/DSRT 射电源高斯中心与
+CSO 动态频谱图对齐展示。
+
+![2025-01-24 SDO AIA 六波段背景、DART/DSRT 射电源轮廓与 CSO 频谱图](docs/assets/images/20250124-aia-radio-spectrogram-sixband.jpg)
+
+图示：SDO/AIA 六波段极紫外背景图，叠加 DART/DSRT 射电源轮廓，并与
+对应的 CSO 动态频谱图同步展示。
+
+数据来源：
+
+- **SDO**：AIA 极紫外图像与 HMI 磁场/磁背景数据来自 NASA Solar
+  Dynamics Observatory；仪器和数据说明参考
+  [SDO/NASA](https://sdo.gsfc.nasa.gov/)、
+  [AIA/LMSAL](https://aia.lmsal.com/)、
+  [HMI/Stanford](https://hmi.stanford.edu/) 和
+  [JSOC](https://jsoc.stanford.edu/)。
+- **DART / DSRT（稻城）**：射电源空间位置/射电源数据标注为
+  DAocheng Radio Telescope / Daocheng Solar Radio Telescope（稻城太阳射电
+  望远镜系统）；公开资料中 DART 与 DSRT 两种命名均可见。参考
+  [NSSC DART 说明](https://www.nssc.ac.cn/xwdt2015/kydt2015/202603/t20260327_8178611.html)
+  和
+  [Gov.cn DSRT 完成报道](https://english.www.gov.cn/news/202309/28/content_WS6514cd8ec6d0868f4e8dfcfc.html)。
+- **CSO / CBSm（槎山）**：动态频谱图数据标注为 Chashan Observatory
+  broadband solar radio spectrometer，关联山东大学 LEAD/ISS，并由中国子午
+  工程二期支持。参考
+  [CESRA CBSm 数据发布](https://cesra.net/?p=3773)。
 
 ### 文档索引
 
