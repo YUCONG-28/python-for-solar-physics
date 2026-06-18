@@ -98,3 +98,50 @@ Describe "Get-GitAutoPushPlan" {
         ($plan.Commands -join "`n") | Should Match "git lfs push origin main"
     }
 }
+
+Describe "paper_daily_recommendation.ps1 entrypoint" {
+    It "resolves default config and seed paths when run through powershell -File" {
+        $repoRoot = Split-Path -Parent $PSScriptRoot
+        $scriptPath = Join-Path $repoRoot "scripts\paper_daily_recommendation.ps1"
+        $statePath = Join-Path $repoRoot ".paper_recommendation_state.json"
+        $originalState = if (Test-Path -LiteralPath $statePath) {
+            Get-Content -Raw -Encoding UTF8 -Path $statePath
+        }
+        else {
+            $null
+        }
+        $testDate = "2099-01-01"
+
+        try {
+            $output = & powershell -NoProfile -ExecutionPolicy Bypass -File $scriptPath -AsOfDate $testDate -SkipLiveSearch -SkipGitPush 2>&1
+            $exitCode = $LASTEXITCODE
+
+            $exitCode | Should Be 0
+            ($output -join "`n") | Should Match "Generated daily report"
+        }
+        finally {
+            $generatedPaths = @(
+                "daily_recommendations\$testDate`_paper_recommendations.md",
+                "02_methods_gaussian_fitting\gaussian_fitting_literature_daily\$testDate`_gaussian_fitting_papers.md",
+                "08_project_method_notes\gaussian_fitting_code_improvement_suggestions_$testDate.md",
+                "organization_log_$testDate.md"
+            )
+
+            foreach ($relativePath in $generatedPaths) {
+                $fullPath = Join-Path $repoRoot $relativePath
+                if (Test-Path -LiteralPath $fullPath) {
+                    Remove-Item -LiteralPath $fullPath -Force
+                }
+            }
+
+            if ($null -eq $originalState) {
+                if (Test-Path -LiteralPath $statePath) {
+                    Remove-Item -LiteralPath $statePath -Force
+                }
+            }
+            else {
+                Set-Content -Encoding UTF8 -Path $statePath -Value $originalState
+            }
+        }
+    }
+}

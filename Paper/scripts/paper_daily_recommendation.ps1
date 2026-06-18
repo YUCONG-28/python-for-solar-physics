@@ -5,14 +5,31 @@ param(
     [switch]$SkipGitPush,
     [string]$GitRemote = "origin",
     [string]$GitBranch = "main",
-    [string]$ConfigPath = (Join-Path $PSScriptRoot "..\config\paper_search_config.json"),
-    [string]$SeedPath = (Join-Path $PSScriptRoot "..\data\seed_papers.json")
+    [string]$ConfigPath = "",
+    [string]$SeedPath = ""
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-Import-Module (Join-Path $PSScriptRoot "PaperRecommendation\PaperRecommendation.psm1") -Force
+$scriptRoot = if ($PSScriptRoot) {
+    $PSScriptRoot
+}
+elseif ($MyInvocation.MyCommand.Path) {
+    Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+else {
+    (Get-Location).Path
+}
+
+if (-not $ConfigPath) {
+    $ConfigPath = Join-Path $scriptRoot "..\config\paper_search_config.json"
+}
+if (-not $SeedPath) {
+    $SeedPath = Join-Path $scriptRoot "..\data\seed_papers.json"
+}
+
+Import-Module (Join-Path $scriptRoot "PaperRecommendation\PaperRecommendation.psm1") -Force
 
 $projectRoot = Get-ProjectRoot
 $initialGitStatus = ""

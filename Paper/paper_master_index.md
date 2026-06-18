@@ -2,6 +2,7 @@
 
 | Title | Year | Relevance | Priority | Key methods | Why relevant |
 |---|---|---|---|---|---|
+| Frequency-time-resolved Imaging Spectroscopy of Fine Structures in a Solar Radio Noise Storm | 2026 | A | high | CLEAN 图像、Tau A PSF、2D 椭圆 Gaussian、FWHM major/minor、centroid uncertainty、fine-structure drift-rate 拟合 | 直接补强 DART / DRAT 图像中 Gaussian center、FWHM、beam/PSF、centroid uncertainty 和多源 centroid jump 的质量控制方案。 |
 | Imaging spectroscopy reveals spike-like repeating radio burst pairs in the solar corona | 2026 | A | high | 成像频谱、源区位移统计、burst pair 识别 | 同时支撑 fine structure 物理解释、源区运动分析和后续 Gaussian center 讨论。 |
 | Multiwavelength Multipoint Observations of the October 28, 2021 Type III Radio Burst | 2026 | A | high | 多平台联合观测、活动区上下文、事件重建 | 可直接借鉴当前项目中 AIA/HMI 背景、事件几何、射电源区识别和多平台证据链的写法。 |
 | Type-III solar radio bursts with spike-like toppings | 2026 | A | high | 宽带动态频谱统计、topping 定义与时间/频率偏移测量 | 直接给出 spike topping 的观测边界和统计事实，可作为当前论文的核心对照文献。 |
@@ -18,6 +19,7 @@
 | e-CALLISTO FITS Analyzer: A Software Framework for CALLISTO Solar Radio Data | 2026 | B | medium | 动态频谱 FITS 合并、背景扣除、多边形 mask、backbone 提取、drift-rate/Newkirk 转换 | 补强当前项目保存 drift 选取频谱图、选点线条和 Newkirk 速度比较的工程规范。 |
 | First Detailed MeerKAT Imaging Spectroscopy of a Solar Flare | 2026 | B | medium | 高保真成像频谱、多源几何解释 | 能帮助区分单峰拟合与真实多源结构之间的差别。 |
 | Implementation of a Near-Realtime Recording and Reporting System of Solar Radio Bursts | 2026 | B | medium | 近实时记录、自动识别、自动报告 | 适合作为本地自动检索与日报系统的工程参考。 |
+| Signatures of Large-Scale Magnetic Field Disturbances and Switchbacks in Interplanetary Type III Radio Bursts | 2026 | B | medium | III 型暴频漂模拟、磁场扰动 / switchback 诊断、electron-beam 传播解释 | 补强当前项目中 Newkirk height-derived speed、dynamic-spectrum drift-rate speed 与表观 source motion speed 不可直接等同的物理边界。 |
 | Electron Beam Propagation and Radio-Wave Scattering in the Inner Heliosphere using Five Spacecraft | 2025 | B | medium | 多航天器传播/散射约束、drift-rate 解释边界 | 提醒不能把 Newkirk 高度、Gaussian center 和电子束真实速度简单等同。 |
 | A Review of Recent Solar Type III Imaging Spectroscopy | 2020 | B | medium | 成像频谱综述、传播与散射背景 | 适合作为文献综述的总入口，再向 Gaussian fitting、AIA 联合分析和 drift-rate 细分展开。 |
 | Type III Solar Radio Burst Source Region Splitting Due to a Quasi-Separatrix Layer | 2017 | B | medium | 源区分裂识别、磁拓扑解释 | 可作为多峰源与单源 Gaussian 失效情形的关键警示文献。 |

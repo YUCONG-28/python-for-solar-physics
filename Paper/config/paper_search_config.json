@@ -30,8 +30,14 @@
         "\"spikes topping type III\"",
         "\"spike topping type III\"",
         "\"solar radio spikes type III bursts\"",
+        "\"spike bursts associated with type III\"",
+        "\"solar radio fine structures type III\"",
+        "\"type III radio burst electron beams\"",
         "\"type III burst frequency drift rate\"",
-        "\"type III burst magnetic reconnection\""
+        "\"type III burst EUV jet\"",
+        "\"type III burst magnetic reconnection\"",
+        "\"type III burst X-ray bright point\"",
+        "\"type III burst solar flare AIA\""
       ],
       "score_terms": [
         { "pattern": "spikes topping type iii", "score": 10 },
@@ -53,7 +59,23 @@
         "\"2D Gaussian fit solar radio source\"",
         "\"elliptical Gaussian fitting radio source\"",
         "\"radio source centroid Gaussian fitting\"",
-        "\"type III burst source trajectory radio imaging\""
+        "\"solar radio burst source centroid\"",
+        "\"radio imaging source size Gaussian fit\"",
+        "\"radio source morphology Gaussian fit\"",
+        "\"Gaussian fitting solar radio images\"",
+        "\"centroid uncertainty Gaussian fit radio image\"",
+        "\"beam deconvolution Gaussian source size radio astronomy\"",
+        "\"CLEAN beam deconvolution Gaussian source size\"",
+        "\"LOFAR solar radio source Gaussian fitting\"",
+        "\"NRH solar radio source centroid Gaussian\"",
+        "\"NoRH solar radio source Gaussian fit\"",
+        "\"VLA solar radio burst Gaussian source size\"",
+        "\"MUSER solar radio source Gaussian fitting\"",
+        "\"OVSA solar radio source imaging Gaussian\"",
+        "\"EOVSA solar radio source imaging Gaussian\"",
+        "\"type III burst radio source centroid imaging\"",
+        "\"type III burst source trajectory radio imaging\"",
+        "\"multi-frequency radio source centroid solar burst\""
       ],
       "score_terms": [
         { "pattern": "gaussian fitting", "score": 6 },
@@ -75,7 +97,11 @@
         "\"AIA EUV radio type III burst\"",
         "\"SDO AIA type III radio burst\"",
         "\"EUV jet type III radio burst\"",
-        "\"magnetic reconnection type III burst AIA\""
+        "\"solar jet type III burst AIA\"",
+        "\"AIA 171 radio source overlay\"",
+        "\"EUV brightening radio burst association\"",
+        "\"magnetic reconnection type III burst AIA\"",
+        "\"HMI magnetic field type III burst source region\""
       ],
       "score_terms": [
         { "pattern": "aia", "score": 3 },
@@ -92,8 +118,11 @@
       "queries": [
         "\"Newkirk density model type III burst\"",
         "\"coronal density model radio burst height\"",
+        "\"plasma frequency type III source height\"",
+        "\"type III burst source height density model\"",
         "\"frequency drift rate source velocity type III\"",
-        "\"radio source motion speed type III burst\""
+        "\"radio source motion speed type III burst\"",
+        "\"coronal electron density model radio source\""
       ],
       "score_terms": [
         { "pattern": "newkirk", "score": 5 },
@@ -112,7 +141,10 @@
       "queries": [
         "\"LOFAR solar radio source Gaussian fitting\"",
         "\"NRH solar radio source centroid Gaussian\"",
+        "\"NoRH solar radio source Gaussian fit\"",
+        "\"VLA solar radio burst Gaussian source size\"",
         "\"MUSER solar radio source Gaussian fitting\"",
+        "\"OVSA solar radio source imaging Gaussian\"",
         "\"EOVSA solar radio source imaging Gaussian\""
       ],
       "score_terms": [
