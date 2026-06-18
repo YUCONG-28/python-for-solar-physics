@@ -10,6 +10,7 @@ they explicitly say so.
 | Document | Use |
 | --- | --- |
 | `../README.md` | Public project overview, setup, and recommended entrypoints. |
+| `README.zh-CN.md` | Chinese project overview, minimal usage notes, data policy, and documentation map. |
 | `project_structure.md` | Current repository layout, data policy, and AIA/HMI structure notes. |
 | `script_index.md` | Current public runnable scripts, compatibility entrypoints, and selected examples. |
 | `MAIN_FILES.md` | Compact list of main workflow files and core module boundaries. |
