@@ -62,9 +62,13 @@ running full science workflows.
 
 **Reproducibility and maintenance**
 
-- Keep reusable, data-independent helpers in `solar_toolkit/`.
+- Keep reusable, data-independent helpers in `solar_toolkit/`. The
+  `solar_toolkit.radio` namespace is the recommended library API for reusable
+  radio coordinates, Gaussian fitting, Newkirk, quicklook, and diagnostic
+  helpers.
 - Keep runnable research workflows under `scripts/`, grouped by instrument or
-  analysis task.
+  analysis task. Historical `scripts.radio.core.*` imports are retained as
+  compatibility aliases while new code should prefer `solar_toolkit.radio.*`.
 - Keep data-independent tests in `tests/`; full scientific products require
   local observations and explicit path configuration.
 
@@ -132,7 +136,7 @@ archive-specific libraries.
 ## Minimal Usage
 
 Full science workflows require local observation data and event-specific path
-configuration. The main public entrypoints are:
+configuration. The main public command-line entrypoints are:
 
 ```powershell
 # SDO/AIA single-band, mosaic, preview, and difference products
@@ -150,6 +154,13 @@ python scripts/radio/run_aia_radio_hmi_overlay.py
 
 The current public script inventory, including utility and legacy-risk
 workflows, is maintained in `docs/script_index.md`.
+
+Reusable radio helpers can also be imported directly from the installable
+package layer:
+
+```python
+from solar_toolkit.radio import gaussian, newkirk, quicklook
+```
 
 ## Configuration and Data Policy
 

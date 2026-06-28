@@ -6,10 +6,12 @@
 
 - `scripts/aia_hmi/`：SDO/AIA 与 SDO/HMI 成像、差分、光变、时间-距离和叠加脚本。
 - `scripts/radio/`：CSO 动态频谱、射电源图和 AIA/射电/HMI 综合叠加脚本。
+- `solar_toolkit/radio/`：射电工作流中已迁移的可复用 Gaussian、Newkirk、坐标、I/O、quicklook 和诊断辅助模块。
+- `scripts/radio/core/`：旧导入兼容层，并继续承载尚未迁移的频漂、频谱等模块。
 - `scripts/xray_dem/`：GOES SXR、HXR、ASO-S/HXI、DEM 和综合诊断脚本。
 - `scripts/lasco_cme/`：SOHO/LASCO 下载、绘图和 CME 差分成像脚本。
 - `scripts/tools/`：通用工具脚本。
-- `examples/`：依赖本地观测数据的历史开发验证脚本和示例工作流。
+- `examples/`：依赖本地观测数据的历史开发验证脚本和示例工作流；其中 `examples/gaussian_newkirk_quicklook/` 是薄 CLI 示例，核心逻辑位于 `solar_toolkit.radio.quicklook`。
 - `tests/`：不依赖本地观测数据的轻量 pytest 测试。
 - `solar_toolkit/solar_analysis_utils.py`：共享时间解析、文件排序、内存管理和坐标辅助函数。
 - `solar_toolkit/path_config.py`：可选本地 YAML 路径配置加载器。
@@ -81,6 +83,7 @@
 | `test_header.py` | `examples/radio/fits_header_metadata_example.py` | FITS 头信息和 map 元数据示例。 |
 | `test_sun_contour.py` | `examples/aia_hmi/solar_limb_contour_example.py` | 日面轮廓提取示例。 |
 | `test_time.py` | `tests/test_observation_time_parsing.py` | 观测时间解析正式轻量测试。 |
+| `examples/gaussian_newkirk_quicklook/test_quicklook_gaussian_newkirk.py` | `tests/test_radio_quicklook.py` | Gaussian/Newkirk quicklook 的正式轻量测试，使用 synthetic CSV，不要求本机观测数据存在。 |
 
 ## 路径配置
 
@@ -93,6 +96,7 @@
 ```powershell
 D:\miniforge3\envs\solarphysics_env\python.exe -m compileall -q solar_toolkit scripts tests examples
 $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"; D:\miniforge3\envs\solarphysics_env\python.exe -m pytest -q tests
+D:\miniforge3\envs\solarphysics_env\python.exe -m ruff check solar_toolkit scripts tests examples
 D:\miniforge3\envs\solarphysics_env\python.exe -c "from solar_toolkit import solar_analysis_utils; import solar_toolkit; print(solar_toolkit.__version__)"
 ```
 

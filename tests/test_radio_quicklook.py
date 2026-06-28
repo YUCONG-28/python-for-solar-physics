@@ -1,0 +1,146 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+
+from scripts.radio.core.radio_quicklook import (
+    filter_valid_gaussian_centers,
+    resolve_gaussian_csv,
+    run_gaussian_newkirk_quicklook,
+)
+
+
+def _gaussian_row(
+    *,
+    time: str,
+    freq: float,
+    x_arcsec: float,
+    y_arcsec: float,
+    quality_flag: str = "ok",
+    overlay_valid: bool = True,
+    trajectory_valid: bool = True,
+) -> dict:
+    return {
+        "source_file": f"{freq:g}MHz_test.fits",
+        "time": time,
+        "freq": freq,
+        "polarization": "RR+LL",
+        "center_x_arcsec": x_arcsec,
+        "center_y_arcsec": y_arcsec,
+        "center_x_pixel": 128.0,
+        "center_y_pixel": 128.0,
+        "fwhm_valid": True,
+        "overlay_valid": overlay_valid,
+        "trajectory_valid": trajectory_valid,
+        "quality_flag": quality_flag,
+        "quality_flag_detail": "",
+    }
+
+
+def test_filter_valid_gaussian_centers_uses_quality_and_visibility_flags():
+    data = pd.DataFrame(
+        [
+            _gaussian_row(
+                time="20250124044840000",
+                freq=149.0,
+                x_arcsec=1100.0,
+                y_arcsec=0.0,
+            ),
+            _gaussian_row(
+                time="20250124044841000",
+                freq=149.0,
+                x_arcsec=100.0,
+                y_arcsec=100.0,
+                overlay_valid=False,
+            ),
+            _gaussian_row(
+                time="20250124044842000",
+                freq=164.0,
+                x_arcsec=1110.0,
+                y_arcsec=10.0,
+                quality_flag="unphysical_size",
+                trajectory_valid=False,
+            ),
+        ]
+    )
+
+    result = filter_valid_gaussian_centers(data)
+
+    assert len(result) == 1
+    assert result.loc[0, "freq"] == 149.0
+    assert result.loc[0, "center_x_arcsec"] == 1100.0
+
+
+def test_quicklook_generates_isolated_outputs_from_gaussian_csv(tmp_path):
+    gaussian_csv = tmp_path / "radio_gaussian_fit_diagnostics.csv"
+    output_dir = tmp_path / "quicklook_outputs"
+    pd.DataFrame(
+        [
+            _gaussian_row(
+                time="20250124044840000",
+                freq=149.0,
+                x_arcsec=1100.0,
+                y_arcsec=0.0,
+            ),
+            _gaussian_row(
+                time="20250124044841000",
+                freq=149.0,
+                x_arcsec=100.0,
+                y_arcsec=100.0,
+            ),
+            _gaussian_row(
+                time="20250124044842000",
+                freq=164.0,
+                x_arcsec=1110.0,
+                y_arcsec=10.0,
+                quality_flag="unphysical_size",
+                overlay_valid=False,
+                trajectory_valid=False,
+            ),
+        ]
+    ).to_csv(gaussian_csv, index=False)
+
+    result = run_gaussian_newkirk_quicklook(
+        gaussian_csv=gaussian_csv,
+        config_name="radio_20250124_config",
+        output_dir=output_dir,
+    )
+
+    expected_files = {
+        "valid_centers_csv": "radio_gaussian_valid_centers.csv",
+        "height_rows_csv": "gaussian_newkirk_height_rows.csv",
+        "height_plot": "event_gaussian_newkirk_height_comparison.png",
+        "trajectory_plot": "gaussian_center_trajectory.png",
+    }
+    for key, filename in expected_files.items():
+        path = output_dir / filename
+        assert Path(result[key]) == path
+        assert path.exists()
+        assert path.stat().st_size > 0
+
+    valid_centers = pd.read_csv(output_dir / "radio_gaussian_valid_centers.csv")
+    height_rows = pd.read_csv(output_dir / "gaussian_newkirk_height_rows.csv")
+
+    assert len(valid_centers) == 2
+    assert set(valid_centers["quality_flag"]) == {"ok"}
+    assert height_rows["gaussian_projected_height_valid"].isin([False]).any()
+    assert result["input_csv"] == str(gaussian_csv)
+    assert result["summary"]["gaussian_rows"] == 3
+    assert result["summary"]["valid_trajectory_rows"] == 2
+    assert result["summary"]["projected_height_valid_count"] == 1
+    assert result["summary"]["projected_height_invalid_count"] == 2
+
+
+def test_resolves_default_gaussian_csv_from_config_without_requiring_local_data():
+    resolved = resolve_gaussian_csv(
+        gaussian_csv=None,
+        config_name="radio_20250124_config",
+    )
+
+    assert (
+        resolved
+        == Path(r"<PROJECT_ROOT>\2025\20250124\output")
+        / "gaussian_spectrogram_overlay"
+        / "radio_gaussian_fit_diagnostics.csv"
+    )

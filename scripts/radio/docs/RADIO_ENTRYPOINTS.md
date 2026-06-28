@@ -4,6 +4,10 @@ This directory now keeps three root-level entrypoints. Run them from
 `<PROJECT_ROOT>\Python` with `PYTHONPATH` set to that same directory.
 All three entrypoints default to `--config radio_20250124_config`.
 
+The reusable Gaussian/Newkirk quicklook logic lives in
+`solar_toolkit.radio.quicklook`; the example CLI is kept under
+`examples/gaussian_newkirk_quicklook/`.
+
 ## `run_radio_burst_pipeline.py`
 
 Recommended full scientific pipeline.
@@ -61,9 +65,27 @@ Compatibility entrypoint for AIA/HMI/radio overlays.
   magnetic structure.
 - Example: `python scripts\radio\run_aia_radio_hmi_overlay.py --config radio_20250124_config`
 
+## Gaussian/Newkirk quicklook example
+
+Small example CLI for regenerating quicklook products from an existing
+`radio_gaussian_fit_diagnostics.csv`-compatible file.
+
+- Purpose: produce a Gaussian center trajectory plot, a Gaussian/Newkirk height
+  comparison plot, and the two intermediate CSV tables without rerunning the
+  full source-map pipeline.
+- Implementation: calls `solar_toolkit.radio.quicklook` so the science
+  logic is reusable and covered by `tests/test_radio_quicklook.py`.
+- Outputs: `radio_gaussian_valid_centers.csv`,
+  `gaussian_newkirk_height_rows.csv`,
+  `event_gaussian_newkirk_height_comparison.png`, and
+  `gaussian_center_trajectory.png`.
+- Example: `python examples\gaussian_newkirk_quicklook\quicklook_gaussian_newkirk.py --config radio_20250124_config`
+
 ## Output Placement
 
 Newly generated selection JSON, preview PNG, and diagnostics CSV files should be
 written under the configured `output_dir` or under `outputs/selections`,
 `outputs/previews`, and `outputs/diagnostics` for local scratch runs. They
-should not be placed in the `scripts/radio` root.
+should not be placed in the `scripts/radio` root. Quicklook example products are
+written under `examples/gaussian_newkirk_quicklook/quicklook_outputs/` by
+default and are treated as reproducible generated outputs.

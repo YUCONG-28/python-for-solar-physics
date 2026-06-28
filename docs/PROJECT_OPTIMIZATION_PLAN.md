@@ -10,6 +10,9 @@ products.
 
 ## Current Completed Direction
 
+- Reusable radio helpers now have an installable package boundary under
+  `solar_toolkit.radio`. The old `scripts.radio.core.*` module paths remain as
+  compatibility aliases for local scripts, tests, and historical docs.
 - AIA/HMI now follows a radio-style phased structure with a recommended
   `run_*.py` entrypoint, `core/`, `configs/`, and `docs/`.
 - The historical AIA EUV processor path is kept as a compatibility wrapper.
@@ -25,11 +28,14 @@ products.
 
 1. Verify AIA/HMI output parity on real FITS data before claiming full
    scientific equivalence of the wrapper/core refactor.
-2. Add a CSO `run_*.py` wrapper only after confirming the current legacy
+2. Prefer `solar_toolkit.radio.*` for new reusable radio imports; keep legacy
+   `scripts.radio.core.*` imports only when testing compatibility or touching
+   unmigrated modules.
+3. Add a CSO `run_*.py` wrapper only after confirming the current legacy
    spectrogram entrypoint behavior.
-3. Keep radio config work separate from this cleanup unless the user explicitly
+4. Keep radio config work separate from this cleanup unless the user explicitly
    asks to include it.
-4. Continue documenting non-empty ignored local folders instead of deleting
+5. Continue documenting non-empty ignored local folders instead of deleting
    them automatically.
 
 ## Medium-Priority Next Work

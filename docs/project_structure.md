@@ -9,6 +9,7 @@ python-for-solar-physics/
 |-- solar_toolkit/
 |   |-- __init__.py
 |   |-- path_config.py
+|   |-- radio/
 |   `-- solar_analysis_utils.py
 |-- scripts/
 |   |-- aia_hmi/
@@ -51,11 +52,12 @@ python-for-solar-physics/
 
 ## Top-Level Directories
 
-- `solar_toolkit/`: reusable helpers and package metadata. This package contains
-  optional YAML path loading, shared observation-time parsing, FITS sorting,
-  memory helpers, and common plotting/coordinate utilities.
+- `solar_toolkit/`: installable library layer and package metadata. This
+  package contains optional YAML path loading, shared observation-time parsing,
+  FITS sorting, memory helpers, common plotting/coordinate utilities, and the
+  reusable `solar_toolkit.radio` APIs.
 - `scripts/`: runnable research workflows grouped by instrument or task. These
-  scripts are the main interface for local data processing.
+  scripts are the main command-line interface for local data processing.
 - `scripts/data_download/`: event-oriented download/query helpers for
   STEREO-A/EUVI, GOES/SUVI, and Solar Orbiter/EUI.
 - `scripts/stereo_suvi/`: STEREO-A/EUVI manifest, overview, ROI movie, and
@@ -97,7 +99,10 @@ python-for-solar-physics/
   entrypoints should be small `run_*.py` wrappers. Keep compatibility wrappers
   when an old script path is already used by tests, docs, or local workflows.
 - `scripts/radio/`: CSO dynamic spectra, radio source maps, polarization
-  products, multi-frequency source panels, and AIA/radio/HMI overlays.
+  products, multi-frequency source panels, and AIA/radio/HMI overlays. New
+  reusable radio code should live under `solar_toolkit.radio`; historical
+  `scripts.radio.core.*` modules are compatibility aliases for existing docs,
+  tests, and local workflows.
 - `scripts/data_download/`: remote data access helpers that create local
   raw-data folders and manifests. These scripts may contact external archives.
 - `scripts/stereo_suvi/`: products for STEREO-A/EUVI and GOES/SUVI context

@@ -214,16 +214,16 @@ def _run_newkirk_height_comparison(
     pipeline_cfg: dict | None = None,
     spectrogram_cache=None,
 ) -> None:
-    from scripts.radio.core.radio_height_comparison import (
+    from solar_toolkit.radio.height_comparison import (
         build_gaussian_newkirk_height_summary_table,
         build_gaussian_newkirk_height_table,
     )
-    from scripts.radio.core.radio_height_plots import (
+    from solar_toolkit.radio.height_plots import (
         plot_gaussian_vs_newkirk_height_frequency,
         plot_gaussian_vs_newkirk_height_time,
         plot_height_residual_vs_frequency,
     )
-    from scripts.radio.core.radio_io import summarize_invalid_reasons
+    from solar_toolkit.radio.io import summarize_invalid_reasons
 
     pd = _pd()
     cfg = dict(height_cfg or {})
@@ -330,7 +330,7 @@ def _run_frequency_priority_diagnostics(
     pipeline_cfg: dict,
     spectrogram_cache=None,
 ) -> None:
-    from scripts.radio.core.radio_frequency_priority_diagnostics import (
+    from solar_toolkit.radio.frequency_priority_diagnostics import (
         build_frequency_priority_summary,
         build_selected_band_newkirk_height_speed_table,
         plot_drift_frequency_band_matching,
@@ -344,7 +344,7 @@ def _run_frequency_priority_diagnostics(
         save_newkirk_physical_consistency_report,
         write_frequency_priority_dashboard,
     )
-    from scripts.radio.core.radio_height_comparison import (
+    from solar_toolkit.radio.height_comparison import (
         build_gaussian_newkirk_height_summary_table,
     )
 
@@ -528,24 +528,15 @@ def _run_drift_band_matching_plot(
 
 
 def _valid_gaussian_centers(df: pd.DataFrame) -> pd.DataFrame:
-    required = {"quality_flag", "overlay_valid", "trajectory_valid"}
-    missing = required - set(df.columns)
-    if missing:
-        raise KeyError(
-            f"Gaussian diagnostics missing required columns: {sorted(missing)}"
-        )
-    mask = (
-        df["quality_flag"].astype(str).str.lower().eq("ok")
-        & df["overlay_valid"].map(_truthy)
-        & df["trajectory_valid"].map(_truthy)
-    )
-    return df.loc[mask].copy().reset_index(drop=True)
+    from solar_toolkit.radio.quicklook import filter_valid_gaussian_centers
+
+    return filter_valid_gaussian_centers(df)
 
 
 def _build_gaussian_newkirk_table(
     valid_df: pd.DataFrame, newkirk_cfg: dict
 ) -> pd.DataFrame:
-    from scripts.radio.core.radio_newkirk_extrapolation import (
+    from solar_toolkit.radio.newkirk import (
         attach_newkirk_height_to_gaussian,
     )
 
@@ -661,7 +652,7 @@ def _save_drift_selection_products(
 def _build_drift_newkirk_table(
     drift_df: pd.DataFrame, newkirk_cfg: dict
 ) -> pd.DataFrame:
-    from scripts.radio.core.radio_newkirk_extrapolation import (
+    from solar_toolkit.radio.newkirk import (
         extrapolate_drift_line_with_newkirk,
     )
 
@@ -701,28 +692,9 @@ def parse_radio_time_value(value):
 
 
 def _plot_gaussian_center_trajectory(df: pd.DataFrame, path: Path) -> None:
-    pd = _pd()
-    plt = _plt()
-    fig, ax = plt.subplots(figsize=(7, 6), dpi=180)
-    if not df.empty:
-        freqs = pd.to_numeric(df.get("freq"), errors="coerce")
-        sc = ax.scatter(
-            pd.to_numeric(df["center_x_arcsec"], errors="coerce"),
-            pd.to_numeric(df["center_y_arcsec"], errors="coerce"),
-            c=freqs,
-            cmap="viridis",
-            s=28,
-            edgecolors="black",
-            linewidths=0.3,
-        )
-        fig.colorbar(sc, ax=ax, label="Frequency (MHz)")
-    ax.set_xlabel("x (arcsec)")
-    ax.set_ylabel("y (arcsec)")
-    ax.set_title("Gaussian center trajectory")
-    ax.grid(True, linestyle=":", alpha=0.35)
-    fig.tight_layout()
-    fig.savefig(path)
-    plt.close(fig)
+    from solar_toolkit.radio.quicklook import plot_gaussian_center_trajectory
+
+    plot_gaussian_center_trajectory(df, path)
 
 
 def _plot_gaussian_center_trajectory_time_colored(df: pd.DataFrame, path: Path) -> None:
@@ -830,7 +802,7 @@ def _plot_gaussian_newkirk_height_time(df: pd.DataFrame, path: Path) -> None:
 
 
 def _plot_drift_speed_comparison(df: pd.DataFrame, path: Path) -> None:
-    from scripts.radio.core.radio_frequency_priority_diagnostics import (
+    from solar_toolkit.radio.frequency_priority_diagnostics import (
         format_newkirk_case_label,
     )
 
@@ -949,9 +921,9 @@ def _plot_drift_speed_comparison(df: pd.DataFrame, path: Path) -> None:
 
 
 def _truthy(value) -> bool:
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "y", "ok"}
-    return bool(value)
+    from solar_toolkit.radio.io import truthy
+
+    return truthy(value)
 
 
 if __name__ == "__main__":

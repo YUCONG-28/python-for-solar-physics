@@ -2,6 +2,12 @@
 
 日期：2026-05-27
 
+> Current note (2026-06-28): reusable radio helpers have begun migrating into
+> the installable `solar_toolkit.radio` package. The historical
+> `scripts/radio/core/radio_*.py` paths are retained as compatibility aliases,
+> so older rows in this inventory should be read as migration history rather
+> than as the preferred implementation location for new reusable code.
+
 ## 范围
 
 本清单整理仓库中与 `radio` 直接相关的源码、配置、文档、测试和示例文件，供后续判断“保留、合并、迁移、删除、补测试”时使用。

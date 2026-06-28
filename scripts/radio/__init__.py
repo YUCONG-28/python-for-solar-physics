@@ -10,9 +10,16 @@ from __future__ import annotations
 from importlib import import_module
 
 _CORE_REEXPORTS = {
+    "radio_coordinates": "solar_toolkit.radio.coordinates",
     "radio_drift_rate": "scripts.radio.core.radio_drift_rate",
-    "radio_gaussian_fit": "scripts.radio.core.radio_gaussian_fit",
-    "radio_newkirk_extrapolation": "scripts.radio.core.radio_newkirk_extrapolation",
+    "radio_frequency_priority_diagnostics": (
+        "solar_toolkit.radio.frequency_priority_diagnostics"
+    ),
+    "radio_gaussian_fit": "solar_toolkit.radio.gaussian",
+    "radio_height_comparison": "solar_toolkit.radio.height_comparison",
+    "radio_io": "solar_toolkit.radio.io",
+    "radio_newkirk_extrapolation": "solar_toolkit.radio.newkirk",
+    "radio_quicklook": "solar_toolkit.radio.quicklook",
     "radio_raw_quality": "scripts.radio.core.radio_raw_quality",
     "radio_spectrogram": "scripts.radio.core.radio_spectrogram",
     "run_radio_raw_quality": "scripts.radio.run_radio_raw_quality",
