@@ -15,7 +15,7 @@ the full boundary map, see `FUNCTION_MAP.md`.
   - `cme/`: namespace for LASCO/CME helpers.
   - `net/`: namespace for archive query and download helpers.
   - `modeling/`: shared Gaussian and density-model boundary.
-  - `visualization/`: shared plotting, media-generation, and interactive HTML visualization helpers.
+  - `visualization/`: shared plotting, media-generation, local image sequence viewer, video export, and interactive HTML visualization helpers.
   - `path_config.py`: local YAML path/config loading.
   - `solar_analysis_utils.py`: shared time, FITS ordering, map, memory, and plotting utilities.
 
@@ -40,6 +40,8 @@ the full boundary map, see `FUNCTION_MAP.md`.
   - AIA/radio/HMI overlay workflow.
 - `scripts/radio/run_radio_raw_quality.py`
   - Raw radio FITS quality-diagnostic workflow.
+- `scripts/tools/run_image_web_viewer.py`
+  - Local Flask/Canvas image sequence viewer for multi-folder playback, ROI review, and composite/separate MP4 export.
 
 ## Compatibility Layers / 兼容层
 
@@ -56,7 +58,7 @@ the full boundary map, see `FUNCTION_MAP.md`.
 - `scripts/lasco_cme/`: SOHO/LASCO download, plotting, and running-difference scripts.
 - `scripts/data_download/`: STEREO, GOES/SUVI, and Solar Orbiter/EUI query/download scripts.
 - `scripts/stereo_suvi/`: STEREO/EUVI and GOES/SUVI event context products.
-- `scripts/tools/`: general utilities such as video generation and Gaussian fitting wrappers.
+- `scripts/tools/`: general utilities such as video generation, image web viewing, and Gaussian fitting wrappers.
 
 ## Documentation / 文档
 

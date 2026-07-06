@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Image Sequence Web Viewer</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Image Sequence Web Viewer</h1>
+      <p>Local multi-folder playback, ROI review, and MP4 export.</p>
+    </div>
+  </header>
+
+  <main>
+    <section class="tool-panel config-panel">
+      <div class="form-row">
+        <label for="folderInput">Image folders, one per line</label>
+        <textarea id="folderInput" rows="4" spellcheck="false" placeholder="D:\data\camera_a&#10;D:\data\camera_b"></textarea>
+      </div>
+      <div class="inline-controls wrap">
+        <label class="checkbox">
+          <input id="recursiveInput" type="checkbox" /> Recursive
+        </label>
+        <button id="loadBtn" class="primary">Load</button>
+        <span id="loadStatus" class="status"></span>
+      </div>
+    </section>
+
+    <section class="tool-panel control-panel">
+      <div class="inline-controls wrap">
+        <button id="prevBtn" disabled title="Previous frame">&lt;</button>
+        <button id="playBtn" disabled>Play</button>
+        <button id="nextBtn" disabled title="Next frame">&gt;</button>
+
+        <label class="compact">FPS
+          <input id="fpsInput" type="number" min="0.2" max="60" step="0.2" value="5" />
+        </label>
+
+        <label class="compact wide">Frame
+          <input id="frameSlider" type="range" min="0" max="0" value="0" disabled />
+        </label>
+        <span id="frameText">0 / 0</span>
+
+        <label class="checkbox">
+          <input id="loopInput" type="checkbox" checked /> Loop
+        </label>
+        <label class="checkbox">
+          <input id="syncZoomInput" type="checkbox" checked /> Sync zoom
+        </label>
+      </div>
+
+      <div class="inline-controls wrap second-row">
+        <button id="roiBtn" disabled>ROI</button>
+        <button id="clearRoiBtn" disabled>Clear ROI</button>
+        <button id="resetViewBtn" disabled>Reset View</button>
+      </div>
+    </section>
+
+    <section class="tool-panel export-panel">
+      <div class="section-title">Video Export</div>
+      <div class="inline-controls wrap">
+        <label class="compact">Mode
+          <select id="exportModeInput">
+            <option value="composite">Composite</option>
+            <option value="separate">Separate</option>
+            <option value="both">Both</option>
+          </select>
+        </label>
+        <label class="compact grow">Output dir
+          <input id="outputDirInput" type="text" value="outputs/image_web_viewer" />
+        </label>
+        <label class="compact">Prefix
+          <input id="prefixInput" type="text" value="image_viewer" />
+        </label>
+        <label class="compact">Quality
+          <select id="qualityInput">
+            <option value="low">low</option>
+            <option value="high">high</option>
+          </select>
+        </label>
+      </div>
+      <div class="inline-controls wrap">
+        <label class="compact">Start
+          <input id="startFrameInput" type="number" min="1" value="1" />
+        </label>
+        <label class="compact">End
+          <input id="endFrameInput" type="number" min="1" placeholder="last" />
+        </label>
+        <label class="compact">Width
+          <input id="targetWidthInput" type="number" min="2" placeholder="auto" />
+        </label>
+        <label class="compact">Height
+          <input id="targetHeightInput" type="number" min="2" placeholder="auto" />
+        </label>
+        <label class="checkbox">
+          <input id="exportRoiInput" type="checkbox" /> Export ROI
+        </label>
+        <button id="exportBtn" disabled>Export</button>
+        <span id="exportStatus" class="status"></span>
+      </div>
+    </section>
+
+    <section id="viewerGrid" class="viewer-grid"></section>
+  </main>
+
+  <script src="/static/main.js"></script>
+</body>
+</html>

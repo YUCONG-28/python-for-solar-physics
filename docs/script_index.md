@@ -47,6 +47,7 @@ Status labels:
 | utility | `scripts/stereo_suvi/goes_suvi_0448_quadrant_plot.py` | Plot GOES-16/18 SUVI lower-right quadrant event context images. | Local SUVI L2 FITS files. | Single-channel and overview PNG products. |
 | utility | `scripts/tools/gaussian_source_fitting.py` | Compatibility wrapper for shared Gaussian fitting helpers in `solar_toolkit.gaussian`. | 2D intensity array and coordinate axes. | Gaussian parameters, covariance, and fitted source center/shape. |
 | utility | `scripts/tools/image_sequence_to_video.py` | Convert an ordered image sequence to MP4 with FFmpeg/imageio/OpenCV fallbacks. | PNG/JPG image sequence and video settings. | MP4 time-evolution video. |
+| utility | `scripts/tools/run_image_web_viewer.py` | Launch the local Flask/Canvas image sequence viewer with synchronized multi-folder playback, ROI selection, and MP4 export. | One or more local image folders, optional allowed-root boundary, playback/export settings. | Interactive browser view plus optional composite and per-folder MP4 files in the selected output directory. |
 | utility | `scripts/lasco_cme/soho_lasco_data_download.py` | Download SOHO/LASCO C2 JP2 files through Helioviewer. | Time range, cadence, data source, output folder. | Local LASCO JP2 files. |
 | utility | `scripts/lasco_cme/soho_lasco_image_plot.py` | Plot basic SOHO/LASCO images. | LASCO JP2 files. | LASCO PNG context images. |
 | utility | `scripts/lasco_cme/soho_lasco_running_difference.py` | Generate LASCO running-difference CME images. | Time-sorted LASCO JP2 sequence. | Running-difference CME PNG figures. |
@@ -73,6 +74,7 @@ Status labels:
 | utility | `solar_toolkit/modeling/` | Shared science-model boundary for Gaussian and Newkirk helpers. | Reusable model imports. |
 | utility | `solar_toolkit/aia/background.py` | Lightweight AIA FITS folder scanning, nearest-frame matching, and downsampled HPLN/HPLT background grids. | Radio-source trajectory frontend and HTML export. |
 | utility | `solar_toolkit/visualization/radio_source_trajectory.py` | Plotly figure and HTML export helpers for radio-source trajectories with optional AIA backgrounds. | `scripts/radio/run_radio_source_app.py` and `scripts/radio/export_radio_source_trajectory.py`. |
+| utility | `solar_toolkit/visualization/image_web_viewer/` | Flask app factory, folder scanner, Canvas frontend assets, and MP4 export helpers for local image sequence review. | `scripts/tools/run_image_web_viewer.py` and browser API routes under `/api/*`. |
 | utility | `solar_toolkit/visualization/` | Shared plotting/media namespace for reusable visual helpers. | Scripts and tools that generate figures, videos, or interactive HTML. |
 
 ## Specialized Or Legacy-Risk Scripts

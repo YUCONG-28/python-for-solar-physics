@@ -18,7 +18,7 @@ from compatibility paths that are kept for local reproducibility.
 | `solar_toolkit.cme` | Public namespace for LASCO/CME helpers. | LASCO/CME 相关辅助逻辑的公共命名空间。 |
 | `solar_toolkit.net` | Archive query and download helper namespace. | 数据归档查询与下载辅助逻辑命名空间。 |
 | `solar_toolkit.modeling` | Shared science-model boundary for Gaussian and density-model helpers. | 高斯模型、密度模型等共享科学模型边界。 |
-| `solar_toolkit.visualization` | Shared plotting, media-generation, and interactive HTML visualization namespace. | 可复用绘图、视频/媒体生成和交互式 HTML 可视化命名空间。 |
+| `solar_toolkit.visualization` | Shared plotting, media-generation, local image-sequence viewer, video export, and interactive HTML visualization namespace. | 可复用绘图、视频/媒体生成、本地图片序列查看器、视频导出和交互式 HTML 可视化命名空间。 |
 
 ## Runnable Entrypoints / 可运行入口
 
@@ -32,6 +32,7 @@ from compatibility paths that are kept for local reproducibility.
 | `scripts/radio/export_radio_source_trajectory.py` | `solar_toolkit.radio.trajectory`, `solar_toolkit.aia.background`, `solar_toolkit.visualization.radio_source_trajectory` | Static Plotly HTML export for selected trajectory frames. |
 | `scripts/radio/run_aia_radio_hmi_overlay.py` | `scripts.radio.legacy.sdo_aia_radio_hmi_overlay` | Compatibility AIA/radio/HMI overlay runner. |
 | `scripts/radio/run_radio_raw_quality.py` | `solar_toolkit.radio.raw_quality` | Raw radio FITS quality diagnostics. |
+| `scripts/tools/run_image_web_viewer.py` | `solar_toolkit.visualization.image_web_viewer` | Local multi-folder image-sequence browser with synchronized playback, ROI review, and composite/separate MP4 export. |
 
 ## Compatibility Policy / 兼容策略
 

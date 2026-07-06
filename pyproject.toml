@@ -50,6 +50,7 @@ app = [
     "streamlit>=1.30",
     "plotly>=5.18",
     "openpyxl>=3.1",
+    "Flask>=3.0",
 ]
 gui = [
     "PyQt5>=5.15.0",
@@ -69,6 +70,13 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["solar_toolkit*"]
 exclude = ["tests*", "examples*", "docs*"]
+
+[tool.setuptools.package-data]
+"solar_toolkit.visualization.image_web_viewer" = [
+    "templates/*.html",
+    "static/*.css",
+    "static/*.js",
+]
 
 [tool.black]
 line-length = 88

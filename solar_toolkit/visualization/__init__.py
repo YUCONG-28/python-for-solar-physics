@@ -11,6 +11,7 @@ from __future__ import annotations
 from importlib import import_module
 
 _SUBMODULES = {
+    "image_web_viewer": "solar_toolkit.visualization.image_web_viewer",
     "radio_source_trajectory": "solar_toolkit.visualization.radio_source_trajectory",
 }
 

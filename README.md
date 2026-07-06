@@ -50,6 +50,9 @@ running full science workflows.
   committing machine-specific paths.
 - Generate context images and movies from STEREO-A/EUVI, GOES/SUVI, and LASCO
   products.
+- Review local image sequences from one or more folders in a browser, compare
+  frames side by side with synchronized playback/ROI selection, and export MP4
+  videos as composite or per-folder products.
 
 **Radio analysis**
 
@@ -146,8 +149,9 @@ python -m pip install -e ".[app]"
 Core dependencies include NumPy, SciPy, AstroPy, SunPy, Matplotlib, Reproject,
 Scikit-image, PyYAML, Pandas, and tqdm. Optional workflows may require DRMS,
 Requests, OpenCV, ImageIO, PyQt5, pyqtgraph, Helioviewer-related packages, or
-archive-specific libraries. The `app` extra adds Streamlit, Plotly, and
-OpenPyXL for interactive trajectory playback and Excel table support.
+archive-specific libraries. The `app` extra adds Streamlit, Plotly, OpenPyXL,
+and Flask for interactive trajectory playback, Excel table support, and the
+local image-sequence web viewer.
 
 ## Minimal Usage
 
@@ -172,6 +176,9 @@ streamlit run scripts/radio/run_radio_source_app.py
 
 # Export one selected trajectory frame to static Plotly HTML
 python scripts/radio/export_radio_source_trajectory.py --centers outputs\radio_centers.csv --out outputs\radio_source_trajectory.html
+
+# Launch the local multi-folder image sequence viewer with video export
+python scripts/tools/run_image_web_viewer.py --allowed-roots D:\path\to\images --open-browser
 
 # AIA/radio/HMI context overlays
 python scripts/radio/run_aia_radio_hmi_overlay.py
@@ -199,6 +206,8 @@ Data and product policy:
   products.
 - Do not commit generated figures, videos, large CSV/XLSX products, or local
   cache folders.
+- The image web viewer reads local folders and writes exported MP4 products to
+  a user-selected output directory; those products remain outside Git.
 - Use local, ignored data/product directories for reproducible products; keep
   public repository content limited to code, tests, configuration templates,
   documentation, and curated display assets.
