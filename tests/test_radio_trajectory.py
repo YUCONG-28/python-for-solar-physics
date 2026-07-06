@@ -6,10 +6,12 @@ import pytest
 from solar_toolkit.radio.trajectory import (
     FRAME_MODE_CURRENT,
     FRAME_MODE_TAIL,
+    filter_time_range,
     load_centers_table,
     make_lr_compare_table,
     normalize_centers_dataframe,
     select_visible_centers,
+    summarize_motion,
 )
 
 
@@ -133,3 +135,97 @@ def test_selects_current_tail_and_lcp_rcp_comparison_rows():
     assert len(compare) == 1
     assert compare.loc[0, "dx_L_minus_R_arcsec"] == pytest.approx(-3.0)
     assert compare.loc[0, "distance_arcsec"] == pytest.approx(5.0)
+
+
+def test_filters_time_range_with_closed_bounds_and_open_ends():
+    df = normalize_centers_dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "obs_time": "2025-01-24T04:46:44.999",
+                    "freq_mhz": 149.0,
+                    "polarization": "L+R",
+                    "center_x_arcsec": 0.0,
+                    "center_y_arcsec": 0.0,
+                },
+                {
+                    "obs_time": "2025-01-24T04:46:45",
+                    "freq_mhz": 149.0,
+                    "polarization": "L+R",
+                    "center_x_arcsec": 1.0,
+                    "center_y_arcsec": 1.0,
+                },
+                {
+                    "obs_time": "2025-01-24T04:50:45",
+                    "freq_mhz": 149.0,
+                    "polarization": "L+R",
+                    "center_x_arcsec": 2.0,
+                    "center_y_arcsec": 2.0,
+                },
+                {
+                    "obs_time": "2025-01-24T04:50:45.001",
+                    "freq_mhz": 149.0,
+                    "polarization": "L+R",
+                    "center_x_arcsec": 3.0,
+                    "center_y_arcsec": 3.0,
+                },
+            ]
+        )
+    )
+
+    closed = filter_time_range(
+        df,
+        start="2025-01-24T04:46:45",
+        end="2025-01-24T04:50:45",
+    )
+    open_start = filter_time_range(df, end="2025-01-24T04:46:45")
+
+    assert closed["center_x_arcsec"].tolist() == [1.0, 2.0]
+    assert open_start["center_x_arcsec"].tolist() == [0.0, 1.0]
+
+
+def test_summarizes_motion_by_frequency_polarization_method_and_source():
+    df = normalize_centers_dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "obs_time": "2025-01-24T04:48:45",
+                    "freq_mhz": 149.0,
+                    "polarization": "L+R",
+                    "center_method": "threshold",
+                    "source_label": "paired_L_plus_R",
+                    "center_x_arcsec": 10.0,
+                    "center_y_arcsec": 20.0,
+                },
+                {
+                    "obs_time": "2025-01-24T04:48:55",
+                    "freq_mhz": 149.0,
+                    "polarization": "L+R",
+                    "center_method": "threshold",
+                    "source_label": "paired_L_plus_R",
+                    "center_x_arcsec": 16.0,
+                    "center_y_arcsec": 28.0,
+                },
+                {
+                    "obs_time": "2025-01-24T04:48:45",
+                    "freq_mhz": 164.0,
+                    "polarization": "L+R",
+                    "center_method": "threshold",
+                    "source_label": "paired_L_plus_R",
+                    "center_x_arcsec": 30.0,
+                    "center_y_arcsec": 40.0,
+                },
+            ]
+        )
+    )
+
+    summary = summarize_motion(df)
+    row = summary[summary["freq_mhz"] == 149.0].iloc[0]
+
+    assert len(summary) == 2
+    assert row["point_count"] == 2
+    assert row["duration_sec"] == pytest.approx(10.0)
+    assert row["dx_arcsec"] == pytest.approx(6.0)
+    assert row["dy_arcsec"] == pytest.approx(8.0)
+    assert row["distance_arcsec"] == pytest.approx(10.0)
+    assert row["mean_speed_arcsec_s"] == pytest.approx(1.0)

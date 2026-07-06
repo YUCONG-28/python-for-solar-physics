@@ -52,9 +52,7 @@ class RadioImage:
     source_label: str = "main"
 
 
-def first_existing_header_value(
-    header: fits.Header, keys: Iterable[str]
-) -> str | None:
+def first_existing_header_value(header: fits.Header, keys: Iterable[str]) -> str | None:
     """Return the first non-empty FITS header value among ``keys``."""
 
     for key in keys:
@@ -116,7 +114,11 @@ def normalize_pol_text(text: str | object) -> str:
 def infer_polarization(
     path: Path, header: fits.Header, default_pol: str = POL_SUM
 ) -> str:
-    """Infer polarization from FITS metadata first, then from the filename."""
+    """Infer polarization from parent folders, FITS metadata, then filename."""
+
+    parent_pol = infer_parent_directory_polarization(path)
+    if parent_pol != POL_UNKNOWN:
+        return parent_pol
 
     header_text = " ".join(
         str(header.get(key, ""))
@@ -129,6 +131,16 @@ def infer_polarization(
     if pol != POL_UNKNOWN:
         return pol
     return default_pol
+
+
+def infer_parent_directory_polarization(path: Path) -> str:
+    """Infer LL/RR-style polarization labels from directory names."""
+
+    for part in reversed(path.parent.parts):
+        pol = normalize_pol_text(part)
+        if pol != POL_UNKNOWN:
+            return pol
+    return POL_UNKNOWN
 
 
 def parse_frequency_mhz(path: Path, header: fits.Header) -> float:
@@ -341,9 +353,7 @@ def stokes_code_to_pol(code: float) -> str:
     )
 
 
-def infer_pol_from_stokes_axis(
-    header: fits.Header, index0: int, fits_axis: int
-) -> str:
+def infer_pol_from_stokes_axis(header: fits.Header, index0: int, fits_axis: int) -> str:
     """Infer polarization for one plane on a FITS Stokes axis."""
 
     crval = float(header.get(f"CRVAL{fits_axis}", 1.0))
@@ -386,10 +396,14 @@ def iter_images_in_hdu(
     if stokes_fits_axis is not None:
         py_axis = arr.ndim - stokes_fits_axis
         if 0 <= py_axis < arr.ndim:
-            yield from _iter_split_axis(path, hdu_index, arr, header, py_axis, True, default_pol)
+            yield from _iter_split_axis(
+                path, hdu_index, arr, header, py_axis, True, default_pol
+            )
             return
 
-    candidate_axes = [axis for axis, size in enumerate(squeezed.shape[:-2]) if size <= 4]
+    candidate_axes = [
+        axis for axis, size in enumerate(squeezed.shape[:-2]) if size <= 4
+    ]
     if candidate_axes:
         yield from _iter_split_axis(
             path,
@@ -457,7 +471,9 @@ def _iter_split_axis(
         yield _radio_image(path, hdu_index, plane, header, default_pol, pol=pol)
 
 
-def iter_radio_images(path: str | Path, default_pol: str = POL_SUM) -> Iterator[RadioImage]:
+def iter_radio_images(
+    path: str | Path, default_pol: str = POL_SUM
+) -> Iterator[RadioImage]:
     """Iterate over usable 2D radio image planes in one FITS file."""
 
     resolved = Path(path)
@@ -656,7 +672,50 @@ def find_files(
 
     folder = Path(radio_dir).expanduser()
     files = folder.rglob(pattern) if recursive else folder.glob(pattern)
-    return sorted(path for path in files if path.is_file() and path.suffix.lower() in FITS_SUFFIXES)
+    return sorted(
+        path
+        for path in files
+        if path.is_file() and path.suffix.lower() in FITS_SUFFIXES
+    )
+
+
+def select_radio_files(
+    radio_dir: str | Path,
+    *,
+    pattern: str = "*.fits",
+    recursive: bool = False,
+    freqs: list[float] | tuple[float, ...] | None = None,
+    polarizations: list[str] | tuple[str, ...] | None = None,
+    time_start: str | datetime | None = None,
+    time_end: str | datetime | None = None,
+) -> list[Path]:
+    """Return FITS files matching path-inferable filters."""
+
+    files = find_files(radio_dir, pattern=pattern, recursive=recursive)
+    freq_set = {float(freq) for freq in freqs or []}
+    pol_set = {normalize_pol_text(pol) for pol in polarizations or []}
+    pol_set.discard(POL_UNKNOWN)
+    start = _parse_optional_datetime(time_start, "time_start")
+    end = _parse_optional_datetime(time_end, "time_end")
+    selected: list[Path] = []
+    blank_header = fits.Header()
+    for path in files:
+        if freq_set:
+            freq = parse_frequency_mhz(path, blank_header)
+            if np.isfinite(freq) and not _frequency_in_set(freq, freq_set):
+                continue
+        if pol_set:
+            pol = infer_polarization(path, blank_header)
+            if pol != POL_UNKNOWN and pol not in pol_set:
+                continue
+        if start is not None or end is not None:
+            obs_time = parse_time_from_filename(path)
+            if start is not None and obs_time is not None and obs_time < start:
+                continue
+            if end is not None and obs_time is not None and obs_time > end:
+                continue
+        selected.append(path)
+    return selected
 
 
 def maybe_make_sum_images(
@@ -667,12 +726,16 @@ def maybe_make_sum_images(
     l_items = [
         item
         for item in items
-        if item.pol == POL_LCP and item.obs_time is not None and np.isfinite(item.freq_mhz)
+        if item.pol == POL_LCP
+        and item.obs_time is not None
+        and np.isfinite(item.freq_mhz)
     ]
     r_items = [
         item
         for item in items
-        if item.pol == POL_RCP and item.obs_time is not None and np.isfinite(item.freq_mhz)
+        if item.pol == POL_RCP
+        and item.obs_time is not None
+        and np.isfinite(item.freq_mhz)
     ]
     sums: list[RadioImage] = []
     used_r: set[int] = set()
@@ -730,6 +793,10 @@ def extract_radio_centers(
     out: str | Path | None = None,
     pattern: str = "*.fits",
     recursive: bool = False,
+    freqs: list[float] | tuple[float, ...] | None = None,
+    polarizations: list[str] | tuple[str, ...] | None = None,
+    time_start: str | datetime | None = None,
+    time_end: str | datetime | None = None,
     threshold_frac: float = 0.95,
     threshold_mode: str = "bg_peak",
     background_percentile: float = 5.0,
@@ -746,15 +813,32 @@ def extract_radio_centers(
     folder = Path(radio_dir).expanduser().resolve()
     if not folder.exists():
         raise FileNotFoundError(f"Radio data folder does not exist: {folder}")
-    files = find_files(folder, pattern=pattern, recursive=recursive)
+    files = select_radio_files(
+        folder,
+        pattern=pattern,
+        recursive=recursive,
+        freqs=freqs,
+        polarizations=polarizations,
+        time_start=time_start,
+        time_end=time_end,
+    )
     if not files:
-        raise FileNotFoundError(f"No FITS files found under {folder} matching {pattern}")
+        raise FileNotFoundError(f"No FITS files found under {folder} matching filters.")
 
     images: list[RadioImage] = []
     for path in files:
         images.extend(iter_radio_images(path, default_pol=default_pol))
+    images = filter_radio_images(
+        images,
+        freqs=freqs,
+        polarizations=polarizations,
+        time_start=time_start,
+        time_end=time_end,
+    )
     if make_sum:
-        images.extend(maybe_make_sum_images(images, tolerance_sec=pair_time_tolerance_sec))
+        images.extend(
+            maybe_make_sum_images(images, tolerance_sec=pair_time_tolerance_sec)
+        )
 
     rows: list[dict[str, object]] = []
     for item in images:
@@ -790,6 +874,53 @@ def extract_radio_centers(
     return df
 
 
+def filter_radio_images(
+    images: list[RadioImage],
+    *,
+    freqs: list[float] | tuple[float, ...] | None = None,
+    polarizations: list[str] | tuple[str, ...] | None = None,
+    time_start: str | datetime | None = None,
+    time_end: str | datetime | None = None,
+) -> list[RadioImage]:
+    """Filter radio image planes before center extraction."""
+
+    freq_set = {float(freq) for freq in freqs or []}
+    pol_set = {normalize_pol_text(pol) for pol in polarizations or []}
+    pol_set.discard(POL_UNKNOWN)
+    start = _parse_optional_datetime(time_start, "time_start")
+    end = _parse_optional_datetime(time_end, "time_end")
+
+    filtered: list[RadioImage] = []
+    for item in images:
+        if freq_set and not _frequency_in_set(item.freq_mhz, freq_set):
+            continue
+        if pol_set and item.pol not in pol_set:
+            continue
+        if start is not None and (item.obs_time is None or item.obs_time < start):
+            continue
+        if end is not None and (item.obs_time is None or item.obs_time > end):
+            continue
+        filtered.append(item)
+    return filtered
+
+
+def _parse_optional_datetime(
+    value: str | datetime | None, label: str
+) -> datetime | None:
+    if value in (None, ""):
+        return None
+    parsed = parse_datetime_value(value)
+    if parsed is None:
+        raise ValueError(f"Invalid {label}: {value}")
+    return parsed
+
+
+def _frequency_in_set(value: float, freq_set: set[float]) -> bool:
+    if not np.isfinite(value):
+        return False
+    return any(_same_frequency(float(value), freq) for freq in freq_set)
+
+
 def write_centers_table(df: pd.DataFrame, out: str | Path) -> Path:
     """Write a source-center table to CSV or Excel based on suffix."""
 
@@ -808,11 +939,37 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Extract threshold radio-source centers from FITS files."
     )
-    parser.add_argument("--radio-dir", required=True, help="Folder containing radio FITS files.")
-    parser.add_argument("--out", default="radio_centers.csv", help="Output .csv or .xlsx table.")
-    parser.add_argument("--pattern", default="*.fits", help="FITS filename glob pattern.")
-    parser.add_argument("--recursive", action="store_true", help="Search subfolders recursively.")
-    parser.add_argument("--threshold", type=float, default=0.95, help="Threshold fraction, e.g. 0.95.")
+    parser.add_argument(
+        "--radio-dir", required=True, help="Folder containing radio FITS files."
+    )
+    parser.add_argument(
+        "--out", default="radio_centers.csv", help="Output .csv or .xlsx table."
+    )
+    parser.add_argument(
+        "--pattern", default="*.fits", help="FITS filename glob pattern."
+    )
+    parser.add_argument(
+        "--recursive", action="store_true", help="Search subfolders recursively."
+    )
+    parser.add_argument(
+        "--freqs",
+        help="Comma-separated frequency filter in MHz, e.g. 149,164,190.",
+    )
+    parser.add_argument(
+        "--polarizations",
+        help="Comma-separated polarization filter such as LL,RR or LCP,RCP.",
+    )
+    parser.add_argument(
+        "--time-start",
+        help="Inclusive observation-time start, e.g. 2025-01-24T04:46:45.",
+    )
+    parser.add_argument(
+        "--time-end",
+        help="Inclusive observation-time end, e.g. 2025-01-24T04:50:45.",
+    )
+    parser.add_argument(
+        "--threshold", type=float, default=0.95, help="Threshold fraction, e.g. 0.95."
+    )
     parser.add_argument(
         "--threshold-mode",
         choices=["peak", "bg_peak", "percentile"],
@@ -837,8 +994,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="peak",
         help="Connected mask component to keep.",
     )
-    parser.add_argument("--use-abs", action="store_true", help="Use absolute image values.")
-    parser.add_argument("--min-pixels", type=int, default=1, help="Minimum mask pixels.")
+    parser.add_argument(
+        "--use-abs", action="store_true", help="Use absolute image values."
+    )
+    parser.add_argument(
+        "--min-pixels", type=int, default=1, help="Minimum mask pixels."
+    )
     parser.add_argument(
         "--default-pol",
         choices=[POL_LCP, POL_RCP, POL_SUM, POL_UNKNOWN],
@@ -863,11 +1024,17 @@ def main(argv: list[str] | None = None) -> pd.DataFrame:
     """CLI entrypoint for threshold radio-source center extraction."""
 
     args = build_parser().parse_args(argv)
+    freqs = _parse_float_csv(args.freqs)
+    polarizations = _parse_str_csv(args.polarizations)
     df = extract_radio_centers(
         args.radio_dir,
         out=args.out,
         pattern=args.pattern,
         recursive=args.recursive,
+        freqs=freqs,
+        polarizations=polarizations,
+        time_start=args.time_start,
+        time_end=args.time_end,
         threshold_frac=args.threshold,
         threshold_mode=args.threshold_mode,
         background_percentile=args.background_percentile,
@@ -879,10 +1046,31 @@ def main(argv: list[str] | None = None) -> pd.DataFrame:
         make_sum=args.make_sum,
         pair_time_tolerance_sec=args.pair_time_tolerance_sec,
     )
-    print(f"Read FITS files: {len(find_files(args.radio_dir, args.pattern, args.recursive))}")
+    candidate_count = len(
+        select_radio_files(
+            args.radio_dir,
+            pattern=args.pattern,
+            recursive=args.recursive,
+            freqs=freqs,
+            polarizations=polarizations,
+            time_start=args.time_start,
+            time_end=args.time_end,
+        )
+    )
+    print(f"Candidate FITS files: {candidate_count}")
     print(f"Extracted centers: {len(df)}")
     print(f"Output table: {Path(args.out).expanduser().resolve()}")
     return df
+
+
+def _parse_str_csv(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _parse_float_csv(raw: str | None) -> list[float]:
+    return [float(item) for item in _parse_str_csv(raw)]
 
 
 if __name__ == "__main__":

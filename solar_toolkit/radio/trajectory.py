@@ -22,9 +22,9 @@ FRAME_MODE_TAIL = "tail"
 FRAME_MODE_ALL = "all"
 
 FRAME_MODE_LABELS = {
-    FRAME_MODE_CURRENT: "当前中心",
-    FRAME_MODE_TAIL: "前 N 帧尾迹",
-    FRAME_MODE_ALL: "截至当前全部轨迹",
+    FRAME_MODE_CURRENT: "Current centers",
+    FRAME_MODE_TAIL: "Previous N-frame trail",
+    FRAME_MODE_ALL: "All points up to current time",
 }
 
 STANDARD_COLUMNS = [
@@ -173,6 +173,96 @@ def filter_centers(
         method_set = {str(method) for method in center_methods}
         result = result[result["center_method"].isin(method_set)]
     return result.reset_index(drop=True)
+
+
+def filter_time_range(
+    df: pd.DataFrame,
+    *,
+    start=None,
+    end=None,
+) -> pd.DataFrame:
+    """Filter centers to an inclusive observation-time range."""
+
+    if df.empty:
+        return df.copy()
+    result = df.copy()
+    times = pd.to_datetime(result["obs_time"], errors="coerce")
+    mask = times.notna()
+    start_ts = _optional_timestamp(start)
+    end_ts = _optional_timestamp(end)
+    if start_ts is not None:
+        mask &= times >= start_ts
+    if end_ts is not None:
+        mask &= times <= end_ts
+    return result.loc[mask].reset_index(drop=True)
+
+
+def summarize_motion(df: pd.DataFrame) -> pd.DataFrame:
+    """Summarize start-to-end center displacement for each trajectory group."""
+
+    columns = [
+        "freq_mhz",
+        "polarization",
+        "center_method",
+        "source_label",
+        "point_count",
+        "start_time",
+        "end_time",
+        "duration_sec",
+        "start_x_arcsec",
+        "start_y_arcsec",
+        "end_x_arcsec",
+        "end_y_arcsec",
+        "dx_arcsec",
+        "dy_arcsec",
+        "distance_arcsec",
+        "mean_speed_arcsec_s",
+    ]
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+
+    rows: list[dict[str, object]] = []
+    group_cols = [
+        column
+        for column in ("freq_mhz", "polarization", "center_method", "source_label")
+        if column in df.columns
+    ]
+    for group_key, group in df.groupby(group_cols, dropna=False, sort=True):
+        ordered = group.sort_values("obs_time")
+        first = ordered.iloc[0]
+        last = ordered.iloc[-1]
+        start_time = pd.Timestamp(first["obs_time"])
+        end_time = pd.Timestamp(last["obs_time"])
+        duration_sec = float((end_time - start_time).total_seconds())
+        dx = float(last["center_x_arcsec"]) - float(first["center_x_arcsec"])
+        dy = float(last["center_y_arcsec"]) - float(first["center_y_arcsec"])
+        distance = float(math.hypot(dx, dy))
+        row = {
+            "point_count": int(len(ordered)),
+            "start_time": start_time,
+            "end_time": end_time,
+            "duration_sec": duration_sec,
+            "start_x_arcsec": float(first["center_x_arcsec"]),
+            "start_y_arcsec": float(first["center_y_arcsec"]),
+            "end_x_arcsec": float(last["center_x_arcsec"]),
+            "end_y_arcsec": float(last["center_y_arcsec"]),
+            "dx_arcsec": dx,
+            "dy_arcsec": dy,
+            "distance_arcsec": distance,
+            "mean_speed_arcsec_s": distance / duration_sec if duration_sec > 0 else 0.0,
+        }
+        _attach_group_values(row, group_cols, group_key)
+        rows.append(row)
+    return pd.DataFrame(rows, columns=columns)
+
+
+def _optional_timestamp(value) -> pd.Timestamp | None:
+    if value in (None, ""):
+        return None
+    timestamp = pd.Timestamp(value)
+    if pd.isna(timestamp):
+        return None
+    return timestamp.tz_localize(None) if timestamp.tzinfo is not None else timestamp
 
 
 def frame_times(df: pd.DataFrame) -> list[pd.Timestamp]:

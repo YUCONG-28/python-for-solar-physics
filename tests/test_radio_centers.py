@@ -15,6 +15,7 @@ from solar_toolkit.radio.centers import (
     extract_radio_centers,
     infer_polarization,
     parse_frequency_mhz,
+    select_radio_files,
 )
 
 
@@ -43,6 +44,24 @@ def test_infers_frequency_and_polarization_from_header_and_filename():
     assert infer_polarization(Path("radio_image.fits"), header) == POL_SUM
 
     assert infer_polarization(Path("source_RCP_164MHz.fits"), fits.Header()) == POL_RCP
+
+
+def test_parent_directory_polarization_overrides_stokes_i_header():
+    header = fits.Header()
+    header["POLAR"] = "StokesI"
+
+    assert (
+        infer_polarization(
+            Path("149MHz") / "LL" / "149MHz_2025124_044845_163.fits", header
+        )
+        == POL_LCP
+    )
+    assert (
+        infer_polarization(
+            Path("149MHz") / "RR" / "149MHz_2025124_044845_163.fits", header
+        )
+        == POL_RCP
+    )
 
 
 def test_computes_95_percent_bg_peak_geometric_center_in_arcsec():
@@ -95,3 +114,58 @@ def test_extracts_radio_centers_and_builds_lcp_rcp_sum(tmp_path):
     assert sum_row["source_label"] == "paired_L_plus_R"
     assert sum_row["freq_mhz"] == pytest.approx(149.0)
     assert sum_row["center_method"].startswith("threshold_geometric_bg_peak")
+
+
+def test_extract_radio_centers_filters_frequency_time_and_polarization(tmp_path):
+    rows = [
+        (149.0, POL_LCP, "2025-01-24T04:48:45.000", 1),
+        (149.0, POL_RCP, "2025-01-24T04:48:45.000", 2),
+        (164.0, POL_LCP, "2025-01-24T04:48:45.000", 3),
+        (149.0, POL_LCP, "2025-01-24T04:46:44.900", 4),
+    ]
+    for freq, pol, obs_time, peak_x in rows:
+        image = np.zeros((5, 5), dtype=float)
+        image[2, peak_x] = 10.0
+        header = _linear_header(FREQ=freq, FREQUNIT="MHz", POLAR=pol)
+        header["DATE-OBS"] = obs_time
+        name = f"{int(freq)}MHz_{pol}_{obs_time[-12:].replace(':', '').replace('.', '_')}.fits"
+        fits.writeto(tmp_path / name, image, header, overwrite=True)
+
+    df = extract_radio_centers(
+        tmp_path,
+        freqs=[149.0],
+        polarizations=[POL_LCP],
+        time_start="2025-01-24T04:46:45",
+        time_end="2025-01-24T04:50:45",
+        threshold_frac=0.95,
+        threshold_mode="bg_peak",
+        centroid="geometric",
+    )
+
+    assert len(df) == 1
+    assert df.loc[0, "freq_mhz"] == pytest.approx(149.0)
+    assert df.loc[0, "polarization"] == POL_LCP
+    assert df.loc[0, "obs_time"] == "2025-01-24T04:48:45.000"
+
+
+def test_select_radio_files_prefilters_using_path_metadata(tmp_path):
+    for relative in [
+        "149MHz/LL/149MHz_2025124_044845_163.fits",
+        "149MHz/RR/149MHz_2025124_044845_163.fits",
+        "164MHz/LL/164MHz_2025124_044845_163.fits",
+        "149MHz/LL/149MHz_2025124_044644_900.fits",
+    ]:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"")
+
+    selected = select_radio_files(
+        tmp_path,
+        recursive=True,
+        freqs=[149.0],
+        polarizations=[POL_LCP],
+        time_start="2025-01-24T04:46:45",
+        time_end="2025-01-24T04:50:45",
+    )
+
+    assert [path.name for path in selected] == ["149MHz_2025124_044845_163.fits"]
