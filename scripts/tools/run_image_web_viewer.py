@@ -3,8 +3,8 @@
 English: Thin CLI for the Flask app factory in
 `solar_toolkit.visualization.image_web_viewer`.
 
-中文: 本文件只负责解析命令行参数并启动 Flask 服务, 具体扫描、显示和导出逻辑位于
-`solar_toolkit.visualization.image_web_viewer`。
+中文: 本文件只负责解析命令行参数并启动 Flask 服务, 具体扫描、显示和
+导出逻辑位于 `solar_toolkit.visualization.image_web_viewer`。
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import threading
 import webbrowser
 from pathlib import Path
 
@@ -36,6 +37,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Open the viewer URL in the default browser after startup.",
     )
+    parser.add_argument(
+        "--keep-alive-after-close",
+        action="store_true",
+        help="Keep the Flask server running after the last browser page closes.",
+    )
     return parser
 
 
@@ -54,6 +60,8 @@ def main(argv: list[str] | None = None) -> int:
         sys.path.insert(0, str(repo_root))
 
     try:
+        from werkzeug.serving import make_server
+
         from solar_toolkit.visualization.image_web_viewer.server import create_app
     except ImportError as exc:
         print(
@@ -65,12 +73,28 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     allowed_roots = parse_allowed_roots(args.allowed_roots)
-    app = create_app(allowed_roots=allowed_roots)
+    server = None
+
+    def request_shutdown() -> None:
+        if server is not None:
+            threading.Thread(target=server.shutdown, daemon=True).start()
+
+    app = create_app(
+        allowed_roots=allowed_roots,
+        stop_on_client_close=not args.keep_alive_after_close,
+        shutdown_callback=request_shutdown,
+    )
     url = f"http://{args.host}:{args.port}/"
     if args.open_browser:
         webbrowser.open(url)
     print(f"Image web viewer: {url}")
-    app.run(host=args.host, port=args.port, debug=args.debug)
+    server = make_server(args.host, args.port, app, threaded=True)
+    if args.debug:
+        app.debug = True
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
     return 0
 
 

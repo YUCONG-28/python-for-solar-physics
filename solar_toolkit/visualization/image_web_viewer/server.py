@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import os
 import re
+import threading
+import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +24,80 @@ IMAGE_EXTENSIONS = {
     ".tif",
     ".tiff",
 }
+
+
+class ClientLifecycle:
+    """Track browser clients and request local server shutdown when they close."""
+
+    def __init__(
+        self,
+        *,
+        stop_on_client_close: bool,
+        shutdown_callback: Callable[[], None] | None,
+        close_grace_seconds: float = 2.0,
+        heartbeat_timeout_seconds: float = 20.0,
+        heartbeat_interval_seconds: float = 5.0,
+    ) -> None:
+        self.stop_on_client_close = stop_on_client_close
+        self.shutdown_callback = shutdown_callback
+        self.close_grace_seconds = close_grace_seconds
+        self.heartbeat_timeout_seconds = heartbeat_timeout_seconds
+        self.heartbeat_interval_seconds = heartbeat_interval_seconds
+        self._clients: dict[str, float] = {}
+        self._lock = threading.Lock()
+        self._timer: threading.Timer | None = None
+        self.shutdown_requested = False
+
+    def config(self) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "stop_on_close": self.stop_on_client_close,
+            "heartbeat_interval_ms": int(self.heartbeat_interval_seconds * 1000),
+            "close_grace_ms": int(self.close_grace_seconds * 1000),
+        }
+
+    def heartbeat(self, client_id: str) -> dict[str, Any]:
+        if not client_id:
+            return {"ok": False, "error": "client_id is required"}
+        with self._lock:
+            self._clients[client_id] = time.monotonic()
+        return {"ok": True}
+
+    def close(self, client_id: str, *, client_requests_stop: bool = True) -> dict[str, Any]:
+        if client_id:
+            with self._lock:
+                self._clients.pop(client_id, None)
+        if client_requests_stop and self.stop_on_client_close:
+            self.schedule_shutdown_check()
+        return {"ok": True, "shutdown_scheduled": client_requests_stop and self.stop_on_client_close}
+
+    def schedule_shutdown_check(self) -> None:
+        if self.shutdown_callback is None:
+            return
+        with self._lock:
+            if self.shutdown_requested:
+                return
+            if self._timer and self._timer.is_alive():
+                self._timer.cancel()
+            self._timer = threading.Timer(self.close_grace_seconds, self._maybe_shutdown)
+            self._timer.daemon = True
+            self._timer.start()
+
+    def _maybe_shutdown(self) -> None:
+        callback: Callable[[], None] | None = None
+        now = time.monotonic()
+        with self._lock:
+            self._clients = {
+                client_id: seen_at
+                for client_id, seen_at in self._clients.items()
+                if now - seen_at <= self.heartbeat_timeout_seconds
+            }
+            if self._clients or self.shutdown_requested:
+                return
+            self.shutdown_requested = True
+            callback = self.shutdown_callback
+        if callback is not None:
+            callback()
 
 
 def natural_key(path: Path) -> list[Any]:
@@ -86,7 +163,14 @@ def scan_images(
     return root, sorted(files, key=natural_key)
 
 
-def create_app(allowed_roots: list[str | Path] | None = None):
+def create_app(
+    allowed_roots: list[str | Path] | None = None,
+    *,
+    stop_on_client_close: bool = True,
+    shutdown_callback: Callable[[], None] | None = None,
+    close_grace_seconds: float = 2.0,
+    heartbeat_timeout_seconds: float = 20.0,
+):
     """Create the Flask app. Flask is imported lazily because it is optional."""
 
     from flask import Flask, jsonify, render_template, request, send_file
@@ -99,6 +183,12 @@ def create_app(allowed_roots: list[str | Path] | None = None):
     )
     sessions: dict[str, list[dict[str, Any]]] = {}
     roots = normalize_allowed_roots(allowed_roots)
+    lifecycle = ClientLifecycle(
+        stop_on_client_close=stop_on_client_close,
+        shutdown_callback=shutdown_callback,
+        close_grace_seconds=close_grace_seconds,
+        heartbeat_timeout_seconds=heartbeat_timeout_seconds,
+    )
 
     @app.get("/")
     def index():
@@ -193,6 +283,25 @@ def create_app(allowed_roots: list[str | Path] | None = None):
     @app.get("/api/health")
     def health():
         return jsonify({"ok": True})
+
+    @app.get("/api/client-config")
+    def client_config():
+        return jsonify(lifecycle.config())
+
+    @app.post("/api/client-heartbeat")
+    def client_heartbeat():
+        payload = request.get_json(force=True, silent=True) or {}
+        result = lifecycle.heartbeat(str(payload.get("client_id", "")))
+        return jsonify(result), (200 if result.get("ok") else 400)
+
+    @app.post("/api/client-close")
+    def client_close():
+        payload = request.get_json(force=True, silent=True) or {}
+        result = lifecycle.close(
+            str(payload.get("client_id", "")),
+            client_requests_stop=bool(payload.get("stop_on_close", True)),
+        )
+        return jsonify(result)
 
     return app
 

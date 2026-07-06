@@ -4,6 +4,7 @@ import importlib.util
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -147,6 +148,109 @@ def test_image_web_viewer_entrypoint_help_does_not_require_flask():
 
     assert result.returncode == 0, result.stderr
     assert "usage:" in result.stdout.lower()
+    assert "--keep-alive-after-close" in result.stdout
+
+
+def test_image_web_viewer_frontend_exposes_workbench_controls():
+    template = (
+        REPO_ROOT
+        / "solar_toolkit"
+        / "visualization"
+        / "image_web_viewer"
+        / "templates"
+        / "index.html"
+    ).read_text(encoding="utf-8")
+    script = (
+        REPO_ROOT
+        / "solar_toolkit"
+        / "visualization"
+        / "image_web_viewer"
+        / "static"
+        / "main.js"
+    ).read_text(encoding="utf-8")
+
+    for marker in [
+        'id="sidebar"',
+        'id="sidebarToggleBtn"',
+        'id="fitLayoutBtn"',
+        'id="landscapeLayoutBtn"',
+        'id="portraitLayoutBtn"',
+        'id="syncViewInput"',
+        'id="syncRoiInput"',
+        'id="settingsPanel"',
+        'id="themeInput"',
+        'id="saveSettingsBtn"',
+        'id="clearSettingsBtn"',
+        'id="stopOnCloseInput"',
+        'id="exportSettingsGroup"',
+        'id="viewerGrid"',
+    ]:
+        assert marker in template
+    assert "viewer-slot" in script
+    assert "clampView" in script
+    assert "layoutMode" in script
+    assert "solarToolkit.imageViewer.v1.settings" in script
+    assert "requestAnimationFrame" in script
+    assert "loadCachedImage" in script
+    assert "/api/client-config" in script
+    assert "/api/client-close" in script
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("flask") is None,
+    reason="Flask is optional; install the app extra to test HTTP routes.",
+)
+def test_flask_client_lifecycle_routes_schedule_shutdown(tmp_path):
+    from solar_toolkit.visualization.image_web_viewer.server import create_app
+
+    shutdown_calls: list[str] = []
+    app = create_app(
+        allowed_roots=[tmp_path],
+        shutdown_callback=lambda: shutdown_calls.append("shutdown"),
+        close_grace_seconds=0.01,
+    )
+    client = app.test_client()
+
+    config = client.get("/api/client-config").get_json()
+    heartbeat = client.post("/api/client-heartbeat", json={"client_id": "client-a"})
+    closed = client.post(
+        "/api/client-close",
+        json={"client_id": "client-a", "stop_on_close": True},
+    )
+    time.sleep(0.05)
+
+    assert config["stop_on_close"] is True
+    assert config["heartbeat_interval_ms"] > 0
+    assert heartbeat.get_json() == {"ok": True}
+    assert closed.get_json()["shutdown_scheduled"] is True
+    assert shutdown_calls == ["shutdown"]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("flask") is None,
+    reason="Flask is optional; install the app extra to test HTTP routes.",
+)
+def test_flask_client_lifecycle_can_keep_service_alive(tmp_path):
+    from solar_toolkit.visualization.image_web_viewer.server import create_app
+
+    shutdown_calls: list[str] = []
+    client = create_app(
+        allowed_roots=[tmp_path],
+        stop_on_client_close=False,
+        shutdown_callback=lambda: shutdown_calls.append("shutdown"),
+        close_grace_seconds=0.01,
+    ).test_client()
+
+    config = client.get("/api/client-config").get_json()
+    closed = client.post(
+        "/api/client-close",
+        json={"client_id": "client-a", "stop_on_close": True},
+    ).get_json()
+    time.sleep(0.05)
+
+    assert config["stop_on_close"] is False
+    assert closed["shutdown_scheduled"] is False
+    assert shutdown_calls == []
 
 
 @pytest.mark.skipif(

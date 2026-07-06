@@ -7,104 +7,155 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <h1>Image Sequence Web Viewer</h1>
-      <p>Local multi-folder playback, ROI review, and MP4 export.</p>
-    </div>
-  </header>
+  <div id="appShell" class="app-shell">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <div>
+          <h1>Image Viewer</h1>
+          <p>Local sequences, synchronized review, MP4 export.</p>
+        </div>
+        <button id="sidebarToggleBtn" class="icon-button" type="button" title="Collapse sidebar">&laquo;</button>
+      </div>
 
-  <main>
-    <section class="tool-panel config-panel">
-      <div class="form-row">
+      <section class="tool-section">
+        <h2>Folders</h2>
         <label for="folderInput">Image folders, one per line</label>
-        <textarea id="folderInput" rows="4" spellcheck="false" placeholder="D:\data\camera_a&#10;D:\data\camera_b"></textarea>
-      </div>
-      <div class="inline-controls wrap">
-        <label class="checkbox">
-          <input id="recursiveInput" type="checkbox" /> Recursive
-        </label>
-        <button id="loadBtn" class="primary">Load</button>
+        <textarea id="folderInput" rows="6" spellcheck="false" placeholder="D:\data\camera_a&#10;D:\data\camera_b"></textarea>
+        <div class="sidebar-row">
+          <label class="checkbox">
+            <input id="recursiveInput" type="checkbox" /> Recursive
+          </label>
+          <button id="loadBtn" class="primary" type="button">Load</button>
+        </div>
         <span id="loadStatus" class="status"></span>
-      </div>
-    </section>
+      </section>
 
-    <section class="tool-panel control-panel">
-      <div class="inline-controls wrap">
-        <button id="prevBtn" disabled title="Previous frame">&lt;</button>
-        <button id="playBtn" disabled>Play</button>
-        <button id="nextBtn" disabled title="Next frame">&gt;</button>
+      <section class="tool-section common-controls">
+        <h2>Playback</h2>
+        <div class="button-row">
+          <button id="prevBtn" type="button" disabled title="Previous frame">&lt;</button>
+          <button id="playBtn" type="button" disabled>Play</button>
+          <button id="nextBtn" type="button" disabled title="Next frame">&gt;</button>
+        </div>
+        <label for="fpsInput">FPS</label>
+        <input id="fpsInput" type="number" min="0.2" max="60" step="0.2" value="5" />
+        <label for="frameSlider">Frame</label>
+        <input id="frameSlider" type="range" min="0" max="0" value="0" disabled />
+        <div class="sidebar-row">
+          <span id="frameText" class="frame-readout">0 / 0</span>
+          <label class="checkbox">
+            <input id="loopInput" type="checkbox" checked /> Loop
+          </label>
+        </div>
+      </section>
 
-        <label class="compact">FPS
-          <input id="fpsInput" type="number" min="0.2" max="60" step="0.2" value="5" />
-        </label>
-
-        <label class="compact wide">Frame
-          <input id="frameSlider" type="range" min="0" max="0" value="0" disabled />
-        </label>
-        <span id="frameText">0 / 0</span>
-
+      <section class="tool-section common-controls">
+        <h2>Layout</h2>
+        <div class="button-row segmented">
+          <button id="fitLayoutBtn" type="button" class="active" data-layout-mode="fit">Fit Screen</button>
+          <button id="landscapeLayoutBtn" type="button" data-layout-mode="landscape">Landscape</button>
+          <button id="portraitLayoutBtn" type="button" data-layout-mode="portrait">Portrait</button>
+        </div>
         <label class="checkbox">
-          <input id="loopInput" type="checkbox" checked /> Loop
+          <input id="syncViewInput" type="checkbox" checked /> Sync view
         </label>
         <label class="checkbox">
-          <input id="syncZoomInput" type="checkbox" checked /> Sync zoom
+          <input id="syncRoiInput" type="checkbox" checked /> Sync ROI
         </label>
-      </div>
+        <div class="button-row">
+          <button id="roiBtn" type="button" disabled>ROI</button>
+          <button id="clearRoiBtn" type="button" disabled>Clear ROI</button>
+          <button id="resetViewBtn" type="button" disabled>Reset View</button>
+        </div>
+      </section>
 
-      <div class="inline-controls wrap second-row">
-        <button id="roiBtn" disabled>ROI</button>
-        <button id="clearRoiBtn" disabled>Clear ROI</button>
-        <button id="resetViewBtn" disabled>Reset View</button>
-      </div>
-    </section>
+      <details id="settingsPanel" class="tool-section settings-panel">
+        <summary>Settings</summary>
 
-    <section class="tool-panel export-panel">
-      <div class="section-title">Video Export</div>
-      <div class="inline-controls wrap">
-        <label class="compact">Mode
+        <div class="settings-group">
+          <h2>Appearance</h2>
+          <label for="themeInput">Theme</label>
+          <select id="themeInput">
+            <option value="auto">Auto</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+
+        <div class="settings-group">
+          <h2>Memory</h2>
+          <div class="button-row">
+            <button id="saveSettingsBtn" type="button">Save current settings</button>
+            <button id="clearSettingsBtn" type="button">Clear remembered settings</button>
+          </div>
+          <span id="settingsStatus" class="status"></span>
+        </div>
+
+        <div class="settings-group">
+          <h2>Service</h2>
+          <label class="checkbox">
+            <input id="stopOnCloseInput" type="checkbox" checked /> Stop service when this page closes
+          </label>
+        </div>
+
+        <div id="exportSettingsGroup" class="settings-group">
+          <h2>Video Export</h2>
+          <label for="exportModeInput">Mode</label>
           <select id="exportModeInput">
             <option value="composite">Composite</option>
             <option value="separate">Separate</option>
             <option value="both">Both</option>
           </select>
-        </label>
-        <label class="compact grow">Output dir
+          <label for="outputDirInput">Output dir</label>
           <input id="outputDirInput" type="text" value="outputs/image_web_viewer" />
-        </label>
-        <label class="compact">Prefix
+          <label for="prefixInput">Prefix</label>
           <input id="prefixInput" type="text" value="image_viewer" />
-        </label>
-        <label class="compact">Quality
-          <select id="qualityInput">
-            <option value="low">low</option>
-            <option value="high">high</option>
-          </select>
-        </label>
-      </div>
-      <div class="inline-controls wrap">
-        <label class="compact">Start
-          <input id="startFrameInput" type="number" min="1" value="1" />
-        </label>
-        <label class="compact">End
-          <input id="endFrameInput" type="number" min="1" placeholder="last" />
-        </label>
-        <label class="compact">Width
-          <input id="targetWidthInput" type="number" min="2" placeholder="auto" />
-        </label>
-        <label class="compact">Height
-          <input id="targetHeightInput" type="number" min="2" placeholder="auto" />
-        </label>
-        <label class="checkbox">
-          <input id="exportRoiInput" type="checkbox" /> Export ROI
-        </label>
-        <button id="exportBtn" disabled>Export</button>
-        <span id="exportStatus" class="status"></span>
-      </div>
-    </section>
+          <div class="two-col">
+            <label>Start
+              <input id="startFrameInput" type="number" min="1" value="1" />
+            </label>
+            <label>End
+              <input id="endFrameInput" type="number" min="1" placeholder="last" />
+            </label>
+          </div>
+          <div class="two-col">
+            <label>Width
+              <input id="targetWidthInput" type="number" min="2" placeholder="auto" />
+            </label>
+            <label>Height
+              <input id="targetHeightInput" type="number" min="2" placeholder="auto" />
+            </label>
+          </div>
+          <div class="sidebar-row">
+            <label class="checkbox">
+              <input id="exportRoiInput" type="checkbox" /> Export ROI
+            </label>
+            <label class="quality-label">Quality
+              <select id="qualityInput">
+                <option value="low">low</option>
+                <option value="high">high</option>
+              </select>
+            </label>
+          </div>
+          <div class="sidebar-row">
+            <button id="exportBtn" type="button" disabled>Export</button>
+            <span id="exportStatus" class="status"></span>
+          </div>
+        </div>
+      </details>
+    </aside>
 
-    <section id="viewerGrid" class="viewer-grid"></section>
-  </main>
+    <main class="viewer-workbench">
+      <div class="stage-toolbar">
+        <button id="mobileSidebarBtn" class="icon-button" type="button" title="Open sidebar">Menu</button>
+        <div>
+          <strong>Viewer Stage</strong>
+          <span id="stageStatus">Load one or more folders to start.</span>
+        </div>
+      </div>
+      <section id="viewerGrid" class="viewer-grid" data-layout="fit" data-count="0"></section>
+    </main>
+  </div>
 
   <script src="/static/main.js"></script>
 </body>
