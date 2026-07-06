@@ -10,6 +10,11 @@ def test_domain_packages_import_without_loading_science_data():
     for module_name in [
         "solar_toolkit.aia",
         "solar_toolkit.hmi",
+        "solar_toolkit.time",
+        "solar_toolkit.io",
+        "solar_toolkit.data",
+        "solar_toolkit.map",
+        "solar_toolkit.timeseries",
         "solar_toolkit.xray_dem",
         "solar_toolkit.cme",
         "solar_toolkit.net",
@@ -18,6 +23,31 @@ def test_domain_packages_import_without_loading_science_data():
     ]:
         module = importlib.import_module(module_name)
         assert module.__doc__
+
+
+def test_sunpy_style_base_helpers_are_public():
+    """SunPy-style base packages expose the stable helper functions."""
+    from solar_toolkit import (
+        cme,
+        data,
+        io,
+        map,
+        net,
+        time,
+        timeseries,
+        visualization,
+        xray_dem,
+    )
+
+    assert time.extract_time_from_filename is not None
+    assert io.scan_fits is not None
+    assert data.ObservationFile is not None
+    assert map.get_display_extent is not None
+    assert timeseries.normalize_time_column is not None
+    assert net.download_url is not None
+    assert cme.running_difference is not None
+    assert xray_dem.load_sxr_data is not None
+    assert visualization.configure_chinese_fonts is not None
 
 
 def test_radio_core_compatibility_aliases_point_to_public_modules():

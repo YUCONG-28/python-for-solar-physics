@@ -8,6 +8,11 @@ the full boundary map, see `FUNCTION_MAP.md`.
 ## Public Packages / 公共包
 
 - `solar_toolkit/`: installable library layer.
+  - `time/`: shared timestamp parsing, filename time extraction, nearest-time matching, and range filtering.
+  - `io/`: local file scanning, natural sorting, FITS data/header reading, and CSV manifest helpers.
+  - `data/`: lightweight local observation inventory records without download side effects.
+  - `map/`: SunPy Map/FITS-header helper layer for display extent, observation time, ROI crop, and normalization.
+  - `timeseries/`: light-curve table time normalization, clipping, smoothing, and derivative helpers.
   - `aia/`: AIA configuration, FITS selection, difference images, mosaics, EUV processing, and lightweight AIA background loading.
   - `hmi/`: HMI-facing facades for FITS renaming, magnetogram plotting, and overlays.
   - `radio/`: radio coordinates, threshold centers, Gaussian fitting, trajectory tables, Newkirk, spectrogram, drift, raw quality, and quicklook helpers.

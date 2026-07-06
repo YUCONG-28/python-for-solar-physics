@@ -56,6 +56,11 @@ Status labels:
 
 | Status | Module | Purpose | Used by |
 | --- | --- | --- | --- |
+| utility | `solar_toolkit/time/` | SunPy-style timestamp parsing, filename time extraction, nearest-time matching, and time-range filtering. | AIA/HMI/radio/X-ray/CME workflows that align observations by time. |
+| utility | `solar_toolkit/io/` | Local file scanning, natural sorting, FITS data/header reading, and CSV manifest helpers. | Scripts and library modules that scan local observation folders. |
+| utility | `solar_toolkit/data/` | Lightweight observation-file inventory records without network side effects. | Future local data manifests and reviewed examples. |
+| utility | `solar_toolkit/map/` | SunPy Map/FITS-header helper layer for extent, observation time, ROI crop, and image normalization. | Plotting and overlay workflows that need common image geometry. |
+| utility | `solar_toolkit/timeseries/` | Light-curve table time normalization, time clipping, smoothing, and finite-difference derivatives. | GOES/HXI/AIA light-curve and Neupert-style workflows. |
 | utility | `solar_toolkit/aia/` | Public AIA library boundary for configuration, FITS selection, difference helpers, mosaic helpers, and the lazy EUV processor dispatcher. | AIA/HMI entrypoints and historical `scripts.aia_hmi.core.*` compatibility imports. |
 | utility | `solar_toolkit/hmi/` | Public HMI-facing namespace for FITS renaming, magnetogram, and overlay facades. | HMI/AIA script workflows and future reusable HMI extraction. |
 | utility | `solar_toolkit/radio/raw_quality.py` | Raw radio FITS artifact/quality diagnostics. | `scripts/radio/run_radio_raw_quality.py` and compatibility imports. |

@@ -4,6 +4,17 @@ This map records the intended public boundaries after the Astropy/SunPy-style
 cleanup. It separates stable library imports from runnable research scripts and
 from compatibility paths that are kept for local reproducibility.
 
+## SunPy-Style Base Layer / SunPy 风格基础层
+
+The project now includes lightweight local-data helpers that mirror the
+practical shape of SunPy namespaces without replacing SunPy itself:
+`solar_toolkit.time`, `solar_toolkit.io`, `solar_toolkit.data`,
+`solar_toolkit.map`, and `solar_toolkit.timeseries`. These packages provide
+shared timestamp parsing, file/FITS scanning, local inventory records,
+Map/header display helpers, and light-curve table utilities. Science-domain
+packages such as `aia`, `hmi`, `radio`, `xray_dem`, and `cme` should use these
+building blocks instead of duplicating glue code in scripts.
+
 本文件记录参照 Astropy/SunPy 风格整理后的公共边界：稳定库层、可运行科研脚本
 以及为本地复现保留的兼容路径。
 
