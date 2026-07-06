@@ -46,6 +46,11 @@ full = [
     "drms>=0.6.3",
     "requests>=2.31.0",
 ]
+app = [
+    "streamlit>=1.30",
+    "plotly>=5.18",
+    "openpyxl>=3.1",
+]
 gui = [
     "PyQt5>=5.15.0",
     "pyqtgraph>=0.13.0",

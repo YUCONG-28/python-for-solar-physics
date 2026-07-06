@@ -10,33 +10,31 @@
   `legacy.radio_source_map_plot_gaussian_overlay.main()`.
 - `run_aia_radio_hmi_overlay.py` loads AIA/HMI/radio overlay config and calls
   `legacy.sdo_aia_radio_hmi_overlay.main(user_config=...)`.
+- Reusable raw-quality, spectrogram, drift-rate, and drift-product helpers now
+  live in `solar_toolkit.radio` and are re-exported through historical
+  `scripts.radio.core.*` wrappers.
 
 ## Remaining Legacy Dependencies
 
 - `core.radio_gaussian_fit` still imports array aliases, diagnostics fields,
   coordinate conversion helpers, and output-subdirectory logic from
   `legacy.radio_source_map_plot_gaussian_overlay`.
-- `core.radio_spectrogram` still imports datetime/index parsing helpers from
-  `legacy.radio_source_map_plot_gaussian_overlay`.
-- `core.radio_drift_rate` still imports datetime parsing, drift output path
-  resolution, and diagnostics field definitions from
-  `legacy.radio_source_map_plot_gaussian_overlay`.
+- `solar_toolkit.radio.gaussian` is still a large compatibility-oriented module,
+  with smaller facade modules for model, background, mask, fit, diagnostics,
+  and I/O imports.
 - The AIA/HMI/radio overlay script still contains its own Gaussian fitting code;
   it should later reuse `core.radio_gaussian_fit`.
 
 ## Safe Next Steps
 
-1. Move low-risk utility helpers from
-   `legacy.radio_source_map_plot_gaussian_overlay` into a small
-   `core.radio_io` module: datetime parsing, output path resolution, config path
-   normalization, and diagnostics-field constants.
-2. Update `core.radio_gaussian_fit`, `core.radio_spectrogram`, and
-   `core.radio_drift_rate` to depend on `core.radio_io` instead of legacy.
-3. Extract the plotting orchestration from
+1. Continue reducing `solar_toolkit.radio.gaussian` by moving real
+   implementations behind the facade modules once focused tests cover each
+   extraction.
+2. Extract the plotting orchestration from
    `legacy.radio_source_map_plot_gaussian_overlay.main()` into smaller functions
    that can be called by `run_radio_source_map.py`.
-4. Continue moving AIA/HMI/radio defaults from
+3. Continue moving AIA/HMI/radio defaults from
    `legacy.sdo_aia_radio_hmi_overlay.Config` into event config files as new
    event-specific settings are needed.
-5. Only after repeated runs match current outputs, consider removing or
+4. Only after repeated runs match current outputs, consider removing or
    deprecating legacy code in a separate review.

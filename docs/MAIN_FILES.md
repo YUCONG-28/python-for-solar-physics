@@ -1,103 +1,78 @@
-# Main Files
+# Main Files / 主文件索引
 
-## Core Package
+This compact index lists the maintainer-facing packages and entrypoints. For
+the full boundary map, see `FUNCTION_MAP.md`.
 
-- `solar_toolkit/`
-  - 项目核心 Python 包。
-  - `path_config.py` 提供本地路径配置读取与脚本参数覆盖。
-  - `solar_analysis_utils.py` 提供太阳物理数据处理共享工具，包括文件时间解析、FITS 文件排序、内存管理、坐标转换和可视化辅助函数。
+本文档是维护者使用的简明主文件索引。完整功能边界见 `FUNCTION_MAP.md`。
 
-## Recommended Core Workflow Scripts
+## Public Packages / 公共包
+
+- `solar_toolkit/`: installable library layer.
+  - `aia/`: AIA configuration, FITS selection, difference images, mosaics, EUV processing, and lightweight AIA background loading.
+  - `hmi/`: HMI-facing facades for FITS renaming, magnetogram plotting, and overlays.
+  - `radio/`: radio coordinates, threshold centers, Gaussian fitting, trajectory tables, Newkirk, spectrogram, drift, raw quality, and quicklook helpers.
+  - `xray_dem/`: namespace for X-ray, HXI, Neupert, and DEM helpers.
+  - `cme/`: namespace for LASCO/CME helpers.
+  - `net/`: namespace for archive query and download helpers.
+  - `modeling/`: shared Gaussian and density-model boundary.
+  - `visualization/`: shared plotting, media-generation, and interactive HTML visualization helpers.
+  - `path_config.py`: local YAML path/config loading.
+  - `solar_analysis_utils.py`: shared time, FITS ordering, map, memory, and plotting utilities.
+
+## Recommended Entrypoints / 推荐入口
 
 - `scripts/aia_hmi/run_aia_euv_processor.py`
-  - AIA 图像、拼图、base difference 和 running difference 的推荐主入口。
-  - 旧路径 `scripts/aia_hmi/sdo_aia_euv_processor.py` 作为兼容入口保留。
-  - 可复用逻辑位于 `scripts/aia_hmi/core/`；其中 `aia_cli.py` 管理 CLI，
-    `aia_config.py` 管理默认配置，`aia_io.py` 管理文件选择，
-    `aia_difference.py` 与 `aia_mosaic.py` 提供轻量 helper，
-    `aia_processor.py` 负责延迟加载原始科研实现。
+  - Recommended AIA EUV command.
+  - Delegates to `solar_toolkit.aia.cli`.
+  - Historical `scripts/aia_hmi/sdo_aia_euv_processor.py` remains compatible.
 - `scripts/radio/run_radio_burst_pipeline.py`
-  - 射电源图、高斯拟合、CSO 频谱/频漂率、Newkirk 高度比较、Gaussian-Newkirk 高度残差和频漂速度诊断的完整推荐主入口。
+  - Full radio burst workflow.
+  - Uses `solar_toolkit.radio` for reusable helpers and keeps legacy plotting compatibility.
 - `scripts/radio/run_radio_source_map.py`
-  - 快速射电源图和 Gaussian 叠加的推荐入口。
+  - Quick radio source-map workflow with Gaussian overlays.
+- `scripts/radio/extract_radio_centers.py`
+  - Threshold/contour radio-source center extraction to CSV/XLSX.
+- `scripts/radio/run_radio_source_app.py`
+  - Streamlit trajectory playback frontend that reads existing center tables.
+- `scripts/radio/export_radio_source_trajectory.py`
+  - Static Plotly HTML export for selected trajectory frames.
 - `scripts/radio/run_aia_radio_hmi_overlay.py`
-  - AIA + radio + HMI 多仪器叠加的推荐主入口。
-- `scripts/radio/legacy/cso_radio_spectrogram_plot.py`
-  - CSO 动态频谱绘制的兼容入口；当前还没有 `run_*.py` wrapper。
-- `scripts/tools/gaussian_source_fitting.py`
-  - 二维椭圆高斯拟合工具，后续建议作为公共拟合核心。
+  - AIA/radio/HMI overlay workflow.
+- `scripts/radio/run_radio_raw_quality.py`
+  - Raw radio FITS quality-diagnostic workflow.
 
-## Scripts
+## Compatibility Layers / 兼容层
 
-- `scripts/aia_hmi/`
-  - SDO/AIA 与 SDO/HMI 相关脚本。
-  - 包括 AIA EUV 单波段处理、多波段面板、基准差分、运行差分、光变曲线提取与绘制、AIA/HMI FITS 规范命名、AIA/HMI 叠加和 HMI 磁图绘制。
+- `scripts/radio/core/`: compatibility wrappers for migrated radio modules.
+- `scripts/aia_hmi/core/`: compatibility wrappers for migrated AIA modules.
+- `scripts/radio/legacy/`: large historical workflows retained for output reproducibility.
+- `legacy/`: archived scripts kept for manual review, not current first-choice entrypoints.
 
-- `scripts/radio/`
-  - 射电频谱与射电源可视化脚本。
-  - 包括 CSO 动态频谱绘图、CSO 交互式 GUI、射电源图像绘制、射电源高斯叠加、AIA/射电/HMI 多仪器叠加。
+## Script Groups / 脚本分组
 
-- `scripts/xray_dem/`
-  - X 射线、DEM 和多波段诊断脚本。
-  - 包括 GOES SXR、HESSI/HXI 光变、ASO-S/HXI 图像、AIA/HXI 叠加、flare 多面板诊断、Neupert 效应分析、DEM 反演和 DEM/射电源叠加。
+- `scripts/aia_hmi/`: AIA/HMI commands and compatibility entrypoints.
+- `scripts/radio/`: radio source maps, center extraction, trajectory playback, burst pipeline, raw quality checks, and overlay commands.
+- `scripts/xray_dem/`: GOES SXR, HXR/HXI, Neupert, DEM, and multi-panel diagnostic scripts.
+- `scripts/lasco_cme/`: SOHO/LASCO download, plotting, and running-difference scripts.
+- `scripts/data_download/`: STEREO, GOES/SUVI, and Solar Orbiter/EUI query/download scripts.
+- `scripts/stereo_suvi/`: STEREO/EUVI and GOES/SUVI event context products.
+- `scripts/tools/`: general utilities such as video generation and Gaussian fitting wrappers.
 
-- `scripts/lasco_cme/`
-  - SOHO/LASCO CME 相关脚本。
-  - 包括 LASCO 数据下载、基础图像绘制和运行差分图像生成。
+## Documentation / 文档
 
-- `scripts/tools/`
-  - 通用科研工具脚本。
-  - `gaussian_source_fitting.py` 用于二维高斯源拟合。
-  - `image_sequence_to_video.py` 用于将图片序列转换为视频。
+- `docs/FUNCTION_MAP.md`: bilingual package and compatibility map.
+- `docs/project_structure.md`: repository layout and data policy.
+- `docs/script_index.md`: runnable script index.
+- `docs/path_configuration.md`: local path configuration guide.
+- `scripts/aia_hmi/docs/AIA_ENTRYPOINTS.md`: AIA entrypoint notes.
+- `scripts/radio/docs/RADIO_ENTRYPOINTS.md`: radio entrypoint notes.
+- `scripts/radio/docs/RADIO_MIGRATION_NOTES.md`: radio migration and compatibility notes.
 
-## Configs
+## Data Policy / 数据策略
 
-- `configs/paths.example.yaml`
-  - 用户可复制为 `configs/paths.local.yaml` 的本地配置模板。
-  - 用于配置本地观测数据路径、输出路径和脚本参数。
-- `configs/aia.example.yaml`
-- `configs/radio.example.yaml`
-- `configs/cso.example.yaml`
-- `configs/overlay.example.yaml`
-  - 第一阶段新增的模块化配置模板，仅作为后续重构参考；现有脚本不强制读取这些文件。
+Do not commit raw observations, local path configs, generated bulk products, or
+personal archives. Keep tracked content focused on code, tests, public docs,
+configuration templates, and reviewed README assets.
 
-## Examples
-
-- `examples/`
-  - 后续放置最小可运行示例、输入示例和输出示例。
-  - `examples/input/` 用于小型示例输入数据。
-  - `examples/output/` 用于示例运行结果。
-  - 大型 FITS、视频和完整科研数据不建议直接提交到 GitHub。
-
-## Docs
-
-- `docs/script_index.md`
-  - 主要脚本索引和用途说明。
-- `docs/project_structure.md`
-  - 项目结构说明。
-- `docs/path_configuration.md`
-  - 本地路径配置说明。
-- `docs/PROJECT_CLEANUP_REPORT.md`
-  - 发布前清理审计报告。
-- `docs/PROJECT_OPTIMIZATION_PLAN.md`
-  - 第一阶段整理优化计划。
-- `docs/LEGACY_AND_REVIEW_FILES.md`
-  - 可合并、可保留、暂不移动文件的人工确认清单。
-- `docs/assets/README.md`
-  - README 展示图片和视频资产规范。
-
-## Output Directories
-
-- `outputs/`
-  - 运行输出目录说明保留。
-  - 实际运行结果默认不建议提交，尤其是大型图片、FITS、视频和中间数据。
-
-## README Assets
-
-- `docs/assets/images/`
-  - README 展示图片目录，可放置压缩后的运行结果图、AIA 图像、射电源叠加图、频谱图等。
-  - 空目录通过 `.gitkeep` 保留。
-
-- `docs/assets/videos/`
-  - README 展示视频目录，可放置压缩后的动画、时间序列视频和太阳事件演化视频。
-  - 空目录通过 `.gitkeep` 保留。
+不要提交原始观测数据、本地路径配置、批量生成产品或个人归档。Git 中应主要
+保留代码、测试、公开文档、配置模板和经过审查的 README 展示资产。

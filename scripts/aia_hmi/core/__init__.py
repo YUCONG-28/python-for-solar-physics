@@ -1,4 +1,4 @@
-"""Core modules for AIA/HMI workflows."""
+"""Compatibility namespace for AIA/HMI workflow helpers."""
 
 from .aia_config import AIAConfig
 from .aia_processor import process_aia_fits

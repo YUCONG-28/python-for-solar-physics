@@ -55,3 +55,17 @@ guideline conflicts with them.
 - Do not merge into `main` or delete the branch without the user's explicit confirmation.
 - If the user confirms, switch to `main`, merge the work branch, then delete the completed local branch.
 - If a remote branch was pushed, ask for confirmation before deleting the remote branch too.
+
+## Radio and verification workflow
+
+- Prefer `solar_toolkit.radio` for new reusable radio-processing imports.
+- Keep old `scripts.radio.core` import paths working during the migration
+  window with compatibility wrappers or aliases rather than symbol copies.
+- For radio work, optimize for denoising and clear radio-source visibility on
+  AIA imagery, not only for visually prettier Gaussian overlays.
+- Keep literature/formula notes mapped to the actual code path and clearly
+  separate implemented behavior from future work.
+- For focused radio changes, prefer targeted tests first, such as relevant
+  `tests\test_radio_*.py` files, then broaden only when shared behavior changed.
+- If a broader suite fails, isolate whether the failure is in the changed path
+  before treating it as a task blocker.

@@ -2,7 +2,8 @@
 
 This directory now follows the same phased structure used by `scripts/radio`.
 The old script path is kept as a compatibility entrypoint, while the reusable
-API boundary lives under `core/`.
+API boundary lives under `solar_toolkit.aia`. The local `core/` package is a
+compatibility namespace for historical imports.
 
 ## `scripts/aia_hmi/run_aia_euv_processor.py`
 
@@ -27,19 +28,24 @@ Compatibility entrypoint for the historical command and import path.
 - Purpose: preserve existing commands such as
   `python scripts\aia_hmi\sdo_aia_euv_processor.py ...`.
 - Behavior: re-exports `AIAConfig`, `process_aia_fits`, `build_parser`,
-  `config_from_args`, and `main` from `scripts.aia_hmi.core`.
+  `config_from_args`, and `main` from `solar_toolkit.aia`.
 - Note: importing this module is intentionally lightweight; the heavy
   SunPy/Astropy implementation loads only when processing is actually run.
 
-## Core Modules
+## Public Modules
 
-- `core/aia_config.py`: AIA and difference defaults plus `AIAConfig`.
-- `core/aia_io.py`: FITS file ordering, wavelength directory discovery, and
+- `solar_toolkit.aia.config`: AIA and difference defaults plus `AIAConfig`.
+- `solar_toolkit.aia.io`: FITS file ordering, wavelength directory discovery, and
   selected-file resolution.
-- `core/aia_difference.py`: lightweight difference-image configuration helpers.
-- `core/aia_mosaic.py`: lightweight mosaic layout and wavelength-slot helpers.
-- `core/aia_processor.py`: lazy runtime dispatcher for the proven implementation.
-- `core/aia_cli.py`: CLI parser, config construction, and command `main()`.
+- `solar_toolkit.aia.difference`: lightweight difference-image configuration helpers.
+- `solar_toolkit.aia.mosaic`: lightweight mosaic layout and wavelength-slot helpers.
+- `solar_toolkit.aia.processor`: lazy runtime dispatcher for the proven implementation.
+- `solar_toolkit.aia.cli`: CLI parser, config construction, and command `main()`.
+
+## Compatibility Modules
+
+The historical `scripts.aia_hmi.core.aia_*` modules remain import-compatible
+wrappers around `solar_toolkit.aia.*`.
 
 ## Compatibility Policy
 

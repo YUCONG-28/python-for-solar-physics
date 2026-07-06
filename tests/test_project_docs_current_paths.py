@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 CURRENT_DOCS = [
     "README.md",
+    "docs/FUNCTION_MAP.md",
     "docs/FINAL_CODE_RETENTION_AND_REMOVAL_PLAN.md",
     "docs/LEGACY_AND_REVIEW_FILES.md",
     "docs/MAIN_FILES.md",

@@ -40,9 +40,9 @@ PATH_CONFIG = load_script_config(
     "image_sequence_to_video",
     {
         "fps": 10,
-        "input_dir": r"<PROJECT_ROOT>\2025\20250124\RS_test\gaussian_spectrogram_overlay\multi_band_RR+LL",
-        "output_dir": r"<PROJECT_ROOT>\2025\20250124\video",
-        "video_name": "gaussian_spectrogram_overlay.mp4",
+        "input_dir": r"<PROJECT_ROOT>\2025\20250503\output\AIA_6band_GaussianRadio_Spectrogram",
+        "output_dir": r"<PROJECT_ROOT>\2025\20250503\video",
+        "video_name": "AIA_spectrogram_overlay.mp4",
     },
 )
 

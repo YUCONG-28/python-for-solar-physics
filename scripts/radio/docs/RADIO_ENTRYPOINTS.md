@@ -50,6 +50,51 @@ Compatibility entrypoint for radio source maps with Gaussian overlay.
 - Output overrides:
   `--output-dir PATH`, `--analysis-subdir NAME`, and `--gaussian-csv NAME`.
 
+## `extract_radio_centers.py`
+
+Recommended threshold/contour center extraction entrypoint.
+
+- Purpose: read a folder of radio FITS files and extract source centers from a
+  thresholded region, such as a 95% intensity contour.
+- Inputs: radio FITS folder, file pattern, threshold mode, centroid mode,
+  connected-component mode, and optional LCP/RCP pairing.
+- Outputs: CSV or XLSX table with observation time, frequency, polarization,
+  center coordinates, peak coordinates, threshold metadata, source label, and
+  quality flag.
+- Best for: creating a trajectory table without rerunning the Gaussian source
+  map pipeline.
+- Example:
+  `python scripts\radio\extract_radio_centers.py --radio-dir D:\path\to\radio_fits --out outputs\radio_centers.csv --threshold 0.95 --threshold-mode bg_peak --make-sum`
+
+## `run_radio_source_app.py`
+
+Streamlit frontend for radio-source trajectory playback.
+
+- Purpose: read an existing center CSV/XLSX table and display radio-source
+  trajectories over time with optional AIA FITS backgrounds.
+- Inputs: center table from `extract_radio_centers.py` or a compatible
+  Gaussian diagnostics table, optional AIA FITS folder, playback FPS, frame
+  mode, frequency/polarization/method filters, and LCP-RCP comparison settings.
+- Outputs: interactive browser view. The app does not run batch FITS
+  extraction; it only reads the selected table.
+- Best for: inspecting one center at a time, the previous N centers, or all
+  centers up to the current frame across multiple frequencies.
+- Example:
+  `streamlit run scripts\radio\run_radio_source_app.py`
+
+## `export_radio_source_trajectory.py`
+
+Static Plotly HTML export for one trajectory frame.
+
+- Purpose: reuse the same trajectory and AIA background library logic as the
+  Streamlit frontend, but write a standalone HTML figure for sharing or review.
+- Inputs: center CSV/XLSX table, frame time or frame index, frame mode, filters,
+  optional AIA FITS folder, and LCP-RCP comparison options.
+- Outputs: standalone Plotly HTML file.
+- Best for: capturing a selected trajectory state without launching Streamlit.
+- Example:
+  `python scripts\radio\export_radio_source_trajectory.py --centers outputs\radio_centers.csv --out outputs\radio_source_trajectory.html`
+
 ## `run_aia_radio_hmi_overlay.py`
 
 Compatibility entrypoint for AIA/HMI/radio overlays.

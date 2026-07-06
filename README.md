@@ -57,18 +57,27 @@ running full science workflows.
 - Build radio source maps and AIA/radio/HMI overlays.
 - Fit two-dimensional Gaussian source models, export fitted centers, and
   generate FWHM and quality-diagnostic products.
+- Extract threshold/contour radio-source centers such as 95% intensity regions,
+  then review multi-frequency trajectories in a Streamlit playback frontend or
+  export a static Plotly HTML view.
 - Support manual drift-rate selections, saved JSON selections, Newkirk height
   comparison, and drift-speed diagnostics.
 
 **Reproducibility and maintenance**
 
-- Keep reusable, data-independent helpers in `solar_toolkit/`. The
-  `solar_toolkit.radio` namespace is the recommended library API for reusable
-  radio coordinates, Gaussian fitting, Newkirk, quicklook, and diagnostic
-  helpers.
+- Keep reusable, data-independent helpers in `solar_toolkit/`. The public
+  package layer now follows an Astropy/SunPy-style boundary with
+  `solar_toolkit.aia`, `solar_toolkit.hmi`, `solar_toolkit.radio`,
+  `solar_toolkit.xray_dem`, `solar_toolkit.cme`, `solar_toolkit.net`,
+  `solar_toolkit.modeling`, and `solar_toolkit.visualization`.
+- The `solar_toolkit.radio` namespace is the recommended library API for
+  reusable radio coordinates, Gaussian fitting, Newkirk, spectrogram, drift,
+  raw-quality, quicklook, and diagnostic helpers.
 - Keep runnable research workflows under `scripts/`, grouped by instrument or
   analysis task. Historical `scripts.radio.core.*` imports are retained as
   compatibility aliases while new code should prefer `solar_toolkit.radio.*`.
+  Historical `scripts.aia_hmi.core.*` imports are retained as compatibility
+  aliases while new AIA code should prefer `solar_toolkit.aia.*`.
 - Keep data-independent tests in `tests/`; full scientific products require
   local observations and explicit path configuration.
 
@@ -128,10 +137,17 @@ Optional GUI workflows may also need:
 python -m pip install -e ".[gui]"
 ```
 
+Optional radio-source trajectory frontend workflows use:
+
+```powershell
+python -m pip install -e ".[app]"
+```
+
 Core dependencies include NumPy, SciPy, AstroPy, SunPy, Matplotlib, Reproject,
 Scikit-image, PyYAML, Pandas, and tqdm. Optional workflows may require DRMS,
 Requests, OpenCV, ImageIO, PyQt5, pyqtgraph, Helioviewer-related packages, or
-archive-specific libraries.
+archive-specific libraries. The `app` extra adds Streamlit, Plotly, and
+OpenPyXL for interactive trajectory playback and Excel table support.
 
 ## Minimal Usage
 
@@ -148,6 +164,15 @@ python scripts/radio/run_radio_burst_pipeline.py --config radio_20250124_config
 # Quick radio source maps with Gaussian overlays
 python scripts/radio/run_radio_source_map.py
 
+# Extract threshold/contour radio-source centers to a table
+python scripts/radio/extract_radio_centers.py --radio-dir D:\path\to\radio_fits --out outputs\radio_centers.csv --threshold 0.95 --threshold-mode bg_peak --make-sum
+
+# Launch the Streamlit radio-source trajectory frontend
+streamlit run scripts/radio/run_radio_source_app.py
+
+# Export one selected trajectory frame to static Plotly HTML
+python scripts/radio/export_radio_source_trajectory.py --centers outputs\radio_centers.csv --out outputs\radio_source_trajectory.html
+
 # AIA/radio/HMI context overlays
 python scripts/radio/run_aia_radio_hmi_overlay.py
 ```
@@ -159,7 +184,7 @@ Reusable radio helpers can also be imported directly from the installable
 package layer:
 
 ```python
-from solar_toolkit.radio import gaussian, newkirk, quicklook
+from solar_toolkit.radio import centers, gaussian, newkirk, quicklook, trajectory
 ```
 
 ## Configuration and Data Policy
@@ -199,6 +224,8 @@ output comparison remains a separate validation step.
 
 - `docs/README.md`: documentation index that separates current guidance from
   historical audit reports.
+- `docs/FUNCTION_MAP.md`: bilingual package/function map and compatibility
+  policy for the public library layer.
 - `docs/script_index.md`: public runnable scripts, compatibility entrypoints,
   utility scripts, examples, and legacy-risk workflows.
 - `docs/project_structure.md`: repository layout, data policy, and script group

@@ -10,15 +10,27 @@ from __future__ import annotations
 from importlib import import_module
 
 _SUBMODULES = {
+    "centers": "solar_toolkit.radio.centers",
     "coordinates": "solar_toolkit.radio.coordinates",
     "frequency_priority_diagnostics": "solar_toolkit.radio.frequency_priority_diagnostics",
     "gaussian": "solar_toolkit.radio.gaussian",
+    "gaussian_background": "solar_toolkit.radio.gaussian_background",
+    "gaussian_diagnostics": "solar_toolkit.radio.gaussian_diagnostics",
+    "gaussian_fit": "solar_toolkit.radio.gaussian_fit",
+    "gaussian_io": "solar_toolkit.radio.gaussian_io",
+    "gaussian_masks": "solar_toolkit.radio.gaussian_masks",
+    "gaussian_models": "solar_toolkit.radio.gaussian_models",
     "height_comparison": "solar_toolkit.radio.height_comparison",
     "height_plots": "solar_toolkit.radio.height_plots",
     "io": "solar_toolkit.radio.io",
     "newkirk": "solar_toolkit.radio.newkirk",
     "output_paths": "solar_toolkit.radio.output_paths",
     "quicklook": "solar_toolkit.radio.quicklook",
+    "raw_quality": "solar_toolkit.radio.raw_quality",
+    "spectrogram": "solar_toolkit.radio.spectrogram",
+    "trajectory": "solar_toolkit.radio.trajectory",
+    "drift_rate": "solar_toolkit.radio.drift_rate",
+    "drift_products": "solar_toolkit.radio.drift_products",
 }
 
 __all__ = sorted(_SUBMODULES)

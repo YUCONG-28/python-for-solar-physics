@@ -8,9 +8,16 @@ separate so the project is easier to maintain and present on GitHub.
 python-for-solar-physics/
 |-- solar_toolkit/
 |   |-- __init__.py
+|   |-- aia/
+|   |-- cme/
+|   |-- hmi/
+|   |-- modeling/
+|   |-- net/
 |   |-- path_config.py
 |   |-- radio/
-|   `-- solar_analysis_utils.py
+|   |-- solar_analysis_utils.py
+|   |-- visualization/
+|   `-- xray_dem/
 |-- scripts/
 |   |-- aia_hmi/
 |   |   |-- core/
@@ -54,8 +61,10 @@ python-for-solar-physics/
 
 - `solar_toolkit/`: installable library layer and package metadata. This
   package contains optional YAML path loading, shared observation-time parsing,
-  FITS sorting, memory helpers, common plotting/coordinate utilities, and the
-  reusable `solar_toolkit.radio` APIs.
+  FITS sorting, memory helpers, common plotting/coordinate utilities, and
+  science-domain namespaces modeled after the Astropy/SunPy package style:
+  `aia`, `hmi`, `radio`, `xray_dem`, `cme`, `net`, `modeling`, and
+  `visualization`.
 - `scripts/`: runnable research workflows grouped by instrument or task. These
   scripts are the main command-line interface for local data processing.
 - `scripts/data_download/`: event-oriented download/query helpers for
@@ -95,24 +104,32 @@ python-for-solar-physics/
   The main AIA EUV processor now uses a radio-style phased structure with
   `run_aia_euv_processor.py`, `core/`, `configs/`, `docs/`, and the historical
   `sdo_aia_euv_processor.py` compatibility entrypoint.
-  New reusable AIA/HMI logic should go under `core/`; new command-line
-  entrypoints should be small `run_*.py` wrappers. Keep compatibility wrappers
-  when an old script path is already used by tests, docs, or local workflows.
-- `scripts/radio/`: CSO dynamic spectra, radio source maps, polarization
-  products, multi-frequency source panels, and AIA/radio/HMI overlays. New
-  reusable radio code should live under `solar_toolkit.radio`; historical
+  New reusable AIA logic should go under `solar_toolkit.aia`; HMI-facing
+  reusable logic should go under `solar_toolkit.hmi`. The `core/` package is
+  now a compatibility namespace for old imports. New command-line entrypoints
+  should be small `run_*.py` wrappers. Keep compatibility wrappers when an old
+  script path is already used by tests, docs, or local workflows.
+- `scripts/radio/`: CSO dynamic spectra, radio source maps, threshold/contour
+  center extraction, trajectory playback/export, polarization products,
+  multi-frequency source panels, and AIA/radio/HMI overlays. New reusable radio
+  code should live under `solar_toolkit.radio`; historical
   `scripts.radio.core.*` modules are compatibility aliases for existing docs,
   tests, and local workflows.
+- `scripts/xray_dem/`: GOES SXR, HXR/HXI, Neupert-effect diagnostics, DEM/Tb
+  visualization, and combined flare analysis plots. Reusable future helpers
+  should be extracted into `solar_toolkit.xray_dem`.
+- `scripts/lasco_cme/`: SOHO/LASCO data download, image plotting, and CME
+  running-difference workflows. Reusable future helpers should be extracted
+  into `solar_toolkit.cme`.
 - `scripts/data_download/`: remote data access helpers that create local
-  raw-data folders and manifests. These scripts may contact external archives.
+  raw-data folders and manifests. These scripts may contact external archives;
+  reusable query/download helpers should be extracted into `solar_toolkit.net`.
 - `scripts/stereo_suvi/`: products for STEREO-A/EUVI and GOES/SUVI context
   imaging of the 2025-01-24 event.
-- `scripts/xray_dem/`: GOES SXR, HXR/HXI, Neupert-effect diagnostics, DEM/Tb
-  visualization, and combined flare analysis plots.
-- `scripts/lasco_cme/`: SOHO/LASCO data download, image plotting, and CME
-  running-difference workflows.
 - `scripts/tools/`: general utilities such as image-sequence video generation
-  and Gaussian source fitting.
+  and Gaussian source fitting. Reusable plotting/media helpers should move
+  toward `solar_toolkit.visualization`, while science models should move toward
+  `solar_toolkit.modeling`.
 
 ## Tests vs Examples
 
