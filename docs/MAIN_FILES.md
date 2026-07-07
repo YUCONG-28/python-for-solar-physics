@@ -20,6 +20,7 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
   - `net/`: archive query and download helper boundary.
   - `modeling/`: shared Gaussian and density-model boundary.
   - `visualization/`: shared plotting, media-generation, local image sequence viewer, video export, and interactive HTML visualization helpers.
+  - `webapp/`: unified local English web GUI, workflow registry, and job runner.
   - `path_config.py`: local YAML path/config loading.
   - `solar_analysis_utils.py`: compatibility facade for shared time, FITS ordering, map, memory, and plotting utilities.
 
@@ -46,6 +47,8 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
   - Raw radio FITS quality-diagnostic workflow.
 - `scripts/tools/run_image_web_viewer.py`
   - Local Flask/Canvas image sequence viewer for multi-folder playback, ROI review, and composite/separate MP4 export.
+- `scripts/tools/run_solar_webapp.py`
+  - Unified local English web GUI for registered public workflows.
 
 ## Compatibility Layers
 

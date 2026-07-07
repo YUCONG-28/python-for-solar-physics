@@ -59,6 +59,7 @@ def test_beginner_safe_entrypoint_modules_import_without_running_data_workflows(
         "scripts.aia_hmi.sdo_aia_hmi_fits_rename",
         "scripts.tools.image_sequence_to_video",
         "scripts.tools.run_image_web_viewer",
+        "scripts.tools.run_solar_webapp",
         "scripts.data_download.goes_suvi_download_20250124",
         "scripts.data_download.stereo_a_euvi_download_20250124",
         "scripts.data_download.solo_eui_soar_query_download",
@@ -79,6 +80,7 @@ def test_beginner_safe_help_commands_do_not_start_data_workflows():
         "scripts/radio/run_radio_burst_pipeline.py",
         "scripts/radio/run_radio_raw_quality.py",
         "scripts/tools/run_image_web_viewer.py",
+        "scripts/tools/run_solar_webapp.py",
     ]:
         result = _run_help(script)
         assert result.returncode == 0, result.stderr

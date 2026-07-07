@@ -77,6 +77,11 @@ exclude = ["tests*", "examples*", "docs*"]
     "static/*.css",
     "static/*.js",
 ]
+"solar_toolkit.webapp" = [
+    "templates/*.html",
+    "static/*.css",
+    "static/*.js",
+]
 
 [tool.black]
 line-length = 88

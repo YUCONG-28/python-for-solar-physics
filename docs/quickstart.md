@@ -85,6 +85,7 @@ D:\miniforge3\envs\solarphysics_env\python.exe scripts\aia_hmi\sdo_aia_hmi_fits_
 D:\miniforge3\envs\solarphysics_env\python.exe scripts\data_download\solo_eui_soar_query_download.py --help
 D:\miniforge3\envs\solarphysics_env\python.exe scripts\radio\run_radio_burst_pipeline.py --help
 D:\miniforge3\envs\solarphysics_env\python.exe scripts\tools\run_image_web_viewer.py --help
+D:\miniforge3\envs\solarphysics_env\python.exe scripts\tools\run_solar_webapp.py --help
 ```
 
 For the current public script inventory, use `docs/script_index.md`.
@@ -99,6 +100,8 @@ Use these only after local data paths are configured:
 - Radio-source trajectory playback: `scripts/radio/run_radio_source_app.py`
 - Multi-folder image review and MP4 export:
   `scripts/tools/run_image_web_viewer.py`
+- Unified local English web GUI:
+  `scripts/tools/run_solar_webapp.py`
 
 Raw observations, generated figures, videos, CSV/XLSX products, and local cache
 folders should stay outside Git unless they are explicitly reviewed and moved

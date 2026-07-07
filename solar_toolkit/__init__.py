@@ -31,5 +31,6 @@ __all__ = [
     "time",
     "timeseries",
     "visualization",
+    "webapp",
     "xray_dem",
 ]
