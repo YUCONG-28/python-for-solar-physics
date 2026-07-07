@@ -25,6 +25,10 @@ data portal. Raw observations and large generated products are intentionally
 kept outside Git; users are expected to configure local data paths before
 running full science workflows.
 
+New users should start with `docs/quickstart.md`. It lists data-independent
+checks, first import examples, and safe `--help` commands before any local
+observation archive is required.
+
 ## Scientific Scope
 
 - **SDO/AIA and SDO/HMI context imaging**: EUV visualization, mosaics,
@@ -70,9 +74,11 @@ running full science workflows.
 
 - Keep reusable, data-independent helpers in `solar_toolkit/`. The public
   package layer now follows an Astropy/SunPy-style boundary with
-  `solar_toolkit.aia`, `solar_toolkit.hmi`, `solar_toolkit.radio`,
-  `solar_toolkit.xray_dem`, `solar_toolkit.cme`, `solar_toolkit.net`,
-  `solar_toolkit.modeling`, and `solar_toolkit.visualization`.
+  `solar_toolkit.time`, `solar_toolkit.io`, `solar_toolkit.data`,
+  `solar_toolkit.map`, `solar_toolkit.timeseries`, `solar_toolkit.aia`,
+  `solar_toolkit.hmi`, `solar_toolkit.radio`, `solar_toolkit.xray_dem`,
+  `solar_toolkit.cme`, `solar_toolkit.net`, `solar_toolkit.modeling`, and
+  `solar_toolkit.visualization`.
 - The `solar_toolkit.radio` namespace is the recommended library API for
   reusable radio coordinates, Gaussian fitting, Newkirk, spectrogram, drift,
   raw-quality, quicklook, and diagnostic helpers.
@@ -219,9 +225,11 @@ Data and product policy:
 Lightweight checks are designed to run without local science data:
 
 ```powershell
-ruff check .
-python -m compileall solar_toolkit scripts tests examples
-$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'; python -m pytest -q tests
+$env:PATH="D:\miniforge3\envs\solarphysics_env;D:\miniforge3\envs\solarphysics_env\Library\mingw-w64\bin;D:\miniforge3\envs\solarphysics_env\Library\usr\bin;D:\miniforge3\envs\solarphysics_env\Library\bin;D:\miniforge3\envs\solarphysics_env\Scripts;$env:PATH"
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
+D:\miniforge3\envs\solarphysics_env\python.exe -m compileall -q solar_toolkit scripts tests examples
+D:\miniforge3\envs\solarphysics_env\python.exe -m ruff check solar_toolkit scripts tests examples
+D:\miniforge3\envs\solarphysics_env\python.exe -m pytest -q tests
 ```
 
 These checks cover imports, documentation consistency, path configuration,
@@ -231,6 +239,8 @@ output comparison remains a separate validation step.
 
 ## Documentation Map
 
+- `docs/quickstart.md`: beginner path for environment setup, safe checks,
+  first imports, path configuration, and recommended entrypoints.
 - `docs/README.md`: documentation index that separates current guidance from
   historical audit reports.
 - `docs/FUNCTION_MAP.md`: bilingual package/function map and compatibility
@@ -246,15 +256,13 @@ output comparison remains a separate validation step.
 - `CHANGELOG.md`: release and change history.
 - `docs/README.zh-CN.md`: Chinese project overview and usage summary.
 
-## Chinese Summary
+## Chinese Note
 
-本项目是一个面向太阳物理多波段事件分析的 Python 研究工具包，主要用于
-SDO/AIA、SDO/HMI、CSO 动态频谱、射电源图像、高斯源区诊断和多仪器背景图的
-本地化处理。README 以英文公开学术项目介绍为主；中文说明见
-`docs/README.zh-CN.md`。
+This README is English-first for GitHub presentation. A Chinese project overview
+is available in `docs/README.zh-CN.md`.
 
-完整科学工作流需要本地观测数据和路径配置。原始观测数据、批量生成图像、
-视频和表格不进入 Git；公开展示图只保留在 `docs/assets/` 中。
+本项目用于本地太阳物理多波段事件分析。完整科学流程需要本地观测数据和路径配置；原始观测、
+批量生成图像、视频和表格不进入 Git。公开展示素材只保留在 `docs/assets/`。
 
 ## Citation
 

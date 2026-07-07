@@ -10,12 +10,17 @@ python-for-solar-physics/
 |   |-- __init__.py
 |   |-- aia/
 |   |-- cme/
+|   |-- data/
 |   |-- hmi/
+|   |-- io/
+|   |-- map/
 |   |-- modeling/
 |   |-- net/
 |   |-- path_config.py
 |   |-- radio/
 |   |-- solar_analysis_utils.py
+|   |-- time/
+|   |-- timeseries/
 |   |-- visualization/
 |   `-- xray_dem/
 |-- scripts/
@@ -61,10 +66,11 @@ python-for-solar-physics/
 
 - `solar_toolkit/`: installable library layer and package metadata. This
   package contains optional YAML path loading, shared observation-time parsing,
-  FITS sorting, memory helpers, common plotting/coordinate utilities, and
-  science-domain namespaces modeled after the Astropy/SunPy package style:
-  `aia`, `hmi`, `radio`, `xray_dem`, `cme`, `net`, `modeling`, and
-  `visualization`.
+  FITS sorting, local inventory records, map/header helpers, time-series
+  helpers, common plotting/coordinate utilities, and science-domain namespaces
+  modeled after the Astropy/SunPy package style: `time`, `io`, `data`, `map`,
+  `timeseries`, `aia`, `hmi`, `radio`, `xray_dem`, `cme`, `net`, `modeling`,
+  and `visualization`.
 - `scripts/`: runnable research workflows grouped by instrument or task. These
   scripts are the main command-line interface for local data processing.
 - `scripts/data_download/`: event-oriented download/query helpers for
@@ -79,8 +85,8 @@ python-for-solar-physics/
   `paths.local.yaml` for machine-specific paths. The module-specific
   `*.example.yaml` files document planned AIA, radio, CSO, and overlay
   parameters for later config consolidation.
-- `docs/`: project documentation, including this structure guide and the script
-  index.
+- `docs/`: project documentation, including this structure guide,
+  `docs/quickstart.md`, and the script index.
 - `docs/assets/`: GitHub/README display assets. Put only compressed, documented
   example images or short videos here; do not store raw observation data or bulk
   processing outputs.

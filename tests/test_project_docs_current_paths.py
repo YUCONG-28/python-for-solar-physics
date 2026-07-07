@@ -18,6 +18,7 @@ CURRENT_DOCS = [
     "docs/PROJECT_CLEANUP_REPORT.md",
     "docs/README.md",
     "docs/REFACTOR_BASELINE.md",
+    "docs/quickstart.md",
     "docs/project_structure.md",
     "docs/script_index.md",
     "scripts/aia_hmi/docs/AIA_ENTRYPOINTS.md",
@@ -122,6 +123,48 @@ def test_aia_recommended_entrypoint_is_current(doc_path):
     text = (REPO_ROOT / doc_path).read_text(encoding="utf-8")
 
     assert "scripts/aia_hmi/run_aia_euv_processor.py" in text
+
+
+def test_beginner_quickstart_is_linked_from_current_docs():
+    for doc_path in [
+        "README.md",
+        "docs/README.md",
+        "docs/MAIN_FILES.md",
+        "docs/project_structure.md",
+        "docs/script_index.md",
+    ]:
+        text = (REPO_ROOT / doc_path).read_text(encoding="utf-8")
+        assert "quickstart.md" in text
+
+
+def test_current_docs_explain_sunpy_style_base_packages():
+    required_packages = [
+        "solar_toolkit.time",
+        "solar_toolkit.io",
+        "solar_toolkit.data",
+        "solar_toolkit.map",
+        "solar_toolkit.timeseries",
+        "solar_toolkit.net",
+        "solar_toolkit.cme",
+        "solar_toolkit.xray_dem",
+    ]
+    docs = [
+        (REPO_ROOT / "README.md").read_text(encoding="utf-8"),
+        (REPO_ROOT / "docs" / "FUNCTION_MAP.md").read_text(encoding="utf-8"),
+        (REPO_ROOT / "docs" / "quickstart.md").read_text(encoding="utf-8"),
+    ]
+
+    for package in required_packages:
+        assert any(package in text for text in docs), package
+
+
+def test_quickstart_uses_project_interpreter_for_local_validation():
+    text = (REPO_ROOT / "docs" / "quickstart.md").read_text(encoding="utf-8")
+
+    assert r"D:\miniforge3\envs\solarphysics_env\python.exe" in text
+    assert "PYTEST_DISABLE_PLUGIN_AUTOLOAD" in text
+    assert "-m compileall -q solar_toolkit scripts tests examples" in text
+    assert "tests\\test_imports.py" in text
 
 
 @pytest.mark.parametrize("doc_path", MAINTAINED_MARKDOWN_DOCS)

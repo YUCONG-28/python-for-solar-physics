@@ -10,6 +10,7 @@ they explicitly say so.
 | Document | Use |
 | --- | --- |
 | `../README.md` | Public project overview, setup, and recommended entrypoints. |
+| `quickstart.md` | Beginner-friendly setup, no-data checks, first imports, path configuration, and safe entrypoint help commands. |
 | `README.zh-CN.md` | Chinese project overview, minimal usage notes, data policy, and documentation map. |
 | `FUNCTION_MAP.md` | Bilingual public package map, runnable entrypoints, and compatibility policy. |
 | `project_structure.md` | Current repository layout, data policy, and AIA/HMI structure notes. |

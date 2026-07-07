@@ -1,11 +1,10 @@
-# Main Files / 主文件索引
+# Main Files
 
-This compact index lists the maintainer-facing packages and entrypoints. For
-the full boundary map, see `FUNCTION_MAP.md`.
+This compact index lists the maintainer-facing packages and entrypoints. For the
+full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
+`quickstart.md`.
 
-本文档是维护者使用的简明主文件索引。完整功能边界见 `FUNCTION_MAP.md`。
-
-## Public Packages / 公共包
+## Public Packages
 
 - `solar_toolkit/`: installable library layer.
   - `time/`: shared timestamp parsing, filename time extraction, nearest-time matching, and range filtering.
@@ -16,15 +15,15 @@ the full boundary map, see `FUNCTION_MAP.md`.
   - `aia/`: AIA configuration, FITS selection, difference images, mosaics, EUV processing, and lightweight AIA background loading.
   - `hmi/`: HMI-facing facades for FITS renaming, magnetogram plotting, and overlays.
   - `radio/`: radio coordinates, threshold centers, Gaussian fitting, trajectory tables, Newkirk, spectrogram, drift, raw quality, and quicklook helpers.
-  - `xray_dem/`: namespace for X-ray, HXI, Neupert, and DEM helpers.
-  - `cme/`: namespace for LASCO/CME helpers.
-  - `net/`: namespace for archive query and download helpers.
+  - `xray_dem/`: X-ray, HXI, Neupert, and DEM helper boundary.
+  - `cme/`: LASCO/CME helper boundary.
+  - `net/`: archive query and download helper boundary.
   - `modeling/`: shared Gaussian and density-model boundary.
   - `visualization/`: shared plotting, media-generation, local image sequence viewer, video export, and interactive HTML visualization helpers.
   - `path_config.py`: local YAML path/config loading.
-  - `solar_analysis_utils.py`: shared time, FITS ordering, map, memory, and plotting utilities.
+  - `solar_analysis_utils.py`: compatibility facade for shared time, FITS ordering, map, memory, and plotting utilities.
 
-## Recommended Entrypoints / 推荐入口
+## Recommended Entrypoints
 
 - `scripts/aia_hmi/run_aia_euv_processor.py`
   - Recommended AIA EUV command.
@@ -48,14 +47,14 @@ the full boundary map, see `FUNCTION_MAP.md`.
 - `scripts/tools/run_image_web_viewer.py`
   - Local Flask/Canvas image sequence viewer for multi-folder playback, ROI review, and composite/separate MP4 export.
 
-## Compatibility Layers / 兼容层
+## Compatibility Layers
 
 - `scripts/radio/core/`: compatibility wrappers for migrated radio modules.
 - `scripts/aia_hmi/core/`: compatibility wrappers for migrated AIA modules.
 - `scripts/radio/legacy/`: large historical workflows retained for output reproducibility.
 - `legacy/`: archived scripts kept for manual review, not current first-choice entrypoints.
 
-## Script Groups / 脚本分组
+## Script Groups
 
 - `scripts/aia_hmi/`: AIA/HMI commands and compatibility entrypoints.
 - `scripts/radio/`: radio source maps, center extraction, trajectory playback, burst pipeline, raw quality checks, and overlay commands.
@@ -65,9 +64,10 @@ the full boundary map, see `FUNCTION_MAP.md`.
 - `scripts/stereo_suvi/`: STEREO/EUVI and GOES/SUVI event context products.
 - `scripts/tools/`: general utilities such as video generation, image web viewing, and Gaussian fitting wrappers.
 
-## Documentation / 文档
+## Documentation
 
-- `docs/FUNCTION_MAP.md`: bilingual package and compatibility map.
+- `docs/quickstart.md`: beginner setup, no-data validation, first imports, and safe entrypoint checks.
+- `docs/FUNCTION_MAP.md`: package and compatibility map.
 - `docs/project_structure.md`: repository layout and data policy.
 - `docs/script_index.md`: runnable script index.
 - `docs/path_configuration.md`: local path configuration guide.
@@ -75,11 +75,8 @@ the full boundary map, see `FUNCTION_MAP.md`.
 - `scripts/radio/docs/RADIO_ENTRYPOINTS.md`: radio entrypoint notes.
 - `scripts/radio/docs/RADIO_MIGRATION_NOTES.md`: radio migration and compatibility notes.
 
-## Data Policy / 数据策略
+## Data Policy
 
 Do not commit raw observations, local path configs, generated bulk products, or
 personal archives. Keep tracked content focused on code, tests, public docs,
 configuration templates, and reviewed README assets.
-
-不要提交原始观测数据、本地路径配置、批量生成产品或个人归档。Git 中应主要
-保留代码、测试、公开文档、配置模板和经过审查的 README 展示资产。

@@ -6,6 +6,8 @@ not list every internal `core/` module or event-specific config module. Most
 workflows expect local observation data and should be configured through
 `configs/paths.local.yaml` or the `SOLAR_PHYSICS_CONFIG` environment variable.
 The bilingual `README.md` links to the main workflows listed here.
+For a beginner-safe path that starts with no-data checks, see
+`docs/quickstart.md`.
 
 Status labels:
 
