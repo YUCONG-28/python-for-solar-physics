@@ -23,7 +23,7 @@ python scripts\aia_hmi\run_aia_euv_processor.py --mode mosaic --waves 94 131 171
 
 ## `sdo_aia_euv_processor.py`
 
-Compatibility entrypoint for the historical command and import path.
+Deprecated compatibility entrypoint for the historical command and import path.
 
 - Purpose: preserve existing commands such as
   `python scripts\aia_hmi\sdo_aia_euv_processor.py ...`.
@@ -44,12 +44,14 @@ Compatibility entrypoint for the historical command and import path.
 
 ## Compatibility Modules
 
-The historical `scripts.aia_hmi.core.aia_*` modules remain import-compatible
-wrappers around `solar_toolkit.aia.*`.
+The historical `scripts.aia_hmi.core.*` modules remain deprecated
+compatibility wrappers around `solar_toolkit.aia.*`.
 
 ## Compatibility Policy
 
 This refactor does not intentionally change scientific defaults, image
 processing, FITS/WCS handling, plotting parameters, output file names, or output
 directory rules. The original implementation is retained internally and loaded
-by the dispatcher when the workflow runs.
+by the dispatcher when the workflow runs. New reusable AIA code should import
+from `solar_toolkit.aia`; old `scripts.aia_hmi.core.*` imports are kept only for
+deprecated compatibility.

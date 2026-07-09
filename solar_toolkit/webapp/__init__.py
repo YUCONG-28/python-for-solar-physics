@@ -5,6 +5,7 @@ from __future__ import annotations
 from importlib import import_module
 
 _SUBMODULES = {
+    "cli": "solar_toolkit.webapp.cli",
     "registry": "solar_toolkit.webapp.registry",
     "runner": "solar_toolkit.webapp.runner",
     "server": "solar_toolkit.webapp.server",

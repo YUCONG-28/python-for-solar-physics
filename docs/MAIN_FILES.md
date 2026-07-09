@@ -52,9 +52,9 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
 
 ## Compatibility Layers
 
-- `scripts/radio/core/`: compatibility wrappers for migrated radio modules.
-- `scripts/aia_hmi/core/`: compatibility wrappers for migrated AIA modules.
-- `scripts/radio/legacy/`: large historical workflows retained for output reproducibility.
+- `scripts/radio/core/`: deprecated compatibility wrappers for migrated radio modules.
+- `scripts/aia_hmi/core/`: deprecated compatibility wrappers for migrated AIA modules.
+- `scripts/radio/legacy/`: deprecated compatibility workflows retained for output reproducibility.
 - `legacy/`: archived scripts kept for manual review, not current first-choice entrypoints.
 
 ## Script Groups

@@ -2,7 +2,121 @@
 
 from __future__ import annotations
 
+import ast
 import importlib
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MOJIBAKE_MARKERS = [
+    "\u9225",
+    "\u20ac?",
+    "\u6d93",
+    "\u9365",
+    "\u7edb",
+    "\ufffd",
+]
+LAZY_PUBLIC_PACKAGES = [
+    "aia",
+    "hmi",
+    "radio",
+    "visualization",
+    "webapp",
+]
+
+
+def _public_module_names(package_dir: Path) -> set[str]:
+    names = {
+        path.stem
+        for path in package_dir.glob("*.py")
+        if path.name != "__init__.py" and not path.name.startswith("_")
+    }
+    names.update(
+        path.name
+        for path in package_dir.iterdir()
+        if path.is_dir()
+        and not path.name.startswith("_")
+        and (path / "__init__.py").exists()
+    )
+    return names
+
+
+def _wrapper_target(path: Path) -> str | None:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Name) or node.func.id != "reexport_module":
+            continue
+        if node.args and isinstance(node.args[0], ast.Constant):
+            return str(node.args[0].value)
+    return None
+
+
+def test_root_public_names_match_existing_modules_or_packages():
+    """Top-level __all__ names resolve to real public files or packages."""
+    import solar_toolkit
+
+    for name in solar_toolkit.__all__:
+        if name.startswith("__"):
+            continue
+        package_path = REPO_ROOT / "solar_toolkit" / name / "__init__.py"
+        module_path = REPO_ROOT / "solar_toolkit" / f"{name}.py"
+
+        assert package_path.exists() or module_path.exists(), name
+
+
+def test_lazy_public_submodules_cover_real_public_files():
+    """Lazy public namespaces should expose their real public modules."""
+    for package_name in LAZY_PUBLIC_PACKAGES:
+        package = importlib.import_module(f"solar_toolkit.{package_name}")
+        package_dir = REPO_ROOT / "solar_toolkit" / package_name
+        expected = _public_module_names(package_dir)
+        submodules = package._SUBMODULES
+
+        assert expected - set(submodules) == set(), package_name
+
+        for public_name, target_name in submodules.items():
+            assert target_name.startswith("solar_toolkit.")
+            target = importlib.import_module(target_name)
+            assert target.__doc__, public_name
+
+
+def test_core_compatibility_wrappers_alias_public_modules():
+    """Core compatibility wrappers remain true module aliases."""
+    wrapper_roots = [
+        REPO_ROOT / "scripts" / "radio" / "core",
+        REPO_ROOT / "scripts" / "aia_hmi" / "core",
+    ]
+
+    for root in wrapper_roots:
+        for path in sorted(root.glob("*.py")):
+            if path.name in {"__init__.py", "_compat.py"} or path.name.startswith("_"):
+                continue
+            target_name = _wrapper_target(path)
+            assert target_name is not None, path
+
+            wrapper_name = ".".join(path.relative_to(REPO_ROOT).with_suffix("").parts)
+            wrapper = importlib.import_module(wrapper_name)
+            target = importlib.import_module(target_name)
+
+            assert wrapper is target, wrapper_name
+
+
+def test_public_package_docstrings_are_readable():
+    """Public package docstrings exist and avoid common mojibake markers."""
+    import solar_toolkit
+
+    for name in solar_toolkit.__all__:
+        if name.startswith("__"):
+            continue
+        package_path = REPO_ROOT / "solar_toolkit" / name / "__init__.py"
+        if not package_path.exists():
+            continue
+        text = package_path.read_text(encoding="utf-8")
+        docstring = ast.get_docstring(ast.parse(text))
+
+        assert docstring, name
+        assert [marker for marker in MOJIBAKE_MARKERS if marker in docstring] == []
 
 
 def test_domain_packages_import_without_loading_science_data():

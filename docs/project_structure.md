@@ -112,15 +112,15 @@ python-for-solar-physics/
   `sdo_aia_euv_processor.py` compatibility entrypoint.
   New reusable AIA logic should go under `solar_toolkit.aia`; HMI-facing
   reusable logic should go under `solar_toolkit.hmi`. The `core/` package is
-  now a compatibility namespace for old imports. New command-line entrypoints
-  should be small `run_*.py` wrappers. Keep compatibility wrappers when an old
-  script path is already used by tests, docs, or local workflows.
+  now a deprecated compatibility namespace for old imports. New command-line
+  entrypoints should be small `run_*.py` wrappers. Keep compatibility wrappers
+  when an old script path is already used by tests, docs, or local workflows.
 - `scripts/radio/`: CSO dynamic spectra, radio source maps, threshold/contour
   center extraction, trajectory playback/export, polarization products,
   multi-frequency source panels, and AIA/radio/HMI overlays. New reusable radio
   code should live under `solar_toolkit.radio`; historical
-  `scripts.radio.core.*` modules are compatibility aliases for existing docs,
-  tests, and local workflows.
+  `scripts.radio.core.*` modules are deprecated compatibility aliases for
+  existing docs, tests, and local workflows.
 - `scripts/xray_dem/`: GOES SXR, HXR/HXI, Neupert-effect diagnostics, DEM/Tb
   visualization, and combined flare analysis plots. Reusable future helpers
   should be extracted into `solar_toolkit.xray_dem`.

@@ -1,6 +1,6 @@
 # Radio Migration Notes
 
-## Current Compatibility Layer
+## Current Deprecated Compatibility Layer
 
 - `run_radio_burst_pipeline.py` is the preferred full pipeline entrypoint. It
   now imports scientific helpers from `core/` and still uses the archived
@@ -13,6 +13,10 @@
 - Reusable raw-quality, spectrogram, drift-rate, and drift-product helpers now
   live in `solar_toolkit.radio` and are re-exported through historical
   `scripts.radio.core.*` wrappers.
+- `scripts.radio.core.*`, `scripts.aia_hmi.core.*`, and
+  `scripts/radio/legacy/` are deprecated compatibility paths. They are kept to
+  protect existing local workflows and to support real-data output parity
+  checks before any future removal.
 
 ## Remaining Legacy Dependencies
 

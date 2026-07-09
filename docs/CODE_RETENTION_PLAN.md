@@ -38,7 +38,7 @@ For deletion rules and local artifact handling, prefer
 | Area | Current module boundary |
 | --- | --- |
 | AIA/HMI | `scripts/aia_hmi/core/` for config, CLI, I/O, difference helpers, mosaic helpers, and runtime dispatch. |
-| Radio | `solar_toolkit/radio/` for migrated reusable helpers, with `scripts/radio/core/` retained as compatibility aliases and for unmigrated drift/spectrogram helpers. |
+| Radio | `solar_toolkit/radio/` for reusable helpers, with `scripts/radio/core/` retained as deprecated compatibility aliases for historical imports. |
 | Shared toolkit | `solar_toolkit/` for reusable package-level helpers. |
 | Config templates | `configs/*.example.yaml` for public examples; local path configs stay ignored. |
 

@@ -43,7 +43,7 @@ This cleanup is intentionally conservative:
 | Area | Current decision |
 | --- | --- |
 | AIA/HMI main processor | Use `scripts/aia_hmi/run_aia_euv_processor.py`; keep `scripts/aia_hmi/sdo_aia_euv_processor.py` as a compatibility wrapper. |
-| AIA/HMI reusable code | Place reusable code under `scripts/aia_hmi/core/`; keep CLI, config, I/O, difference, mosaic, and runtime-dispatch boundaries explicit. |
+| AIA/HMI reusable code | Place reusable code under `solar_toolkit.aia`; keep `scripts/aia_hmi/core/` as deprecated compatibility aliases for old imports. |
 | Radio workflows | Keep existing radio run wrappers, `core/`, `configs/`, `legacy/`, and `docs/` structure. Current radio config changes in the working tree are treated as user work and are not part of this cleanup pass. |
 | Historical AIA difference scripts | Keep under `legacy/scripts/aia_hmi/` for parameter and output comparison. |
 | Local products | Keep ignored outputs and workbooks local; document them in `docs/LEGACY_AND_REVIEW_FILES.md` rather than deleting them. |

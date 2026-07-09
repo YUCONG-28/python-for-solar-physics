@@ -10,6 +10,7 @@ they explicitly say so.
 | Document | Use |
 | --- | --- |
 | `../README.md` | Public project overview, setup, and recommended entrypoints. |
+| `../CODE_ORGANIZATION_MANIFEST.md` | Current whole-repository module boundary and deprecated compatibility policy. |
 | `quickstart.md` | Beginner-friendly setup, no-data checks, first imports, path configuration, and safe entrypoint help commands. |
 | `README.zh-CN.md` | Chinese project overview, minimal usage notes, data policy, and documentation map. |
 | `FUNCTION_MAP.md` | Bilingual public package map, runnable entrypoints, and compatibility policy. |

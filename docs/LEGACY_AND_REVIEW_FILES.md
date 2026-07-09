@@ -22,11 +22,11 @@ configuration files unless their role has been reviewed.
 
 | Path | Current role | Cleanup decision |
 | --- | --- | --- |
-| `scripts/aia_hmi/sdo_aia_euv_processor.py` | Historical AIA EUV command and import path. It now delegates to `scripts/aia_hmi/core/`. | Keep as compatibility wrapper. |
-| `scripts/radio/core/` radio wrappers | Historical radio core import paths. Reusable migrated modules now live under `solar_toolkit.radio`, while these files alias the new modules for compatibility. | Keep for at least one migration cycle. |
-| `scripts/radio/legacy/cso_radio_spectrogram_plot.py` | CSO dynamic-spectrum workflow kept as the current compatibility entrypoint; no `run_*.py` wrapper exists yet. | Keep until a verified wrapper exists. |
-| `scripts/radio/legacy/radio_source_map_plot_gaussian_overlay.py` | Radio source-map and Gaussian workflow retained behind `run_radio_source_map.py`. | Keep; scientific behavior is sensitive. |
-| `scripts/radio/legacy/sdo_aia_radio_hmi_overlay.py` | AIA/radio/HMI overlay workflow retained behind `run_aia_radio_hmi_overlay.py`. | Keep; FITS/WCS and overlay behavior need verified parity before deeper changes. |
+| `scripts/aia_hmi/sdo_aia_euv_processor.py` | Historical AIA EUV command and import path. It now delegates to `scripts/aia_hmi/core/`. | Deprecated compatibility wrapper; keep until old command usage is no longer needed. |
+| `scripts/radio/core/` radio wrappers | Historical radio core import paths. Reusable migrated modules now live under `solar_toolkit.radio`, while these files alias the new modules for compatibility. | Deprecated compatibility wrappers; keep for at least one migration cycle. |
+| `scripts/radio/legacy/cso_radio_spectrogram_plot.py` | CSO dynamic-spectrum workflow kept as the current compatibility entrypoint; no `run_*.py` wrapper exists yet. | Deprecated compatibility workflow; keep until a verified wrapper exists. |
+| `scripts/radio/legacy/radio_source_map_plot_gaussian_overlay.py` | Radio source-map and Gaussian workflow retained behind `run_radio_source_map.py`. | Deprecated compatibility workflow; keep because scientific behavior is sensitive. |
+| `scripts/radio/legacy/sdo_aia_radio_hmi_overlay.py` | AIA/radio/HMI overlay workflow retained behind `run_aia_radio_hmi_overlay.py`. | Deprecated compatibility workflow; keep until FITS/WCS and overlay behavior have verified parity. |
 
 ## Historical Scripts Kept for Review
 

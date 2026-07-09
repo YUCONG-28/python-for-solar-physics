@@ -53,12 +53,13 @@ building blocks instead of duplicating glue code in scripts.
 
 ## Compatibility Policy
 
-- Historical `scripts.radio.core.*` imports remain aliases of the matching
-  `solar_toolkit.radio.*` modules when the reusable implementation has moved.
-- Historical `scripts.aia_hmi.core.*` imports remain aliases of the matching
-  `solar_toolkit.aia.*` modules.
-- Large legacy workflows are not deleted in this cleanup. They stay runnable
-  until output-equivalence checks with real observation data justify a separate
-  removal or deprecation step.
+- Historical `scripts.radio.core.*` imports remain deprecated compatibility
+  aliases of the matching `solar_toolkit.radio.*` modules when the reusable
+  implementation has moved.
+- Historical `scripts.aia_hmi.core.*` imports remain deprecated compatibility
+  aliases of the matching `solar_toolkit.aia.*` modules.
+- Large workflows under `scripts/radio/legacy/` are deprecated compatibility
+  paths. They stay runnable until output-equivalence checks with real
+  observation data justify a separate removal step.
 - New reusable code should import from `solar_toolkit.*`. Thin scripts may keep
   user-facing command-line behavior and local path configuration.

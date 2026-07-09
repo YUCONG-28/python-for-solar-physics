@@ -10,6 +10,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 CURRENT_DOCS = [
+    "CODE_ORGANIZATION_MANIFEST.md",
     "README.md",
     "docs/FUNCTION_MAP.md",
     "docs/FINAL_CODE_RETENTION_AND_REMOVAL_PLAN.md",
@@ -41,6 +42,7 @@ DOCS_ROOT_DOCS = sorted(
 MAINTAINED_MARKDOWN_DOCS = sorted(
     set(
         [
+            "CODE_ORGANIZATION_MANIFEST.md",
             "README.md",
             "examples/README.md",
             "docs/assets/README.md",
@@ -156,6 +158,58 @@ def test_current_docs_explain_sunpy_style_base_packages():
 
     for package in required_packages:
         assert any(package in text for text in docs), package
+
+
+def test_current_docs_mark_compatibility_paths_as_deprecated():
+    docs = "\n".join(
+        [
+            (REPO_ROOT / "README.md").read_text(encoding="utf-8"),
+            (REPO_ROOT / "docs" / "FUNCTION_MAP.md").read_text(encoding="utf-8"),
+            (REPO_ROOT / "docs" / "LEGACY_AND_REVIEW_FILES.md").read_text(
+                encoding="utf-8"
+            ),
+            (
+                REPO_ROOT / "scripts" / "aia_hmi" / "docs" / "AIA_ENTRYPOINTS.md"
+            ).read_text(encoding="utf-8"),
+            (
+                REPO_ROOT / "scripts" / "radio" / "docs" / "RADIO_MIGRATION_NOTES.md"
+            ).read_text(encoding="utf-8"),
+        ]
+    )
+
+    for path in [
+        "scripts.radio.core.*",
+        "scripts.aia_hmi.core.*",
+        "scripts/radio/legacy/",
+    ]:
+        assert path in docs
+    assert "deprecated compatibility" in docs
+    assert "DeprecationWarning" not in docs
+
+
+def test_current_docs_do_not_claim_drift_spectrogram_is_unmigrated():
+    docs = "\n".join(
+        (REPO_ROOT / doc_path).read_text(encoding="utf-8") for doc_path in CURRENT_DOCS
+    )
+
+    stale_claims = [
+        "unmigrated drift/spectrogram",
+        "drift/spectrogram helpers remain under",
+        "drift/spectrogram helpers remain unmigrated",
+    ]
+
+    assert [claim for claim in stale_claims if claim in docs] == []
+
+
+def test_new_public_facade_modules_are_importable_without_running_workflows():
+    from solar_toolkit import visualization, webapp
+    from solar_toolkit.visualization import radio_source_video
+    from solar_toolkit.webapp import cli
+
+    assert "radio_source_video" in visualization.__all__
+    assert "cli" in webapp.__all__
+    assert radio_source_video.VideoExportOptions is not None
+    assert callable(cli.build_parser)
 
 
 def test_quickstart_uses_project_interpreter_for_local_validation():

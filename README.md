@@ -84,9 +84,12 @@ observation archive is required.
   raw-quality, quicklook, and diagnostic helpers.
 - Keep runnable research workflows under `scripts/`, grouped by instrument or
   analysis task. Historical `scripts.radio.core.*` imports are retained as
-  compatibility aliases while new code should prefer `solar_toolkit.radio.*`.
-  Historical `scripts.aia_hmi.core.*` imports are retained as compatibility
-  aliases while new AIA code should prefer `solar_toolkit.aia.*`.
+  deprecated compatibility aliases while new code should prefer
+  `solar_toolkit.radio.*`. Historical `scripts.aia_hmi.core.*` imports are
+  retained as deprecated compatibility aliases while new AIA code should prefer
+  `solar_toolkit.aia.*`. Large `scripts/radio/legacy/` workflows are also
+  deprecated compatibility paths and remain only until real-data output parity
+  justifies a separate removal step.
 - Keep data-independent tests in `tests/`; full scientific products require
   local observations and explicit path configuration.
 

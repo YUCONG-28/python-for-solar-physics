@@ -41,7 +41,7 @@ deleted.
 | --- | --- | --- |
 | Shared package | `solar_toolkit/` | Shared path, coordinate, CSO, Gaussian, and analysis helpers. |
 | AIA/HMI core | `scripts/aia_hmi/core/` | New AIA/HMI config, CLI, I/O, difference, mosaic, and dispatcher boundary. |
-| Radio library/core | `solar_toolkit/radio/`, with `scripts/radio/core/` compatibility aliases | Reusable Gaussian, Newkirk, coordinate, I/O, quicklook, and diagnostic helpers are migrating into the installable package; unmigrated drift/spectrogram helpers remain under `scripts/radio/core/`. |
+| Radio library/core | `solar_toolkit/radio/`, with `scripts/radio/core/` deprecated compatibility aliases | Reusable Gaussian, Newkirk, coordinate, I/O, quicklook, raw-quality, drift, spectrogram, and diagnostic helpers live in the installable package; old core imports remain as aliases during the compatibility window. |
 | Config templates | `configs/*.example.yaml` | Public examples for future path and workflow configuration. |
 | Tests | `tests/` | Lightweight data-independent regression tests. |
 
