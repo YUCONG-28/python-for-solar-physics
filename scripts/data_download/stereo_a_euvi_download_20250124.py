@@ -6,9 +6,6 @@ import sys
 import urllib.request
 from pathlib import Path
 
-from sunpy.net import Fido
-from sunpy.net import attrs as a
-
 BASE_URL = "https://stereo-ssc.nascom.nasa.gov/data/ins_data"
 OUT_DIR = Path(os.getenv("STEREO_EUVI_DATA_DIR", "data/raw/stereo/euvi/20250124"))
 START = "2025-01-24 04:00"
@@ -30,6 +27,9 @@ def download(url: str, dest: Path) -> str:
 
 
 def main() -> int:
+    from sunpy.net import Fido
+    from sunpy.net import attrs as a
+
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     result = Fido.search(
         a.Time(START, END),

@@ -16,7 +16,6 @@ from pathlib import Path
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
-import xarray as xr
 from astropy.io import fits
 from scipy.signal import savgol_filter
 
@@ -29,6 +28,8 @@ plt.rcParams["axes.unicode_minus"] = False  # 解决负号显示问题
 
 def load_sxr_data(file_path, start_time, end_time):
     """加载并处理SXR数据"""
+    import xarray as xr
+
     ds = xr.open_dataset(file_path)
     ds = xr.decode_cf(ds)
     ds_subset = ds.sel(time=slice(start_time, end_time))

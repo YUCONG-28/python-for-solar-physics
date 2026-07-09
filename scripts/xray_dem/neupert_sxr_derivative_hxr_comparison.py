@@ -13,7 +13,6 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
-import xarray as xr
 from matplotlib.font_manager import FontProperties, findfont
 from scipy.signal import savgol_filter
 
@@ -108,6 +107,8 @@ def init_plt_settings():
 # 数据处理函数
 # --------------------------
 def load_sxr_data(file_path, start_time, end_time):
+    import xarray as xr
+
     if not file_path.exists():
         raise FileNotFoundError(f"数据文件不存在: {file_path}")
 
