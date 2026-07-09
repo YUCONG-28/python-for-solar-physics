@@ -102,6 +102,7 @@ def test_video_export_invokes_separate_and_composite_writers(tmp_path, monkeypat
         {"name": "source", "folder": str(source), "files": sorted(source.glob("*.png"))}
     ]
     calls: list[dict] = []
+    frame_calls: list[dict] = []
 
     def fake_writer(paths, output_path, fps, quality, target_size_tuple=None, **kwargs):
         calls.append(
@@ -117,7 +118,32 @@ def test_video_export_invokes_separate_and_composite_writers(tmp_path, monkeypat
         Path(output_path).write_bytes(b"fake video")
         return True
 
+    def fake_frame_writer(
+        frame_iter,
+        output_path,
+        fps,
+        quality,
+        *,
+        frame_size,
+        output_format,
+    ):
+        frames = list(frame_iter)
+        frame_calls.append(
+            {
+                "output_path": str(output_path),
+                "fps": fps,
+                "quality": quality,
+                "frame_size": frame_size,
+                "output_format": output_format,
+                "frame_count": len(frames),
+            }
+        )
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"fake video")
+        return True
+
     monkeypatch.setattr(export_mod, "_write_video_from_paths", fake_writer)
+    monkeypatch.setattr(export_mod.media, "write_media_from_frames", fake_frame_writer)
 
     config = export_mod.ExportConfig(
         output_dir=tmp_path / "videos",
@@ -131,9 +157,19 @@ def test_video_export_invokes_separate_and_composite_writers(tmp_path, monkeypat
 
     assert separate["status"] == "saved"
     assert composite["status"] == "saved"
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert calls[0]["fps"] == 7
     assert calls[0]["target_size_tuple"] == (12, 8)
+    assert frame_calls == [
+        {
+            "output_path": str(tmp_path / "videos" / "demo_composite.mp4"),
+            "fps": 7,
+            "quality": "low",
+            "frame_size": (12, 8),
+            "output_format": "mp4",
+            "frame_count": 2,
+        }
+    ]
     assert Path(composite["path"]).name == "demo_composite.mp4"
 
 
@@ -148,6 +184,7 @@ def test_video_export_normalizes_format_and_uses_selected_extension(
         {"name": "source", "folder": str(source), "files": sorted(source.glob("*.png"))}
     ]
     calls: list[dict] = []
+    frame_calls: list[dict] = []
 
     def fake_writer(paths, output_path, fps, quality, target_size_tuple=None, **kwargs):
         calls.append(
@@ -160,7 +197,28 @@ def test_video_export_normalizes_format_and_uses_selected_extension(
         Path(output_path).write_bytes(b"fake video")
         return True
 
+    def fake_frame_writer(
+        frame_iter,
+        output_path,
+        fps,
+        quality,
+        *,
+        frame_size,
+        output_format,
+    ):
+        list(frame_iter)
+        frame_calls.append(
+            {
+                "output_path": str(output_path),
+                "output_format": output_format,
+            }
+        )
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"fake video")
+        return True
+
     monkeypatch.setattr(export_mod, "_write_video_from_paths", fake_writer)
+    monkeypatch.setattr(export_mod.media, "write_media_from_frames", fake_frame_writer)
 
     config = export_mod.ExportConfig(
         output_dir=tmp_path / "videos",
@@ -172,7 +230,8 @@ def test_video_export_normalizes_format_and_uses_selected_extension(
 
     assert separate["paths"][0].endswith("_source.webm")
     assert Path(composite["path"]).name == "demo_composite.webm"
-    assert [call["output_format"] for call in calls] == ["webm", "webm"]
+    assert [call["output_format"] for call in calls] == ["webm"]
+    assert [call["output_format"] for call in frame_calls] == ["webm"]
 
 
 def test_video_export_defaults_unknown_format_to_mp4(tmp_path, monkeypatch):
@@ -189,7 +248,22 @@ def test_video_export_defaults_unknown_format_to_mp4(tmp_path, monkeypatch):
         Path(output_path).write_bytes(b"fake video")
         return True
 
+    def fake_frame_writer(
+        frame_iter,
+        output_path,
+        fps,
+        quality,
+        *,
+        frame_size,
+        output_format,
+    ):
+        list(frame_iter)
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"fake video")
+        return True
+
     monkeypatch.setattr(export_mod, "_write_video_from_paths", fake_writer)
+    monkeypatch.setattr(export_mod.media, "write_media_from_frames", fake_frame_writer)
 
     result = export_mod.export_composite_video(
         groups,
@@ -201,6 +275,77 @@ def test_video_export_defaults_unknown_format_to_mp4(tmp_path, monkeypatch):
     )
 
     assert Path(result["path"]).name == "demo_composite.mp4"
+
+
+def test_composite_export_streams_generated_frames_without_temp_paths(
+    tmp_path, monkeypatch
+):
+    from solar_toolkit.visualization.image_web_viewer import export as export_mod
+
+    source = tmp_path / "source"
+    _write_png(source / "frame0.png", (1, 2, 3), size=(9, 7))
+    _write_png(source / "frame1.png", (4, 5, 6), size=(9, 7))
+    groups = [
+        {"name": "source", "folder": str(source), "files": sorted(source.glob("*.png"))}
+    ]
+    calls: list[dict] = []
+
+    def fake_path_writer(*args, **kwargs):
+        raise AssertionError("composite export should stream frames, not temp paths")
+
+    def fake_frame_writer(
+        frame_iter,
+        output_path,
+        fps,
+        quality,
+        *,
+        frame_size,
+        output_format,
+    ):
+        frames = list(frame_iter)
+        calls.append(
+            {
+                "output_path": Path(output_path),
+                "fps": fps,
+                "quality": quality,
+                "frame_size": frame_size,
+                "output_format": output_format,
+                "frame_shapes": [frame.shape for frame, _size in frames],
+            }
+        )
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"streamed video")
+        return True
+
+    monkeypatch.setattr(export_mod, "_write_video_from_paths", fake_path_writer)
+    monkeypatch.setattr(
+        export_mod.media, "write_media_from_frames", fake_frame_writer, raising=False
+    )
+
+    result = export_mod.export_composite_video(
+        groups,
+        export_mod.ExportConfig(
+            output_dir=tmp_path / "videos",
+            file_prefix="demo",
+            fps=11,
+            quality="high",
+            target_size=(12, 8),
+            output_format="mp4",
+        ),
+    )
+
+    assert result["status"] == "saved"
+    assert result["frame_count"] == 2
+    assert calls == [
+        {
+            "output_path": tmp_path / "videos" / "demo_composite.mp4",
+            "fps": 11,
+            "quality": "high",
+            "frame_size": (12, 8),
+            "output_format": "mp4",
+            "frame_shapes": [(8, 12, 3), (8, 12, 3)],
+        }
+    ]
 
 
 def test_image_web_viewer_entrypoint_help_does_not_require_flask():
@@ -265,6 +410,10 @@ def test_image_web_viewer_frontend_exposes_workbench_controls():
         'id="viewerGrid"',
     ]:
         assert marker in template
+    preload_markup = next(
+        line for line in template.splitlines() if 'id="preloadFrameInput"' in line
+    )
+    assert "max=" not in preload_markup
     assert "viewer-slot" in script
     assert "clampView" in script
     assert "layoutMode" in script
@@ -273,15 +422,26 @@ def test_image_web_viewer_frontend_exposes_workbench_controls():
     assert "loadCachedImage" in script
     assert "PRELOAD_SECONDS_AHEAD" in script
     assert "MAX_PRELOAD_CONCURRENCY" in script
+    assert "MAX_PRELOAD_AHEAD_FRAMES" not in script
+    assert "MAX_CACHE_ENTRIES" not in script
     assert "preloadFrameCount" in script
+    assert "normalizePreloadFrameCount" in script
     assert "getPreloadFrameCount" in script
+    assert "getDynamicFrameCacheCapacity" in script
     assert "getCachedImageIfReady" in script
     assert "warmFrameWindow" in script
     assert "deferUntilReady" in script
+    assert "getSelectedFrameRange" in script
+    assert "recordSelectedFrameRange" in script
+    assert "captureRangeRecordingFrame" in script
+    assert "waitForFrameReady" in script
+    assert "Cancel Recording" in script
+    assert "Recording canceled." in script
     assert "captureStream(0)" in script
     assert "requestFrame" in script
     assert "requestData" in script
     assert "formatRecordingError" in script
+    assert "summarizeSavedPaths" in script
     assert "Preloading frame" in script
     assert "keepCurrentImage" in script
     assert "Missing frame" in script
@@ -598,3 +758,45 @@ def test_recording_transcode_mp4_uses_safe_ffmpeg_filters(tmp_path, monkeypatch)
     assert "format=yuv420p" in filter_expr
     assert "-pix_fmt" in command
     assert "yuv420p" in command
+
+
+def test_write_media_from_frames_streams_mp4_with_safe_ffmpeg_args(
+    tmp_path, monkeypatch
+):
+    from solar_toolkit.visualization.image_web_viewer import media
+
+    commands: list[list[str]] = []
+    consumed_frames: list[tuple[int, int, int]] = []
+
+    def fake_run_ffmpeg_stream(cmd, frame_iter, *, width, height):
+        commands.append(cmd)
+        consumed_frames.extend(frame.shape for frame, _size in frame_iter)
+        assert width == 7
+        assert height == 5
+        return True
+
+    monkeypatch.setattr(media, "resolve_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(media, "_run_ffmpeg_stream", fake_run_ffmpeg_stream)
+
+    frame = np.zeros((5, 7, 3), dtype=np.uint8)
+    ok = media.write_media_from_frames(
+        [(frame, (7, 5))],
+        tmp_path / "streamed.mp4",
+        fps=30,
+        quality="high",
+        frame_size=(7, 5),
+        output_format="mp4",
+    )
+
+    assert ok is True
+    assert consumed_frames == [(5, 7, 3)]
+    command = commands[0]
+    assert "-f" in command
+    assert "rawvideo" in command
+    assert "-pix_fmt" in command
+    assert "rgb24" in command
+    assert "7x5" in command
+    filter_expr = command[command.index("-vf") + 1]
+    assert "fps=30" in filter_expr
+    assert "scale=trunc(iw/2)*2:trunc(ih/2)*2" in filter_expr
+    assert "format=yuv420p" in filter_expr

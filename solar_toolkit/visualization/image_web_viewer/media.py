@@ -125,6 +125,41 @@ def write_media_from_paths(
     return False
 
 
+def write_media_from_frames(
+    frame_iter: Iterable[tuple[np.ndarray, tuple[int, int]]],
+    output_path: str | Path,
+    fps: int,
+    quality: str = "high",
+    *,
+    frame_size: tuple[int, int],
+    output_format: str = "mp4",
+) -> bool:
+    """Write already-rendered RGB frames to MP4, GIF, or WebM."""
+
+    output_format = normalize_output_format(output_format)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    width, height = int(frame_size[0]), int(frame_size[1])
+    if width <= 0 or height <= 0:
+        return False
+
+    ok = write_frames_ffmpeg_stream(
+        frame_iter,
+        output_path,
+        fps=int(fps),
+        width=width,
+        height=height,
+        output_format=output_format,
+        quality=quality,
+    )
+    if ok:
+        return True
+
+    if output_format == "gif":
+        return write_gif_imageio_stream(frame_iter, output_path, fps=int(fps))
+    return False
+
+
 def write_frames_ffmpeg_stream(
     frame_iter: Iterable[tuple[np.ndarray, tuple[int, int]]],
     output_path: str | Path,

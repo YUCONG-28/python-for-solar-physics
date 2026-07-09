@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import math
 import re
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -145,33 +144,20 @@ def export_composite_video(
         config.output_dir / f"{config.file_prefix}_composite.{config.output_format}"
     )
 
-    with tempfile.TemporaryDirectory(prefix="image_viewer_frames_") as temp_dir:
-        frame_paths: list[str] = []
-        temp_root = Path(temp_dir)
-        for frame_index in range(start, stop):
-            frame = build_composite_frame(
-                groups,
-                frame_index,
-                panel_size=panel_size,
-                roi=config.roi,
-            )
-            frame_path = temp_root / f"frame_{frame_index:06d}.png"
-            Image.fromarray(frame).save(frame_path)
-            frame_paths.append(str(frame_path))
-        ok = _write_video_from_paths(
-            frame_paths,
-            output_path,
-            fps=_video_fps(config.fps),
-            quality=config.quality,
-            target_size_tuple=(frame.shape[1], frame.shape[0]),
-            workers=1,
-            batch_size=config.batch_size,
-            output_format=config.output_format,
-        )
+    frame_size = (panel_size[0] * max(1, len(groups)), panel_size[1])
+    frame_count = stop - start
+    ok = media.write_media_from_frames(
+        _iter_composite_frames(groups, start, stop, panel_size, config.roi),
+        output_path,
+        fps=_video_fps(config.fps),
+        quality=config.quality,
+        frame_size=frame_size,
+        output_format=config.output_format,
+    )
     return {
         "status": "saved" if ok else "failed",
         "path": str(output_path),
-        "frame_count": len(frame_paths),
+        "frame_count": frame_count,
     }
 
 
@@ -200,6 +186,23 @@ def build_composite_frame(
     if not panels:
         panels.append(_missing_panel(panel_width, panel_height, "no image folders"))
     return np.concatenate(panels, axis=1)
+
+
+def _iter_composite_frames(
+    groups: list[dict[str, Any]],
+    start: int,
+    stop: int,
+    panel_size: tuple[int, int],
+    roi: dict[str, float] | None,
+):
+    for frame_index in range(start, stop):
+        frame = build_composite_frame(
+            groups,
+            frame_index,
+            panel_size=panel_size,
+            roi=roi,
+        )
+        yield frame, (frame.shape[1], frame.shape[0])
 
 
 def _write_video_from_paths(

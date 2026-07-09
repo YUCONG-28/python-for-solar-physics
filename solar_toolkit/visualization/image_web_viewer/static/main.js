@@ -27,10 +27,9 @@ const DEFAULT_SETTINGS = {
 const PRELOAD_BEHIND_FRAMES = 2;
 const PRELOAD_SECONDS_AHEAD = 0.75;
 const MIN_PRELOAD_AHEAD_FRAMES = 4;
-const MAX_PRELOAD_AHEAD_FRAMES = 24;
 const MIN_CACHE_ENTRIES = 96;
-const MAX_CACHE_ENTRIES = 1024;
 const MAX_PRELOAD_CONCURRENCY = 6;
+const PRELOAD_QUEUE_CHUNK_SIZE = 120;
 
 const state = {
   sessionId: null,
@@ -56,6 +55,7 @@ const state = {
   recordingTimer: null,
   recordingStream: null,
   recordingMimeType: "",
+  recordingCancelRequested: false,
 };
 
 const frameCache = new Map();
@@ -63,6 +63,7 @@ const preloadQueue = [];
 const queuedPreloadKeys = new Set();
 let preloadActiveCount = 0;
 let cacheTouchCounter = 0;
+let preloadGeneration = 0;
 const mediaTheme = window.matchMedia("(prefers-color-scheme: dark)");
 
 const els = {
@@ -127,12 +128,16 @@ function getPlaybackFps() {
   return clamp(Number(els.fpsInput.value) || DEFAULT_SETTINGS.fps, 0.2, 60);
 }
 
+function normalizePreloadFrameCount(value) {
+  const rawValue = String(value ?? "").trim();
+  if (rawValue === "") return DEFAULT_SETTINGS.preloadFrameCount;
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed)) return DEFAULT_SETTINGS.preloadFrameCount;
+  return Math.max(0, Math.round(parsed));
+}
+
 function getPreloadFrameCount() {
-  return Math.round(clamp(
-    Number(els.preloadFrameInput.value) || DEFAULT_SETTINGS.preloadFrameCount,
-    0,
-    300,
-  ));
+  return normalizePreloadFrameCount(els.preloadFrameInput.value);
 }
 
 function makeClientId() {
@@ -254,10 +259,8 @@ function applyStoredPreferences() {
   if (typeof folders === "string") els.folderInput.value = folders;
   els.recursiveInput.checked = Boolean(settings.recursive);
   els.fpsInput.value = settings.fps;
-  els.preloadFrameInput.value = clamp(
-    Number(settings.preloadFrameCount) || DEFAULT_SETTINGS.preloadFrameCount,
-    0,
-    300,
+  els.preloadFrameInput.value = String(
+    normalizePreloadFrameCount(settings.preloadFrameCount),
   );
   els.loopInput.checked = Boolean(settings.loop);
   els.syncViewInput.checked = settings.syncView !== false;
@@ -519,10 +522,14 @@ function summarizeExport(payload) {
   const paths = [];
   if (payload.composite?.path) paths.push(payload.composite.path);
   if (payload.separate?.paths) paths.push(...payload.separate.paths);
-  if (paths.length) return `Saved ${paths.length} video(s).`;
+  if (paths.length) return summarizeSavedPaths(paths);
   if (payload.composite?.reason) return `Composite failed: ${payload.composite.reason}`;
   if (payload.separate?.failures?.length) return payload.separate.failures.join("; ");
   return "Export finished.";
+}
+
+function summarizeSavedPaths(paths) {
+  return `Saved ${paths.length} video(s): ${paths.join("; ")}`;
 }
 
 async function exportVideo() {
@@ -640,18 +647,61 @@ function resetRecordingState() {
   state.mediaRecorder = null;
   state.recordingMimeType = "";
   state.recording = false;
+  state.recordingCancelRequested = false;
   els.recordBtn.textContent = "Start Recording";
+  els.recordBtn.disabled = !state.sessionId;
 }
 
-async function startLiveRecording() {
-  if (!state.sessionId) return;
+function getSelectedFrameRange() {
+  if (state.maxFrames <= 0) return null;
+  const startOneBased = Math.max(1, readOptionalInt(els.startFrameInput) || 1);
+  const endOneBased = readOptionalInt(els.endFrameInput) || state.maxFrames;
+  const start = clamp(startOneBased - 1, 0, state.maxFrames - 1);
+  const end = clamp(endOneBased - 1, start, state.maxFrames - 1);
+  return {start, end, frameCount: end - start + 1};
+}
+
+function waitMs(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function waitForNextPaint() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+}
+
+async function waitForFrameReady(frameIndex, timeoutMs = 15000) {
+  const startMs = performance.now();
+  warmFrameWindow(frameIndex, {direction: 1, highPriority: true});
+  while (!isFrameReady(frameIndex)) {
+    if (state.recordingCancelRequested) throw new Error("Recording canceled.");
+    if (performance.now() - startMs > timeoutMs) {
+      throw new Error(`Frame ${frameIndex + 1} did not finish preloading.`);
+    }
+    setRecordingStatus(`Preloading frame ${frameIndex + 1}...`);
+    await waitMs(25);
+  }
+}
+
+async function captureRangeRecordingFrame(frameIndex, fps) {
+  await waitForFrameReady(frameIndex);
+  if (state.recordingCancelRequested) throw new Error("Recording canceled.");
+  if (!showFrame(frameIndex, {deferUntilReady: true, direction: 1})) {
+    throw new Error(`Frame ${frameIndex + 1} is not ready for recording.`);
+  }
+  await waitForNextPaint();
+  for (const panel of state.panels) panel.drawNow();
+  renderAndRequestRecordingFrame();
+  await waitMs(Math.max(10, Math.round(1000 / fps)));
+}
+
+function startRecordingStream(fps) {
   if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) {
-    setRecordingStatus("This browser cannot record canvas streams.", true);
-    return;
+    throw new Error("This browser cannot record canvas streams.");
   }
 
   renderRecordingFrame();
-  const fps = getPlaybackFps();
   const mimeType = chooseRecordingMimeType();
   let stream = state.recordingCanvas.captureStream(0);
   let tracks = stream.getVideoTracks ? stream.getVideoTracks() : [];
@@ -664,52 +714,94 @@ async function startLiveRecording() {
   state.recordingChunks = [];
   state.recordingStream = stream;
   state.recordingMimeType = mimeType || "video/webm";
-  try {
-    state.mediaRecorder = new MediaRecorder(stream, options);
-  } catch (error) {
-    resetRecordingState();
-    setRecordingStatus(error.message, true);
-    return;
-  }
-
+  state.mediaRecorder = new MediaRecorder(stream, options);
   state.mediaRecorder.addEventListener("dataavailable", (event) => {
     if (event.data && event.data.size > 0) state.recordingChunks.push(event.data);
   });
-  state.mediaRecorder.addEventListener("stop", () => {
-    const blob = new Blob(state.recordingChunks, {type: state.recordingMimeType || "video/webm"});
-    uploadLiveRecording(blob).finally(resetRecordingState);
-  });
-
-  const frameMs = Math.max(10, Math.round(1000 / fps));
-  state.recording = true;
-  els.recordBtn.textContent = "Stop Recording";
-  setRecordingStatus("Recording...");
   state.mediaRecorder.start(1000);
   renderAndRequestRecordingFrame();
-  state.recordingTimer = window.setInterval(renderAndRequestRecordingFrame, frameMs);
+}
+
+function stopRecordingStream() {
+  return new Promise((resolve) => {
+    if (!state.mediaRecorder || state.mediaRecorder.state === "inactive") {
+      resolve(new Blob([], {type: state.recordingMimeType || "video/webm"}));
+      return;
+    }
+    const recorder = state.mediaRecorder;
+    recorder.addEventListener("stop", () => {
+      resolve(new Blob(state.recordingChunks, {type: state.recordingMimeType || "video/webm"}));
+    }, {once: true});
+    if (typeof recorder.requestData === "function") {
+      recorder.requestData();
+    }
+    recorder.stop();
+  });
+}
+
+function cancelRangeRecording() {
+  if (!state.recording) return;
+  state.recordingCancelRequested = true;
+  els.recordBtn.disabled = true;
+  setRecordingStatus("Canceling...");
+}
+
+async function recordSelectedFrameRange() {
+  if (!state.sessionId || state.maxFrames <= 0) return;
+  if (state.recording) {
+    cancelRangeRecording();
+    return;
+  }
+
+  const range = getSelectedFrameRange();
+  if (!range) return;
+  const fps = getPlaybackFps();
+  stopPlayback();
+  saveRememberedSettings(false);
+  state.recording = true;
+  state.recordingCancelRequested = false;
+  els.recordBtn.textContent = "Cancel Recording";
+  setRecordingStatus(`Recording frames ${range.start + 1}-${range.end + 1}...`);
+  warmFrameWindow(range.start, {direction: 1, highPriority: true});
+
+  try {
+    startRecordingStream(fps);
+    for (let frameIndex = range.start; frameIndex <= range.end; frameIndex += 1) {
+      if (state.recordingCancelRequested) throw new Error("Recording canceled.");
+      setRecordingStatus(
+        `Recording frame ${frameIndex - range.start + 1} of ${range.frameCount}...`,
+      );
+      await captureRangeRecordingFrame(frameIndex, fps);
+    }
+    els.recordBtn.disabled = true;
+    setRecordingStatus("Saving...");
+    renderAndRequestRecordingFrame();
+    const blob = await stopRecordingStream();
+    if (state.recordingCancelRequested) {
+      setRecordingStatus("Recording canceled.");
+      return;
+    }
+    await uploadLiveRecording(blob);
+  } catch (error) {
+    if (String(error?.message || error) === "Recording canceled.") {
+      await stopRecordingStream();
+      setRecordingStatus("Recording canceled.");
+    } else {
+      const formatted = formatRecordingError(error);
+      setRecordingStatus(formatted.summary, true, formatted.detail);
+      await stopRecordingStream();
+    }
+  } finally {
+    resetRecordingState();
+  }
 }
 
 function stopLiveRecording() {
-  if (!state.mediaRecorder || state.mediaRecorder.state === "inactive") {
-    resetRecordingState();
-    return;
-  }
-  if (state.recordingTimer !== null) window.clearInterval(state.recordingTimer);
-  state.recordingTimer = null;
-  els.recordBtn.disabled = true;
-  els.recordBtn.textContent = "Start Recording";
-  setRecordingStatus("Saving...");
-  renderAndRequestRecordingFrame();
-  state.recording = false;
-  if (typeof state.mediaRecorder.requestData === "function") {
-    state.mediaRecorder.requestData();
-  }
-  state.mediaRecorder.stop();
+  cancelRangeRecording();
 }
 
 function toggleRecording() {
-  if (state.recording) stopLiveRecording();
-  else startLiveRecording();
+  recordSelectedFrameRange();
 }
 
 async function uploadLiveRecording(blob) {
@@ -739,7 +831,8 @@ async function uploadLiveRecording(blob) {
     });
     const payload = await response.json();
     if (!response.ok || !payload.ok) throw new Error(payload.error || "Recording save failed.");
-    setRecordingStatus(`Saved ${payload.format.toUpperCase()} recording.`);
+    const outputPath = payload.path ? `: ${payload.path}` : "";
+    setRecordingStatus(`Saved ${payload.format.toUpperCase()} recording${outputPath}`);
   } catch (error) {
     const formatted = formatRecordingError(error);
     setRecordingStatus(formatted.summary, true, formatted.detail);
@@ -760,17 +853,21 @@ function touchCacheEntry(entry) {
 function getPreloadAheadFrameCount() {
   const manualCount = getPreloadFrameCount();
   if (manualCount === 0) return 0;
-  return Math.round(clamp(
-    manualCount,
-    MIN_PRELOAD_AHEAD_FRAMES,
-    Math.max(MAX_PRELOAD_AHEAD_FRAMES, manualCount),
-  ));
+  if (state.maxFrames > 0) return Math.min(manualCount, Math.max(0, state.maxFrames - 1));
+  return manualCount;
 }
 
 function getFrameCacheCapacity() {
+  return getDynamicFrameCacheCapacity();
+}
+
+function getDynamicFrameCacheCapacity() {
   const groupCount = Math.max(1, state.groups.length);
   const windowFrames = getPreloadAheadFrameCount() + PRELOAD_BEHIND_FRAMES + 1;
-  return Math.round(clamp(windowFrames * groupCount * 2, MIN_CACHE_ENTRIES, MAX_CACHE_ENTRIES));
+  const requested = Math.max(MIN_CACHE_ENTRIES, windowFrames * groupCount * 2);
+  const available = state.groups.reduce((total, group) => total + group.count, 0);
+  if (available <= 0) return requested;
+  return Math.max(Math.min(requested, available), Math.min(MIN_CACHE_ENTRIES, available));
 }
 
 function normalizePreloadFrame(frameIndex) {
@@ -895,22 +992,35 @@ function processPreloadQueue() {
 
 function warmFrameWindow(frameIndex, options = {}) {
   if (!state.sessionId) return;
+  preloadGeneration += 1;
+  const generation = preloadGeneration;
   const ahead = getPreloadAheadFrameCount();
   const direction = options.direction === -1 ? -1 : 1;
   const startOffset = direction > 0 ? -PRELOAD_BEHIND_FRAMES : -ahead;
   const endOffset = direction > 0 ? ahead : PRELOAD_BEHIND_FRAMES;
-  for (let offset = startOffset; offset <= endOffset; offset += 1) {
-    const candidate = normalizePreloadFrame(frameIndex + offset);
-    if (candidate === null) continue;
-    for (const group of state.groups) {
-      if (candidate >= group.count) continue;
-      queuePreloadImage(group.index, candidate, Boolean(options.highPriority) || offset === 0);
+  let offset = startOffset;
+  const queueChunk = () => {
+    if (generation !== preloadGeneration) return;
+    let queued = 0;
+    while (offset <= endOffset && queued < PRELOAD_QUEUE_CHUNK_SIZE) {
+      const candidate = normalizePreloadFrame(frameIndex + offset);
+      if (candidate !== null) {
+        for (const group of state.groups) {
+          if (candidate >= group.count) continue;
+          queuePreloadImage(group.index, candidate, Boolean(options.highPriority) || offset === 0);
+        }
+      }
+      offset += 1;
+      queued += 1;
     }
-  }
-  pruneFrameCache();
+    pruneFrameCache();
+    if (offset <= endOffset) window.setTimeout(queueChunk, 0);
+  };
+  queueChunk();
 }
 
 function resetFramePreloadState() {
+  preloadGeneration += 1;
   frameCache.clear();
   preloadQueue.length = 0;
   queuedPreloadKeys.clear();
