@@ -42,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Keep the Flask server running after the last browser page closes.",
     )
+    parser.add_argument(
+        "--default-output-format",
+        choices=("mp4", "gif", "webm"),
+        default="mp4",
+        help="Default recording/export format shown in the browser UI.",
+    )
     return parser
 
 
@@ -83,6 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         allowed_roots=allowed_roots,
         stop_on_client_close=not args.keep_alive_after_close,
         shutdown_callback=request_shutdown,
+        default_output_format=args.default_output_format,
     )
     url = f"http://{args.host}:{args.port}/"
     if args.open_browser:

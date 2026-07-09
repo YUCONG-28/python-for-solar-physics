@@ -13,6 +13,7 @@ from importlib import import_module
 
 _SUBMODULES = {
     "export": "solar_toolkit.visualization.image_web_viewer.export",
+    "media": "solar_toolkit.visualization.image_web_viewer.media",
     "server": "solar_toolkit.visualization.image_web_viewer.server",
 }
 

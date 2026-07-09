@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import os
 import subprocess
 import sys
@@ -71,7 +72,11 @@ def test_build_composite_frame_handles_roi_and_missing_frames(tmp_path):
     _write_png(left / "frame1.png", (0, 255, 0), size=(10, 10))
     _write_png(right / "frame0.png", (0, 0, 255), size=(20, 10))
     groups = [
-        {"name": "left", "folder": str(left), "files": [left / "frame0.png", left / "frame1.png"]},
+        {
+            "name": "left",
+            "folder": str(left),
+            "files": [left / "frame0.png", left / "frame1.png"],
+        },
         {"name": "right", "folder": str(right), "files": [right / "frame0.png"]},
     ]
 
@@ -93,7 +98,9 @@ def test_video_export_invokes_separate_and_composite_writers(tmp_path, monkeypat
     source = tmp_path / "source"
     _write_png(source / "frame0.png", (1, 2, 3))
     _write_png(source / "frame1.png", (4, 5, 6))
-    groups = [{"name": "source", "folder": str(source), "files": sorted(source.glob("*.png"))}]
+    groups = [
+        {"name": "source", "folder": str(source), "files": sorted(source.glob("*.png"))}
+    ]
     calls: list[dict] = []
 
     def fake_writer(paths, output_path, fps, quality, target_size_tuple=None, **kwargs):
@@ -130,6 +137,72 @@ def test_video_export_invokes_separate_and_composite_writers(tmp_path, monkeypat
     assert Path(composite["path"]).name == "demo_composite.mp4"
 
 
+def test_video_export_normalizes_format_and_uses_selected_extension(
+    tmp_path, monkeypatch
+):
+    from solar_toolkit.visualization.image_web_viewer import export as export_mod
+
+    source = tmp_path / "source"
+    _write_png(source / "frame0.png", (1, 2, 3))
+    groups = [
+        {"name": "source", "folder": str(source), "files": sorted(source.glob("*.png"))}
+    ]
+    calls: list[dict] = []
+
+    def fake_writer(paths, output_path, fps, quality, target_size_tuple=None, **kwargs):
+        calls.append(
+            {
+                "output_path": str(output_path),
+                "output_format": kwargs["output_format"],
+            }
+        )
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"fake video")
+        return True
+
+    monkeypatch.setattr(export_mod, "_write_video_from_paths", fake_writer)
+
+    config = export_mod.ExportConfig(
+        output_dir=tmp_path / "videos",
+        file_prefix="demo",
+        output_format="WEBM",
+    )
+    separate = export_mod.export_separate_videos(groups, config)
+    composite = export_mod.export_composite_video(groups, config)
+
+    assert separate["paths"][0].endswith("_source.webm")
+    assert Path(composite["path"]).name == "demo_composite.webm"
+    assert [call["output_format"] for call in calls] == ["webm", "webm"]
+
+
+def test_video_export_defaults_unknown_format_to_mp4(tmp_path, monkeypatch):
+    from solar_toolkit.visualization.image_web_viewer import export as export_mod
+
+    source = tmp_path / "source"
+    _write_png(source / "frame0.png", (1, 2, 3))
+    groups = [
+        {"name": "source", "folder": str(source), "files": sorted(source.glob("*.png"))}
+    ]
+
+    def fake_writer(paths, output_path, fps, quality, target_size_tuple=None, **kwargs):
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"fake video")
+        return True
+
+    monkeypatch.setattr(export_mod, "_write_video_from_paths", fake_writer)
+
+    result = export_mod.export_composite_video(
+        groups,
+        export_mod.ExportConfig(
+            output_dir=tmp_path / "videos",
+            file_prefix="demo",
+            output_format="unknown",
+        ),
+    )
+
+    assert Path(result["path"]).name == "demo_composite.mp4"
+
+
 def test_image_web_viewer_entrypoint_help_does_not_require_flask():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(REPO_ROOT)
@@ -149,6 +222,7 @@ def test_image_web_viewer_entrypoint_help_does_not_require_flask():
     assert result.returncode == 0, result.stderr
     assert "usage:" in result.stdout.lower()
     assert "--keep-alive-after-close" in result.stdout
+    assert "--default-output-format" in result.stdout
 
 
 def test_image_web_viewer_frontend_exposes_workbench_controls():
@@ -183,6 +257,9 @@ def test_image_web_viewer_frontend_exposes_workbench_controls():
         'id="clearSettingsBtn"',
         'id="stopOnCloseInput"',
         'id="exportSettingsGroup"',
+        'id="formatInput"',
+        'id="recordBtn"',
+        'id="recordStatus"',
         'id="viewerGrid"',
     ]:
         assert marker in template
@@ -194,6 +271,9 @@ def test_image_web_viewer_frontend_exposes_workbench_controls():
     assert "loadCachedImage" in script
     assert "/api/client-config" in script
     assert "/api/client-close" in script
+    assert "MediaRecorder" in script
+    assert "captureStream" in script
+    assert "/api/save-recording" in script
 
 
 @pytest.mark.skipif(
@@ -266,17 +346,25 @@ def test_flask_routes_load_images_and_export_video(tmp_path, monkeypatch):
     monkeypatch.setattr(
         export_mod,
         "export_composite_video",
-        lambda groups, config: {"status": "saved", "path": str(config.output_dir / "demo.mp4")},
+        lambda groups, config: {
+            "status": "saved",
+            "path": str(config.output_dir / "demo.mp4"),
+        },
     )
     monkeypatch.setattr(
         export_mod,
         "export_separate_videos",
-        lambda groups, config: {"status": "saved", "paths": [str(config.output_dir / "single.mp4")]},
+        lambda groups, config: {
+            "status": "saved",
+            "paths": [str(config.output_dir / "single.mp4")],
+        },
     )
 
     client = create_app(allowed_roots=[tmp_path]).test_client()
     health = client.get("/api/health")
-    loaded = client.post("/api/load", json={"folders": [str(folder)], "recursive": False})
+    loaded = client.post(
+        "/api/load", json={"folders": [str(folder)], "recursive": False}
+    )
     payload = loaded.get_json()
     image = client.get(f"/api/image/{payload['session_id']}/0/0")
     exported = client.post(
@@ -294,3 +382,123 @@ def test_flask_routes_load_images_and_export_video(tmp_path, monkeypatch):
     assert payload["ok"] is True
     assert image.status_code == 200
     assert exported.get_json()["ok"] is True
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("flask") is None,
+    reason="Flask is optional; install the app extra to test HTTP routes.",
+)
+def test_flask_export_video_passes_selected_format(tmp_path, monkeypatch):
+    from solar_toolkit.visualization.image_web_viewer import export as export_mod
+    from solar_toolkit.visualization.image_web_viewer.server import create_app
+
+    folder = tmp_path / "images"
+    _write_png(folder / "frame0.png", (255, 0, 0))
+    seen_formats: list[str] = []
+
+    def fake_composite(groups, config):
+        seen_formats.append(config.output_format)
+        return {"status": "saved", "path": str(config.output_dir / "demo.gif")}
+
+    monkeypatch.setattr(export_mod, "export_composite_video", fake_composite)
+
+    client = create_app(allowed_roots=[tmp_path]).test_client()
+    loaded = client.post(
+        "/api/load", json={"folders": [str(folder)], "recursive": False}
+    )
+    payload = loaded.get_json()
+    exported = client.post(
+        "/api/export-video",
+        json={
+            "session_id": payload["session_id"],
+            "mode": "composite",
+            "format": "gif",
+            "output_dir": str(tmp_path / "videos"),
+            "file_prefix": "demo",
+            "fps": 5,
+        },
+    )
+
+    assert exported.get_json()["ok"] is True
+    assert seen_formats == ["gif"]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("flask") is None,
+    reason="Flask is optional; install the app extra to test HTTP routes.",
+)
+def test_flask_save_recording_saves_webm_directly(tmp_path):
+    from solar_toolkit.visualization.image_web_viewer.server import create_app
+
+    client = create_app(allowed_roots=[tmp_path]).test_client()
+    response = client.post(
+        "/api/save-recording",
+        data={
+            "recording": (io.BytesIO(b"webm-data"), "recording.webm"),
+            "format": "webm",
+            "output_dir": str(tmp_path / "videos"),
+            "file_prefix": "stage demo",
+            "fps": "5",
+            "quality": "low",
+        },
+        content_type="multipart/form-data",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["format"] == "webm"
+    assert Path(payload["path"]).name == "stage_demo_recording.webm"
+    assert Path(payload["path"]).read_bytes() == b"webm-data"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("flask") is None,
+    reason="Flask is optional; install the app extra to test HTTP routes.",
+)
+def test_flask_save_recording_transcodes_mp4_and_gif(tmp_path, monkeypatch):
+    from solar_toolkit.visualization.image_web_viewer import media
+    from solar_toolkit.visualization.image_web_viewer.server import create_app
+
+    transcode_calls: list[dict] = []
+
+    def fake_transcode(input_path, output_path, output_format, fps, quality):
+        transcode_calls.append(
+            {
+                "input_suffix": Path(input_path).suffix,
+                "output_path": str(output_path),
+                "output_format": output_format,
+                "fps": fps,
+                "quality": quality,
+            }
+        )
+        Path(output_path).write_bytes(b"converted")
+        return True
+
+    monkeypatch.setattr(media, "transcode_recording", fake_transcode)
+
+    client = create_app(allowed_roots=[tmp_path]).test_client()
+    for output_format in ["mp4", "gif"]:
+        response = client.post(
+            "/api/save-recording",
+            data={
+                "recording": (io.BytesIO(b"webm-data"), "recording.webm"),
+                "format": output_format,
+                "output_dir": str(tmp_path / "videos"),
+                "file_prefix": "stage",
+                "fps": "7",
+                "quality": "high",
+            },
+            content_type="multipart/form-data",
+        )
+        payload = response.get_json()
+
+        assert response.status_code == 200
+        assert payload["ok"] is True
+        assert payload["format"] == output_format
+        assert Path(payload["path"]).suffix == f".{output_format}"
+        assert Path(payload["path"]).read_bytes() == b"converted"
+
+    assert [call["output_format"] for call in transcode_calls] == ["mp4", "gif"]
+    assert {call["fps"] for call in transcode_calls} == {7.0}
+    assert {call["quality"] for call in transcode_calls} == {"high"}

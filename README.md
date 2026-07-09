@@ -55,8 +55,8 @@ observation archive is required.
 - Generate context images and movies from STEREO-A/EUVI, GOES/SUVI, and LASCO
   products.
 - Review local image sequences from one or more folders in a browser, compare
-  frames side by side with synchronized playback/ROI selection, and export MP4
-  videos as composite or per-folder products.
+  frames side by side with synchronized playback/ROI selection, and save
+  MP4/GIF/WebM recordings or sequence exports.
 
 **Radio analysis**
 
@@ -215,8 +215,9 @@ Data and product policy:
   products.
 - Do not commit generated figures, videos, large CSV/XLSX products, or local
   cache folders.
-- The image web viewer reads local folders and writes exported MP4 products to
-  a user-selected output directory; those products remain outside Git.
+- The image web viewer reads local folders and writes exported MP4/GIF/WebM
+  products to a user-selected output directory; those products remain outside
+  Git.
 - Use local, ignored data/product directories for reproducible products; keep
   public repository content limited to code, tests, configuration templates,
   documentation, and curated display assets.

@@ -46,7 +46,7 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
 - `scripts/radio/run_radio_raw_quality.py`
   - Raw radio FITS quality-diagnostic workflow.
 - `scripts/tools/run_image_web_viewer.py`
-  - Local Flask/Canvas image sequence viewer for multi-folder playback, ROI review, and composite/separate MP4 export.
+  - Local Flask/Canvas image sequence viewer for multi-folder playback, ROI review, live-stage recording, and composite/separate MP4/GIF/WebM export.
 - `scripts/tools/run_solar_webapp.py`
   - Unified local English web GUI for registered public workflows.
 

@@ -19,6 +19,8 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from . import media
+
 
 @dataclass
 class ExportConfig:
@@ -26,6 +28,7 @@ class ExportConfig:
 
     output_dir: str | Path
     file_prefix: str = "image_viewer"
+    output_format: str = "mp4"
     fps: float = 5.0
     quality: str = "low"
     start_frame: int = 0
@@ -41,6 +44,7 @@ class ExportConfig:
         return ExportConfig(
             output_dir=Path(self.output_dir).expanduser().resolve(),
             file_prefix=sanitize_filename(self.file_prefix or "image_viewer"),
+            output_format=media.normalize_output_format(self.output_format),
             fps=max(0.2, float(self.fps or 5.0)),
             quality=quality,
             start_frame=max(0, int(self.start_frame or 0)),
@@ -84,7 +88,7 @@ def normalize_roi(roi: dict[str, Any] | None) -> dict[str, float] | None:
 def export_separate_videos(
     groups: list[dict[str, Any]], export_config: ExportConfig
 ) -> dict[str, Any]:
-    """Export one MP4 per image folder."""
+    """Export one media file per image folder."""
 
     config = export_config.normalized()
     config.output_dir.mkdir(parents=True, exist_ok=True)
@@ -95,8 +99,9 @@ def export_separate_videos(
         if not selected:
             failures.append(f"{_group_name(group, index)}: no frames selected")
             continue
-        output_path = (
-            config.output_dir / f"{config.file_prefix}_{index + 1:02d}_{sanitize_filename(_group_name(group, index))}.mp4"
+        output_path = config.output_dir / (
+            f"{config.file_prefix}_{index + 1:02d}_"
+            f"{sanitize_filename(_group_name(group, index))}.{config.output_format}"
         )
         ok = _write_video_from_paths(
             selected,
@@ -106,13 +111,16 @@ def export_separate_videos(
             target_size_tuple=config.target_size,
             workers=config.workers,
             batch_size=config.batch_size,
+            output_format=config.output_format,
         )
         if ok:
             paths.append(str(output_path))
         else:
             failures.append(f"{_group_name(group, index)}: writer failed")
     return {
-        "status": "saved" if paths and not failures else ("partial" if paths else "failed"),
+        "status": (
+            "saved" if paths and not failures else ("partial" if paths else "failed")
+        ),
         "paths": paths,
         "failures": failures,
     }
@@ -121,7 +129,7 @@ def export_separate_videos(
 def export_composite_video(
     groups: list[dict[str, Any]], export_config: ExportConfig
 ) -> dict[str, Any]:
-    """Export a side-by-side composite MP4 using index-synchronized frames."""
+    """Export a side-by-side composite using index-synchronized frames."""
 
     config = export_config.normalized()
     config.output_dir.mkdir(parents=True, exist_ok=True)
@@ -130,8 +138,12 @@ def export_composite_video(
     start, stop = _frame_range(groups, config)
     if stop <= start:
         return {"status": "failed", "reason": "no_frames_selected"}
-    panel_size = config.composite_panel_size or config.target_size or _default_panel_size(groups)
-    output_path = config.output_dir / f"{config.file_prefix}_composite.mp4"
+    panel_size = (
+        config.composite_panel_size or config.target_size or _default_panel_size(groups)
+    )
+    output_path = (
+        config.output_dir / f"{config.file_prefix}_composite.{config.output_format}"
+    )
 
     with tempfile.TemporaryDirectory(prefix="image_viewer_frames_") as temp_dir:
         frame_paths: list[str] = []
@@ -154,6 +166,7 @@ def export_composite_video(
             target_size_tuple=(frame.shape[1], frame.shape[0]),
             workers=1,
             batch_size=config.batch_size,
+            output_format=config.output_format,
         )
     return {
         "status": "saved" if ok else "failed",
@@ -197,17 +210,17 @@ def _write_video_from_paths(
     target_size_tuple=None,
     workers=4,
     batch_size=8,
+    output_format="mp4",
 ) -> bool:
-    from scripts.tools.image_sequence_to_video import write_video_from_paths
-
-    return write_video_from_paths(
+    return media.write_media_from_paths(
         paths,
-        str(output_path),
+        output_path,
         int(fps),
         quality=quality,
         target_size_tuple=target_size_tuple,
         workers=workers,
         batch_size=batch_size,
+        output_format=output_format,
     )
 
 
@@ -220,7 +233,11 @@ def _select_paths(group: dict[str, Any], config: ExportConfig) -> list[str]:
 def _frame_range(groups: list[dict[str, Any]], config: ExportConfig) -> tuple[int, int]:
     max_frames = max((len(_group_files(group)) for group in groups), default=0)
     start = min(max(0, int(config.start_frame)), max_frames)
-    stop = max_frames if config.end_frame is None else min(int(config.end_frame), max_frames)
+    stop = (
+        max_frames
+        if config.end_frame is None
+        else min(int(config.end_frame), max_frames)
+    )
     stop = max(start, stop)
     return start, stop
 
@@ -289,7 +306,9 @@ def _group_name(group: dict[str, Any], index: int) -> str:
     return str(group.get("name") or f"group_{index + 1}")
 
 
-def _normalize_size(value: tuple[int, int] | list[int] | None) -> tuple[int, int] | None:
+def _normalize_size(
+    value: tuple[int, int] | list[int] | None,
+) -> tuple[int, int] | None:
     if not value:
         return None
     try:

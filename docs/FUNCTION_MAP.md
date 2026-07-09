@@ -49,7 +49,7 @@ building blocks instead of duplicating glue code in scripts.
 | `scripts/radio/export_radio_source_trajectory.py` | `solar_toolkit.radio.trajectory`, `solar_toolkit.aia.background`, `solar_toolkit.visualization.radio_source_trajectory` | Static Plotly HTML export for selected trajectory frames. |
 | `scripts/radio/run_aia_radio_hmi_overlay.py` | `scripts.radio.legacy.sdo_aia_radio_hmi_overlay` | Compatibility AIA/radio/HMI overlay runner. |
 | `scripts/radio/run_radio_raw_quality.py` | `solar_toolkit.radio.raw_quality` | Raw radio FITS quality diagnostics. |
-| `scripts/tools/run_image_web_viewer.py` | `solar_toolkit.visualization.image_web_viewer` | Local multi-folder image-sequence browser with synchronized playback, ROI review, and composite/separate MP4 export. |
+| `scripts/tools/run_image_web_viewer.py` | `solar_toolkit.visualization.image_web_viewer` | Local multi-folder image-sequence browser with synchronized playback, ROI review, live-stage recording, and composite/separate MP4/GIF/WebM export. |
 
 ## Compatibility Policy
 

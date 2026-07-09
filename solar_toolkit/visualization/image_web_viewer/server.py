@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from . import export as export_mod
+from . import media
 from .export import ExportConfig
 
 IMAGE_EXTENSIONS = {
@@ -63,13 +64,18 @@ class ClientLifecycle:
             self._clients[client_id] = time.monotonic()
         return {"ok": True}
 
-    def close(self, client_id: str, *, client_requests_stop: bool = True) -> dict[str, Any]:
+    def close(
+        self, client_id: str, *, client_requests_stop: bool = True
+    ) -> dict[str, Any]:
         if client_id:
             with self._lock:
                 self._clients.pop(client_id, None)
         if client_requests_stop and self.stop_on_client_close:
             self.schedule_shutdown_check()
-        return {"ok": True, "shutdown_scheduled": client_requests_stop and self.stop_on_client_close}
+        return {
+            "ok": True,
+            "shutdown_scheduled": client_requests_stop and self.stop_on_client_close,
+        }
 
     def schedule_shutdown_check(self) -> None:
         if self.shutdown_callback is None:
@@ -79,7 +85,9 @@ class ClientLifecycle:
                 return
             if self._timer and self._timer.is_alive():
                 self._timer.cancel()
-            self._timer = threading.Timer(self.close_grace_seconds, self._maybe_shutdown)
+            self._timer = threading.Timer(
+                self.close_grace_seconds, self._maybe_shutdown
+            )
             self._timer.daemon = True
             self._timer.start()
 
@@ -125,10 +133,14 @@ def normalize_allowed_roots(allowed_roots: list[str | Path] | None) -> list[Path
 
     if allowed_roots is None:
         return configured_roots()
-    return [Path(root).expanduser().resolve() for root in allowed_roots if str(root).strip()]
+    return [
+        Path(root).expanduser().resolve() for root in allowed_roots if str(root).strip()
+    ]
 
 
-def is_under_allowed_root(path: Path, allowed_roots: list[str | Path] | None = None) -> bool:
+def is_under_allowed_root(
+    path: Path, allowed_roots: list[str | Path] | None = None
+) -> bool:
     """Return whether path is inside the optional local access boundary."""
 
     roots = normalize_allowed_roots(allowed_roots)
@@ -170,6 +182,7 @@ def create_app(
     shutdown_callback: Callable[[], None] | None = None,
     close_grace_seconds: float = 2.0,
     heartbeat_timeout_seconds: float = 20.0,
+    default_output_format: str = "mp4",
 ):
     """Create the Flask app. Flask is imported lazily because it is optional."""
 
@@ -183,6 +196,7 @@ def create_app(
     )
     sessions: dict[str, list[dict[str, Any]]] = {}
     roots = normalize_allowed_roots(allowed_roots)
+    default_output_format = media.normalize_output_format(default_output_format)
     lifecycle = ClientLifecycle(
         stop_on_client_close=stop_on_client_close,
         shutdown_callback=shutdown_callback,
@@ -192,7 +206,10 @@ def create_app(
 
     @app.get("/")
     def index():
-        return render_template("index.html")
+        return render_template(
+            "index.html",
+            default_output_format=default_output_format,
+        )
 
     @app.post("/api/load")
     def load_folders():
@@ -204,13 +221,18 @@ def create_app(
 
         cleaned = [str(folder).strip() for folder in folders if str(folder).strip()]
         if not cleaned:
-            return jsonify({"ok": False, "error": "Please enter at least one folder."}), 400
+            return (
+                jsonify({"ok": False, "error": "Please enter at least one folder."}),
+                400,
+            )
 
         groups: list[dict[str, Any]] = []
         errors: list[str] = []
         for folder in cleaned:
             try:
-                root, files = scan_images(folder, recursive=recursive, allowed_roots=roots)
+                root, files = scan_images(
+                    folder, recursive=recursive, allowed_roots=roots
+                )
                 groups.append(
                     {
                         "folder": str(root),
@@ -225,7 +247,9 @@ def create_app(
             return jsonify({"ok": False, "error": "\n".join(errors)}), 400
         session_id = uuid.uuid4().hex
         sessions[session_id] = groups
-        public_groups = [_public_group(group, index) for index, group in enumerate(groups)]
+        public_groups = [
+            _public_group(group, index) for index, group in enumerate(groups)
+        ]
         return jsonify(
             {
                 "ok": True,
@@ -268,15 +292,52 @@ def create_app(
 
         mode = str(payload.get("mode", "composite")).strip().lower()
         if mode not in {"composite", "separate", "both"}:
-            return jsonify({"ok": False, "error": "mode must be composite, separate, or both"}), 400
+            return (
+                jsonify(
+                    {"ok": False, "error": "mode must be composite, separate, or both"}
+                ),
+                400,
+            )
         try:
-            config = _export_config_from_payload(payload).normalized()
-            result: dict[str, Any] = {"ok": True, "mode": mode}
+            config = _export_config_from_payload(
+                payload,
+                default_output_format=default_output_format,
+            ).normalized()
+            result: dict[str, Any] = {
+                "ok": True,
+                "mode": mode,
+                "format": config.output_format,
+            }
             if mode in {"separate", "both"}:
                 result["separate"] = export_mod.export_separate_videos(groups, config)
             if mode in {"composite", "both"}:
                 result["composite"] = export_mod.export_composite_video(groups, config)
             return jsonify(result)
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.post("/api/save-recording")
+    def save_recording():
+        recording_file = request.files.get("recording")
+        if recording_file is None:
+            return jsonify({"ok": False, "error": "recording file is required"}), 400
+
+        output_dir = request.form.get("output_dir") or "outputs/image_web_viewer"
+        file_prefix = request.form.get("file_prefix") or "image_viewer"
+        output_format = request.form.get("format") or default_output_format
+        fps = _float_form(request.form.get("fps"), default=5.0)
+        quality = request.form.get("quality") or "low"
+
+        try:
+            result = media.save_browser_recording(
+                recording_file,
+                output_dir=output_dir,
+                file_prefix=file_prefix,
+                output_format=output_format,
+                fps=fps,
+                quality=quality,
+            )
+            return jsonify({"ok": True, **result})
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 
@@ -286,7 +347,9 @@ def create_app(
 
     @app.get("/api/client-config")
     def client_config():
-        return jsonify(lifecycle.config())
+        config = lifecycle.config()
+        config["default_output_format"] = default_output_format
+        return jsonify(config)
 
     @app.post("/api/client-heartbeat")
     def client_heartbeat():
@@ -318,13 +381,20 @@ def _public_group(group: dict[str, Any], index: int) -> dict[str, Any]:
     }
 
 
-def _export_config_from_payload(payload: dict[str, Any]) -> ExportConfig:
+def _export_config_from_payload(
+    payload: dict[str, Any],
+    *,
+    default_output_format: str = "mp4",
+) -> ExportConfig:
     output_dir = payload.get("output_dir") or "outputs/image_web_viewer"
-    target_size = _optional_size(payload.get("target_width"), payload.get("target_height"))
+    target_size = _optional_size(
+        payload.get("target_width"), payload.get("target_height")
+    )
     panel_size = _optional_size(payload.get("panel_width"), payload.get("panel_height"))
     return ExportConfig(
         output_dir=output_dir,
         file_prefix=str(payload.get("file_prefix") or "image_viewer"),
+        output_format=str(payload.get("format") or default_output_format),
         fps=float(payload.get("fps") or 5.0),
         quality=str(payload.get("quality") or "low"),
         start_frame=int(payload.get("start_frame") or 0),
@@ -343,3 +413,10 @@ def _optional_size(width, height) -> tuple[int, int] | None:
     if width in (None, "") or height in (None, ""):
         return None
     return int(width), int(height)
+
+
+def _float_form(value: str | None, *, default: float) -> float:
+    try:
+        return float(value) if value not in (None, "") else default
+    except (TypeError, ValueError):
+        return default

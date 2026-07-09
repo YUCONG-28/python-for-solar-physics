@@ -4,6 +4,9 @@ const STORAGE_KEYS = {
   theme: "solarToolkit.imageViewer.v1.theme",
 };
 
+const SUPPORTED_OUTPUT_FORMATS = new Set(["mp4", "gif", "webm"]);
+const DEFAULT_OUTPUT_FORMAT = normalizeOutputFormat(document.body?.dataset.defaultOutputFormat || "mp4");
+
 const DEFAULT_SETTINGS = {
   recursive: false,
   fps: 5,
@@ -15,6 +18,7 @@ const DEFAULT_SETTINGS = {
   prefix: "image_viewer",
   quality: "low",
   exportMode: "composite",
+  outputFormat: DEFAULT_OUTPUT_FORMAT,
   stopOnClose: true,
   theme: "auto",
 };
@@ -40,6 +44,12 @@ const state = {
   clientId: makeClientId(),
   serverStopOnClose: true,
   heartbeatTimer: null,
+  recording: false,
+  mediaRecorder: null,
+  recordingChunks: [],
+  recordingCanvas: null,
+  recordingTimer: null,
+  recordingStream: null,
 };
 
 const frameCache = new Map();
@@ -74,6 +84,7 @@ const els = {
   clearSettingsBtn: document.getElementById("clearSettingsBtn"),
   settingsStatus: document.getElementById("settingsStatus"),
   stopOnCloseInput: document.getElementById("stopOnCloseInput"),
+  formatInput: document.getElementById("formatInput"),
   exportModeInput: document.getElementById("exportModeInput"),
   outputDirInput: document.getElementById("outputDirInput"),
   prefixInput: document.getElementById("prefixInput"),
@@ -85,12 +96,19 @@ const els = {
   exportRoiInput: document.getElementById("exportRoiInput"),
   exportBtn: document.getElementById("exportBtn"),
   exportStatus: document.getElementById("exportStatus"),
+  recordBtn: document.getElementById("recordBtn"),
+  recordStatus: document.getElementById("recordStatus"),
   stageStatus: document.getElementById("stageStatus"),
   viewerGrid: document.getElementById("viewerGrid"),
 };
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeOutputFormat(value) {
+  const outputFormat = String(value || "mp4").trim().toLowerCase();
+  return SUPPORTED_OUTPUT_FORMATS.has(outputFormat) ? outputFormat : "mp4";
 }
 
 function makeClientId() {
@@ -117,6 +135,7 @@ function setControlsEnabled(enabled) {
     els.clearRoiBtn,
     els.resetViewBtn,
     els.exportBtn,
+    els.recordBtn,
   ];
   for (const control of controls) control.disabled = !enabled;
 }
@@ -158,6 +177,7 @@ function collectSettings() {
     prefix: els.prefixInput.value.trim() || DEFAULT_SETTINGS.prefix,
     quality: els.qualityInput.value,
     exportMode: els.exportModeInput.value,
+    outputFormat: normalizeOutputFormat(els.formatInput.value),
     stopOnClose: els.stopOnCloseInput.checked,
     theme: els.themeInput.value,
   };
@@ -196,6 +216,7 @@ function applyStoredPreferences() {
   els.prefixInput.value = settings.prefix || DEFAULT_SETTINGS.prefix;
   els.qualityInput.value = settings.quality || DEFAULT_SETTINGS.quality;
   els.exportModeInput.value = settings.exportMode || DEFAULT_SETTINGS.exportMode;
+  els.formatInput.value = normalizeOutputFormat(settings.outputFormat || DEFAULT_SETTINGS.outputFormat);
   els.stopOnCloseInput.checked = settings.stopOnClose !== false;
   applyTheme(storedTheme);
   applyLayoutMode(settings.layoutMode || DEFAULT_SETTINGS.layoutMode);
@@ -303,6 +324,7 @@ async function loadFolders() {
     setStatus(els.loadStatus, "Enter at least one folder.", true);
     return;
   }
+  if (state.recording) stopLiveRecording();
   stopPlayback();
   setStatus(els.loadStatus, "Loading...");
   setControlsEnabled(false);
@@ -421,6 +443,7 @@ function buildExportPayload() {
   return {
     session_id: state.sessionId,
     mode: els.exportModeInput.value,
+    format: normalizeOutputFormat(els.formatInput.value),
     output_dir: els.outputDirInput.value.trim() || DEFAULT_SETTINGS.outputDir,
     file_prefix: els.prefixInput.value.trim() || DEFAULT_SETTINGS.prefix,
     fps: clamp(Number(els.fpsInput.value) || DEFAULT_SETTINGS.fps, 0.2, 60),
@@ -462,6 +485,168 @@ async function exportVideo() {
     setStatus(els.exportStatus, error.message, true);
   } finally {
     els.exportBtn.disabled = false;
+  }
+}
+
+function chooseRecordingMimeType() {
+  if (!window.MediaRecorder) return "";
+  for (const mimeType of [
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=vp8",
+    "video/webm",
+  ]) {
+    if (MediaRecorder.isTypeSupported(mimeType)) return mimeType;
+  }
+  return "";
+}
+
+function recordingFrameBounds() {
+  const rects = state.panels
+    .map((panel) => panel.canvas.getBoundingClientRect())
+    .filter((rect) => rect.width > 0 && rect.height > 0);
+  if (!rects.length) return els.viewerGrid.getBoundingClientRect();
+  const left = Math.min(...rects.map((rect) => rect.left));
+  const top = Math.min(...rects.map((rect) => rect.top));
+  const right = Math.max(...rects.map((rect) => rect.right));
+  const bottom = Math.max(...rects.map((rect) => rect.bottom));
+  return {
+    left,
+    top,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
+function ensureRecordingCanvas() {
+  if (!state.recordingCanvas) {
+    state.recordingCanvas = document.createElement("canvas");
+  }
+  const bounds = recordingFrameBounds();
+  const ratio = window.devicePixelRatio || 1;
+  const width = Math.max(320, Math.floor(bounds.width * ratio));
+  const height = Math.max(220, Math.floor(bounds.height * ratio));
+  if (state.recordingCanvas.width !== width || state.recordingCanvas.height !== height) {
+    state.recordingCanvas.width = width;
+    state.recordingCanvas.height = height;
+  }
+  return {canvas: state.recordingCanvas, bounds, ratio};
+}
+
+function renderRecordingFrame() {
+  const {canvas, bounds, ratio} = ensureRecordingCanvas();
+  const ctx = canvas.getContext("2d", {alpha: false});
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--stage").trim() || "#11161f";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (const panel of state.panels) {
+    const rect = panel.canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    ctx.drawImage(
+      panel.canvas,
+      (rect.left - bounds.left) * ratio,
+      (rect.top - bounds.top) * ratio,
+      rect.width * ratio,
+      rect.height * ratio,
+    );
+  }
+}
+
+function resetRecordingState() {
+  if (state.recordingTimer !== null) window.clearInterval(state.recordingTimer);
+  state.recordingTimer = null;
+  if (state.recordingStream) {
+    for (const track of state.recordingStream.getTracks()) track.stop();
+  }
+  state.recordingStream = null;
+  state.mediaRecorder = null;
+  state.recording = false;
+  els.recordBtn.textContent = "Start Recording";
+}
+
+async function startLiveRecording() {
+  if (!state.sessionId) return;
+  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) {
+    setStatus(els.recordStatus, "This browser cannot record canvas streams.", true);
+    return;
+  }
+
+  renderRecordingFrame();
+  const fps = clamp(Number(els.fpsInput.value) || DEFAULT_SETTINGS.fps, 0.2, 60);
+  const mimeType = chooseRecordingMimeType();
+  const stream = state.recordingCanvas.captureStream(fps);
+  const options = mimeType ? {mimeType} : {};
+  state.recordingChunks = [];
+  state.recordingStream = stream;
+  try {
+    state.mediaRecorder = new MediaRecorder(stream, options);
+  } catch (error) {
+    resetRecordingState();
+    setStatus(els.recordStatus, error.message, true);
+    return;
+  }
+
+  state.mediaRecorder.addEventListener("dataavailable", (event) => {
+    if (event.data && event.data.size > 0) state.recordingChunks.push(event.data);
+  });
+  state.mediaRecorder.addEventListener("stop", () => {
+    const blob = new Blob(state.recordingChunks, {type: mimeType || "video/webm"});
+    uploadLiveRecording(blob).finally(resetRecordingState);
+  });
+
+  const frameMs = Math.max(50, Math.round(1000 / fps));
+  state.recordingTimer = window.setInterval(renderRecordingFrame, frameMs);
+  state.recording = true;
+  els.recordBtn.textContent = "Stop Recording";
+  setStatus(els.recordStatus, "Recording...");
+  state.mediaRecorder.start();
+}
+
+function stopLiveRecording() {
+  if (!state.mediaRecorder || state.mediaRecorder.state === "inactive") {
+    resetRecordingState();
+    return;
+  }
+  if (state.recordingTimer !== null) window.clearInterval(state.recordingTimer);
+  state.recordingTimer = null;
+  state.recording = false;
+  els.recordBtn.disabled = true;
+  els.recordBtn.textContent = "Start Recording";
+  setStatus(els.recordStatus, "Saving...");
+  state.mediaRecorder.stop();
+}
+
+function toggleRecording() {
+  if (state.recording) stopLiveRecording();
+  else startLiveRecording();
+}
+
+async function uploadLiveRecording(blob) {
+  if (!blob || blob.size === 0) {
+    setStatus(els.recordStatus, "Recording produced no frames.", true);
+    return;
+  }
+
+  const outputFormat = normalizeOutputFormat(els.formatInput.value);
+  const formData = new FormData();
+  formData.append("recording", blob, "recording.webm");
+  formData.append("format", outputFormat);
+  formData.append("output_dir", els.outputDirInput.value.trim() || DEFAULT_SETTINGS.outputDir);
+  formData.append("file_prefix", els.prefixInput.value.trim() || DEFAULT_SETTINGS.prefix);
+  formData.append("fps", String(clamp(Number(els.fpsInput.value) || DEFAULT_SETTINGS.fps, 0.2, 60)));
+  formData.append("quality", els.qualityInput.value);
+
+  try {
+    saveRememberedSettings(false);
+    const response = await fetch("/api/save-recording", {
+      method: "POST",
+      body: formData,
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "Recording save failed.");
+    setStatus(els.recordStatus, `Saved ${payload.format.toUpperCase()} recording.`);
+  } catch (error) {
+    setStatus(els.recordStatus, error.message, true);
+  } finally {
+    els.recordBtn.disabled = !state.sessionId;
   }
 }
 
@@ -946,6 +1131,7 @@ function installEventHandlers() {
   els.clearRoiBtn.addEventListener("click", clearRoi);
   els.resetViewBtn.addEventListener("click", resetAllViews);
   els.exportBtn.addEventListener("click", exportVideo);
+  els.recordBtn.addEventListener("click", toggleRecording);
   els.sidebarToggleBtn.addEventListener("click", () => toggleSidebar());
   els.mobileSidebarBtn.addEventListener("click", () => toggleSidebar(true));
   els.themeInput.addEventListener("change", () => {
@@ -970,6 +1156,7 @@ function installEventHandlers() {
     els.outputDirInput,
     els.prefixInput,
     els.qualityInput,
+    els.formatInput,
     els.exportModeInput,
     els.stopOnCloseInput,
   ]) {

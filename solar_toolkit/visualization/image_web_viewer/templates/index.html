@@ -6,13 +6,13 @@
   <title>Image Sequence Web Viewer</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
-<body>
+<body data-default-output-format="{{ default_output_format }}">
   <div id="appShell" class="app-shell">
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-header">
         <div>
           <h1>Image Viewer</h1>
-          <p>Local sequences, synchronized review, MP4 export.</p>
+          <p>Local sequences, synchronized review, recording export.</p>
         </div>
         <button id="sidebarToggleBtn" class="icon-button" type="button" title="Collapse sidebar">&laquo;</button>
       </div>
@@ -99,7 +99,13 @@
         </div>
 
         <div id="exportSettingsGroup" class="settings-group">
-          <h2>Video Export</h2>
+          <h2>Recording & Export</h2>
+          <label for="formatInput">Format</label>
+          <select id="formatInput">
+            <option value="mp4">MP4</option>
+            <option value="gif">GIF</option>
+            <option value="webm">WebM</option>
+          </select>
           <label for="exportModeInput">Mode</label>
           <select id="exportModeInput">
             <option value="composite">Composite</option>
@@ -140,6 +146,10 @@
           <div class="sidebar-row">
             <button id="exportBtn" type="button" disabled>Export</button>
             <span id="exportStatus" class="status"></span>
+          </div>
+          <div class="sidebar-row">
+            <button id="recordBtn" type="button" disabled>Start Recording</button>
+            <span id="recordStatus" class="status"></span>
           </div>
         </div>
       </details>
