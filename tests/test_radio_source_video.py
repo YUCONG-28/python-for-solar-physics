@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import cv2
 import pandas as pd
 import pytest
 
@@ -8,6 +7,8 @@ from solar_toolkit.visualization.radio_source_video import (
     VideoExportOptions,
     export_radio_source_video_mp4,
 )
+
+cv2 = pytest.importorskip("cv2")
 
 
 def test_export_radio_source_video_mp4_writes_playable_file(tmp_path):

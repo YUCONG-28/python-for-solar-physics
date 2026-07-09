@@ -30,6 +30,7 @@ dev = [
     "mypy>=1.0.0",
     "jupyter>=1.0.0",
     "ipython>=8.14.0",
+    "opencv-python>=4.8.0",
 ]
 full = [
     "xarray>=2023.6.0",
