@@ -257,9 +257,11 @@ def test_image_web_viewer_frontend_exposes_workbench_controls():
         'id="clearSettingsBtn"',
         'id="stopOnCloseInput"',
         'id="exportSettingsGroup"',
+        'id="preloadFrameInput"',
         'id="formatInput"',
         'id="recordBtn"',
         'id="recordStatus"',
+        'id="recordingStatusDetail"',
         'id="viewerGrid"',
     ]:
         assert marker in template
@@ -271,9 +273,15 @@ def test_image_web_viewer_frontend_exposes_workbench_controls():
     assert "loadCachedImage" in script
     assert "PRELOAD_SECONDS_AHEAD" in script
     assert "MAX_PRELOAD_CONCURRENCY" in script
+    assert "preloadFrameCount" in script
+    assert "getPreloadFrameCount" in script
     assert "getCachedImageIfReady" in script
     assert "warmFrameWindow" in script
     assert "deferUntilReady" in script
+    assert "captureStream(0)" in script
+    assert "requestFrame" in script
+    assert "requestData" in script
+    assert "formatRecordingError" in script
     assert "Preloading frame" in script
     assert "keepCurrentImage" in script
     assert "Missing frame" in script
@@ -403,10 +411,10 @@ def test_flask_export_video_passes_selected_format(tmp_path, monkeypatch):
 
     folder = tmp_path / "images"
     _write_png(folder / "frame0.png", (255, 0, 0))
-    seen_formats: list[str] = []
+    seen_configs: list[object] = []
 
     def fake_composite(groups, config):
-        seen_formats.append(config.output_format)
+        seen_configs.append(config)
         return {"status": "saved", "path": str(config.output_dir / "demo.gif")}
 
     monkeypatch.setattr(export_mod, "export_composite_video", fake_composite)
@@ -424,12 +432,26 @@ def test_flask_export_video_passes_selected_format(tmp_path, monkeypatch):
             "format": "gif",
             "output_dir": str(tmp_path / "videos"),
             "file_prefix": "demo",
-            "fps": 5,
+            "fps": 12,
+            "quality": "high",
+            "start_frame": 1,
+            "end_frame": 3,
+            "target_width": 640,
+            "target_height": 480,
+            "use_roi": True,
+            "roi": {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4},
         },
     )
 
     assert exported.get_json()["ok"] is True
-    assert seen_formats == ["gif"]
+    config = seen_configs[0].normalized()
+    assert config.output_format == "gif"
+    assert config.fps == 12
+    assert config.quality == "high"
+    assert config.start_frame == 1
+    assert config.end_frame == 3
+    assert config.target_size == (640, 480)
+    assert config.roi == {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}
 
 
 @pytest.mark.skipif(
@@ -471,7 +493,14 @@ def test_flask_save_recording_transcodes_mp4_and_gif(tmp_path, monkeypatch):
 
     transcode_calls: list[dict] = []
 
-    def fake_transcode(input_path, output_path, output_format, fps, quality):
+    def fake_transcode(
+        input_path,
+        output_path,
+        output_format,
+        fps,
+        quality,
+        recording_size=None,
+    ):
         transcode_calls.append(
             {
                 "input_suffix": Path(input_path).suffix,
@@ -479,6 +508,7 @@ def test_flask_save_recording_transcodes_mp4_and_gif(tmp_path, monkeypatch):
                 "output_format": output_format,
                 "fps": fps,
                 "quality": quality,
+                "recording_size": recording_size,
             }
         )
         Path(output_path).write_bytes(b"converted")
@@ -497,6 +527,8 @@ def test_flask_save_recording_transcodes_mp4_and_gif(tmp_path, monkeypatch):
                 "file_prefix": "stage",
                 "fps": "7",
                 "quality": "high",
+                "recording_width": "641",
+                "recording_height": "479",
             },
             content_type="multipart/form-data",
         )
@@ -511,3 +543,58 @@ def test_flask_save_recording_transcodes_mp4_and_gif(tmp_path, monkeypatch):
     assert [call["output_format"] for call in transcode_calls] == ["mp4", "gif"]
     assert {call["fps"] for call in transcode_calls} == {7.0}
     assert {call["quality"] for call in transcode_calls} == {"high"}
+    assert {call["recording_size"] for call in transcode_calls} == {(641, 479)}
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("flask") is None,
+    reason="Flask is optional; install the app extra to test HTTP routes.",
+)
+def test_flask_save_recording_rejects_empty_upload(tmp_path):
+    from solar_toolkit.visualization.image_web_viewer.server import create_app
+
+    client = create_app(allowed_roots=[tmp_path]).test_client()
+    response = client.post(
+        "/api/save-recording",
+        data={
+            "recording": (io.BytesIO(b""), "recording.webm"),
+            "format": "mp4",
+            "output_dir": str(tmp_path / "videos"),
+            "file_prefix": "stage",
+            "fps": "30",
+            "quality": "low",
+        },
+        content_type="multipart/form-data",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert "empty" in payload["error"].lower()
+
+
+def test_recording_transcode_mp4_uses_safe_ffmpeg_filters(tmp_path, monkeypatch):
+    from solar_toolkit.visualization.image_web_viewer import media
+
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(media, "resolve_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(media, "_run_ffmpeg_file", lambda cmd: commands.append(cmd))
+
+    media.transcode_recording(
+        tmp_path / "input.webm",
+        tmp_path / "output.mp4",
+        "mp4",
+        fps=30,
+        quality="low",
+        recording_size=(641, 479),
+    )
+
+    command = commands[0]
+    filter_index = command.index("-vf") + 1
+    filter_expr = command[filter_index]
+    assert "fps=30" in filter_expr
+    assert "scale=trunc(iw/2)*2:trunc(ih/2)*2" in filter_expr
+    assert "format=yuv420p" in filter_expr
+    assert "-pix_fmt" in command
+    assert "yuv420p" in command

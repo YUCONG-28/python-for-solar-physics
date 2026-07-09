@@ -329,6 +329,10 @@ def create_app(
         quality = request.form.get("quality") or "low"
 
         try:
+            recording_size = _optional_size(
+                request.form.get("recording_width"),
+                request.form.get("recording_height"),
+            )
             result = media.save_browser_recording(
                 recording_file,
                 output_dir=output_dir,
@@ -336,6 +340,7 @@ def create_app(
                 output_format=output_format,
                 fps=fps,
                 quality=quality,
+                recording_size=recording_size,
             )
             return jsonify({"ok": True, **result})
         except Exception as exc:

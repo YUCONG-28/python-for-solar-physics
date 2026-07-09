@@ -195,6 +195,7 @@ def save_browser_recording(
     output_format: str,
     fps: float,
     quality: str,
+    recording_size: tuple[int, int] | None = None,
 ) -> dict[str, Any]:
     """Save or transcode a WebM browser recording uploaded by the frontend."""
 
@@ -226,6 +227,7 @@ def save_browser_recording(
             output_format,
             fps=max(0.2, float(fps or 5.0)),
             quality=quality,
+            recording_size=recording_size,
         )
         _raise_if_empty(output_path)
         return {"status": "saved", "path": str(output_path), "format": output_format}
@@ -239,6 +241,7 @@ def transcode_recording(
     output_format: str,
     fps: float,
     quality: str,
+    recording_size: tuple[int, int] | None = None,
 ) -> bool:
     """Transcode a browser WebM recording to MP4 or GIF."""
 
@@ -255,7 +258,15 @@ def transcode_recording(
 
     fps_int = max(1, int(round(float(fps or 5.0))))
     cmd = [ffmpeg, "-y", "-i", str(input_path), "-an"]
-    cmd.extend(_ffmpeg_output_args(output_format, quality, fps_int, ffmpeg=ffmpeg))
+    cmd.extend(
+        _ffmpeg_output_args(
+            output_format,
+            quality,
+            fps_int,
+            ffmpeg=ffmpeg,
+            recording_size=recording_size,
+        )
+    )
     cmd.append(str(output_path))
     _run_ffmpeg_file(cmd)
     return True
@@ -267,6 +278,7 @@ def _ffmpeg_output_args(
     fps: int,
     *,
     ffmpeg: str | None = None,
+    recording_size: tuple[int, int] | None = None,
 ) -> list[str]:
     output_format = normalize_output_format(output_format)
     quality = "high" if quality == "high" else "low"
@@ -295,7 +307,16 @@ def _ffmpeg_output_args(
 
     crf = "18" if quality == "high" else "28"
     preset = "slow" if quality == "high" else "fast"
+    filter_expr = ",".join(
+        [
+            f"fps={max(1, int(fps))}",
+            "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+            "format=yuv420p",
+        ]
+    )
     return [
+        "-vf",
+        filter_expr,
         "-c:v",
         "libx264",
         "-pix_fmt",
@@ -395,8 +416,18 @@ def _run_ffmpeg_file(cmd: list[str]) -> None:
         check=False,
     )
     if result.returncode != 0:
-        stderr = result.stderr[-1000:] if result.stderr else "no FFmpeg stderr"
-        raise RuntimeError(f"FFmpeg failed while saving recording: {stderr}")
+        stderr = _compact_ffmpeg_stderr(result.stderr)
+        raise RuntimeError(
+            f"FFmpeg failed while saving recording. Diagnostics: {stderr}"
+        )
+
+
+def _compact_ffmpeg_stderr(stderr: str | None) -> str:
+    if not stderr:
+        return "no FFmpeg stderr"
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    compact = "\n".join(lines[-12:])
+    return compact[-1200:] if compact else "no FFmpeg stderr"
 
 
 def _raise_if_empty(path: Path) -> None:

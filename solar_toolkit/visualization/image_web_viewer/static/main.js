@@ -10,6 +10,7 @@ const DEFAULT_OUTPUT_FORMAT = normalizeOutputFormat(document.body?.dataset.defau
 const DEFAULT_SETTINGS = {
   recursive: false,
   fps: 5,
+  preloadFrameCount: 30,
   loop: true,
   layoutMode: "fit",
   syncView: true,
@@ -28,7 +29,7 @@ const PRELOAD_SECONDS_AHEAD = 0.75;
 const MIN_PRELOAD_AHEAD_FRAMES = 4;
 const MAX_PRELOAD_AHEAD_FRAMES = 24;
 const MIN_CACHE_ENTRIES = 96;
-const MAX_CACHE_ENTRIES = 256;
+const MAX_CACHE_ENTRIES = 1024;
 const MAX_PRELOAD_CONCURRENCY = 6;
 
 const state = {
@@ -54,6 +55,7 @@ const state = {
   recordingCanvas: null,
   recordingTimer: null,
   recordingStream: null,
+  recordingMimeType: "",
 };
 
 const frameCache = new Map();
@@ -76,6 +78,7 @@ const els = {
   playBtn: document.getElementById("playBtn"),
   nextBtn: document.getElementById("nextBtn"),
   fpsInput: document.getElementById("fpsInput"),
+  preloadFrameInput: document.getElementById("preloadFrameInput"),
   frameSlider: document.getElementById("frameSlider"),
   frameText: document.getElementById("frameText"),
   loopInput: document.getElementById("loopInput"),
@@ -106,6 +109,7 @@ const els = {
   exportStatus: document.getElementById("exportStatus"),
   recordBtn: document.getElementById("recordBtn"),
   recordStatus: document.getElementById("recordStatus"),
+  recordingStatusDetail: document.getElementById("recordingStatusDetail"),
   stageStatus: document.getElementById("stageStatus"),
   viewerGrid: document.getElementById("viewerGrid"),
 };
@@ -123,6 +127,14 @@ function getPlaybackFps() {
   return clamp(Number(els.fpsInput.value) || DEFAULT_SETTINGS.fps, 0.2, 60);
 }
 
+function getPreloadFrameCount() {
+  return Math.round(clamp(
+    Number(els.preloadFrameInput.value) || DEFAULT_SETTINGS.preloadFrameCount,
+    0,
+    300,
+  ));
+}
+
 function makeClientId() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -135,6 +147,26 @@ function getFrameUrl(groupIndex, frameIndex) {
 function setStatus(element, text, isError = false) {
   element.textContent = text;
   element.classList.toggle("error", isError);
+}
+
+function setRecordingStatus(text, isError = false, detail = "") {
+  setStatus(els.recordStatus, text, isError);
+  els.recordingStatusDetail.textContent = detail || "";
+  els.recordingStatusDetail.hidden = !detail;
+}
+
+function formatRecordingError(error) {
+  const detail = String(error?.message || error || "Recording save failed.");
+  if (detail.includes("FFmpeg failed while saving recording")) {
+    return {
+      summary: "Recording save failed in FFmpeg.",
+      detail,
+    };
+  }
+  return {
+    summary: detail.length > 160 ? "Recording save failed." : detail,
+    detail: detail.length > 160 ? detail : "",
+  };
 }
 
 function setControlsEnabled(enabled) {
@@ -181,6 +213,7 @@ function collectSettings() {
   return {
     recursive: els.recursiveInput.checked,
     fps: clamp(Number(els.fpsInput.value) || DEFAULT_SETTINGS.fps, 0.2, 60),
+    preloadFrameCount: getPreloadFrameCount(),
     loop: els.loopInput.checked,
     layoutMode: state.layoutMode,
     syncView: els.syncViewInput.checked,
@@ -221,6 +254,11 @@ function applyStoredPreferences() {
   if (typeof folders === "string") els.folderInput.value = folders;
   els.recursiveInput.checked = Boolean(settings.recursive);
   els.fpsInput.value = settings.fps;
+  els.preloadFrameInput.value = clamp(
+    Number(settings.preloadFrameCount) || DEFAULT_SETTINGS.preloadFrameCount,
+    0,
+    300,
+  );
   els.loopInput.checked = Boolean(settings.loop);
   els.syncViewInput.checked = settings.syncView !== false;
   els.syncRoiInput.checked = settings.syncRoi !== false;
@@ -537,15 +575,23 @@ function recordingFrameBounds() {
   };
 }
 
+function evenRecordingDimension(value, minValue) {
+  const size = Math.max(minValue, Math.floor(Number(value) || minValue));
+  return size % 2 === 0 ? size : Math.max(minValue, size - 1);
+}
+
 function ensureRecordingCanvas() {
   if (!state.recordingCanvas) {
     state.recordingCanvas = document.createElement("canvas");
   }
   const bounds = recordingFrameBounds();
   const ratio = window.devicePixelRatio || 1;
-  const width = Math.max(320, Math.floor(bounds.width * ratio));
-  const height = Math.max(220, Math.floor(bounds.height * ratio));
-  if (state.recordingCanvas.width !== width || state.recordingCanvas.height !== height) {
+  const width = evenRecordingDimension(bounds.width * ratio, 320);
+  const height = evenRecordingDimension(bounds.height * ratio, 220);
+  if (
+    !state.recording
+    && (state.recordingCanvas.width !== width || state.recordingCanvas.height !== height)
+  ) {
     state.recordingCanvas.width = width;
     state.recordingCanvas.height = height;
   }
@@ -568,6 +614,20 @@ function renderRecordingFrame() {
       rect.height * ratio,
     );
   }
+  return canvas;
+}
+
+function requestRecordingFrame() {
+  const tracks = state.recordingStream?.getVideoTracks ? state.recordingStream.getVideoTracks() : [];
+  for (const track of tracks) {
+    if (typeof track.requestFrame === "function") track.requestFrame();
+  }
+}
+
+function renderAndRequestRecordingFrame() {
+  const canvas = renderRecordingFrame();
+  requestRecordingFrame();
+  return canvas;
 }
 
 function resetRecordingState() {
@@ -578,6 +638,7 @@ function resetRecordingState() {
   }
   state.recordingStream = null;
   state.mediaRecorder = null;
+  state.recordingMimeType = "";
   state.recording = false;
   els.recordBtn.textContent = "Start Recording";
 }
@@ -585,22 +646,29 @@ function resetRecordingState() {
 async function startLiveRecording() {
   if (!state.sessionId) return;
   if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) {
-    setStatus(els.recordStatus, "This browser cannot record canvas streams.", true);
+    setRecordingStatus("This browser cannot record canvas streams.", true);
     return;
   }
 
   renderRecordingFrame();
-  const fps = clamp(Number(els.fpsInput.value) || DEFAULT_SETTINGS.fps, 0.2, 60);
+  const fps = getPlaybackFps();
   const mimeType = chooseRecordingMimeType();
-  const stream = state.recordingCanvas.captureStream(fps);
+  let stream = state.recordingCanvas.captureStream(0);
+  let tracks = stream.getVideoTracks ? stream.getVideoTracks() : [];
+  if (!tracks.some((track) => typeof track.requestFrame === "function")) {
+    for (const track of stream.getTracks()) track.stop();
+    stream = state.recordingCanvas.captureStream(fps);
+    tracks = stream.getVideoTracks ? stream.getVideoTracks() : [];
+  }
   const options = mimeType ? {mimeType} : {};
   state.recordingChunks = [];
   state.recordingStream = stream;
+  state.recordingMimeType = mimeType || "video/webm";
   try {
     state.mediaRecorder = new MediaRecorder(stream, options);
   } catch (error) {
     resetRecordingState();
-    setStatus(els.recordStatus, error.message, true);
+    setRecordingStatus(error.message, true);
     return;
   }
 
@@ -608,16 +676,17 @@ async function startLiveRecording() {
     if (event.data && event.data.size > 0) state.recordingChunks.push(event.data);
   });
   state.mediaRecorder.addEventListener("stop", () => {
-    const blob = new Blob(state.recordingChunks, {type: mimeType || "video/webm"});
+    const blob = new Blob(state.recordingChunks, {type: state.recordingMimeType || "video/webm"});
     uploadLiveRecording(blob).finally(resetRecordingState);
   });
 
-  const frameMs = Math.max(50, Math.round(1000 / fps));
-  state.recordingTimer = window.setInterval(renderRecordingFrame, frameMs);
+  const frameMs = Math.max(10, Math.round(1000 / fps));
   state.recording = true;
   els.recordBtn.textContent = "Stop Recording";
-  setStatus(els.recordStatus, "Recording...");
-  state.mediaRecorder.start();
+  setRecordingStatus("Recording...");
+  state.mediaRecorder.start(1000);
+  renderAndRequestRecordingFrame();
+  state.recordingTimer = window.setInterval(renderAndRequestRecordingFrame, frameMs);
 }
 
 function stopLiveRecording() {
@@ -627,10 +696,14 @@ function stopLiveRecording() {
   }
   if (state.recordingTimer !== null) window.clearInterval(state.recordingTimer);
   state.recordingTimer = null;
-  state.recording = false;
   els.recordBtn.disabled = true;
   els.recordBtn.textContent = "Start Recording";
-  setStatus(els.recordStatus, "Saving...");
+  setRecordingStatus("Saving...");
+  renderAndRequestRecordingFrame();
+  state.recording = false;
+  if (typeof state.mediaRecorder.requestData === "function") {
+    state.mediaRecorder.requestData();
+  }
   state.mediaRecorder.stop();
 }
 
@@ -641,7 +714,7 @@ function toggleRecording() {
 
 async function uploadLiveRecording(blob) {
   if (!blob || blob.size === 0) {
-    setStatus(els.recordStatus, "Recording produced no frames.", true);
+    setRecordingStatus("Recording produced no frames.", true);
     return;
   }
 
@@ -651,8 +724,12 @@ async function uploadLiveRecording(blob) {
   formData.append("format", outputFormat);
   formData.append("output_dir", els.outputDirInput.value.trim() || DEFAULT_SETTINGS.outputDir);
   formData.append("file_prefix", els.prefixInput.value.trim() || DEFAULT_SETTINGS.prefix);
-  formData.append("fps", String(clamp(Number(els.fpsInput.value) || DEFAULT_SETTINGS.fps, 0.2, 60)));
+  formData.append("fps", String(getPlaybackFps()));
   formData.append("quality", els.qualityInput.value);
+  if (state.recordingCanvas) {
+    formData.append("recording_width", String(state.recordingCanvas.width));
+    formData.append("recording_height", String(state.recordingCanvas.height));
+  }
 
   try {
     saveRememberedSettings(false);
@@ -662,9 +739,10 @@ async function uploadLiveRecording(blob) {
     });
     const payload = await response.json();
     if (!response.ok || !payload.ok) throw new Error(payload.error || "Recording save failed.");
-    setStatus(els.recordStatus, `Saved ${payload.format.toUpperCase()} recording.`);
+    setRecordingStatus(`Saved ${payload.format.toUpperCase()} recording.`);
   } catch (error) {
-    setStatus(els.recordStatus, error.message, true);
+    const formatted = formatRecordingError(error);
+    setRecordingStatus(formatted.summary, true, formatted.detail);
   } finally {
     els.recordBtn.disabled = !state.sessionId;
   }
@@ -680,10 +758,12 @@ function touchCacheEntry(entry) {
 }
 
 function getPreloadAheadFrameCount() {
+  const manualCount = getPreloadFrameCount();
+  if (manualCount === 0) return 0;
   return Math.round(clamp(
-    Math.ceil(getPlaybackFps() * PRELOAD_SECONDS_AHEAD),
+    manualCount,
     MIN_PRELOAD_AHEAD_FRAMES,
-    MAX_PRELOAD_AHEAD_FRAMES,
+    Math.max(MAX_PRELOAD_AHEAD_FRAMES, manualCount),
   ));
 }
 
@@ -834,6 +914,11 @@ function resetFramePreloadState() {
   frameCache.clear();
   preloadQueue.length = 0;
   queuedPreloadKeys.clear();
+}
+
+function warmCurrentFrameWindow() {
+  if (!state.sessionId) return;
+  warmFrameWindow(state.frame, {direction: 1, highPriority: true});
 }
 
 class ImagePanel {
@@ -1273,7 +1358,12 @@ function installEventHandlers() {
   els.nextBtn.addEventListener("click", () => stepFrame(1));
   els.frameSlider.addEventListener("input", () => showFrame(Number(els.frameSlider.value)));
   els.fpsInput.addEventListener("change", () => {
+    warmCurrentFrameWindow();
     if (state.playing) startPlayback();
+  });
+  els.preloadFrameInput.addEventListener("change", () => {
+    els.preloadFrameInput.value = String(getPreloadFrameCount());
+    warmCurrentFrameWindow();
   });
   els.fitLayoutBtn.addEventListener("click", () => applyLayoutMode("fit"));
   els.landscapeLayoutBtn.addEventListener("click", () => applyLayoutMode("landscape"));
@@ -1304,6 +1394,7 @@ function installEventHandlers() {
   for (const element of [
     els.recursiveInput,
     els.fpsInput,
+    els.preloadFrameInput,
     els.loopInput,
     els.syncViewInput,
     els.syncRoiInput,

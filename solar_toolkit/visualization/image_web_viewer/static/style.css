@@ -284,6 +284,33 @@ label {
   color: var(--danger);
 }
 
+.recording-status-row {
+  align-items: flex-start;
+}
+
+.recording-status-row button {
+  flex: 0 0 auto;
+  max-width: 148px;
+  white-space: normal;
+}
+
+.recording-status {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 4px;
+}
+
+.status-detail {
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .frame-readout {
   flex: 1 1 auto;
   color: var(--muted);
