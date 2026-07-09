@@ -269,6 +269,15 @@ def test_image_web_viewer_frontend_exposes_workbench_controls():
     assert "solarToolkit.imageViewer.v1.settings" in script
     assert "requestAnimationFrame" in script
     assert "loadCachedImage" in script
+    assert "PRELOAD_SECONDS_AHEAD" in script
+    assert "MAX_PRELOAD_CONCURRENCY" in script
+    assert "getCachedImageIfReady" in script
+    assert "warmFrameWindow" in script
+    assert "deferUntilReady" in script
+    assert "Preloading frame" in script
+    assert "keepCurrentImage" in script
+    assert "Missing frame" in script
+    assert "Loading..." in script
     assert "/api/client-config" in script
     assert "/api/client-close" in script
     assert "MediaRecorder" in script

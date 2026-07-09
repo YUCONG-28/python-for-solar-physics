@@ -23,9 +23,13 @@ const DEFAULT_SETTINGS = {
   theme: "auto",
 };
 
-const CACHE_RADIUS_BEFORE = 1;
-const CACHE_RADIUS_AFTER = 3;
-const MAX_CACHE_ENTRIES = 96;
+const PRELOAD_BEHIND_FRAMES = 2;
+const PRELOAD_SECONDS_AHEAD = 0.75;
+const MIN_PRELOAD_AHEAD_FRAMES = 4;
+const MAX_PRELOAD_AHEAD_FRAMES = 24;
+const MIN_CACHE_ENTRIES = 96;
+const MAX_CACHE_ENTRIES = 256;
+const MAX_PRELOAD_CONCURRENCY = 6;
 
 const state = {
   sessionId: null,
@@ -53,6 +57,10 @@ const state = {
 };
 
 const frameCache = new Map();
+const preloadQueue = [];
+const queuedPreloadKeys = new Set();
+let preloadActiveCount = 0;
+let cacheTouchCounter = 0;
 const mediaTheme = window.matchMedia("(prefers-color-scheme: dark)");
 
 const els = {
@@ -109,6 +117,10 @@ function clamp(value, min, max) {
 function normalizeOutputFormat(value) {
   const outputFormat = String(value || "mp4").trim().toLowerCase();
   return SUPPORTED_OUTPUT_FORMATS.has(outputFormat) ? outputFormat : "mp4";
+}
+
+function getPlaybackFps() {
+  return clamp(Number(els.fpsInput.value) || DEFAULT_SETTINGS.fps, 0.2, 60);
 }
 
 function makeClientId() {
@@ -265,6 +277,7 @@ function stopPlayback() {
 function startPlayback() {
   if (!state.sessionId || state.maxFrames <= 0) return;
   stopPlayback();
+  warmFrameWindow(state.frame, {direction: 1, highPriority: true});
   state.playing = true;
   state.playbackLastMs = performance.now();
   els.playBtn.textContent = "Pause";
@@ -273,7 +286,7 @@ function startPlayback() {
 
 function playbackTick(now) {
   if (!state.playing) return;
-  const fps = clamp(Number(els.fpsInput.value) || DEFAULT_SETTINGS.fps, 0.2, 60);
+  const fps = getPlaybackFps();
   const frameMs = 1000 / fps;
   state.playbackAccumulatorMs += now - state.playbackLastMs;
   state.playbackLastMs = now;
@@ -281,7 +294,7 @@ function playbackTick(now) {
   if (steps > 0) {
     state.playbackAccumulatorMs %= frameMs;
     while (steps > 0 && state.playing) {
-      stepFrame(1);
+      if (!stepFrame(1, {deferUntilReady: true})) break;
       steps -= 1;
     }
   }
@@ -293,8 +306,8 @@ function togglePlayback() {
   else startPlayback();
 }
 
-function stepFrame(delta) {
-  if (state.maxFrames <= 0) return;
+function stepFrame(delta, options = {}) {
+  if (state.maxFrames <= 0) return false;
   let nextFrame = state.frame + delta;
   if (nextFrame >= state.maxFrames) {
     if (els.loopInput.checked) nextFrame = nextFrame % state.maxFrames;
@@ -304,15 +317,22 @@ function stepFrame(delta) {
     }
   }
   if (nextFrame < 0) nextFrame = els.loopInput.checked ? state.maxFrames - 1 : 0;
-  showFrame(nextFrame);
+  return showFrame(nextFrame, {...options, direction: Math.sign(delta) || 1});
 }
 
-function showFrame(frameIndex) {
-  if (state.maxFrames <= 0) return;
-  state.frame = clamp(frameIndex, 0, state.maxFrames - 1);
+function showFrame(frameIndex, options = {}) {
+  if (state.maxFrames <= 0) return false;
+  const targetFrame = clamp(frameIndex, 0, state.maxFrames - 1);
+  if (options.deferUntilReady && targetFrame !== state.frame && !isFrameReady(targetFrame)) {
+    warmFrameWindow(targetFrame, {direction: options.direction || 1, highPriority: true});
+    els.stageStatus.textContent = `Preloading frame ${targetFrame + 1}...`;
+    return false;
+  }
+  state.frame = targetFrame;
   updateFrameUI();
-  for (const panel of state.panels) panel.showFrame(state.frame);
-  prefetchAroundFrame(state.frame);
+  for (const panel of state.panels) panel.showFrame(state.frame, {deferUntilReady: Boolean(options.deferUntilReady)});
+  warmFrameWindow(state.frame, {direction: options.direction || 1});
+  return true;
 }
 
 async function loadFolders() {
@@ -339,7 +359,7 @@ async function loadFolders() {
     if (!response.ok || !payload.ok) {
       throw new Error(payload.error || "Folder load failed.");
     }
-    frameCache.clear();
+    resetFramePreloadState();
     state.sessionId = payload.session_id;
     state.groups = payload.groups;
     state.maxFrames = payload.max_frames || 0;
@@ -654,16 +674,63 @@ function cacheKey(groupIndex, frameIndex) {
   return `${state.sessionId}:${groupIndex}:${frameIndex}`;
 }
 
+function touchCacheEntry(entry) {
+  cacheTouchCounter += 1;
+  entry.lastUsedAt = cacheTouchCounter;
+}
+
+function getPreloadAheadFrameCount() {
+  return Math.round(clamp(
+    Math.ceil(getPlaybackFps() * PRELOAD_SECONDS_AHEAD),
+    MIN_PRELOAD_AHEAD_FRAMES,
+    MAX_PRELOAD_AHEAD_FRAMES,
+  ));
+}
+
+function getFrameCacheCapacity() {
+  const groupCount = Math.max(1, state.groups.length);
+  const windowFrames = getPreloadAheadFrameCount() + PRELOAD_BEHIND_FRAMES + 1;
+  return Math.round(clamp(windowFrames * groupCount * 2, MIN_CACHE_ENTRIES, MAX_CACHE_ENTRIES));
+}
+
+function normalizePreloadFrame(frameIndex) {
+  if (state.maxFrames <= 0) return null;
+  if (els.loopInput.checked) {
+    return ((frameIndex % state.maxFrames) + state.maxFrames) % state.maxFrames;
+  }
+  if (frameIndex < 0 || frameIndex >= state.maxFrames) return null;
+  return frameIndex;
+}
+
+function getCachedImageIfReady(groupIndex, frameIndex) {
+  const entry = frameCache.get(cacheKey(groupIndex, frameIndex));
+  if (!entry || entry.status !== "ready") return null;
+  touchCacheEntry(entry);
+  return entry.image;
+}
+
+function isFrameReady(frameIndex) {
+  const normalizedFrame = normalizePreloadFrame(frameIndex);
+  if (normalizedFrame === null) return false;
+  for (const group of state.groups) {
+    if (normalizedFrame >= group.count) continue;
+    const entry = frameCache.get(cacheKey(group.index, normalizedFrame));
+    if (!entry || !["ready", "error"].includes(entry.status)) return false;
+  }
+  return true;
+}
+
 function loadCachedImage(groupIndex, frameIndex) {
   const key = cacheKey(groupIndex, frameIndex);
   let entry = frameCache.get(key);
   if (entry) {
-    frameCache.delete(key);
-    frameCache.set(key, entry);
+    touchCacheEntry(entry);
     return entry.promise;
   }
 
   const image = new Image();
+  image.decoding = "async";
+  image.loading = "eager";
   const promise = new Promise((resolve, reject) => {
     image.onload = async () => {
       try {
@@ -671,11 +738,19 @@ function loadCachedImage(groupIndex, frameIndex) {
       } catch {
         // Some browsers reject decode for already-loaded images; onload is enough.
       }
+      entry.status = "ready";
+      touchCacheEntry(entry);
       resolve(image);
     };
-    image.onerror = () => reject(new Error("image failed to load"));
+    image.onerror = () => {
+      entry.status = "error";
+      entry.error = new Error("image failed to load");
+      touchCacheEntry(entry);
+      reject(entry.error);
+    };
   });
-  entry = {image, promise};
+  entry = {image, promise, status: "loading", lastUsedAt: 0, error: null};
+  touchCacheEntry(entry);
   frameCache.set(key, entry);
   image.src = getFrameUrl(groupIndex, frameIndex);
   pruneFrameCache();
@@ -683,22 +758,82 @@ function loadCachedImage(groupIndex, frameIndex) {
 }
 
 function pruneFrameCache() {
-  while (frameCache.size > MAX_CACHE_ENTRIES) {
-    const oldest = frameCache.keys().next().value;
-    frameCache.delete(oldest);
+  const capacity = getFrameCacheCapacity();
+  while (frameCache.size > capacity) {
+    let oldestKey = null;
+    let oldestUsedAt = Number.POSITIVE_INFINITY;
+    for (const [key, entry] of frameCache.entries()) {
+      if (entry.status === "loading") continue;
+      if (entry.lastUsedAt < oldestUsedAt) {
+        oldestUsedAt = entry.lastUsedAt;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey === null) return;
+    frameCache.delete(oldestKey);
   }
 }
 
-function prefetchAroundFrame(frameIndex) {
-  if (!state.sessionId) return;
-  for (const group of state.groups) {
-    for (let offset = -CACHE_RADIUS_BEFORE; offset <= CACHE_RADIUS_AFTER; offset += 1) {
-      const candidate = frameIndex + offset;
-      if (candidate >= 0 && candidate < group.count) {
-        loadCachedImage(group.index, candidate).catch(() => {});
+function queuePreloadImage(groupIndex, frameIndex, highPriority = false) {
+  const key = cacheKey(groupIndex, frameIndex);
+  const entry = frameCache.get(key);
+  if (entry) {
+    touchCacheEntry(entry);
+    return;
+  }
+  if (queuedPreloadKeys.has(key)) {
+    if (highPriority) {
+      const queuedIndex = preloadQueue.findIndex((item) => item.key === key);
+      if (queuedIndex > 0) {
+        const [item] = preloadQueue.splice(queuedIndex, 1);
+        preloadQueue.unshift(item);
       }
     }
+    return;
   }
+  const item = {groupIndex, frameIndex, key};
+  queuedPreloadKeys.add(key);
+  if (highPriority) preloadQueue.unshift(item);
+  else preloadQueue.push(item);
+  processPreloadQueue();
+}
+
+function processPreloadQueue() {
+  while (preloadActiveCount < MAX_PRELOAD_CONCURRENCY && preloadQueue.length > 0) {
+    const item = preloadQueue.shift();
+    queuedPreloadKeys.delete(item.key);
+    preloadActiveCount += 1;
+    loadCachedImage(item.groupIndex, item.frameIndex)
+      .catch(() => {})
+      .finally(() => {
+        preloadActiveCount -= 1;
+        pruneFrameCache();
+        processPreloadQueue();
+      });
+  }
+}
+
+function warmFrameWindow(frameIndex, options = {}) {
+  if (!state.sessionId) return;
+  const ahead = getPreloadAheadFrameCount();
+  const direction = options.direction === -1 ? -1 : 1;
+  const startOffset = direction > 0 ? -PRELOAD_BEHIND_FRAMES : -ahead;
+  const endOffset = direction > 0 ? ahead : PRELOAD_BEHIND_FRAMES;
+  for (let offset = startOffset; offset <= endOffset; offset += 1) {
+    const candidate = normalizePreloadFrame(frameIndex + offset);
+    if (candidate === null) continue;
+    for (const group of state.groups) {
+      if (candidate >= group.count) continue;
+      queuePreloadImage(group.index, candidate, Boolean(options.highPriority) || offset === 0);
+    }
+  }
+  pruneFrameCache();
+}
+
+function resetFramePreloadState() {
+  frameCache.clear();
+  preloadQueue.length = 0;
+  queuedPreloadKeys.clear();
 }
 
 class ImagePanel {
@@ -882,7 +1017,7 @@ class ImagePanel {
     this.draw();
   }
 
-  showFrame(frameIndex) {
+  showFrame(frameIndex, options = {}) {
     this.currentFrameIndex = frameIndex;
     if (frameIndex >= this.group.count) {
       this.imageLoaded = false;
@@ -891,8 +1026,27 @@ class ImagePanel {
       return;
     }
     this.badge.textContent = `${frameIndex + 1} / ${this.group.count}`;
-    this.imageLoaded = false;
-    this.draw();
+    const readyImage = getCachedImageIfReady(this.group.index, frameIndex);
+    if (readyImage) {
+      this.image = readyImage;
+      this.imageLoaded = true;
+      this.clampView();
+      this.draw();
+      return;
+    }
+    const cachedEntry = frameCache.get(cacheKey(this.group.index, frameIndex));
+    if (cachedEntry?.status === "error") {
+      this.imageLoaded = false;
+      this.badge.textContent = "Missing";
+      this.draw();
+      return;
+    }
+
+    const keepCurrentImage = Boolean(options.deferUntilReady && this.imageLoaded);
+    if (!keepCurrentImage) {
+      this.imageLoaded = false;
+      this.draw();
+    }
     loadCachedImage(this.group.index, frameIndex)
       .then((image) => {
         if (this.currentFrameIndex !== frameIndex) return;
@@ -903,7 +1057,7 @@ class ImagePanel {
       })
       .catch(() => {
         if (this.currentFrameIndex !== frameIndex) return;
-        this.imageLoaded = false;
+        if (!keepCurrentImage) this.imageLoaded = false;
         this.badge.textContent = "Missing";
         this.draw();
       });
