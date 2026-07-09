@@ -15,6 +15,7 @@ from solar_toolkit.radio.trajectory import select_visible_centers
 from solar_toolkit.visualization.radio_source_trajectory import (
     FACET_BY_OPTIONS,
     PLOT_LAYOUTS,
+    marker_symbol_for_frequency,
     resolve_theme_palette,
 )
 
@@ -28,6 +29,7 @@ class VideoExportOptions:
     theme_mode: str = "auto"
     draw_lines: bool = True
     marker_size: int = 9
+    marker_symbol_by_freq: dict[str, str] | None = None
     trail_min_opacity: float = 0.25
     include_aia: bool = True
     max_aia_dt_sec: float = 3600.0
@@ -106,6 +108,7 @@ def export_radio_source_video_mp4(
                 theme_mode=options.theme_mode,
                 draw_lines=bool(options.draw_lines),
                 marker_size=int(options.marker_size),
+                marker_symbol_by_freq=options.marker_symbol_by_freq,
                 trail_min_opacity=float(options.trail_min_opacity),
                 plot_layout=resolved_layout,
                 facet_by=resolved_facet_by,
@@ -128,6 +131,7 @@ def _render_frame_rgb(
     theme_mode: str,
     draw_lines: bool,
     marker_size: int,
+    marker_symbol_by_freq: dict[str, str] | None,
     trail_min_opacity: float,
     plot_layout: str,
     facet_by: str,
@@ -169,6 +173,7 @@ def _render_frame_rgb(
                 theme=theme,
                 draw_lines=draw_lines,
                 marker_size=marker_size,
+                marker_symbol_by_freq=marker_symbol_by_freq,
                 trail_min_opacity=trail_min_opacity,
                 aia_background=aia_background,
             )
@@ -184,6 +189,7 @@ def _render_frame_rgb(
             theme=theme,
             draw_lines=draw_lines,
             marker_size=marker_size,
+            marker_symbol_by_freq=marker_symbol_by_freq,
             trail_min_opacity=trail_min_opacity,
             aia_background=aia_background,
         )
@@ -204,6 +210,7 @@ def _draw_axes(
     theme: dict[str, str],
     draw_lines: bool,
     marker_size: int,
+    marker_symbol_by_freq: dict[str, str] | None,
     trail_min_opacity: float,
     aia_background,
 ) -> None:
@@ -234,7 +241,7 @@ def _draw_axes(
         )
     if visible is None or visible.empty:
         return
-    for (_freq, _pol, _method), group in visible.groupby(
+    for (freq, _pol, _method), group in visible.groupby(
         ["freq_mhz", "polarization", "center_method"],
         sort=True,
     ):
@@ -247,6 +254,9 @@ def _draw_axes(
             x,
             y,
             s=max(1, int(marker_size)) ** 2,
+            marker=_matplotlib_marker_symbol(
+                marker_symbol_for_frequency(freq, marker_symbol_by_freq)
+            ),
             alpha=_trail_opacity(len(ordered), min_opacity=trail_min_opacity),
         )
 
@@ -285,6 +295,17 @@ def _format_facet_label(facet_by: str, value: object) -> str:
 def _choice_value(options: tuple[str, ...], value: object, default: str) -> str:
     text = str(value)
     return text if text in options else default
+
+
+def _matplotlib_marker_symbol(plotly_symbol: str) -> str:
+    return {
+        "circle": "o",
+        "x": "x",
+        "cross": "+",
+        "triangle-up": "^",
+        "square": "s",
+        "diamond": "D",
+    }.get(str(plotly_symbol), "o")
 
 
 def _trail_opacity(count: int, *, min_opacity: float) -> list[float]:

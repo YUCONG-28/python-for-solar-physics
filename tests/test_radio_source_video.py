@@ -68,6 +68,7 @@ def test_export_radio_source_video_mp4_writes_playable_file(tmp_path):
             draw_lines=True,
             include_aia=False,
             marker_size=12,
+            marker_symbol_by_freq={"149": "x", "164": "triangle-up"},
             trail_min_opacity=0.35,
         ),
     )

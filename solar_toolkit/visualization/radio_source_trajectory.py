@@ -24,6 +24,7 @@ PLOT_LAYOUTS = (PLOT_LAYOUT_OVERLAY, PLOT_LAYOUT_FACETS)
 FACET_BY_OPTIONS = ("freq_mhz", "polarization", "center_method")
 FACET_HORIZONTAL_SPACING = 0.075
 FACET_VERTICAL_SPACING = 0.14
+MARKER_SYMBOL_OPTIONS = ("circle", "x", "cross", "triangle-up", "square", "diamond")
 AIA_COLORMAPS = {
     "94": "sdoaia94",
     "131": "sdoaia131",
@@ -60,6 +61,7 @@ def build_trajectory_figure(
     plot_layout: str = PLOT_LAYOUT_OVERLAY,
     facet_by: str = "freq_mhz",
     marker_size: int = 9,
+    marker_symbol_by_freq: dict[str, str] | None = None,
     trail_min_opacity: float = 0.25,
     sync_axes: bool = False,
 ):
@@ -117,6 +119,7 @@ def build_trajectory_figure(
     mode = "lines+markers" if draw_lines else "markers"
     scatter_class = go.Scattergl if use_webgl else go.Scatter
     if visible is not None and not visible.empty:
+        marker_symbols = normalize_marker_symbol_by_frequency(marker_symbol_by_freq)
         for (freq, pol, method), group in visible.groupby(
             ["freq_mhz", "polarization", "center_method"],
             sort=True,
@@ -132,6 +135,7 @@ def build_trajectory_figure(
                 mode=mode,
                 marker={
                     "size": max(1, int(marker_size)),
+                    "symbol": marker_symbol_for_frequency(freq, marker_symbols),
                     "opacity": _trail_opacity(
                         len(sorted_group),
                         min_opacity=trail_min_opacity,
@@ -174,10 +178,8 @@ def build_trajectory_figure(
         else:
             add_lr_compare_segments(fig, compare_df)
 
-    title = (
-        "Radio source trajectory | "
-        f"display time: {pd.Timestamp(frame_time).isoformat()}"
-    )
+    frame_time_iso = pd.Timestamp(frame_time).isoformat()
+    title = "Radio source trajectory | " f"display time: {frame_time_iso}"
     if title_extra:
         title = f"{title} | {title_extra}"
     fig.update_layout(
@@ -191,6 +193,17 @@ def build_trajectory_figure(
         height=int(layout["height"]),
         legend=layout["legend"],
         margin=layout["margin"],
+    )
+    fig.add_annotation(
+        text=f"Radio source time: {frame_time_iso}",
+        xref="paper",
+        yref="paper",
+        x=1.0,
+        y=1.08,
+        xanchor="right",
+        yanchor="bottom",
+        showarrow=False,
+        font={"color": theme["font_color"], "size": 12},
     )
     fig.update_xaxes(
         gridcolor=theme["grid_color"],
@@ -223,6 +236,46 @@ def build_trajectory_figure(
             fig.update_xaxes(matches="x", row=row, col=col)
             fig.update_yaxes(matches="y", row=row, col=col)
     return fig, compare_df
+
+
+def frequency_marker_key(freq: object) -> str:
+    """Return a stable compact key for frequency-specific marker settings."""
+
+    try:
+        value = float(freq)
+    except (TypeError, ValueError):
+        return str(freq)
+    if not np.isfinite(value):
+        return str(freq)
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:g}"
+
+
+def normalize_marker_symbol_by_frequency(
+    marker_symbol_by_freq: dict[str, str] | None,
+) -> dict[str, str]:
+    """Return sanitized Plotly marker symbols keyed by compact frequency text."""
+
+    if not isinstance(marker_symbol_by_freq, dict):
+        return {}
+    normalized: dict[str, str] = {}
+    for freq, symbol in marker_symbol_by_freq.items():
+        marker_symbol = str(symbol)
+        if marker_symbol not in MARKER_SYMBOL_OPTIONS:
+            marker_symbol = "circle"
+        normalized[frequency_marker_key(freq)] = marker_symbol
+    return normalized
+
+
+def marker_symbol_for_frequency(
+    freq: object,
+    marker_symbol_by_freq: dict[str, str] | None,
+) -> str:
+    """Return the configured Plotly marker symbol for one frequency."""
+
+    normalized = normalize_marker_symbol_by_frequency(marker_symbol_by_freq)
+    return normalized.get(frequency_marker_key(freq), "circle")
 
 
 def resolve_theme_palette(theme_mode: str) -> dict[str, str]:

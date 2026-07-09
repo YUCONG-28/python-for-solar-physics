@@ -40,9 +40,13 @@ from solar_toolkit.radio.trajectory import (
 )
 from solar_toolkit.visualization.radio_source_trajectory import (
     FACET_BY_OPTIONS,
+    MARKER_SYMBOL_OPTIONS,
     PLOT_LAYOUTS,
     apply_aia_colormap_to_uint8,
     build_trajectory_figure,
+    frequency_marker_key,
+    marker_symbol_for_frequency,
+    normalize_marker_symbol_by_frequency,
     resolve_theme_palette,
 )
 from solar_toolkit.visualization.radio_source_video import (
@@ -60,6 +64,7 @@ DEFAULT_MARKER_SIZE = 8
 DEFAULT_TRAIL_MIN_OPACITY = 0.25
 DEFAULT_PLAYBACK_AIA_MAX_PIXELS = 384
 DEFAULT_PLAYBACK_MIN_STEP_SEC = 0.25
+DEFAULT_MARKER_SYMBOL_CYCLE = MARKER_SYMBOL_OPTIONS
 PRELOADED_FACET_SPACING = {"x": 0.075, "y": 0.13}
 
 DEFAULT_APP_SETTINGS: dict[str, Any] = {
@@ -84,6 +89,7 @@ DEFAULT_APP_SETTINGS: dict[str, Any] = {
     "compare_tolerance_sec": 1.0,
     "draw_lines": True,
     "marker_size": DEFAULT_MARKER_SIZE,
+    "frequency_marker_symbols": {},
     "trail_min_opacity": DEFAULT_TRAIL_MIN_OPACITY,
     "link_facet_views": False,
     "fps": 2.0,
@@ -309,6 +315,83 @@ def playback_interval_seconds(fps: float, *, playing: bool) -> float | None:
     return max(0.05, 1.0 / max(0.2, float(fps)))
 
 
+def default_frequency_marker_symbols(
+    freqs: list[float],
+    saved: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Return stable frequency marker symbols, with saved choices preferred."""
+
+    saved_symbols = normalize_marker_symbol_by_frequency(saved)
+    result: dict[str, str] = {}
+    for index, freq in enumerate(freqs):
+        key = frequency_marker_key(freq)
+        default_symbol = DEFAULT_MARKER_SYMBOL_CYCLE[
+            index % len(DEFAULT_MARKER_SYMBOL_CYCLE)
+        ]
+        result[key] = saved_symbols.get(key, default_symbol)
+    return result
+
+
+def slider_with_step_buttons(
+    st,
+    label: str,
+    min_value,
+    max_value,
+    value,
+    step,
+    *,
+    key: str,
+    help: str | None = None,
+):
+    """Render a Streamlit slider with adjacent fine-adjust buttons."""
+
+    integer_slider = all(
+        isinstance(item, int) and not isinstance(item, bool)
+        for item in (min_value, max_value, value, step)
+    )
+
+    def normalize(raw_value):
+        try:
+            numeric = float(raw_value)
+        except (TypeError, ValueError):
+            numeric = float(value)
+        numeric = min(float(max_value), max(float(min_value), numeric))
+        return int(round(numeric)) if integer_slider else numeric
+
+    state_key = f"{key}_value"
+    st.session_state[state_key] = normalize(st.session_state.get(state_key, value))
+    minus_col, slider_col, plus_col = st.columns([0.14, 0.72, 0.14])
+    with minus_col:
+        if st.button(
+            "-",
+            key=f"{key}_minus",
+            width="stretch",
+            help=f"Decrease {label}",
+        ):
+            st.session_state[state_key] = normalize(
+                float(st.session_state[state_key]) - float(step)
+            )
+    with plus_col:
+        if st.button(
+            "+",
+            key=f"{key}_plus",
+            width="stretch",
+            help=f"Increase {label}",
+        ):
+            st.session_state[state_key] = normalize(
+                float(st.session_state[state_key]) + float(step)
+            )
+    with slider_col:
+        return st.slider(
+            label,
+            min_value=min_value,
+            max_value=max_value,
+            step=step,
+            key=state_key,
+            help=help,
+        )
+
+
 def aia_background_to_png_image(background: AiaBackground) -> dict[str, object]:
     """Convert a scaled AIA background into a browser-friendly PNG image."""
 
@@ -353,6 +436,7 @@ def build_preloaded_playback_payload(
     plot_layout: str = "overlay",
     facet_by: str = "freq_mhz",
     marker_size: int = DEFAULT_MARKER_SIZE,
+    marker_symbol_by_freq: dict[str, str] | None = None,
     trail_min_opacity: float = DEFAULT_TRAIL_MIN_OPACITY,
     link_views: bool = False,
     background_loader=None,
@@ -366,6 +450,7 @@ def build_preloaded_playback_payload(
         centers,
         facet_by=resolved_facet_by,
         plot_layout=resolved_plot_layout,
+        marker_symbol_by_freq=marker_symbol_by_freq,
     )
     backgrounds: dict[str, dict[str, object]] = {}
     background_key_by_path: dict[str, str] = {}
@@ -707,7 +792,17 @@ function buildLayout(frame) {{
     plot_bgcolor: theme.plot_bgcolor,
     font: {{color: theme.font_color}},
     images,
-    annotations: [],
+    annotations: [{{
+      text: `Radio source time: ${{frame.time}}`,
+      showarrow: false,
+      xref: "paper",
+      yref: "paper",
+      x: 1,
+      y: 1.08,
+      xanchor: "right",
+      yanchor: "bottom",
+      font: {{color: theme.font_color, size: 13}}
+    }}],
     legend: {{orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "left", x: 0}},
     uirevision: "radio-preloaded"
   }};
@@ -778,6 +873,7 @@ function frameData(frame) {{
       y: trace.y.slice(group.start, group.end),
       marker: {{
         size: Math.max(1, Number(radioPayload.config.marker_size || 8)),
+        symbol: trace.marker_symbol || "circle",
         opacity: opacityForPoints(count)
       }},
       line: {{width: 2}},
@@ -856,6 +952,46 @@ async function blobToImage(blob) {{
   }}
 }}
 
+async function dataUrlToImage(dataUrl) {{
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  if (window.createImageBitmap) {{
+    return createImageBitmap(blob);
+  }}
+  return blobToImage(blob);
+}}
+
+function releaseRecordingFrames(images) {{
+  for (const image of images) {{
+    if (image && typeof image.close === "function") {{
+      image.close();
+    }}
+  }}
+}}
+
+async function prepareRecordingFrames(width, height) {{
+  const images = [];
+  for (let i = 0; i < radioPayload.frames.length; i += 1) {{
+    statusEl.textContent = `Preloading recording frame ${{i + 1}} / ${{radioPayload.frames.length}}`;
+    await renderFrame(i);
+    await delay(20);
+    const dataUrl = await Plotly.toImage(plotEl, {{
+      format: "png",
+      width,
+      height,
+      scale: 1
+    }});
+    images.push(await dataUrlToImage(dataUrl));
+  }}
+  return images;
+}}
+
+function drawRecordingFrame(ctx, image, width, height) {{
+  ctx.fillStyle = activeTheme().paper_bgcolor || "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(image, 0, 0, width, height);
+}}
+
 async function recordWebm() {{
   if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) {{
     statusEl.textContent = "Browser recording is not supported here.";
@@ -872,31 +1008,27 @@ async function recordWebm() {{
   canvas.height = height;
   const ctx = canvas.getContext("2d");
   const fps = Math.max(0.2, Number(radioPayload.config.fps || 2));
-  const stream = canvas.captureStream(fps);
-  const chunks = [];
-  const recorder = new MediaRecorder(stream, {{mimeType: "video/webm"}});
-  recorder.ondataavailable = (event) => {{
-    if (event.data && event.data.size > 0) chunks.push(event.data);
-  }};
-  recorder.start();
+  const preparedImages = [];
+  let stream = null;
+  let recorder = null;
   try {{
-    for (let i = 0; i < radioPayload.frames.length; i += 1) {{
-      await renderFrame(i);
-      await delay(20);
-      const dataUrl = await Plotly.toImage(plotEl, {{
-        format: "png",
-        width,
-        height,
-        scale: 1
-      }});
-      const response = await fetch(dataUrl);
-      const image = await blobToImage(await response.blob());
-      ctx.fillStyle = activeTheme().paper_bgcolor || "#ffffff";
-      ctx.fillRect(0, 0, width, height);
-      ctx.drawImage(image, 0, 0, width, height);
+    preparedImages.push(...await prepareRecordingFrames(width, height));
+    stream = canvas.captureStream(fps);
+    const chunks = [];
+    recorder = new MediaRecorder(stream, {{mimeType: "video/webm"}});
+    recorder.ondataavailable = (event) => {{
+      if (event.data && event.data.size > 0) chunks.push(event.data);
+    }};
+    statusEl.textContent = "Recording preloaded frames...";
+    recorder.start();
+    for (let i = 0; i < preparedImages.length; i += 1) {{
+      drawRecordingFrame(ctx, preparedImages[i], width, height);
+      const tracks = stream.getVideoTracks ? stream.getVideoTracks() : [];
+      for (const track of tracks) {{
+        if (typeof track.requestFrame === "function") track.requestFrame();
+      }}
       await delay(1000 / fps);
     }}
-  }} finally {{
     await new Promise((resolve) => {{
       recorder.onstop = resolve;
       recorder.stop();
@@ -906,6 +1038,18 @@ async function recordWebm() {{
     downloadEl.href = url;
     downloadEl.setAttribute("aria-disabled", "false");
     statusEl.textContent = `WebM ready (${{(blob.size / 1024 / 1024).toFixed(2)}} MB)`;
+  }} catch (error) {{
+    if (recorder && recorder.state !== "inactive") {{
+      try {{
+        recorder.stop();
+      }} catch (_stopError) {{}}
+    }}
+    statusEl.textContent = `WebM recording failed: ${{error && error.message ? error.message : error}}`;
+  }} finally {{
+    if (stream) {{
+      stream.getTracks().forEach((track) => track.stop());
+    }}
+    releaseRecordingFrames(preparedImages);
     recordEl.disabled = false;
   }}
 }}
@@ -955,6 +1099,7 @@ def _build_preloaded_trace_groups(
     *,
     facet_by: str = "freq_mhz",
     plot_layout: str = "overlay",
+    marker_symbol_by_freq: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, object]], list[list[int]], list[dict[str, object]]]:
     if centers is None or centers.empty:
         return [], [], []
@@ -962,6 +1107,7 @@ def _build_preloaded_trace_groups(
     group_times_ns: list[list[int]] = []
     resolved_facet_by = _choice_value(FACET_BY_OPTIONS, facet_by, "freq_mhz")
     resolved_plot_layout = _choice_value(PLOT_LAYOUTS, plot_layout, "overlay")
+    marker_symbols = normalize_marker_symbol_by_frequency(marker_symbol_by_freq)
     facet_values = _preloaded_facet_values(centers, resolved_facet_by)
     facet_lookup = {str(value): index for index, value in enumerate(facet_values)}
     facets = [
@@ -987,6 +1133,7 @@ def _build_preloaded_trace_groups(
                 "freq_mhz": float(freq),
                 "polarization": str(pol),
                 "center_method": str(method),
+                "marker_symbol": marker_symbol_for_frequency(freq, marker_symbols),
                 "facet": int(facet_lookup.get(str(facet_value), 0)),
                 "facet_value": _jsonable_facet_value(facet_value),
                 "x": [float(value) for value in ordered["center_x_arcsec"].tolist()],
@@ -1302,6 +1449,7 @@ def main(argv: list[str] | None = None) -> None:
         selected_plot_layout: str,
         selected_facet_by: str,
         selected_marker_size: int,
+        selected_marker_symbol_by_freq: dict[str, str],
         selected_trail_min_opacity: float,
         selected_link_views: bool,
     ):
@@ -1325,6 +1473,7 @@ def main(argv: list[str] | None = None) -> None:
             plot_layout=selected_plot_layout,
             facet_by=selected_facet_by,
             marker_size=int(selected_marker_size),
+            marker_symbol_by_freq=selected_marker_symbol_by_freq,
             trail_min_opacity=float(selected_trail_min_opacity),
             link_views=bool(selected_link_views),
         )
@@ -1396,12 +1545,14 @@ def main(argv: list[str] | None = None) -> None:
             value=use_aia_default,
             help="Overlay the closest AIA image within the allowed time difference.",
         )
-        max_pixels = st.slider(
+        max_pixels = slider_with_step_buttons(
+            st,
             "AIA background max side / px",
             256,
             2048,
-            int(settings["max_pixels"]),
-            128,
+            value=int(settings["max_pixels"]),
+            step=128,
+            key="aia_background_max_side",
             help="Resolution used for paused/manual AIA viewing.",
         )
         percentile_limits = st.slider(
@@ -1417,20 +1568,24 @@ def main(argv: list[str] | None = None) -> None:
             value=bool(settings["log_scale"]),
             help="Apply log scaling after percentile clipping to reveal faint structure.",
         )
-        playback_aia_max_pixels = st.slider(
+        playback_aia_max_pixels = slider_with_step_buttons(
+            st,
             "Playback AIA preview max side / px",
             128,
             1024,
-            int(settings["playback_aia_max_pixels"]),
-            64,
+            value=int(settings["playback_aia_max_pixels"]),
+            step=64,
+            key="playback_aia_preview_max_side",
             help="Lower-resolution AIA preview used for smooth browser playback.",
         )
-        fps = st.slider(
+        fps = slider_with_step_buttons(
+            st,
             "Playback FPS",
             min_value=0.2,
             max_value=20.0,
             value=float(settings["fps"]),
             step=0.2,
+            key="playback_fps",
             help="Target playback frame rate for the browser player and fallback controls.",
         )
         mode_label_to_value = {label: key for key, label in FRAME_MODE_LABELS.items()}
@@ -1447,20 +1602,24 @@ def main(argv: list[str] | None = None) -> None:
             help="Choose whether each frame shows current points, a fixed trail, or all prior points.",
         )
         frame_mode = mode_label_to_value[selected_mode_label]
-        tail_n = st.slider(
+        tail_n = slider_with_step_buttons(
+            st,
             "Frames shown per trace, including current",
             min_value=1,
             max_value=max(200, int(settings["tail_n"])),
             value=max(1, int(settings["tail_n"])),
             step=1,
+            key="frames_shown_per_trace",
             help="For trail mode, each frequency/polarization/method trace keeps this many recent points.",
         )
-        marker_size = st.slider(
+        marker_size = slider_with_step_buttons(
+            st,
             "Center marker size",
             min_value=2,
             max_value=24,
             value=int(settings["marker_size"]),
             step=1,
+            key="center_marker_size",
             help="Marker size for radio-source center points in plots and exported video.",
         )
         plot_layout = st.radio(
@@ -1533,12 +1692,14 @@ def main(argv: list[str] | None = None) -> None:
                 step=0.05,
                 help="Coalesce dense radio frames for smoother playback; set 0 to keep every frame.",
             )
-            trail_min_opacity = st.slider(
+            trail_min_opacity = slider_with_step_buttons(
+                st,
                 "Minimum historical-point opacity",
                 min_value=0.05,
                 max_value=1.0,
                 value=float(settings["trail_min_opacity"]),
                 step=0.05,
+                key="minimum_historical_point_opacity",
                 help="Oldest visible trail points use this opacity; current points remain fully opaque.",
             )
             link_facet_views = st.checkbox(
@@ -1640,6 +1801,21 @@ def main(argv: list[str] | None = None) -> None:
             ),
             help="Choose which radio frequency bands to display.",
         )
+        frequency_marker_symbols = default_frequency_marker_symbols(
+            [float(freq) for freq in freqs_all],
+            settings["frequency_marker_symbols"],
+        )
+        with st.expander("Frequency marker symbols", expanded=False):
+            for freq in freqs_all:
+                marker_key = frequency_marker_key(freq)
+                current_symbol = frequency_marker_symbols.get(marker_key, "circle")
+                frequency_marker_symbols[marker_key] = st.selectbox(
+                    f"{float(freq):.3g} MHz marker",
+                    MARKER_SYMBOL_OPTIONS,
+                    index=_choice_index(MARKER_SYMBOL_OPTIONS, current_symbol),
+                    key=f"radio_marker_symbol_{marker_key}",
+                    help="Marker symbol used for this radio frequency in playback and video export.",
+                )
         default_pols = _saved_str_selection(settings["selected_pols"], pols_all) or (
             ["L+R"] if "L+R" in pols_all else pols_all
         )
@@ -1696,6 +1872,7 @@ def main(argv: list[str] | None = None) -> None:
             "compare_tolerance_sec": float(compare_tolerance_sec),
             "draw_lines": bool(draw_lines),
             "marker_size": int(marker_size),
+            "frequency_marker_symbols": frequency_marker_symbols,
             "trail_min_opacity": float(trail_min_opacity),
             "link_facet_views": bool(link_facet_views),
             "fps": float(fps),
@@ -1779,6 +1956,7 @@ def main(argv: list[str] | None = None) -> None:
                             theme_mode=str(theme_mode),
                             draw_lines=bool(draw_lines),
                             marker_size=int(marker_size),
+                            marker_symbol_by_freq=frequency_marker_symbols,
                             trail_min_opacity=float(trail_min_opacity),
                             include_aia=bool(video_include_aia and use_aia),
                             max_aia_dt_sec=float(max_aia_dt_sec),
@@ -1925,6 +2103,7 @@ def main(argv: list[str] | None = None) -> None:
             plot_layout=str(plot_layout),
             facet_by=str(facet_by),
             marker_size=int(marker_size),
+            marker_symbol_by_freq=frequency_marker_symbols,
             trail_min_opacity=float(trail_min_opacity),
             sync_axes=bool(link_facet_views),
         )
@@ -2009,6 +2188,7 @@ def main(argv: list[str] | None = None) -> None:
                 "plot_layout": str(plot_layout),
                 "facet_by": str(facet_by),
                 "marker_size": int(marker_size),
+                "frequency_marker_symbols": frequency_marker_symbols,
                 "trail_min_opacity": float(trail_min_opacity),
                 "link_facet_views": bool(link_facet_views),
             }
@@ -2053,6 +2233,7 @@ def main(argv: list[str] | None = None) -> None:
                         str(plot_layout),
                         str(facet_by),
                         int(marker_size),
+                        frequency_marker_symbols,
                         float(trail_min_opacity),
                         bool(link_facet_views),
                     )
@@ -2163,6 +2344,9 @@ def _coerce_app_settings(settings: dict[str, Any]) -> dict[str, Any]:
     result["marker_size"] = min(
         24,
         max(2, _safe_int(result["marker_size"], DEFAULT_MARKER_SIZE)),
+    )
+    result["frequency_marker_symbols"] = normalize_marker_symbol_by_frequency(
+        result["frequency_marker_symbols"]
     )
     result["trail_min_opacity"] = _coerce_unit_interval(
         result["trail_min_opacity"],

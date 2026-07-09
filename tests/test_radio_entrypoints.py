@@ -108,6 +108,7 @@ def test_radio_source_app_settings_roundtrip_and_cli_override(tmp_path):
     assert missing["video_fps"] == 6.0
     assert missing["video_include_aia"] is True
     assert missing["marker_size"] == 8
+    assert missing["frequency_marker_symbols"] == {}
     assert missing["trail_min_opacity"] == 0.25
     assert missing["link_facet_views"] is False
 
@@ -128,6 +129,7 @@ def test_radio_source_app_settings_roundtrip_and_cli_override(tmp_path):
             "video_fps": 4.0,
             "video_include_aia": False,
             "marker_size": 13,
+            "frequency_marker_symbols": {"149": "x", "164": "triangle-up"},
             "trail_min_opacity": 0.4,
             "link_facet_views": True,
         },
@@ -153,6 +155,10 @@ def test_radio_source_app_settings_roundtrip_and_cli_override(tmp_path):
     assert resolved["video_fps"] == 4.0
     assert resolved["video_include_aia"] is False
     assert resolved["marker_size"] == 13
+    assert resolved["frequency_marker_symbols"] == {
+        "149": "x",
+        "164": "triangle-up",
+    }
     assert resolved["trail_min_opacity"] == 0.4
     assert resolved["link_facet_views"] is True
     assert (
@@ -326,6 +332,7 @@ def test_preloaded_payload_records_facet_metadata_and_tail_indices():
         plot_layout="facets",
         facet_by="freq_mhz",
         marker_size=13,
+        marker_symbol_by_freq={"149": "x", "164": "triangle-up"},
         trail_min_opacity=0.4,
         link_views=True,
     )
@@ -343,6 +350,9 @@ def test_preloaded_payload_records_facet_metadata_and_tail_indices():
     assert payload["config"]["marker_size"] == 13
     assert payload["config"]["trail_min_opacity"] == 0.4
     assert payload["config"]["link_views"] is True
+    assert {
+        trace["freq_mhz"]: trace["marker_symbol"] for trace in payload["traces"]
+    } == {149.0: "x", 164.0: "triangle-up"}
     assert payload["layout"]["facet_spacing"] == {"x": 0.075, "y": 0.13}
 
 
@@ -511,6 +521,11 @@ def test_preloaded_player_html_contains_single_plotly_root_and_payload():
     assert "MediaRecorder" in html
     assert "captureStream" in html
     assert "Plotly.toImage" in html
+    assert "Radio source time:" in html
+    assert "marker_symbol" in html
+    assert "symbol: trace.marker_symbol" in html
+    assert "prepareRecordingFrames" in html
+    assert "Recording preloaded frames" in html
     assert "radio-record" in html
     assert "radio-play" in html
 

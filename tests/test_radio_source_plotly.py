@@ -246,6 +246,44 @@ def test_trajectory_figure_uses_time_fade_and_custom_marker_size():
     assert list(trace.marker.opacity) == pytest.approx([0.2, 0.6, 1.0])
 
 
+def test_trajectory_figure_uses_frequency_marker_symbols_and_time_annotation():
+    visible = pd.DataFrame(
+        [
+            {
+                "obs_time": pd.Timestamp("2025-01-24T04:48:37"),
+                "freq_mhz": 149.0,
+                "polarization": "L+R",
+                "center_method": "threshold",
+                "center_x_arcsec": 10.0,
+                "center_y_arcsec": 20.0,
+            },
+            {
+                "obs_time": pd.Timestamp("2025-01-24T04:48:37"),
+                "freq_mhz": 164.0,
+                "polarization": "L+R",
+                "center_method": "threshold",
+                "center_x_arcsec": -8.0,
+                "center_y_arcsec": 15.0,
+            },
+        ]
+    )
+
+    fig, _compare = build_trajectory_figure(
+        visible,
+        pd.Timestamp("2025-01-24T04:48:37"),
+        marker_symbol_by_freq={"149": "x", "164": "triangle-up"},
+    )
+
+    symbols = {
+        float(trace.name.split(" MHz", 1)[0]): trace.marker.symbol for trace in fig.data
+    }
+    assert symbols == {149.0: "x", 164.0: "triangle-up"}
+    assert any(
+        "Radio source time: 2025-01-24T04:48:37" in annotation.text
+        for annotation in fig.layout.annotations
+    )
+
+
 def test_trajectory_figure_can_sync_facet_axes():
     visible = pd.DataFrame(
         [
