@@ -1,4 +1,4 @@
-# Script Index
+# Script Index / 脚本索引
 
 This index describes the public runnable scripts, compatibility entrypoints, and
 selected examples that users are expected to run directly. It intentionally does
@@ -9,6 +9,9 @@ The bilingual `README.md` links to the main workflows listed here.
 For a beginner-safe path that starts with no-data checks, see
 `docs/quickstart.md`.
 
+本索引同时区分安装后命令与源码仓库 recipe。可复用实现位于 `solar_toolkit.*`，
+`scripts/` 只保留薄入口或兼容工作流。
+
 Status labels:
 
 - `main`: recommended public entry point.
@@ -18,18 +21,30 @@ Status labels:
 - `deprecated`: not recommended for new work, but kept because it may preserve
   historical parameters or optional behavior.
 
+## Installed Commands / 安装后命令
+
+| Command | Purpose | Boundary / 当前边界 |
+| --- | --- | --- |
+| `solar-aia` | AIA single-band, mosaic, and difference processing. | Package-owned runner. |
+| `solar-radio` | `centers`, `pipeline`, `source-map`, `overlay`, `quicklook`, `raw-quality`, and `trajectory`. | `pipeline/source-map/overlay` return status `2` without a source-checkout compatibility runner; this is not an end-to-end parity claim. |
+| `solar-image-viewer` | Local multi-folder image viewer and media export. | Package-owned runner. |
+| `solar-webapp` | Local English workflow workbench. | Source-only recipes are listed as unavailable when their files are absent from the installed package. |
+
+安装后的 `solar-radio pipeline/source-map/overlay` 会明确暴露尚未迁移的完整编排边界；完整执行
+仍应使用源码仓库中的对应薄脚本。
+
 ## Main Workflows
 
 | Status | Script | Purpose | Main inputs | Main outputs |
 | --- | --- | --- | --- | --- |
 | main | `scripts/aia_hmi/run_aia_euv_processor.py` | Main SDO/AIA EUV processor for single-band PNGs, multi-band mosaics, test previews, and optional base/running difference images. | AIA FITS files in wavelength folders; ROI, wavelength, scaling, and mosaic settings. | AIA PNG images, mosaics, and optional difference products. |
-| main | `scripts/radio/run_radio_burst_pipeline.py` | Full radio burst workflow with source maps, Gaussian diagnostics, CSO spectrogram/drift support, Newkirk height comparison, Gaussian-Newkirk height residuals, and drift-speed diagnostics. | Radio source FITS files, optional CSO spectrogram FITS, Gaussian/drift/Newkirk settings. | Radio source maps, fitted centers, FWHM overlays, diagnostics CSV, Newkirk height tables, height-residual plots, and optional drift-rate JSON/preview products. |
-| main | `scripts/radio/run_radio_source_map.py` | Quick radio source map workflow with Gaussian overlay through the compatibility source-map workflow. | Radio source FITS files, Gaussian settings. | Radio source maps, fitted centers, FWHM overlays, and diagnostics CSV. |
+| main | `scripts/radio/run_radio_burst_pipeline.py` | Source-checkout full radio burst workflow with source maps, Gaussian diagnostics, CSO spectrogram/drift support, Newkirk height comparison, Gaussian-Newkirk height residuals, and drift-speed diagnostics. Its complete orchestration remains a compatibility runner. | Radio source FITS files, optional CSO spectrogram FITS, Gaussian/drift/Newkirk settings. | Radio source maps, fitted centers, FWHM overlays, diagnostics CSV, Newkirk height tables, height-residual plots, and optional drift-rate JSON/preview products. |
+| main | `scripts/radio/run_radio_source_map.py` | Source-checkout radio source-map workflow with Gaussian overlay through the retained compatibility orchestration. | Radio source FITS files, Gaussian settings. | Radio source maps, fitted centers, FWHM overlays, and diagnostics CSV. |
 | main | `scripts/radio/extract_radio_centers.py` | Extract threshold/contour radio-source centers, such as 95% intensity regions, from a radio FITS folder. | Radio FITS files, threshold mode, centroid mode, optional LCP/RCP pairing. | CSV or XLSX center table with `obs_time`, `freq_mhz`, `polarization`, center coordinates, method, and quality flag. |
 | main | `scripts/radio/run_radio_source_app.py` | Streamlit frontend for radio-source trajectory playback, exact-timestamp MP4/WebM browser recording, and reproducible MP4/GIF/WebM backend export. | Center CSV/XLSX table, optional AIA FITS folder, playback/filter controls, Start/End, size, FPS, quality, format, and full backend output path. | Interactive browser view, local browser recording download, and optional backend video; no batch FITS extraction is run inside the app. |
 | utility | `scripts/radio/export_radio_source_trajectory.py` | Export a selected radio-source trajectory frame to a static Plotly HTML file. | Center CSV/XLSX table, frame time or frame index, optional AIA FITS folder. | Standalone HTML trajectory figure. |
-| main | `scripts/radio/run_aia_radio_hmi_overlay.py` | Overlay radio source contours and optional HMI contours on AIA context images. | AIA FITS, radio source FITS, optional HMI FITS, matching and fit settings. | AIA-radio or AIA-radio-HMI diagnostic figures with contours and fitted source markers. |
-| main | `scripts/radio/legacy/cso_radio_spectrogram_plot.py` | Deprecated compatibility CSO dynamic spectra workflow with memory-aware slicing and downsampling; no `run_*.py` wrapper exists yet. | CSO spectrogram FITS, time/frequency ranges, polarization settings. | LL/RR, total intensity, and polarization-ratio spectrum figures. |
+| main | `scripts/radio/run_aia_radio_hmi_overlay.py` | Source-checkout AIA/radio/HMI overlay using retained compatibility orchestration for the complete renderer. | AIA FITS, radio source FITS, optional HMI FITS, matching and fit settings. | AIA-radio or AIA-radio-HMI diagnostic figures with contours and fitted source markers. |
+| deprecated | `scripts/radio/legacy/cso_radio_spectrogram_plot.py` | Compatibility CSO dynamic spectra workflow with memory-aware slicing and downsampling; no new public script wrapper exists yet. | CSO spectrogram FITS, time/frequency ranges, polarization settings. | LL/RR, total intensity, and polarization-ratio spectrum figures. |
 | main | `scripts/aia_hmi/sdo_aia_jsoc_download_20250124.py` | Download selected SDO/AIA JSOC level-1 EUV FITS files for 2025-01-24 04:00-05:00 UTC. | JSOC/DRMS query, 211 A and 304 A channels by default. | FITS files and `manifest_urls.txt` under `~/data/aia/20250124_2/`. |
 | main | `scripts/data_download/stereo_a_euvi_download_20250124.py` | Download STEREO-A SECCHI/EUVI files for the 2025-01-24 event window. | SunPy/Fido query to STEREO/EUVI archive. | EUVI FTS files and `selected_files.txt`. |
 | main | `scripts/data_download/goes_suvi_download_20250124.py` | Download GOES-16/18 SUVI L2 composite FITS files for the event window. | NOAA GOES SUVI public data directory. | SUVI FITS files grouped by satellite, channel, and date. |
@@ -47,7 +62,7 @@ Status labels:
 | utility | `scripts/stereo_suvi/stereo_euvi_0448_overview_plot.py` | Plot STEREO-A/EUVI context images nearest the 2025-01-24 04:48 UT event time. | EUVI manifest from the wavelength organizer. | Single-channel and 2x2 overview PNG products. |
 | utility | `scripts/stereo_suvi/stereo_euvi_roi_movie.py` | Generate fixed-ROI EUVI frame sequences and MP4 movies for event evolution. | EUVI manifest and local EUVI FTS files. | ROI PNG frames, MP4 movies, and `movie_summary.csv`. |
 | utility | `scripts/stereo_suvi/goes_suvi_0448_quadrant_plot.py` | Plot GOES-16/18 SUVI lower-right quadrant event context images. | Local SUVI L2 FITS files. | Single-channel and overview PNG products. |
-| utility | `scripts/tools/gaussian_source_fitting.py` | Compatibility wrapper for shared Gaussian fitting helpers in `solar_toolkit.gaussian`. | 2D intensity array and coordinate axes. | Gaussian parameters, covariance, and fitted source center/shape. |
+| utility | `scripts/tools/gaussian_source_fitting.py` | Compatibility wrapper for the pure model in `solar_toolkit.modeling.gaussian`; radio-domain fitting lives under `solar_toolkit.radio.gaussian_*`. | 2D intensity array and coordinate axes. | Gaussian parameters, covariance, and fitted source center/shape. |
 | utility | `scripts/tools/image_sequence_to_video.py` | Convert an ordered image sequence to MP4 with FFmpeg/imageio/OpenCV fallbacks. | PNG/JPG image sequence and video settings. | MP4 time-evolution video. |
 | utility | `scripts/tools/run_image_web_viewer.py` | Launch the local Flask/Canvas image sequence viewer with synchronized multi-folder playback, ROI selection, and recording/export controls for MP4, GIF, or WebM. | One or more local image folders, optional allowed-root boundary, playback/export settings. | Interactive browser view plus optional live-stage recordings, composite exports, and per-folder media files in the selected output directory. |
 | utility | `scripts/tools/run_solar_webapp.py` | Launch the unified local English web GUI for registered AIA/HMI, radio, data-download, LASCO/CME, X-ray/DEM, example, and media workflows. | Optional allowed-root boundary and workbench port. | Local browser dashboard with workflow forms, job status, and logs. |
@@ -65,26 +80,27 @@ Status labels:
 | utility | `solar_toolkit/map/` | SunPy Map/FITS-header helper layer for extent, observation time, ROI crop, and image normalization. | Plotting and overlay workflows that need common image geometry. |
 | utility | `solar_toolkit/timeseries/` | Light-curve table time normalization, time clipping, smoothing, and finite-difference derivatives. | GOES/HXI/AIA light-curve and Neupert-style workflows. |
 | utility | `solar_toolkit/aia/` | Public AIA library boundary for configuration, FITS selection, difference helpers, mosaic helpers, and the lazy EUV processor dispatcher. | AIA/HMI entrypoints and historical `scripts.aia_hmi.core.*` compatibility imports. |
-| utility | `solar_toolkit/hmi/` | Public HMI-facing namespace for FITS renaming, magnetogram, and overlay facades. | HMI/AIA script workflows and future reusable HMI extraction. |
+| utility | `solar_toolkit/hmi/` | Canonical FITS rename, magnetogram, magnetic processing, and AIA/HMI overlay implementations. | Thin HMI/AIA script workflows. |
 | utility | `solar_toolkit/radio/raw_quality.py` | Raw radio FITS artifact/quality diagnostics. | `scripts/radio/run_radio_raw_quality.py` and compatibility imports. |
 | utility | `solar_toolkit/radio/centers.py` | Threshold/contour radio-source center extraction from FITS image planes. | `scripts/radio/extract_radio_centers.py` and trajectory frontend workflows. |
 | utility | `solar_toolkit/radio/trajectory.py` | Normalize threshold-center and Gaussian diagnostics tables, filter series, select playback frames, and compute LCP-RCP separation rows. | `scripts/radio/run_radio_source_app.py`, `scripts/radio/export_radio_source_trajectory.py`, and future trajectory products. |
 | utility | `solar_toolkit/radio/spectrogram.py` | Dynamic spectrogram cache and overlay helpers. | Radio pipeline and AIA/radio overlay workflows. |
 | utility | `solar_toolkit/radio/drift_rate.py` | Manual drift-rate selection and overlay helpers. | Full radio burst pipeline. |
 | utility | `solar_toolkit/radio/drift_products.py` | Persistent drift-selection preview/table/metadata products. | Drift-selection tests and full radio burst pipeline. |
+| utility | `solar_toolkit/radio/config.py` | Canonical validated radio configuration loader; rejects unknown event sections and adapts existing Python event modules. | Package radio commands and source-checkout compatibility runners. |
 | utility | `solar_toolkit/path_config.py` | Load local path configuration from `configs/paths.example.yaml`-style YAML files without committing personal paths. | README-recommended workflows that need local data roots. |
-| utility | `solar_toolkit/gaussian.py` | Shared Gaussian fitting helpers used by compatibility and diagnostic code. | Gaussian fitting tests and `scripts/tools/gaussian_source_fitting.py`. |
-| utility | `solar_toolkit/coordinates.py` | Coordinate and image extent helpers for radio/AIA consistency checks. | Radio coordinate tests and plotting workflows. |
-| utility | `solar_toolkit/cso.py` | CSO spectrogram utility helpers. | CSO tests and radio spectrogram workflows. |
-| utility | `solar_toolkit/xray_dem/` | Public namespace for future X-ray/HXI/DEM helper extraction. | `scripts/xray_dem/` workflows. |
-| utility | `solar_toolkit/cme/` | Public namespace for future LASCO/CME helper extraction. | `scripts/lasco_cme/` workflows. |
-| utility | `solar_toolkit/net/` | Public namespace for future archive query/download helper extraction. | `scripts/data_download/` workflows. |
+| utility | `solar_toolkit/modeling/gaussian.py` | Canonical pure Gaussian model; old `solar_toolkit.gaussian` is a compatibility alias. | Gaussian utilities and radio-domain Gaussian models. |
+| utility | `solar_toolkit/map/coordinates.py` | Canonical coordinate and image-extent helpers; old `solar_toolkit.coordinates` is a compatibility alias. | Radio coordinate tests and plotting workflows. |
+| utility | `solar_toolkit/radio/cso.py` | Canonical CSO spectrogram helpers; old `solar_toolkit.cso` is a compatibility alias. | CSO tests and radio spectrogram workflows. |
+| utility | `solar_toolkit/xray_dem/` | Canonical SXR, HXI, processing, and packaged CLI helper namespace. | Thin `scripts/xray_dem/` workflows. |
+| utility | `solar_toolkit/cme/` | Canonical LASCO/CME scanning, processing, plotting, and download helper namespace. | Thin `scripts/lasco_cme/` workflows. |
+| utility | `solar_toolkit/net/` | Canonical archive query, link, and download helper namespace. | Thin `scripts/data_download/` workflows. |
 | utility | `solar_toolkit/modeling/` | Shared science-model boundary for Gaussian and Newkirk helpers. | Reusable model imports. |
 | utility | `solar_toolkit/aia/background.py` | Lightweight AIA FITS folder scanning, nearest-frame matching, and downsampled HPLN/HPLT background grids. | Radio-source trajectory frontend and HTML export. |
 | utility | `solar_toolkit/visualization/radio_source_trajectory.py` | Plotly figure and HTML export helpers for radio-source trajectories with optional AIA backgrounds. | `scripts/radio/run_radio_source_app.py` and `scripts/radio/export_radio_source_trajectory.py`. |
 | utility | `solar_toolkit/visualization/radio_source_video.py` | Rebuildable Matplotlib frame factory and bounded AIA cache for radio-source MP4/GIF/WebM export. | `scripts/radio/run_radio_source_app.py` and normalized trajectory frames. |
 | utility | `solar_toolkit/visualization/media.py` | Shared FFmpeg/FFprobe resolver, ordered frame writers, atomic publication, cancellation, diagnostics, and output validation. | Radio trajectory and image-sequence exporters. |
-| utility | `solar_toolkit/visualization/media_assets/` | Bundled Mediabunny, shared `SolarToolkitMedia.createCanvasRecorder` API, and MPL-2.0 notices. | Radio Plotly player and Flask image viewer; no CDN or npm runtime dependency. |
+| utility | `solar_toolkit/visualization/_media_assets/` | Internal canonical package for bundled Mediabunny, shared `SolarToolkitMedia.createCanvasRecorder` API, and MPL-2.0 notices. The old non-private path remains an alias. | Radio Plotly player and Flask image viewer; no CDN or npm runtime dependency. |
 | utility | `solar_toolkit/visualization/image_web_viewer/` | Flask app factory, folder scanner, Canvas frontend, and compatibility integration with shared MP4/GIF/WebM recording/export helpers. | `scripts/tools/run_image_web_viewer.py` and browser API routes under `/api/*`. |
 | utility | `solar_toolkit/visualization/` | Shared plotting/media namespace for reusable visual helpers. | Scripts and tools that generate figures, videos, or interactive HTML. |
 

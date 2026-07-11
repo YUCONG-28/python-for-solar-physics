@@ -1,83 +1,149 @@
-# Project Code Organization Manifest
+# Project Code Organization Manifest / 项目代码组织清单
 
-This manifest records the current whole-repository module boundary after the
-Astropy/SunPy-style cleanup. It is a maintained inventory, not a historical
-move log. Older file-by-file migration reports remain under `docs/` and
-`scripts/radio/docs/`.
+This file records the current architecture after the Astropy/SunPy-style
+reorganization. It is the maintained source of truth for package boundaries;
+historical migration reports remain in `docs/` and `scripts/radio/docs/`.
 
-中文说明: 本文件记录当前仓库的功能分区和公共边界。历史迁移细节保留在
-`docs/` 与 `scripts/radio/docs/` 中；这里以当前状态为准。
+本文记录 Astropy/SunPy 风格重构后的当前架构，是包边界的维护基准；历史迁移报告仍保留在
+`docs/` 和 `scripts/radio/docs/` 中。
 
-## Public Library Boundary
+## Dependency Direction / 依赖方向
 
-Reusable, data-independent helpers belong under `solar_toolkit/`. New code
-should prefer these imports instead of reaching into script internals.
+The supported dependency direction is:
 
-| Package | Current role |
+```text
+base utilities -> science-domain packages -> visualization/apps -> scripts/compatibility
+基础工具层 -> 科学领域包 -> 可视化与应用层 -> scripts/兼容入口
+```
+
+`solar_toolkit.*` is the implementation layer. Package code must not statically
+import `scripts`, `legacy`, or `examples`; those trees may call the package but
+not the reverse. Importing a public namespace must not scan data, create output
+directories, launch a GUI, or execute a workflow.
+
+`solar_toolkit.*` 是唯一实现层。包代码不得静态依赖 `scripts`、`legacy` 或
+`examples`；后三者可以调用包，不能反向被包调用。导入公共命名空间不得扫描数据、创建输出目录、
+启动 GUI 或执行工作流。
+
+## Public Package Contract / 公共包契约
+
+`import solar_toolkit` is lightweight. Public namespaces are advertised by an
+explicit `__all__` and loaded on first attribute access through `__getattr__`;
+`__dir__` exposes the same stable list. For example,
+`import solar_toolkit; solar_toolkit.radio` works without eagerly importing the
+radio scientific stack. The version comes from installed package metadata.
+
+`import solar_toolkit` 保持轻量。公共命名空间由显式 `__all__` 声明，并通过
+`__getattr__` 首次访问时加载；`__dir__` 返回同一稳定列表。版本号只读取安装元数据。
+
+| Layer / 层级 | Canonical namespaces / 规范命名空间 | Responsibility / 职责 |
+| --- | --- | --- |
+| Base / 基础 | `solar_toolkit.time`, `io`, `data`, `map`, `timeseries`, `_utils` | Time parsing, FITS/file discovery, manifests, WCS/HPC helpers, table processing, and private generic utilities. / 时间、文件、WCS 与表格基础能力。 |
+| Science / 科学 | `solar_toolkit.aia`, `hmi`, `radio`, `cme`, `xray_dem` | Instrument and science-domain implementations. / 仪器与科学领域实现。 |
+| Models / 模型 | `solar_toolkit.modeling.gaussian`; `solar_toolkit.radio.newkirk` | Pure Gaussian model and radio density-model calculations. / 纯高斯模型与射电密度模型。 |
+| Network / 网络 | `solar_toolkit.net` | Explicit archive link/query/download helpers; no import-time downloads. / 显式查询与下载，不在导入时联网。 |
+| Presentation / 展示 | `solar_toolkit.visualization`, `solar_toolkit.webapp` | Plotting, media generation, image viewer, and local workbench. / 绘图、媒体、图像浏览器和本地工作台。 |
+
+Domain details:
+
+- AIA runs through `config -> io -> difference/mosaic -> processor -> cli`;
+  `solar_toolkit.aia._euv_processor_impl` contains the remaining internal
+  execution logic.
+- HMI implementations live in `solar_toolkit.hmi.fits_rename`, `magnetogram`,
+  `processing`, and `overlay`; matching scripts only parse arguments and call
+  these modules.
+- Radio configuration is canonical in `solar_toolkit.radio.config`.
+  `RadioEventConfig` validates named sections and rejects unknown sections;
+  existing event Python modules under `scripts.radio.configs` are adapters.
+- `solar_toolkit.radio.provenance` writes `radio_run_provenance.json` beside a
+  resolved analysis output. It records the resolved ROI, thresholds,
+  Gaussian choices, WCS policy, Newkirk assumptions, configuration source,
+  CLI overrides, and precedence order. This reproducibility record does not
+  imply full pipeline parity.
+- The pure elliptical Gaussian is canonical in
+  `solar_toolkit.modeling.gaussian`. Radio-specific analytic variants,
+  background estimation, and masks live in `gaussian_models`,
+  `gaussian_background`, and `gaussian_masks`. `solar_toolkit.radio.gaussian`
+  remains the fit engine and aggregation surface; `gaussian_fit`,
+  `gaussian_diagnostics`, and `gaussian_io` expose focused facades without
+  copying implementations.
+- Browser media resources are internal package data under
+  `solar_toolkit.visualization._media_assets`.
+
+领域说明：AIA、HMI、Radio 的可复用逻辑均位于 `solar_toolkit`。事件配置仍可保留在
+`scripts.radio.configs`，但由 `solar_toolkit.radio.config` 统一校验和适配。浏览器媒体资源的
+规范位置为私有包 `_media_assets`。
+
+`solar_toolkit.radio.provenance` 会在已解析的分析输出旁写入
+`radio_run_provenance.json`，记录最终 ROI、阈值、Gaussian、WCS、Newkirk 假设及配置优先级；
+该复现记录不代表完整 pipeline 已通过等价验证。
+
+## Canonical and Compatibility Paths / 规范路径与兼容路径
+
+Compatibility paths are deprecated from version `0.2.0`. They are retained
+through the 0.x series and will not be considered for removal before `1.0.0`;
+removal also requires real-data equivalence evidence. New code must use the
+canonical path.
+
+兼容路径自 `0.2.0` 起进入弃用期，在整个 0.x 系列保留，最早只能在 `1.0.0` 且真实数据等价
+验证完成后评估移除。新代码必须使用规范路径。
+
+| Compatibility path / 兼容路径 | Canonical implementation / 规范实现 |
 | --- | --- |
-| `solar_toolkit.time` | Timestamp parsing, filename time extraction, nearest-time matching, and time-range filtering. |
-| `solar_toolkit.io` | Local file scanning, natural sorting, FITS data/header reading, and CSV manifest helpers. |
-| `solar_toolkit.data` | Lightweight local observation-file records without download side effects. |
-| `solar_toolkit.map` | SunPy Map/FITS-header helpers for extent, observation time, ROI crop, and normalization. |
-| `solar_toolkit.timeseries` | Light-curve table time normalization, clipping, smoothing, and derivatives. |
-| `solar_toolkit.aia` | AIA configuration, FITS selection, difference products, mosaics, and lazy EUV processing dispatch. |
-| `solar_toolkit.hmi` | Lightweight HMI facades for FITS renaming, magnetogram plotting, and AIA/HMI overlay workflows. |
-| `solar_toolkit.radio` | Radio coordinates, center extraction, Gaussian fitting, Newkirk, spectrogram, drift, raw-quality, quicklook, and diagnostics. |
-| `solar_toolkit.xray_dem` | Reusable GOES/HXR/HXI/DEM helpers extracted from script workflows. |
-| `solar_toolkit.cme` | LASCO/CME timestamp, scanning, and running-difference helpers. |
-| `solar_toolkit.net` | Archive link collection, filtering, and explicit-location download helpers. |
-| `solar_toolkit.modeling` | Shared Gaussian and density-model boundary. |
-| `solar_toolkit.visualization` | Shared plotting, trajectory HTML, image viewer, and MP4 export helpers. |
-| `solar_toolkit.webapp` | Local English workflow workbench, registry, runner, server, and CLI launcher. |
+| `solar_toolkit.coordinates` | `solar_toolkit.map.coordinates` |
+| `solar_toolkit.cso` | `solar_toolkit.radio.cso` |
+| `solar_toolkit.gaussian` | `solar_toolkit.modeling.gaussian` |
+| `solar_toolkit.solar_analysis_utils` | Focused `time`, `io`, `map`, `hmi`, `visualization`, and `_utils` modules |
+| `solar_toolkit.visualization.media_assets` | `solar_toolkit.visualization._media_assets` |
+| `scripts.radio.core.*` | Matching `solar_toolkit.radio.*` module aliases |
+| `scripts.aia_hmi.core.*` | Matching `solar_toolkit.aia.*` module aliases |
+| `scripts.radio.configs` loader exports | `solar_toolkit.radio.config` |
 
-## Runnable Script Boundary
+Large workflows under `scripts/radio/legacy/` remain source-repository
+compatibility implementations. They are not imported by `solar_toolkit`.
 
-Runnable workflows stay under `scripts/`, grouped by instrument or task. These
-paths are user-facing commands and may keep local path configuration or
-script-style behavior.
+## Command Boundary / 命令边界
 
-| Area | Recommended entrypoints |
-| --- | --- |
-| AIA/HMI | `scripts/aia_hmi/run_aia_euv_processor.py`, `scripts/aia_hmi/sdo_aia_hmi_fits_rename.py` |
-| Radio | `scripts/radio/run_radio_burst_pipeline.py`, `scripts/radio/run_radio_source_map.py`, `scripts/radio/extract_radio_centers.py`, `scripts/radio/run_radio_source_app.py`, `scripts/radio/export_radio_source_trajectory.py`, `scripts/radio/run_aia_radio_hmi_overlay.py`, `scripts/radio/run_radio_raw_quality.py` |
-| Data download | `scripts/data_download/stereo_a_euvi_download_20250124.py`, `scripts/data_download/goes_suvi_download_20250124.py`, `scripts/data_download/solo_eui_soar_query_download.py` |
-| Context imaging | `scripts/stereo_suvi/stereo_euvi_manifest_by_wavelength.py`, `scripts/stereo_suvi/stereo_euvi_0448_overview_plot.py`, `scripts/stereo_suvi/stereo_euvi_roi_movie.py`, `scripts/stereo_suvi/goes_suvi_0448_quadrant_plot.py` |
-| X-ray/DEM | `scripts/xray_dem/flare_aia_sxr_hxr_summary_plot.py`, `scripts/xray_dem/neupert_sxr_derivative_hxr_comparison.py`, `scripts/xray_dem/sdo_aia_dem_inversion.py`, `scripts/xray_dem/dem_radio_source_overlay.py` |
-| LASCO/CME | `scripts/lasco_cme/soho_lasco_data_download.py`, `scripts/lasco_cme/soho_lasco_image_plot.py`, `scripts/lasco_cme/soho_lasco_running_difference.py` |
-| Tools | `scripts/tools/run_image_web_viewer.py`, `scripts/tools/run_solar_webapp.py`, `scripts/tools/image_sequence_to_video.py`, `scripts/tools/gaussian_source_fitting.py` |
+Installed commands are registered in `pyproject.toml`:
 
-## Deprecated Compatibility Boundary
+| Command | Package entry point | Installed behavior |
+| --- | --- | --- |
+| `solar-aia` | `solar_toolkit.aia.cli:main` | Packaged AIA processing CLI. |
+| `solar-radio` | `solar_toolkit.radio.cli:main` | Dispatcher for `centers`, `pipeline`, `source-map`, `overlay`, `quicklook`, `raw-quality`, and `trajectory`. |
+| `solar-image-viewer` | `solar_toolkit.visualization.image_web_viewer.cli:main` | Packaged local image viewer. |
+| `solar-webapp` | `solar_toolkit.webapp.cli:main` | Packaged local workbench; source-only recipes are shown as unavailable when their scripts are absent. |
 
-The following paths are retained as deprecated compatibility paths. They are
-kept to protect existing local workflows and to support real-data output
-comparison before any removal:
+The installed `solar-radio pipeline`, `source-map`, and `overlay` commands are
+currently honest boundary runners: without a source-checkout compatibility
+runner they explain the limitation and return status `2`. Use the corresponding
+thin script in a source checkout for the full workflow. This is not a claim of
+end-to-end pipeline parity.
 
-- `scripts.radio.core.*`: compatibility aliases for migrated
-  `solar_toolkit.radio.*` modules.
-- `scripts.aia_hmi.core.*`: compatibility aliases for migrated
-  `solar_toolkit.aia.*` modules.
-- `scripts/radio/legacy/`: large historical radio and AIA/radio/HMI workflows
-  retained behind current run scripts.
-- `scripts/aia_hmi/sdo_aia_euv_processor.py`: historical AIA EUV command path
-  retained behind `scripts/aia_hmi/run_aia_euv_processor.py`.
+安装后的 `solar-radio pipeline/source-map/overlay` 当前只提供明确的边界契约：未注入源码
+兼容 runner 时会说明限制并返回状态码 `2`。完整流程仍需在源码仓库中运行对应薄脚本；这不代表
+端到端 pipeline 已完成等价迁移。
 
-This compatibility marking is documentation and test policy only. Runtime code
-should not emit deprecation warnings in this pass.
+## Scientific Parity Status / 科学等价验证状态
 
-## Data And Artifact Policy
+The structural moves were checked against baseline commit `301765a` with local
+observations. For AIA 2024-01-10, all eight local bands (94, 131, 171, 193,
+211, 304, 335, and 1600) matched for selection, ROI cutout, WCS, and original/
+running/base arrays; the checked single image and all three 8-band mosaic PNGs
+had exact SHA equality. Focused Radio/CSO products for 2025-01-24 and
+2025-05-03 also matched within the recorded scope. Evidence and exclusions are
+recorded in
+[`docs/validation/astropy_sunpy_reorg_parity.md`](docs/validation/astropy_sunpy_reorg_parity.md).
 
-Tracked repository content should stay limited to code, tests, documentation,
-configuration templates, and reviewed display assets. Do not commit raw FITS,
-FTS, JP2, NetCDF, CDF, HDF5, NumPy arrays, local path configs, bulk generated
-figures, MP4/GIF products, large CSV/XLSX outputs, or local archive folders.
+结构迁移以 `301765a` 为基线。AIA 2024-01-10 的八个本地波段（94、131、171、193、211、
+304、335、1600）在选择、ROI 裁剪、WCS 及 original/running/base 数组上完全一致；已检查单图和
+三类 8-band mosaic PNG 的 SHA 也完全一致。验证范围与未覆盖边界见上述记录；当前不宣称完整射电
+端到端流程等价。
 
-Ignored local products such as `archive/`, `data dowload/`,
-`scripts/radio/outputs/`, root workbooks, and root display images require
-manual review before deletion or movement.
+## Data and Verification Policy / 数据与验证策略
 
-## Verification
-
-Use the project interpreter from `AGENTS.md`:
+Do not commit raw FITS/FTS/JP2/NetCDF/CDF/HDF5/NumPy observations, local path
+configuration, or bulk generated products. Use the interpreter defined in
+`AGENTS.md` for validation:
 
 ```powershell
 $env:PATH="D:\miniforge3\envs\solarphysics_env;D:\miniforge3\envs\solarphysics_env\Library\mingw-w64\bin;D:\miniforge3\envs\solarphysics_env\Library\usr\bin;D:\miniforge3\envs\solarphysics_env\Library\bin;D:\miniforge3\envs\solarphysics_env\Scripts;$env:PATH"
@@ -86,6 +152,4 @@ D:\miniforge3\envs\solarphysics_env\python.exe -m ruff check solar_toolkit scrip
 D:\miniforge3\envs\solarphysics_env\python.exe -m pytest -q tests
 ```
 
-These checks verify imports, public boundaries, docs consistency, and
-data-independent logic. They do not prove full scientific output equivalence on
-real observation data.
+代码检查验证结构和无数据逻辑；真实数据科学等价必须单独记录，不能由单元测试结果代替。

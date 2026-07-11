@@ -79,6 +79,10 @@ observation archive is required.
   `solar_toolkit.hmi`, `solar_toolkit.radio`, `solar_toolkit.xray_dem`,
   `solar_toolkit.cme`, `solar_toolkit.net`, `solar_toolkit.modeling`, and
   `solar_toolkit.visualization`.
+- The root API uses explicit `__all__`, `__getattr__`, and `__dir__`: public
+  namespaces such as `solar_toolkit.radio` load on first access, so importing
+  `solar_toolkit` does not execute workflows or eagerly import every science
+  dependency.
 - The `solar_toolkit.radio` namespace is the recommended library API for
   reusable radio coordinates, Gaussian fitting, Newkirk, spectrogram, drift,
   raw-quality, quicklook, and diagnostic helpers.
@@ -90,6 +94,11 @@ observation archive is required.
   `solar_toolkit.aia.*`. Large `scripts/radio/legacy/` workflows are also
   deprecated compatibility paths and remain only until real-data output parity
   justifies a separate removal step.
+- The root aliases `solar_toolkit.gaussian`, `solar_toolkit.coordinates`, and
+  `solar_toolkit.cso` are deprecated from `0.2.0`; new code should use
+  `solar_toolkit.modeling.gaussian`, `solar_toolkit.map.coordinates`, and
+  `solar_toolkit.radio.cso`. Compatibility remains through 0.x and is not
+  considered for removal before `1.0.0` plus real-data equivalence review.
 - Keep data-independent tests in `tests/`; full scientific products require
   local observations and explicit path configuration.
 
@@ -168,6 +177,20 @@ Full science workflows require local observation data and event-specific path
 configuration. The main public command-line entrypoints are:
 
 ```powershell
+# Installed, package-owned command surfaces
+solar-aia --help
+solar-radio --help
+solar-image-viewer --help
+solar-webapp --help
+```
+
+`solar-radio` exposes `centers`, `pipeline`, `source-map`, `overlay`,
+`quicklook`, `raw-quality`, and `trajectory`. The installed
+`pipeline/source-map/overlay` runners currently report their source-compatibility
+boundary and return status `2`; they do not claim complete end-to-end pipeline
+parity. Use the following thin scripts from a source checkout for full runs:
+
+```powershell
 # SDO/AIA single-band, mosaic, preview, and difference products
 python scripts/aia_hmi/run_aia_euv_processor.py --mode single --waves 171 193 304
 
@@ -203,11 +226,18 @@ package layer:
 from solar_toolkit.radio import centers, gaussian, newkirk, quicklook, trajectory
 ```
 
+The `gaussian` object above is the radio-domain aggregation surface. Import the
+instrument-independent model from `solar_toolkit.modeling.gaussian`.
+
 ## Configuration and Data Policy
 
 Copy `configs/paths.example.yaml` to `configs/paths.local.yaml` and adapt it to
 your local observation archive. `configs/paths.local.yaml` is ignored by Git.
 Alternatively, set `SOLAR_PHYSICS_CONFIG` to point to an external YAML file.
+Radio event configuration is validated by `solar_toolkit.radio.config`.
+Precedence is CLI arguments, explicit config file/object/mapping, path-only
+environment configuration, then defaults; scientific ROI, threshold, Gaussian,
+and Newkirk assumptions are not inferred from environment variables.
 
 Data and product policy:
 
@@ -238,8 +268,11 @@ D:\miniforge3\envs\solarphysics_env\python.exe -m pytest -q tests
 
 These checks cover imports, documentation consistency, path configuration,
 coordinate helpers, Gaussian fitting utilities, and other data-independent
-logic. They do not claim full scientific output equivalence; real FITS/JP2/CSO
-output comparison remains a separate validation step.
+logic. Focused real-data comparisons against baseline `301765a` found exact
+array/table equality and exact PNG hashes for the recorded AIA 2024-01-10 and
+Radio/CSO 2025-01-24 and 2025-05-03 products. The scope and exclusions are in
+[`docs/validation/astropy_sunpy_reorg_parity.md`](docs/validation/astropy_sunpy_reorg_parity.md);
+the result is not a full end-to-end radio pipeline parity claim.
 
 ## Documentation Map
 
@@ -251,6 +284,8 @@ output comparison remains a separate validation step.
   policy for the public library layer.
 - `docs/script_index.md`: public runnable scripts, compatibility entrypoints,
   utility scripts, examples, and legacy-risk workflows.
+- `docs/validation/astropy_sunpy_reorg_parity.md`: focused real-data parity
+  evidence and the explicit end-to-end exclusions.
 - `docs/project_structure.md`: repository layout, data policy, and script group
   boundaries.
 - `docs/path_configuration.md`: local path configuration and

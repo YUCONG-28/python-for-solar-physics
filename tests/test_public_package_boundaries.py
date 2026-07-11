@@ -7,14 +7,30 @@ import importlib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MOJIBAKE_MARKERS = [
-    "\u9225",
-    "\u20ac?",
-    "\u6d93",
-    "\u9365",
-    "\u7edb",
+PUBLIC_PACKAGE_ROOT = REPO_ROOT / "solar_toolkit"
+MOJIBAKE_MARKERS = (
     "\ufffd",
-]
+    "涓",
+    "鐨",
+    "锛",
+    "鈥",
+    "鍥",
+    "鏃",
+    "鏂",
+    "杩",
+    "缁",
+    "璇",
+    "瀵",
+    "鎴",
+    "鍔",
+    "浠",
+    "鐢",
+    "閫",
+    "€",
+    "Â",
+    "Ã",
+    "â€",
+)
 LAZY_PUBLIC_PACKAGES = [
     "aia",
     "hmi",
@@ -38,6 +54,19 @@ def _public_module_names(package_dir: Path) -> set[str]:
         and (path / "__init__.py").exists()
     )
     return names
+
+
+def _public_python_module_paths() -> list[Path]:
+    """Return source paths for public package modules, excluding internals."""
+    paths = []
+    for path in PUBLIC_PACKAGE_ROOT.rglob("*.py"):
+        relative = path.relative_to(PUBLIC_PACKAGE_ROOT)
+        if any(
+            part.startswith("_") and part != "__init__.py" for part in relative.parts
+        ):
+            continue
+        paths.append(path)
+    return sorted(paths)
 
 
 def _wrapper_target(path: Path) -> str | None:
@@ -65,6 +94,16 @@ def test_root_public_names_match_existing_modules_or_packages():
         assert package_path.exists() or module_path.exists(), name
 
 
+def test_root_lazy_submodules_cover_real_public_files():
+    """The root lazy map covers every real public module and package."""
+    import solar_toolkit
+
+    expected = _public_module_names(REPO_ROOT / "solar_toolkit")
+
+    assert expected == set(solar_toolkit._SUBMODULES)
+    assert set(solar_toolkit._SUBMODULES) <= set(solar_toolkit.__all__)
+
+
 def test_lazy_public_submodules_cover_real_public_files():
     """Lazy public namespaces should expose their real public modules."""
     for package_name in LAZY_PUBLIC_PACKAGES:
@@ -72,13 +111,21 @@ def test_lazy_public_submodules_cover_real_public_files():
         package_dir = REPO_ROOT / "solar_toolkit" / package_name
         expected = _public_module_names(package_dir)
         submodules = package._SUBMODULES
+        compatibility = vars(package).get("_COMPATIBILITY_SUBMODULES", {})
 
-        assert expected - set(submodules) == set(), package_name
+        assert expected - set(submodules) - set(compatibility) == set(), package_name
+        assert set(submodules).isdisjoint(compatibility), package_name
 
         for public_name, target_name in submodules.items():
             assert target_name.startswith("solar_toolkit.")
             target = importlib.import_module(target_name)
             assert target.__doc__, public_name
+
+        for old_name, target_name in compatibility.items():
+            old_module = importlib.import_module(f"{package.__name__}.{old_name}")
+            target = importlib.import_module(target_name)
+
+            assert old_module is target, old_name
 
 
 def test_core_compatibility_wrappers_alias_public_modules():
@@ -102,21 +149,17 @@ def test_core_compatibility_wrappers_alias_public_modules():
             assert wrapper is target, wrapper_name
 
 
-def test_public_package_docstrings_are_readable():
-    """Public package docstrings exist and avoid common mojibake markers."""
-    import solar_toolkit
-
-    for name in solar_toolkit.__all__:
-        if name.startswith("__"):
-            continue
-        package_path = REPO_ROOT / "solar_toolkit" / name / "__init__.py"
-        if not package_path.exists():
-            continue
-        text = package_path.read_text(encoding="utf-8")
+def test_public_module_docstrings_are_readable():
+    """Every public module docstring avoids common UTF-8/GBK mojibake."""
+    for module_path in _public_python_module_paths():
+        text = module_path.read_text(encoding="utf-8")
         docstring = ast.get_docstring(ast.parse(text))
+        relative_path = module_path.relative_to(REPO_ROOT)
 
-        assert docstring, name
-        assert [marker for marker in MOJIBAKE_MARKERS if marker in docstring] == []
+        assert docstring, relative_path
+        assert [
+            marker for marker in MOJIBAKE_MARKERS if marker in docstring
+        ] == [], relative_path
 
 
 def test_domain_packages_import_without_loading_science_data():

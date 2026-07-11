@@ -1,6 +1,6 @@
 [project]
 name = "solar-physics-toolkit"
-version = "0.1.0"
+version = "0.2.0"
 description = "A comprehensive collection of Python scripts for multi-wavelength solar data analysis"
 authors = [
     {name = "Severus / Lee / Ninghao"}
@@ -24,6 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "build>=1.2.0",
     "pytest>=7.0.0",
     "black>=23.0.0",
     "flake8>=6.0.0",
@@ -63,6 +64,12 @@ Homepage = "https://github.com/YUCONG-28/python-for-solar-physics"
 Repository = "https://github.com/YUCONG-28/python-for-solar-physics.git"
 Issues = "https://github.com/YUCONG-28/python-for-solar-physics/issues"
 
+[project.scripts]
+solar-aia = "solar_toolkit.aia.cli:main"
+solar-image-viewer = "solar_toolkit.visualization.image_web_viewer.cli:main"
+solar-radio = "solar_toolkit.radio.cli:main"
+solar-webapp = "solar_toolkit.webapp.cli:main"
+
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -78,7 +85,7 @@ exclude = ["tests*", "examples*", "docs*"]
     "static/*.css",
     "static/*.js",
 ]
-"solar_toolkit.visualization.media_assets" = ["*.cjs", "*.js", "*.txt"]
+"solar_toolkit.visualization._media_assets" = ["*.cjs", "*.js", "*.txt"]
 "solar_toolkit.webapp" = [
     "templates/*.html",
     "static/*.css",

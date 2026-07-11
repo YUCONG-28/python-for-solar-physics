@@ -4,6 +4,9 @@ This compact index lists the maintainer-facing packages and entrypoints. For the
 full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
 `quickstart.md`.
 
+本页为维护者提供主要包、命令入口和兼容层的简明索引；完整边界见 `FUNCTION_MAP.md`，首次运行
+请先阅读 `quickstart.md`。
+
 ## Public Packages
 
 - `solar_toolkit/`: installable library layer.
@@ -15,6 +18,7 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
   - `aia/`: AIA configuration, FITS selection, difference images, mosaics, EUV processing, and lightweight AIA background loading.
   - `hmi/`: HMI-facing facades for FITS renaming, magnetogram plotting, and overlays.
   - `radio/`: radio coordinates, threshold centers, Gaussian fitting, trajectory tables, Newkirk, spectrogram, drift, raw quality, and quicklook helpers.
+    - `config.py`: canonical validated radio event-configuration loader; `scripts.radio.configs` keeps event adapters.
   - `xray_dem/`: X-ray, HXI, Neupert, and DEM helper boundary.
   - `cme/`: LASCO/CME helper boundary.
   - `net/`: archive query and download helper boundary.
@@ -51,8 +55,8 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
 - `solar_toolkit/visualization/media.py`
   - Shared FFmpeg/FFprobe resolution, atomic media writing, validation, cancellation, and frame-factory support used by radio and image-sequence video workflows.
   - Honors `SOLAR_TOOLKIT_FFMPEG` and `SOLAR_TOOLKIT_FFPROBE`, with the older image-viewer environment variable names retained as fallbacks.
-- `solar_toolkit/visualization/media_assets/`
-  - Bundled Mediabunny recorder, shared browser recorder API, and license files; no runtime CDN or npm build is required.
+- `solar_toolkit/visualization/_media_assets/`
+  - Internal canonical package for the bundled Mediabunny recorder, shared browser recorder API, and license files; the old non-private path remains a compatibility alias.
 - `scripts/tools/run_solar_webapp.py`
   - Unified local English web GUI for registered public workflows.
 
@@ -61,6 +65,7 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
 - `scripts/radio/core/`: deprecated compatibility wrappers for migrated radio modules.
 - `scripts/aia_hmi/core/`: deprecated compatibility wrappers for migrated AIA modules.
 - `scripts/radio/legacy/`: deprecated compatibility workflows retained for output reproducibility.
+- `solar_toolkit.gaussian`, `solar_toolkit.coordinates`, and `solar_toolkit.cso`: deprecated root aliases for `solar_toolkit.modeling.gaussian`, `solar_toolkit.map.coordinates`, and `solar_toolkit.radio.cso`.
 - `legacy/`: archived scripts kept for manual review, not current first-choice entrypoints.
 
 ## Script Groups
@@ -79,6 +84,7 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
 - `docs/FUNCTION_MAP.md`: package and compatibility map.
 - `docs/project_structure.md`: repository layout and data policy.
 - `docs/script_index.md`: runnable script index.
+- `docs/validation/astropy_sunpy_reorg_parity.md`: focused real-data parity record and explicit end-to-end exclusions.
 - `docs/path_configuration.md`: local path configuration guide.
 - `scripts/aia_hmi/docs/AIA_ENTRYPOINTS.md`: AIA entrypoint notes.
 - `scripts/radio/docs/RADIO_ENTRYPOINTS.md`: radio entrypoint notes.

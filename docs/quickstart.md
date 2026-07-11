@@ -1,8 +1,11 @@
-# Quickstart for New Users
+# Quickstart for New Users / 新用户快速开始
 
 This guide is the safest first path through the project. It focuses on commands
 that do not require local observation data, then points to the scripts that do
 need configured FITS, FTS, JP2, NetCDF, CSV, or image folders.
+
+本指南先运行无需本地观测数据的导入和帮助命令，再进入需要 FITS、FTS、JP2、NetCDF、CSV
+或图像目录的科学流程。
 
 ## 1. Create the Environment
 
@@ -48,6 +51,16 @@ from solar_toolkit.cme import extract_lasco_timestamp, running_difference
 from solar_toolkit.xray_dem import load_sxr_data, calculate_derivative
 ```
 
+The root package is lazy: this imports `radio` only when requested.
+
+```python
+import solar_toolkit
+
+radio = solar_toolkit.radio
+```
+
+根包使用懒加载；`import solar_toolkit` 不会启动工作流、扫描数据或立即导入全部科学依赖。
+
 The package layout follows a lightweight SunPy-style boundary:
 
 - `solar_toolkit.time`, `io`, `data`, `map`, and `timeseries` hold shared
@@ -56,6 +69,14 @@ The package layout follows a lightweight SunPy-style boundary:
   instrument- or domain-specific helpers.
 - `solar_toolkit.net`, `modeling`, and `visualization` hold archive access,
   science-model, plotting, browser, and video-export helpers.
+
+Use `solar_toolkit.modeling.gaussian`, `solar_toolkit.map.coordinates`, and
+`solar_toolkit.radio.cso` for new code. The old root paths are compatibility
+aliases deprecated from `0.2.0`; they remain through 0.x and are not considered
+for removal before `1.0.0` plus real-data equivalence review.
+
+新代码应使用上述规范路径。旧根路径从 `0.2.0` 起进入弃用期，0.x 期间继续保留，最早在
+`1.0.0` 且完成真实数据等价复核后才会评估移除。
 
 ## 3. Configure Local Data Only When Needed
 
@@ -75,9 +96,37 @@ $env:SOLAR_PHYSICS_CONFIG="D:\my_project\solar_paths.yaml"
 
 See `docs/path_configuration.md` for the expected YAML shape.
 
+Radio runs that resolve an analysis output can write
+`radio_run_provenance.json` through `solar_toolkit.radio.provenance`. The file
+records the resolved ROI, thresholds, Gaussian/WCS/Newkirk assumptions and the
+CLI → explicit config → path-only environment → defaults precedence. It is a
+reproducibility record, not a full-pipeline parity claim.
+
+射电流程在解析出分析输出目录后，可通过 `solar_toolkit.radio.provenance` 写入
+`radio_run_provenance.json`，记录最终 ROI、阈值、Gaussian/WCS/Newkirk 假设与配置优先级。
+该文件用于复现，不代表完整 pipeline 已完成等价验证。
+
 ## 4. Safe Entrypoint Checks
 
-The following commands only show help and should not start a real data run:
+After installation, these package commands only show help and should not start
+a real data run:
+
+```powershell
+solar-aia --help
+solar-radio --help
+solar-radio centers --help
+solar-radio quicklook --help
+solar-radio raw-quality --help
+solar-radio trajectory --help
+solar-image-viewer --help
+solar-webapp --help
+```
+
+安装后的四个主命令都支持无数据的 `--help` 检查。`solar-radio` 还列出
+`pipeline/source-map/overlay`，但这些完整科学编排在当前版本仍有明确边界：未提供源码兼容
+runner 时返回状态码 `2`。
+
+Source-checkout compatibility commands remain available:
 
 ```powershell
 D:\miniforge3\envs\solarphysics_env\python.exe scripts\aia_hmi\run_aia_euv_processor.py --help
@@ -103,6 +152,15 @@ Use these only after local data paths are configured:
   `scripts/tools/run_image_web_viewer.py`
 - Unified local English web GUI:
   `scripts/tools/run_solar_webapp.py`
+
+The full radio pipeline, source-map renderer, and AIA/radio/HMI overlay should
+continue to use their thin source-checkout scripts. Focused AIA and Radio/CSO
+products have real-data parity evidence, but the complete radio pipeline is not
+claimed end-to-end equivalent. See
+[`validation/astropy_sunpy_reorg_parity.md`](validation/astropy_sunpy_reorg_parity.md).
+
+完整射电 pipeline、source-map 和 AIA/radio/HMI overlay 仍通过源码薄脚本运行。分项真实数据
+已经验证，但不宣称完整射电 pipeline 端到端等价。
 
 Raw observations, generated figures, videos, CSV/XLSX products, and local cache
 folders should stay outside Git unless they are explicitly reviewed and moved

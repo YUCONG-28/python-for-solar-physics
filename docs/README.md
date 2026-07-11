@@ -5,6 +5,9 @@ reports. Use the current-guidance documents first; older reports are retained as
 audit history and should not be treated as the latest workspace state unless
 they explicitly say so.
 
+本目录同时包含当前指南与历史重构报告。决定运行入口或代码边界时，请优先采用“Current
+Guidance”中的文件；历史报告只作为审计记录。
+
 ## Current Guidance
 
 | Document | Use |
@@ -16,6 +19,7 @@ they explicitly say so.
 | `FUNCTION_MAP.md` | Bilingual public package map, runnable entrypoints, and compatibility policy. |
 | `project_structure.md` | Current repository layout, data policy, and AIA/HMI structure notes. |
 | `script_index.md` | Current public runnable scripts, compatibility entrypoints, and selected examples. |
+| `validation/astropy_sunpy_reorg_parity.md` | Focused AIA and Radio/CSO real-data parity evidence, plus explicit end-to-end exclusions. |
 | `MAIN_FILES.md` | Compact list of main workflow files and core module boundaries. |
 | `PROJECT_CLEANUP_REPORT.md` | Current cleanup status, validation scope, and remaining review items. |
 | `FINAL_CODE_RETENTION_AND_REMOVAL_PLAN.md` | Current retention/removal rules and manual-confirmation boundaries. |
