@@ -84,7 +84,7 @@ def test_streamlit_main_does_not_swallow_control_flow(monkeypatch):
     (
         "scripts/radio/legacy/radio_source_map_plot_gaussian_overlay.py",
         "scripts/radio/legacy/sdo_aia_radio_hmi_overlay.py",
-        "scripts/radio/run_radio_source_app.py",
+        "solar_toolkit/radio/source_app.py",
     ),
 )
 def test_retained_workflow_module_exits_with_main_status(relative_path):

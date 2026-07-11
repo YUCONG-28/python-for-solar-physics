@@ -2,10 +2,10 @@
 
 This file records the current architecture after the Astropy/SunPy-style
 reorganization. It is the maintained source of truth for package boundaries;
-historical migration reports remain in `docs/` and `scripts/radio/docs/`.
+historical migration reports are archived under `docs/history/`.
 
 本文记录 Astropy/SunPy 风格重构后的当前架构，是包边界的维护基准；历史迁移报告仍保留在
-`docs/` 和 `scripts/radio/docs/` 中。
+`docs/history/` 中。
 
 ## Dependency Direction / 依赖方向
 
@@ -54,7 +54,12 @@ Domain details:
   these modules.
 - Radio configuration is canonical in `solar_toolkit.radio.config`.
   `RadioEventConfig` validates named sections and rejects unknown sections;
-  existing event Python modules under `scripts.radio.configs` are adapters.
+  installable event modules live in `solar_toolkit.radio.configs`, while
+  `scripts.radio.configs` contains only compatibility aliases.
+- Complete Radio orchestration is package-owned by
+  `solar_toolkit.radio.pipeline_workflow`, `source_map_workflow`, and
+  `overlay_workflow`; the matching scripts and legacy paths are thin commands
+  or true module aliases.
 - `solar_toolkit.radio.provenance` writes `radio_run_provenance.json` beside a
   resolved analysis output. It records the resolved ROI, thresholds,
   Gaussian choices, WCS policy, Newkirk assumptions, configuration source,
@@ -69,10 +74,15 @@ Domain details:
   copying implementations.
 - Browser media resources are internal package data under
   `solar_toolkit.visualization._media_assets`.
+- AIA light curves, JSOC download, STEREO/SUVI products, image-sequence video,
+  the radio trajectory app, and X-ray/DEM recipes now have package-owned
+  implementations. Source scripts are compatibility entry points; the
+  network-backed AIA time-distance tutorial is archived under
+  `examples/history/`.
 
-领域说明：AIA、HMI、Radio 的可复用逻辑均位于 `solar_toolkit`。事件配置仍可保留在
-`scripts.radio.configs`，但由 `solar_toolkit.radio.config` 统一校验和适配。浏览器媒体资源的
-规范位置为私有包 `_media_assets`。
+领域说明：AIA、HMI、Radio 的实现与完整编排均位于 `solar_toolkit`。事件配置的规范位置为
+`solar_toolkit.radio.configs`，旧配置路径只保留兼容别名。浏览器媒体资源的规范位置为私有包
+`_media_assets`；源码脚本只负责参数入口或兼容转发。
 
 `solar_toolkit.radio.provenance` 会在已解析的分析输出旁写入
 `radio_run_provenance.json`，记录最终 ROI、阈值、Gaussian、WCS、Newkirk 假设及配置优先级；
@@ -97,10 +107,14 @@ canonical path.
 | `solar_toolkit.visualization.media_assets` | `solar_toolkit.visualization._media_assets` |
 | `scripts.radio.core.*` | Matching `solar_toolkit.radio.*` module aliases |
 | `scripts.aia_hmi.core.*` | Matching `solar_toolkit.aia.*` module aliases |
-| `scripts.radio.configs` loader exports | `solar_toolkit.radio.config` |
+| `scripts.radio.configs.*` | Matching `solar_toolkit.radio.configs.*` module aliases |
+| `scripts.radio.legacy.radio_source_map_plot_gaussian_overlay` | `solar_toolkit.radio.source_map_workflow` |
+| `scripts.radio.legacy.sdo_aia_radio_hmi_overlay` | `solar_toolkit.radio.overlay_workflow` |
+| Historical workflow scripts | Matching package modules in `aia`, `hmi`, `net`, `radio`, `visualization`, and `xray_dem` |
 
-Large workflows under `scripts/radio/legacy/` remain source-repository
-compatibility implementations. They are not imported by `solar_toolkit`.
+`scripts/radio/legacy/` contains compatibility aliases, not second scientific
+implementations. All files under `scripts/` are thin parsers, launchers, or
+module aliases; the package never imports them.
 
 ## Command Boundary / 命令边界
 
@@ -113,15 +127,12 @@ Installed commands are registered in `pyproject.toml`:
 | `solar-image-viewer` | `solar_toolkit.visualization.image_web_viewer.cli:main` | Packaged local image viewer. |
 | `solar-webapp` | `solar_toolkit.webapp.cli:main` | Packaged local workbench; source-only recipes are shown as unavailable when their scripts are absent. |
 
-The installed `solar-radio pipeline`, `source-map`, and `overlay` commands are
-currently honest boundary runners: without a source-checkout compatibility
-runner they explain the limitation and return status `2`. Use the corresponding
-thin script in a source checkout for the full workflow. This is not a claim of
-end-to-end pipeline parity.
+All seven `solar-radio` subcommands dispatch to installable package runners.
+They do not require a source checkout or `scripts.radio`; source scripts call
+the same command/workflow modules for compatibility.
 
-安装后的 `solar-radio pipeline/source-map/overlay` 当前只提供明确的边界契约：未注入源码
-兼容 runner 时会说明限制并返回状态码 `2`。完整流程仍需在源码仓库中运行对应薄脚本；这不代表
-端到端 pipeline 已完成等价迁移。
+`solar-radio` 的七个子命令均直接调用 wheel 内的包实现，不再依赖源码仓库或
+`scripts.radio`；旧脚本入口调用同一模块以保持兼容。
 
 ## Scientific Parity Status / 科学等价验证状态
 
@@ -130,14 +141,19 @@ observations. For AIA 2024-01-10, all eight local bands (94, 131, 171, 193,
 211, 304, 335, and 1600) matched for selection, ROI cutout, WCS, and original/
 running/base arrays; the checked single image and all three 8-band mosaic PNGs
 had exact SHA equality. Focused Radio/CSO products for 2025-01-24 and
-2025-05-03 also matched within the recorded scope. Evidence and exclusions are
-recorded in
+2025-05-03 also matched within the recorded scope. In addition, the packaged
+2025-01-24 Radio pipeline completed with status `0`, and package/compatibility
+overlay entry points produced 28 identical PNGs plus an identical diagnostics
+CSV. The pipeline run proves the installed orchestration is operational; it is
+not a byte-for-byte baseline claim for every end-to-end artifact. Evidence and
+exclusions are recorded in
 [`docs/validation/astropy_sunpy_reorg_parity.md`](docs/validation/astropy_sunpy_reorg_parity.md).
 
 结构迁移以 `301765a` 为基线。AIA 2024-01-10 的八个本地波段（94、131、171、193、211、
 304、335、1600）在选择、ROI 裁剪、WCS 及 original/running/base 数组上完全一致；已检查单图和
-三类 8-band mosaic PNG 的 SHA 也完全一致。验证范围与未覆盖边界见上述记录；当前不宣称完整射电
-端到端流程等价。
+三类 8-band mosaic PNG 的 SHA 也完全一致。包内 2025-01-24 Radio pipeline 以状态 `0` 完成；包入口
+与兼容入口的 28 张 overlay PNG 及诊断 CSV 完全一致。完整 pipeline 运行证明安装态编排可用，但不
+表示所有端到端产物均已与基线逐字节一致；验证范围与未覆盖边界见上述记录。
 
 ## Data and Verification Policy / 数据与验证策略
 

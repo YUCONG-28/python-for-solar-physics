@@ -35,6 +35,8 @@ import pytest
             {
                 "ObservationFile": "solar_toolkit.data.inventory",
                 "build_inventory": "solar_toolkit.data.inventory",
+                "inventory": "solar_toolkit.data.inventory",
+                "stereo_manifest": "solar_toolkit.data.stereo_manifest",
             },
         ),
         (
@@ -62,6 +64,12 @@ import pytest
                 "collect_links": "solar_toolkit.net.links",
                 "download_url": "solar_toolkit.net.downloads",
                 "filter_links": "solar_toolkit.net.links",
+                "downloads": "solar_toolkit.net.downloads",
+                "jsoc": "solar_toolkit.net.jsoc",
+                "links": "solar_toolkit.net.links",
+                "soar": "solar_toolkit.net.soar",
+                "stereo": "solar_toolkit.net.stereo",
+                "suvi": "solar_toolkit.net.suvi",
             },
         ),
         (
@@ -78,6 +86,18 @@ import pytest
                 "calculate_derivative": "solar_toolkit.xray_dem.processing",
                 "load_sxr_data": "solar_toolkit.xray_dem.sxr",
                 "smooth_flux_data": "solar_toolkit.xray_dem.processing",
+                "aia_dem_inversion": "solar_toolkit.xray_dem.aia_dem_inversion",
+                "aia_hxi_overlay": "solar_toolkit.xray_dem.aia_hxi_overlay",
+                "cli": "solar_toolkit.xray_dem.cli",
+                "dem_radio_source_overlay": (
+                    "solar_toolkit.xray_dem.dem_radio_source_overlay"
+                ),
+                "hxi": "solar_toolkit.xray_dem.hxi",
+                "hxi_image": "solar_toolkit.xray_dem.hxi_image",
+                "hxi_lightcurve": "solar_toolkit.xray_dem.hxi_lightcurve",
+                "hxi_sxr_comparison": "solar_toolkit.xray_dem.hxi_sxr_comparison",
+                "processing": "solar_toolkit.xray_dem.processing",
+                "sxr": "solar_toolkit.xray_dem.sxr",
             },
         ),
     ],
@@ -88,7 +108,10 @@ def test_base_namespace_reexports_canonical_symbols(package_name, exports):
     assert package.__all__ == list(exports)
     for name, module_name in exports.items():
         implementation = importlib.import_module(module_name)
-        assert getattr(package, name) is getattr(implementation, name)
+        if module_name == f"{package_name}.{name}":
+            assert getattr(package, name) is implementation
+        else:
+            assert getattr(package, name) is getattr(implementation, name)
 
 
 @pytest.mark.parametrize(
@@ -101,12 +124,14 @@ def test_base_namespace_reexports_canonical_symbols(package_name, exports):
         "solar_toolkit.io.fits",
         "solar_toolkit.io.manifest",
         "solar_toolkit.data.inventory",
+        "solar_toolkit.data.stereo_manifest",
         "solar_toolkit.map.metadata",
         "solar_toolkit.map.image",
         "solar_toolkit.timeseries.tables",
         "solar_toolkit.timeseries.processing",
         "solar_toolkit.net.links",
         "solar_toolkit.net.downloads",
+        "solar_toolkit.net.jsoc",
         "solar_toolkit.cme.files",
         "solar_toolkit.cme.processing",
         "solar_toolkit.xray_dem.sxr",

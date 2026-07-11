@@ -13,17 +13,14 @@ CURRENT_DOCS = [
     "CODE_ORGANIZATION_MANIFEST.md",
     "README.md",
     "docs/FUNCTION_MAP.md",
-    "docs/FINAL_CODE_RETENTION_AND_REMOVAL_PLAN.md",
-    "docs/LEGACY_AND_REVIEW_FILES.md",
     "docs/MAIN_FILES.md",
-    "docs/PROJECT_CLEANUP_REPORT.md",
     "docs/README.md",
-    "docs/REFACTOR_BASELINE.md",
+    "docs/README.zh-CN.md",
+    "docs/path_configuration.md",
     "docs/quickstart.md",
-    "docs/project_structure.md",
     "docs/script_index.md",
+    "docs/validation/astropy_sunpy_reorg_parity.md",
     "scripts/aia_hmi/docs/AIA_ENTRYPOINTS.md",
-    "scripts/radio/docs/README.md",
 ]
 
 MOJIBAKE_MARKERS = [
@@ -132,7 +129,6 @@ def test_beginner_quickstart_is_linked_from_current_docs():
         "README.md",
         "docs/README.md",
         "docs/MAIN_FILES.md",
-        "docs/project_structure.md",
         "docs/script_index.md",
     ]:
         text = (REPO_ROOT / doc_path).read_text(encoding="utf-8")
@@ -164,15 +160,10 @@ def test_current_docs_mark_compatibility_paths_as_deprecated():
     docs = "\n".join(
         [
             (REPO_ROOT / "README.md").read_text(encoding="utf-8"),
+            (REPO_ROOT / "CODE_ORGANIZATION_MANIFEST.md").read_text(encoding="utf-8"),
             (REPO_ROOT / "docs" / "FUNCTION_MAP.md").read_text(encoding="utf-8"),
-            (REPO_ROOT / "docs" / "LEGACY_AND_REVIEW_FILES.md").read_text(
-                encoding="utf-8"
-            ),
             (
                 REPO_ROOT / "scripts" / "aia_hmi" / "docs" / "AIA_ENTRYPOINTS.md"
-            ).read_text(encoding="utf-8"),
-            (
-                REPO_ROOT / "scripts" / "radio" / "docs" / "RADIO_MIGRATION_NOTES.md"
             ).read_text(encoding="utf-8"),
         ]
     )

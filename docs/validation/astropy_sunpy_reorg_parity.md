@@ -38,26 +38,46 @@ drift product helpers.
 这些对比支持 AIA 选择、差分、mosaic 以及 Radio/CSO 频谱、高斯、分项 overlay、Newkirk 和
 drift 产品的结构迁移结论。
 
+## Packaged End-to-End Operational Evidence / 包内端到端运行证据
+
+The package-owned 2025-01-24 Radio pipeline completed successfully with exit
+status `0` in 482.745 seconds and produced 75 files. The selection-product SHA
+was unchanged before and after the run:
+`0A3C81536802EF2A7584AB38875D25AE4FDE7D05CD8C30D4F44ABFBBF46437EA`.
+
+包内 2025-01-24 Radio pipeline 在 482.745 秒内完成，退出状态为 `0`，共生成 75 个文件。运行前后
+selection product 的 SHA 均为
+`0A3C81536802EF2A7584AB38875D25AE4FDE7D05CD8C30D4F44ABFBBF46437EA`。
+
+The package and compatibility overlay entry points each produced 28 PNG files
+at 2537 x 2603 pixels plus one diagnostics CSV. All 29 scientific/output files
+had exact SHA equality. Their provenance files differed only in `created_utc`
+and `cli_overrides`, reflecting the run time and the two explicit output
+directories.
+
+包入口与兼容入口各生成 28 张 2537 x 2603 PNG 及一份诊断 CSV；29 个科学/输出文件的 SHA
+全部完全一致。两份 provenance 仅在 `created_utc` 和 `cli_overrides` 上不同，对应实际运行时间与
+显式指定的两个输出目录。
+
+Installed `solar-radio pipeline`, `solar-radio source-map`, and
+`solar-radio overlay` now dispatch directly to package-owned runners. They do
+not require a source checkout or an explicit compatibility runner.
+
+安装后的 `solar-radio pipeline/source-map/overlay` 现已直接调用包内 runner，不需要源码仓库或
+显式兼容 runner。
+
 ## Explicit Exclusions / 明确未覆盖项
 
-- This is **not** an end-to-end parity claim for
-  `scripts/radio/run_radio_burst_pipeline.py`.
-- The complete source-map orchestration and complete AIA/radio/HMI overlay
-  orchestration still use source-checkout compatibility runners.
+- The successful full pipeline run is operational evidence, not a claim that
+  every end-to-end artifact is byte-for-byte equal to a complete run of commit
+  `301765a`; baseline parity remains limited to the scientific products listed
+  above.
 - Interactive drift selection, GUI/browser behavior, network downloads, and
   every event-specific or historical recipe were not covered by these hashes.
 - The result does not authorize changing scientific defaults or deleting
   compatibility paths.
 
-- 本记录不宣称 `scripts/radio/run_radio_burst_pipeline.py` 已完成端到端等价。
-- 完整 source-map 与 AIA/radio/HMI overlay 编排仍使用源码兼容 runner。
+- 完整 pipeline 成功运行属于可运行性证据，不表示其全部端到端产物已与 `301765a` 的完整运行逐字节
+  相等；基线等价范围仍以本文上方列出的科学产品为限。
 - 交互式 drift 选择、GUI/浏览器行为、网络下载以及全部事件或历史 recipe 未纳入本次哈希对比。
 - 该结果不授权修改科学默认值，也不授权删除兼容路径。
-
-Accordingly, installed `solar-radio pipeline`, `solar-radio source-map`, and
-`solar-radio overlay` report the boundary and return status `2` unless an
-explicit source compatibility runner is supplied. This makes the unverified
-boundary visible instead of silently changing behavior.
-
-因此，安装后的 `solar-radio pipeline/source-map/overlay` 在未显式提供源码兼容 runner 时会
-说明边界并返回状态码 `2`，避免把未验证部分误表示为已迁移完成。

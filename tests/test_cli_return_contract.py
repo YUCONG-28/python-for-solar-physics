@@ -12,27 +12,48 @@ from typing import get_type_hints
 import pytest
 
 PACKAGE_CLI_MODULES = (
-    "solar_toolkit.aia._euv_processor_impl",
     "solar_toolkit.aia.cli",
+    "solar_toolkit.aia.lightcurve_extraction",
+    "solar_toolkit.aia.lightcurve_plot",
+    "solar_toolkit.data.stereo_manifest",
     "solar_toolkit.hmi.fits_rename",
+    "solar_toolkit.hmi.overlay_cli",
+    "solar_toolkit.net.jsoc",
     "solar_toolkit.radio.centers",
     "solar_toolkit.radio.cli",
+    "solar_toolkit.radio.cso_workflow",
     "solar_toolkit.radio.overlay_cli",
     "solar_toolkit.radio.pipeline_cli",
     "solar_toolkit.radio.quicklook",
     "solar_toolkit.radio.raw_quality_cli",
     "solar_toolkit.radio.source_map_cli",
+    "solar_toolkit.radio.source_app",
+    "solar_toolkit.radio.source_app_launcher",
     "solar_toolkit.radio.trajectory_cli",
     "solar_toolkit.visualization.image_web_viewer.cli",
+    "solar_toolkit.visualization.stereo_euvi_overview",
+    "solar_toolkit.visualization.stereo_euvi_roi_movie",
+    "solar_toolkit.visualization.suvi_quadrant",
+    "solar_toolkit.visualization.video_cli",
     "solar_toolkit.webapp.cli",
     "solar_toolkit.xray_dem._flare_summary",
     "solar_toolkit.xray_dem._goes_lightcurve",
     "solar_toolkit.xray_dem._neupert_comparison",
     "solar_toolkit.xray_dem._neupert_timing",
+    "solar_toolkit.xray_dem.aia_dem_inversion",
+    "solar_toolkit.xray_dem.aia_hxi_overlay",
+    "solar_toolkit.xray_dem.dem_radio_source_overlay",
+    "solar_toolkit.xray_dem.hxi_image",
+    "solar_toolkit.xray_dem.hxi_lightcurve",
+    "solar_toolkit.xray_dem.hxi_sxr_comparison",
 )
 
 THIN_PUBLIC_SCRIPT_MODULES = (
     "scripts.aia_hmi.run_aia_euv_processor",
+    "scripts.aia_hmi.sdo_aia_jsoc_download_20250124",
+    "scripts.aia_hmi.sdo_aia_lightcurve_extraction",
+    "scripts.aia_hmi.sdo_aia_lightcurve_plot",
+    "scripts.aia_hmi.sdo_aia_time_distance_diagram",
     "scripts.aia_hmi.sdo_aia_hmi_fits_rename",
     "scripts.aia_hmi.sdo_aia_hmi_overlay",
     "scripts.aia_hmi.sdo_hmi_magnetogram_plot",
@@ -49,26 +70,26 @@ THIN_PUBLIC_SCRIPT_MODULES = (
     "scripts.radio.run_radio_raw_quality",
     "scripts.radio.run_radio_source_app_managed",
     "scripts.radio.run_radio_source_map",
+    "scripts.stereo_suvi.goes_suvi_0448_quadrant_plot",
+    "scripts.stereo_suvi.stereo_euvi_0448_overview_plot",
+    "scripts.stereo_suvi.stereo_euvi_manifest_by_wavelength",
+    "scripts.stereo_suvi.stereo_euvi_roi_movie",
     "scripts.tools.image_sequence_to_video",
     "scripts.tools.run_image_web_viewer",
     "scripts.tools.run_solar_webapp",
     "scripts.xray_dem.flare_aia_sxr_hxr_summary_plot",
     "scripts.xray_dem.goes_sxr_lightcurve_plot",
+    "scripts.xray_dem.asos_hxi_goes_sxr_comparison",
+    "scripts.xray_dem.asos_hxi_image_plot",
+    "scripts.xray_dem.dem_radio_source_overlay",
+    "scripts.xray_dem.hessi_hxr_lightcurve_plot",
     "scripts.xray_dem.neupert_sxr_derivative_hxr_comparison",
     "scripts.xray_dem.neupert_timing_error_analysis",
+    "scripts.xray_dem.sdo_aia_asos_hxi_overlay",
+    "scripts.xray_dem.sdo_aia_dem_inversion",
 )
 
-CONTRACT_ONLY_SCRIPT_PATHS = (
-    Path("scripts/aia_hmi/sdo_aia_jsoc_download_20250124.py"),
-    Path("scripts/aia_hmi/sdo_aia_lightcurve_extraction.py"),
-    Path("scripts/aia_hmi/sdo_aia_lightcurve_plot.py"),
-    Path("scripts/stereo_suvi/goes_suvi_0448_quadrant_plot.py"),
-    Path("scripts/stereo_suvi/stereo_euvi_0448_overview_plot.py"),
-    Path("scripts/stereo_suvi/stereo_euvi_manifest_by_wavelength.py"),
-    Path("scripts/stereo_suvi/stereo_euvi_roi_movie.py"),
-    Path("scripts/xray_dem/dem_radio_source_overlay.py"),
-    Path("scripts/xray_dem/sdo_aia_dem_inversion.py"),
-)
+CONTRACT_ONLY_SCRIPT_PATHS = ()
 
 
 @pytest.mark.parametrize("module_name", PACKAGE_CLI_MODULES)
@@ -148,8 +169,8 @@ def test_radio_data_returning_workflows_are_wrapped_by_integer_mains(monkeypatch
     assert trajectory_cli.main(["--centers", "input.csv", "--out", "out.html"]) == 0
 
 
-def test_internal_aia_cli_returns_success_after_processing(monkeypatch):
-    from solar_toolkit.aia import _euv_processor_impl as cli_impl
+def test_canonical_aia_cli_returns_success_after_processing(monkeypatch):
+    from solar_toolkit.aia import cli as cli_impl
 
     config = SimpleNamespace(
         data_path="input",

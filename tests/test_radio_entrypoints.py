@@ -578,7 +578,7 @@ def test_managed_radio_source_app_parser_defaults_and_overrides():
 
 
 def test_radio_source_app_visible_copy_is_english():
-    source = (REPO_ROOT / "scripts/radio/run_radio_source_app.py").read_text(
+    source = (REPO_ROOT / "solar_toolkit/radio/source_app.py").read_text(
         encoding="utf-8"
     )
 

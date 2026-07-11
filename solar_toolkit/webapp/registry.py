@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -51,6 +52,7 @@ class FeatureModule:
     input_schema: list[dict[str, Any]] = field(default_factory=list)
     launch_mode: str = "job"
     command_path: Path | None = None
+    command_module: str | None = None
     available: bool = True
     unavailable_reason: str | None = None
 
@@ -74,6 +76,13 @@ class FeatureModule:
         payload = payload or {}
         validate_payload_paths(payload, context=context)
         args = normalize_arguments(payload.get("arguments", ""))
+        if self.command_module:
+            return [
+                str(context.python_executable),
+                "-m",
+                self.command_module,
+                *args,
+            ]
         script = (context.repo_root / self.command_path).resolve()
         return [
             str(context.python_executable),
@@ -89,6 +98,7 @@ class FeatureModule:
             "description": self.description,
             "script_path": self.script_path.as_posix(),
             "command_path": self.command_path.as_posix(),
+            "command_module": self.command_module,
             "status": self.status,
             "risk_level": self.risk_level,
             "launch_mode": self.launch_mode,
@@ -152,31 +162,38 @@ def default_registry(repo_root: str | Path | None = None) -> WorkflowRegistry:
         if repo_root is not None
         else Path(__file__).resolve().parents[2]
     )
-    modules = {
-        spec["id"]: FeatureModule(
+    modules = {}
+    for spec in MODULE_SPECS:
+        command_module = spec.get("command_module")
+        command_path = Path(spec.get("command_path", spec["script_path"]))
+        available = (
+            importlib.util.find_spec(command_module) is not None
+            if command_module
+            else (resolved_root / command_path).is_file()
+        )
+        modules[spec["id"]] = FeatureModule(
             id=spec["id"],
             title=spec["title"],
             category=spec["category"],
             description=spec["description"],
             script_path=Path(spec["script_path"]),
-            command_path=Path(spec.get("command_path", spec["script_path"])),
+            command_path=command_path,
+            command_module=command_module,
             status=spec["status"],
             risk_level=spec["risk_level"],
             launch_mode=spec.get("launch_mode", "job"),
             input_schema=[dict(item) for item in COMMON_INPUT_SCHEMA],
-            available=(
-                resolved_root / spec.get("command_path", spec["script_path"])
-            ).is_file(),
+            available=available,
             unavailable_reason=(
                 None
-                if (
-                    resolved_root / spec.get("command_path", spec["script_path"])
-                ).is_file()
-                else "This source-repository recipe is not included in the installed package."
+                if available
+                else (
+                    f"Installed workflow module {command_module!r} is unavailable."
+                    if command_module
+                    else "This source-repository recipe is not included in the installed package."
+                )
             ),
         )
-        for spec in MODULE_SPECS
-    }
     return WorkflowRegistry(
         modules=modules,
         archived_references=[
@@ -212,6 +229,7 @@ MODULE_SPECS = [
         "status": "main",
         "risk_level": "standard",
         "script_path": "scripts/aia_hmi/run_aia_euv_processor.py",
+        "command_module": "solar_toolkit.aia.cli",
         "description": "Main SDO/AIA EUV image, mosaic, and difference workflow.",
     },
     {
@@ -221,6 +239,7 @@ MODULE_SPECS = [
         "status": "main",
         "risk_level": "advanced",
         "script_path": "scripts/aia_hmi/sdo_aia_jsoc_download_20250124.py",
+        "command_module": "solar_toolkit.net.jsoc",
         "description": "Download selected SDO/AIA JSOC level-1 FITS files.",
     },
     {
@@ -257,6 +276,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/aia_hmi/sdo_aia_lightcurve_extraction.py",
+        "command_module": "solar_toolkit.aia.lightcurve_extraction",
         "description": "Extract AIA light-curve tables from local FITS sequences.",
     },
     {
@@ -266,6 +286,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/aia_hmi/sdo_aia_lightcurve_plot.py",
+        "command_module": "solar_toolkit.aia.lightcurve_plot",
         "description": "Plot one or more AIA light-curve CSV products.",
     },
     {
@@ -293,6 +314,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/stereo_suvi/stereo_euvi_manifest_by_wavelength.py",
+        "command_module": "solar_toolkit.data.stereo_manifest",
         "description": "Build a wavelength manifest for STEREO-A/EUVI data.",
     },
     {
@@ -302,6 +324,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/stereo_suvi/stereo_euvi_0448_overview_plot.py",
+        "command_module": "solar_toolkit.visualization.stereo_euvi_overview",
         "description": "Plot STEREO-A/EUVI context images near 04:48 UT.",
     },
     {
@@ -311,6 +334,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/stereo_suvi/stereo_euvi_roi_movie.py",
+        "command_module": "solar_toolkit.visualization.stereo_euvi_roi_movie",
         "description": "Generate fixed-ROI EUVI frame sequences and movies.",
     },
     {
@@ -320,6 +344,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/stereo_suvi/goes_suvi_0448_quadrant_plot.py",
+        "command_module": "solar_toolkit.visualization.suvi_quadrant",
         "description": "Plot GOES SUVI lower-right quadrant context products.",
     },
     {
@@ -338,6 +363,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/tools/image_sequence_to_video.py",
+        "command_module": "solar_toolkit.visualization.video_cli",
         "description": "Convert an ordered image sequence to MP4.",
     },
     {
@@ -347,6 +373,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/tools/run_image_web_viewer.py",
+        "command_module": "solar_toolkit.visualization.image_web_viewer.cli",
         "description": "Launch the local multi-folder image sequence viewer.",
     },
     {
@@ -356,6 +383,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/tools/run_solar_webapp.py",
+        "command_module": "solar_toolkit.webapp.cli",
         "description": "Launch the unified local English web GUI.",
     },
     {
@@ -392,6 +420,7 @@ MODULE_SPECS = [
         "status": "main",
         "risk_level": "standard",
         "script_path": "scripts/radio/run_radio_burst_pipeline.py",
+        "command_module": "solar_toolkit.radio.pipeline_cli",
         "description": "Run source maps, Gaussian diagnostics, drift, and height products.",
     },
     {
@@ -401,6 +430,7 @@ MODULE_SPECS = [
         "status": "main",
         "risk_level": "standard",
         "script_path": "scripts/radio/run_radio_source_map.py",
+        "command_module": "solar_toolkit.radio.source_map_cli",
         "description": "Create quick radio source maps with Gaussian overlays.",
     },
     {
@@ -410,6 +440,7 @@ MODULE_SPECS = [
         "status": "main",
         "risk_level": "standard",
         "script_path": "scripts/radio/extract_radio_centers.py",
+        "command_module": "solar_toolkit.radio.centers",
         "description": "Extract threshold or contour radio-source centers.",
     },
     {
@@ -420,6 +451,7 @@ MODULE_SPECS = [
         "risk_level": "standard",
         "script_path": "scripts/radio/run_radio_source_app.py",
         "command_path": "scripts/radio/run_radio_source_app_managed.py",
+        "command_module": "solar_toolkit.radio.source_app_launcher",
         "launch_mode": "interactive",
         "description": "Launch the managed Streamlit trajectory playback app.",
     },
@@ -430,6 +462,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/radio/export_radio_source_trajectory.py",
+        "command_module": "solar_toolkit.radio.trajectory_cli",
         "description": "Export a selected radio-source trajectory frame to HTML.",
     },
     {
@@ -439,6 +472,7 @@ MODULE_SPECS = [
         "status": "main",
         "risk_level": "standard",
         "script_path": "scripts/radio/run_aia_radio_hmi_overlay.py",
+        "command_module": "solar_toolkit.radio.overlay_cli",
         "description": "Overlay radio and optional HMI contours on AIA context images.",
     },
     {
@@ -448,6 +482,7 @@ MODULE_SPECS = [
         "status": "main",
         "risk_level": "advanced",
         "script_path": "scripts/radio/legacy/cso_radio_spectrogram_plot.py",
+        "command_module": "solar_toolkit.radio.cso_workflow",
         "description": "Compatibility CSO dynamic spectra workflow.",
     },
     {
@@ -457,6 +492,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/radio/run_radio_raw_quality.py",
+        "command_module": "solar_toolkit.radio.raw_quality_cli",
         "description": "Run raw radio FITS artifact and quality diagnostics.",
     },
     {
@@ -475,6 +511,7 @@ MODULE_SPECS = [
         "status": "deprecated",
         "risk_level": "deprecated",
         "script_path": "scripts/aia_hmi/sdo_aia_hmi_overlay.py",
+        "command_module": "solar_toolkit.hmi.overlay_cli",
         "description": "Deprecated AIA/HMI magnetic contour overlay workflow.",
     },
     {
@@ -493,6 +530,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/xray_dem/goes_sxr_lightcurve_plot.py",
+        "command_module": "solar_toolkit.xray_dem._goes_lightcurve",
         "description": "Plot GOES soft X-ray light curves.",
     },
     {
@@ -502,6 +540,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/xray_dem/hessi_hxr_lightcurve_plot.py",
+        "command_module": "solar_toolkit.xray_dem.hxi_lightcurve",
         "description": "Plot HXR light curves from FITS event files.",
     },
     {
@@ -511,6 +550,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/xray_dem/asos_hxi_image_plot.py",
+        "command_module": "solar_toolkit.xray_dem.hxi_image",
         "description": "Plot ASO-S/HXI hard X-ray image maps.",
     },
     {
@@ -520,6 +560,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/xray_dem/asos_hxi_goes_sxr_comparison.py",
+        "command_module": "solar_toolkit.xray_dem.hxi_sxr_comparison",
         "description": "Compare HXI count-rate evolution with GOES SXR context.",
     },
     {
@@ -529,6 +570,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/xray_dem/sdo_aia_asos_hxi_overlay.py",
+        "command_module": "solar_toolkit.xray_dem.aia_hxi_overlay",
         "description": "Overlay ASO-S/HXI contours on SDO/AIA images.",
     },
     {
@@ -538,6 +580,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/xray_dem/flare_aia_sxr_hxr_summary_plot.py",
+        "command_module": "solar_toolkit.xray_dem._flare_summary",
         "description": "Build a three-panel flare diagnostic summary figure.",
     },
     {
@@ -547,6 +590,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/xray_dem/neupert_sxr_derivative_hxr_comparison.py",
+        "command_module": "solar_toolkit.xray_dem._neupert_comparison",
         "description": "Compare smoothed SXR derivatives with HXR-style timing.",
     },
     {
@@ -556,6 +600,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/xray_dem/neupert_timing_error_analysis.py",
+        "command_module": "solar_toolkit.xray_dem._neupert_timing",
         "description": "Explore smoothing, timing, and derivative behavior.",
     },
     {
@@ -565,6 +610,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/xray_dem/sdo_aia_dem_inversion.py",
+        "command_module": "solar_toolkit.xray_dem.aia_dem_inversion",
         "description": "Visualize DEM and brightness-temperature products.",
     },
     {
@@ -574,6 +620,7 @@ MODULE_SPECS = [
         "status": "utility",
         "risk_level": "standard",
         "script_path": "scripts/xray_dem/dem_radio_source_overlay.py",
+        "command_module": "solar_toolkit.xray_dem.dem_radio_source_overlay",
         "description": "Compare DEM/Tb structure with radio source morphology.",
     },
     {

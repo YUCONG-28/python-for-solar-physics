@@ -86,14 +86,11 @@ observation archive is required.
 - The `solar_toolkit.radio` namespace is the recommended library API for
   reusable radio coordinates, Gaussian fitting, Newkirk, spectrogram, drift,
   raw-quality, quicklook, and diagnostic helpers.
-- Keep runnable research workflows under `scripts/`, grouped by instrument or
-  analysis task. Historical `scripts.radio.core.*` imports are retained as
-  deprecated compatibility aliases while new code should prefer
-  `solar_toolkit.radio.*`. Historical `scripts.aia_hmi.core.*` imports are
-  retained as deprecated compatibility aliases while new AIA code should prefer
-  `solar_toolkit.aia.*`. Large `scripts/radio/legacy/` workflows are also
-  deprecated compatibility paths and remain only until real-data output parity
-  justifies a separate removal step.
+- Keep all maintained implementations under `solar_toolkit/`; `scripts/`
+  contains only thin commands, launchers, and compatibility aliases grouped by
+  instrument. Historical `scripts.radio.core.*`, `scripts.aia_hmi.core.*`, and
+  `scripts/radio/legacy/` imports remain deprecated compatibility paths, but
+  resolve to the same package-owned implementations.
 - The root aliases `solar_toolkit.gaussian`, `solar_toolkit.coordinates`, and
   `solar_toolkit.cso` are deprecated from `0.2.0`; new code should use
   `solar_toolkit.modeling.gaussian`, `solar_toolkit.map.coordinates`, and
@@ -182,13 +179,17 @@ solar-aia --help
 solar-radio --help
 solar-image-viewer --help
 solar-webapp --help
+
+# Package-owned Radio workflows
+solar-radio source-map --config radio_20250124_config --output-dir outputs\radio-map
+solar-radio pipeline --config radio_20250124_config --output-dir outputs\radio-pipeline
+solar-radio overlay --config radio_20250124_config --overlay-section aia_multi_wave_gaussian_spectrogram
 ```
 
 `solar-radio` exposes `centers`, `pipeline`, `source-map`, `overlay`,
-`quicklook`, `raw-quality`, and `trajectory`. The installed
-`pipeline/source-map/overlay` runners currently report their source-compatibility
-boundary and return status `2`; they do not claim complete end-to-end pipeline
-parity. Use the following thin scripts from a source checkout for full runs:
+`quicklook`, `raw-quality`, and `trajectory`. All seven subcommands, including
+the default event configurations, are included in the installed wheel. The
+following source-checkout scripts are equivalent compatibility surfaces:
 
 ```powershell
 # SDO/AIA single-band, mosaic, preview, and difference products
@@ -286,7 +287,7 @@ the result is not a full end-to-end radio pipeline parity claim.
   utility scripts, examples, and legacy-risk workflows.
 - `docs/validation/astropy_sunpy_reorg_parity.md`: focused real-data parity
   evidence and the explicit end-to-end exclusions.
-- `docs/project_structure.md`: repository layout, data policy, and script group
+- `CODE_ORGANIZATION_MANIFEST.md`: repository layout, data policy, and script group
   boundaries.
 - `docs/path_configuration.md`: local path configuration and
   `configs/paths.local.yaml` guidance.

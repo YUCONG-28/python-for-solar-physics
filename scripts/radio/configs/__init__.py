@@ -1,7 +1,7 @@
 """Compatibility exports for :mod:`solar_toolkit.radio.config`.
 
-Event modules remain in this package so existing names such as
-``scripts.radio.configs.radio_20250124_config`` continue to resolve.
+Historical event-module names such as
+``scripts.radio.configs.radio_20250124_config`` remain compatibility aliases.
 """
 
 from __future__ import annotations

@@ -576,7 +576,7 @@ def overlay_spectrogram_panel(
         vmax=cache.vmax,
     )
     if cfg.get("enable_drift_rate_overlay", False):
-        from .radio_drift_rate import (
+        from .drift_rate import (
             get_or_load_drift_rate_results,
             overlay_drift_rate_results,
             save_drift_rate_diagnostics_once,

@@ -25,6 +25,10 @@ _SUBMODULES = {
     "plotting": "solar_toolkit.visualization.plotting",
     "radio_source_trajectory": "solar_toolkit.visualization.radio_source_trajectory",
     "radio_source_video": "solar_toolkit.visualization.radio_source_video",
+    "stereo_euvi_overview": "solar_toolkit.visualization.stereo_euvi_overview",
+    "stereo_euvi_roi_movie": "solar_toolkit.visualization.stereo_euvi_roi_movie",
+    "suvi_quadrant": "solar_toolkit.visualization.suvi_quadrant",
+    "video_cli": "solar_toolkit.visualization.video_cli",
 }
 
 _COMPATIBILITY_SUBMODULES = {

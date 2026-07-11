@@ -51,7 +51,10 @@ def test_registered_modules_build_safe_argument_list_commands(tmp_path):
 
         assert isinstance(command, list)
         assert command[0] == "PYTHON_EXE"
-        assert command[1].endswith(module.command_path.as_posix())
+        if module.command_module:
+            assert command[1:3] == ["-m", module.command_module]
+        else:
+            assert command[1].endswith(module.command_path.as_posix())
         assert command[-1] == "--help"
         assert all("&&" not in part and "|" not in part for part in command)
         assert module.title.isascii()
@@ -66,14 +69,24 @@ def test_installed_registry_marks_source_only_recipes_unavailable(tmp_path):
     from solar_toolkit.webapp.runner import JobContext
 
     registry = default_registry(tmp_path)
-    module = registry.get("aia-euv-processor")
+    package_module = registry.get("aia-euv-processor")
+    source_recipe = registry.get("aia-time-distance")
     context = JobContext(repo_root=tmp_path, python_executable=sys.executable)
 
-    assert module.available is False
-    assert "not included" in module.unavailable_reason
-    assert module.to_public_dict()["available"] is False
+    assert package_module.available is True
+    assert package_module.command_module == "solar_toolkit.aia.cli"
+    assert package_module.build_command({"arguments": "--help"}, context=context) == [
+        sys.executable,
+        "-m",
+        "solar_toolkit.aia.cli",
+        "--help",
+    ]
+
+    assert source_recipe.available is False
+    assert "not included" in source_recipe.unavailable_reason
+    assert source_recipe.to_public_dict()["available"] is False
     with pytest.raises(RuntimeError, match="is unavailable"):
-        module.build_command({"arguments": "--help"}, context=context)
+        source_recipe.build_command({"arguments": "--help"}, context=context)
 
 
 def test_path_payloads_must_stay_inside_allowed_roots(tmp_path):

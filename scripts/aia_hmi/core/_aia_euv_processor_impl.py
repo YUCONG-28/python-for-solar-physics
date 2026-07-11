@@ -1,8 +1,8 @@
-"""Compatibility alias for :mod:`solar_toolkit.aia._euv_processor_impl`.
+"""Compatibility alias for the private AIA execution engine.
 
-The historical private module contained a full copy of the AIA processor.
-Keeping a real module alias preserves old imports while ensuring the reusable
-package is the only implementation maintained during the migration window.
+The historical private path now aliases the package's worker implementation;
+public configuration, processing, and CLI imports remain available from the
+neighboring ``aia_config``, ``aia_processor``, and ``aia_cli`` wrappers.
 """
 
 from __future__ import annotations

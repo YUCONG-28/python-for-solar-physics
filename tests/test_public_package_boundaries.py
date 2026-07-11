@@ -33,10 +33,13 @@ MOJIBAKE_MARKERS = (
 )
 LAZY_PUBLIC_PACKAGES = [
     "aia",
+    "data",
     "hmi",
+    "net",
     "radio",
     "visualization",
     "webapp",
+    "xray_dem",
 ]
 
 

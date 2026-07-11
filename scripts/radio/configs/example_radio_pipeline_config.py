@@ -1,5 +1,9 @@
-"""Compatibility alias for the user-editable 2025-01-24 radio config."""
+"""Compatibility alias for the packaged example Radio pipeline config."""
 
-from .radio_20250124_config import USER_CONFIG
+from __future__ import annotations
 
-RADIO_PIPELINE_CONFIG = USER_CONFIG
+import sys
+from importlib import import_module
+
+_IMPL = import_module("solar_toolkit.radio.configs.example_radio_pipeline_config")
+sys.modules[__name__] = _IMPL

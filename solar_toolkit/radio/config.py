@@ -192,15 +192,16 @@ def _normalize_config_module_name(config_name: str | None) -> str:
         name = DEFAULT_CONFIG_NAME
     if name.endswith(".py"):
         name = name[:-3]
-    if name.startswith("scripts.radio.configs."):
+    if name.startswith(("scripts.radio.configs.", "solar_toolkit.radio.configs.")):
         return name
     if "." in name:
         return name
-    return f"scripts.radio.configs.{name}"
+    return f"solar_toolkit.radio.configs.{name}"
 
 
 def load_radio_config_module(config_name: str | None = None) -> ModuleType:
-    """Load a Python event-config module by short or qualified name."""
+    """Load a packaged or explicitly qualified Python event-config module."""
+
     return importlib.import_module(_normalize_config_module_name(config_name))
 
 

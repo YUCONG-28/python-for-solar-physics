@@ -79,8 +79,8 @@ def export_radio_source_video(
         raise ValueError("The selected video frame range is empty.")
 
     output_format = media.normalize_output_format(options.output_format)
-    out_path = Path(options.out_path).expanduser().resolve().with_suffix(
-        f".{output_format}"
+    out_path = (
+        Path(options.out_path).expanduser().resolve().with_suffix(f".{output_format}")
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
 

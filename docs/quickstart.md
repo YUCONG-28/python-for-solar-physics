@@ -115,6 +115,9 @@ a real data run:
 solar-aia --help
 solar-radio --help
 solar-radio centers --help
+solar-radio pipeline --help
+solar-radio source-map --help
+solar-radio overlay --help
 solar-radio quicklook --help
 solar-radio raw-quality --help
 solar-radio trajectory --help
@@ -122,9 +125,8 @@ solar-image-viewer --help
 solar-webapp --help
 ```
 
-安装后的四个主命令都支持无数据的 `--help` 检查。`solar-radio` 还列出
-`pipeline/source-map/overlay`，但这些完整科学编排在当前版本仍有明确边界：未提供源码兼容
-runner 时返回状态码 `2`。
+安装后的四个主命令及全部七个 `solar-radio` 子命令都支持无数据的 `--help` 检查；
+`pipeline/source-map/overlay` 的实现和默认事件配置均包含在 wheel 中。
 
 Source-checkout compatibility commands remain available:
 
@@ -143,8 +145,9 @@ For the current public script inventory, use `docs/script_index.md`.
 
 Use these only after local data paths are configured:
 
-- AIA EUV products: `scripts/aia_hmi/run_aia_euv_processor.py`
-- Full radio burst processing: `scripts/radio/run_radio_burst_pipeline.py`
+- AIA EUV products: `solar-aia` or `scripts/aia_hmi/run_aia_euv_processor.py`
+- Full radio burst processing: `solar-radio pipeline` or `scripts/radio/run_radio_burst_pipeline.py`
+- Radio source maps and overlays: `solar-radio source-map` / `solar-radio overlay`
 - Radio-source center extraction: `scripts/radio/extract_radio_centers.py`
 - Radio-source trajectory playback plus MP4/WebM browser recording and
   MP4/GIF/WebM backend export: `scripts/radio/run_radio_source_app.py`
@@ -153,14 +156,11 @@ Use these only after local data paths are configured:
 - Unified local English web GUI:
   `scripts/tools/run_solar_webapp.py`
 
-The full radio pipeline, source-map renderer, and AIA/radio/HMI overlay should
-continue to use their thin source-checkout scripts. Focused AIA and Radio/CSO
-products have real-data parity evidence, but the complete radio pipeline is not
-claimed end-to-end equivalent. See
+The installed commands and source scripts call the same package-owned Radio
+workflows. Real-data equivalence evidence and its precise scope are recorded in
 [`validation/astropy_sunpy_reorg_parity.md`](validation/astropy_sunpy_reorg_parity.md).
 
-完整射电 pipeline、source-map 和 AIA/radio/HMI overlay 仍通过源码薄脚本运行。分项真实数据
-已经验证，但不宣称完整射电 pipeline 端到端等价。
+安装命令与源码薄脚本调用同一包内 Radio 工作流；真实数据等价证据及其精确范围见上述记录。
 
 Raw observations, generated figures, videos, CSV/XLSX products, and local cache
 folders should stay outside Git unless they are explicitly reviewed and moved

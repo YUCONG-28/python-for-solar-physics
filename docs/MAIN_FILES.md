@@ -18,8 +18,9 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
   - `aia/`: AIA configuration, FITS selection, difference images, mosaics, EUV processing, and lightweight AIA background loading.
   - `hmi/`: HMI-facing facades for FITS renaming, magnetogram plotting, and overlays.
   - `radio/`: radio coordinates, threshold centers, Gaussian fitting, trajectory tables, Newkirk, spectrogram, drift, raw quality, and quicklook helpers.
-    - `config.py`: canonical validated radio event-configuration loader; `scripts.radio.configs` keeps event adapters.
-  - `xray_dem/`: X-ray, HXI, Neupert, and DEM helper boundary.
+    - `config.py` and `configs/`: canonical validated loader and installable event configurations; `scripts.radio.configs` keeps aliases.
+    - `pipeline_workflow.py`, `source_map_workflow.py`, `overlay_workflow.py`: package-owned complete orchestration.
+  - `xray_dem/`: X-ray, HXI, Neupert, DEM, image, comparison, and overlay workflow implementations.
   - `cme/`: LASCO/CME helper boundary.
   - `net/`: archive query and download helper boundary.
   - `modeling/`: shared Gaussian and density-model boundary.
@@ -35,10 +36,9 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
   - Delegates to `solar_toolkit.aia.cli`.
   - Historical `scripts/aia_hmi/sdo_aia_euv_processor.py` remains compatible.
 - `scripts/radio/run_radio_burst_pipeline.py`
-  - Full radio burst workflow.
-  - Uses `solar_toolkit.radio` for reusable helpers and keeps legacy plotting compatibility.
+  - Thin compatibility command for `solar_toolkit.radio.pipeline_workflow`.
 - `scripts/radio/run_radio_source_map.py`
-  - Quick radio source-map workflow with Gaussian overlays.
+  - Thin compatibility command for `solar_toolkit.radio.source_map_workflow`.
 - `scripts/radio/extract_radio_centers.py`
   - Threshold/contour radio-source center extraction to CSV/XLSX.
 - `scripts/radio/run_radio_source_app.py`
@@ -64,7 +64,7 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
 
 - `scripts/radio/core/`: deprecated compatibility wrappers for migrated radio modules.
 - `scripts/aia_hmi/core/`: deprecated compatibility wrappers for migrated AIA modules.
-- `scripts/radio/legacy/`: deprecated compatibility workflows retained for output reproducibility.
+- `scripts/radio/legacy/`: deprecated module aliases to package-owned workflows.
 - `solar_toolkit.gaussian`, `solar_toolkit.coordinates`, and `solar_toolkit.cso`: deprecated root aliases for `solar_toolkit.modeling.gaussian`, `solar_toolkit.map.coordinates`, and `solar_toolkit.radio.cso`.
 - `legacy/`: archived scripts kept for manual review, not current first-choice entrypoints.
 
@@ -82,13 +82,12 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
 
 - `docs/quickstart.md`: beginner setup, no-data validation, first imports, and safe entrypoint checks.
 - `docs/FUNCTION_MAP.md`: package and compatibility map.
-- `docs/project_structure.md`: repository layout and data policy.
+- `CODE_ORGANIZATION_MANIFEST.md`: authoritative repository layout and data policy.
 - `docs/script_index.md`: runnable script index.
 - `docs/validation/astropy_sunpy_reorg_parity.md`: focused real-data parity record and explicit end-to-end exclusions.
 - `docs/path_configuration.md`: local path configuration guide.
 - `scripts/aia_hmi/docs/AIA_ENTRYPOINTS.md`: AIA entrypoint notes.
-- `scripts/radio/docs/RADIO_ENTRYPOINTS.md`: radio entrypoint notes.
-- `scripts/radio/docs/RADIO_MIGRATION_NOTES.md`: radio migration and compatibility notes.
+- `docs/history/radio/`: archived Radio entrypoint snapshots and migration reports.
 
 ## Data Policy
 

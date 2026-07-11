@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from solar_toolkit.radio import cli, overlay_cli, pipeline_cli, source_map_cli
+from solar_toolkit.radio import cli, overlay_cli, source_map_cli
 
 EXPECTED_COMMANDS = {
     "centers",
@@ -41,16 +41,9 @@ def test_all_radio_subcommand_help_surfaces_are_import_safe():
         assert f"solar-radio {command}" in result.stdout.splitlines()[0]
 
 
-def test_unmigrated_package_runners_report_the_real_data_parity_boundary(capsys):
-    for module in (pipeline_cli, source_map_cli, overlay_cli):
-        assert module.main([]) == 2
-
-    stderr = capsys.readouterr().err
-    assert stderr.count("real-data parity validation") == 3
-
-
-def test_source_map_compatibility_wrapper_injects_the_retained_runner(monkeypatch):
+def test_source_map_compatibility_wrapper_uses_the_packaged_runner(monkeypatch):
     from scripts.radio import run_radio_source_map
+    from solar_toolkit.radio import source_map_workflow
 
     observed = {}
     monkeypatch.setattr(
@@ -59,9 +52,9 @@ def test_source_map_compatibility_wrapper_injects_the_retained_runner(monkeypatc
         lambda _name: ({"output": {}, "gaussian": {}}, {}),
     )
     monkeypatch.setattr(
-        run_radio_source_map,
-        "_run_legacy",
-        lambda config: observed.update(config) or None,
+        source_map_workflow,
+        "run_source_map",
+        lambda config, *, argv: observed.update(config) or None,
     )
 
     assert (
@@ -74,8 +67,9 @@ def test_source_map_compatibility_wrapper_injects_the_retained_runner(monkeypatc
     assert observed["output"]["analysis_subdir"] == "analysis"
 
 
-def test_overlay_compatibility_wrapper_injects_the_retained_runner(monkeypatch):
+def test_overlay_compatibility_wrapper_uses_the_packaged_runner(monkeypatch):
     from scripts.radio import run_aia_radio_hmi_overlay
+    from solar_toolkit.radio import overlay_workflow
 
     observed = {}
     monkeypatch.setattr(
@@ -84,8 +78,8 @@ def test_overlay_compatibility_wrapper_injects_the_retained_runner(monkeypatch):
         lambda name, *, section: {"config": name, "section": section},
     )
     monkeypatch.setattr(
-        run_aia_radio_hmi_overlay,
-        "_run_legacy",
+        overlay_workflow,
+        "run_overlay_workflow",
         lambda config: observed.update(config) or None,
     )
 

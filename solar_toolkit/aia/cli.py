@@ -14,16 +14,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .config import AIAConfig, _normalize_wave_float_dict
-from .processor import _actual_mode, process_aia_fits
+from .processor import (
+    _actual_mode,
+    _configure_matplotlib_backend,
+    process_aia_fits,
+)
 
 __all__ = ["build_parser", "config_from_args", "main"]
-
-
-def _configure_matplotlib_backend(mode: str) -> None:
-    if mode in ("single", "mosaic"):
-        import matplotlib
-
-        matplotlib.use("Agg", force=True)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -494,3 +491,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Wavelengths: {cfg.multi_band_wavelengths}")
     process_aia_fits(cfg)
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

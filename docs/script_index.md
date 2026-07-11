@@ -26,25 +26,25 @@ Status labels:
 | Command | Purpose | Boundary / 当前边界 |
 | --- | --- | --- |
 | `solar-aia` | AIA single-band, mosaic, and difference processing. | Package-owned runner. |
-| `solar-radio` | `centers`, `pipeline`, `source-map`, `overlay`, `quicklook`, `raw-quality`, and `trajectory`. | `pipeline/source-map/overlay` return status `2` without a source-checkout compatibility runner; this is not an end-to-end parity claim. |
+| `solar-radio` | `centers`, `pipeline`, `source-map`, `overlay`, `quicklook`, `raw-quality`, and `trajectory`. | All seven runners and default event configs are installed with the package. |
 | `solar-image-viewer` | Local multi-folder image viewer and media export. | Package-owned runner. |
 | `solar-webapp` | Local English workflow workbench. | Source-only recipes are listed as unavailable when their files are absent from the installed package. |
 
-安装后的 `solar-radio pipeline/source-map/overlay` 会明确暴露尚未迁移的完整编排边界；完整执行
-仍应使用源码仓库中的对应薄脚本。
+安装后的 `solar-radio pipeline/source-map/overlay` 直接调用包内完整编排；源码脚本只是同一实现的
+兼容入口。
 
 ## Main Workflows
 
 | Status | Script | Purpose | Main inputs | Main outputs |
 | --- | --- | --- | --- | --- |
 | main | `scripts/aia_hmi/run_aia_euv_processor.py` | Main SDO/AIA EUV processor for single-band PNGs, multi-band mosaics, test previews, and optional base/running difference images. | AIA FITS files in wavelength folders; ROI, wavelength, scaling, and mosaic settings. | AIA PNG images, mosaics, and optional difference products. |
-| main | `scripts/radio/run_radio_burst_pipeline.py` | Source-checkout full radio burst workflow with source maps, Gaussian diagnostics, CSO spectrogram/drift support, Newkirk height comparison, Gaussian-Newkirk height residuals, and drift-speed diagnostics. Its complete orchestration remains a compatibility runner. | Radio source FITS files, optional CSO spectrogram FITS, Gaussian/drift/Newkirk settings. | Radio source maps, fitted centers, FWHM overlays, diagnostics CSV, Newkirk height tables, height-residual plots, and optional drift-rate JSON/preview products. |
-| main | `scripts/radio/run_radio_source_map.py` | Source-checkout radio source-map workflow with Gaussian overlay through the retained compatibility orchestration. | Radio source FITS files, Gaussian settings. | Radio source maps, fitted centers, FWHM overlays, and diagnostics CSV. |
+| main | `scripts/radio/run_radio_burst_pipeline.py` | Thin compatibility command for the package-owned full radio pipeline: source maps, Gaussian diagnostics, CSO spectrogram/drift, Newkirk comparison, residuals, and drift speed. | Radio source FITS files, optional CSO spectrogram FITS, Gaussian/drift/Newkirk settings. | Radio source maps, fitted centers, FWHM overlays, diagnostics CSV, Newkirk height tables, height-residual plots, and optional drift-rate JSON/preview products. |
+| main | `scripts/radio/run_radio_source_map.py` | Thin compatibility command for `solar_toolkit.radio.source_map_workflow`. | Radio source FITS files, Gaussian settings. | Radio source maps, fitted centers, FWHM overlays, and diagnostics CSV. |
 | main | `scripts/radio/extract_radio_centers.py` | Extract threshold/contour radio-source centers, such as 95% intensity regions, from a radio FITS folder. | Radio FITS files, threshold mode, centroid mode, optional LCP/RCP pairing. | CSV or XLSX center table with `obs_time`, `freq_mhz`, `polarization`, center coordinates, method, and quality flag. |
 | main | `scripts/radio/run_radio_source_app.py` | Streamlit frontend for radio-source trajectory playback, exact-timestamp MP4/WebM browser recording, and reproducible MP4/GIF/WebM backend export. | Center CSV/XLSX table, optional AIA FITS folder, playback/filter controls, Start/End, size, FPS, quality, format, and full backend output path. | Interactive browser view, local browser recording download, and optional backend video; no batch FITS extraction is run inside the app. |
 | utility | `scripts/radio/export_radio_source_trajectory.py` | Export a selected radio-source trajectory frame to a static Plotly HTML file. | Center CSV/XLSX table, frame time or frame index, optional AIA FITS folder. | Standalone HTML trajectory figure. |
-| main | `scripts/radio/run_aia_radio_hmi_overlay.py` | Source-checkout AIA/radio/HMI overlay using retained compatibility orchestration for the complete renderer. | AIA FITS, radio source FITS, optional HMI FITS, matching and fit settings. | AIA-radio or AIA-radio-HMI diagnostic figures with contours and fitted source markers. |
-| deprecated | `scripts/radio/legacy/cso_radio_spectrogram_plot.py` | Compatibility CSO dynamic spectra workflow with memory-aware slicing and downsampling; no new public script wrapper exists yet. | CSO spectrogram FITS, time/frequency ranges, polarization settings. | LL/RR, total intensity, and polarization-ratio spectrum figures. |
+| main | `scripts/radio/run_aia_radio_hmi_overlay.py` | Thin compatibility command for the package-owned AIA/radio/HMI renderer. | AIA FITS, radio source FITS, optional HMI FITS, matching and fit settings. | AIA-radio or AIA-radio-HMI diagnostic figures with contours and fitted source markers. |
+| deprecated | `scripts/radio/legacy/cso_radio_spectrogram_plot.py` | Compatibility alias for `solar_toolkit.radio.cso_workflow`, with memory-aware slicing and downsampling. | CSO spectrogram FITS, time/frequency ranges, polarization settings. | LL/RR, total intensity, and polarization-ratio spectrum figures. |
 | main | `scripts/aia_hmi/sdo_aia_jsoc_download_20250124.py` | Download selected SDO/AIA JSOC level-1 EUV FITS files for 2025-01-24 04:00-05:00 UTC. | JSOC/DRMS query, 211 A and 304 A channels by default. | FITS files and `manifest_urls.txt` under `~/data/aia/20250124_2/`. |
 | main | `scripts/data_download/stereo_a_euvi_download_20250124.py` | Download STEREO-A SECCHI/EUVI files for the 2025-01-24 event window. | SunPy/Fido query to STEREO/EUVI archive. | EUVI FTS files and `selected_files.txt`. |
 | main | `scripts/data_download/goes_suvi_download_20250124.py` | Download GOES-16/18 SUVI L2 composite FITS files for the event window. | NOAA GOES SUVI public data directory. | SUVI FITS files grouped by satellite, channel, and date. |
@@ -87,7 +87,7 @@ Status labels:
 | utility | `solar_toolkit/radio/spectrogram.py` | Dynamic spectrogram cache and overlay helpers. | Radio pipeline and AIA/radio overlay workflows. |
 | utility | `solar_toolkit/radio/drift_rate.py` | Manual drift-rate selection and overlay helpers. | Full radio burst pipeline. |
 | utility | `solar_toolkit/radio/drift_products.py` | Persistent drift-selection preview/table/metadata products. | Drift-selection tests and full radio burst pipeline. |
-| utility | `solar_toolkit/radio/config.py` | Canonical validated radio configuration loader; rejects unknown event sections and adapts existing Python event modules. | Package radio commands and source-checkout compatibility runners. |
+| utility | `solar_toolkit/radio/config.py` and `solar_toolkit/radio/configs/` | Canonical validated loader and installable event configurations; rejects unknown event sections. | Package radio commands and old configuration aliases. |
 | utility | `solar_toolkit/path_config.py` | Load local path configuration from `configs/paths.example.yaml`-style YAML files without committing personal paths. | README-recommended workflows that need local data roots. |
 | utility | `solar_toolkit/modeling/gaussian.py` | Canonical pure Gaussian model; old `solar_toolkit.gaussian` is a compatibility alias. | Gaussian utilities and radio-domain Gaussian models. |
 | utility | `solar_toolkit/map/coordinates.py` | Canonical coordinate and image-extent helpers; old `solar_toolkit.coordinates` is a compatibility alias. | Radio coordinate tests and plotting workflows. |
@@ -111,7 +111,7 @@ recommended as first entry points for new users.
 
 | Status | Script | Purpose | Main inputs | Main outputs |
 | --- | --- | --- | --- | --- |
-| deprecated | `scripts/aia_hmi/sdo_aia_time_distance_diagram.py` | Demonstrate AIA time-distance analysis along a coordinate path. | AIA map sequence, currently using a SunPy/Fido example query. | Time-distance diagnostic figure. |
+| deprecated | `scripts/aia_hmi/sdo_aia_time_distance_diagram.py` | Thin launcher for the archived network-backed recipe in `examples/history/aia_hmi/`. | AIA map sequence, currently using a SunPy/Fido example query. | Time-distance diagnostic figure. |
 | deprecated | `scripts/aia_hmi/sdo_aia_hmi_overlay.py` | Overlay HMI magnetic contours on AIA images. | AIA FITS, HMI FITS, time matching, contour levels. | AIA-HMI overlay PNG figures. |
 | deprecated | `scripts/aia_hmi/sdo_aia_euv_processor.py` | Deprecated compatibility entrypoint for the historical AIA EUV processor command; new work should use `run_aia_euv_processor.py`. | Same as the recommended AIA EUV entrypoint. | Same as the recommended AIA EUV entrypoint. |
 | utility | `scripts/xray_dem/goes_sxr_lightcurve_plot.py` | Plot GOES soft X-ray light curves. | GOES NetCDF products. | SXR time-series PNG figures. |

@@ -1,11 +1,11 @@
 """SDO/HMI helper namespace.
 
 English: Public boundary for HMI-oriented helpers, including magnetogram
-plotting, FITS renaming, and AIA/HMI overlay workflows that still run through
-thin scripts.
+plotting, FITS renaming, and package-owned AIA/HMI overlay workflows. Historical
+scripts are thin compatibility entry points.
 
-中文：SDO/HMI 公共命名空间，覆盖磁图绘制、FITS 规范命名，以及仍由薄脚本
-调用的 AIA/HMI 叠加流程。
+中文：SDO/HMI 公共命名空间，覆盖磁图绘制、FITS 规范命名和包内 AIA/HMI
+叠加流程；历史脚本仅保留薄兼容入口。
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ _SUBMODULES = {
     "fits_rename": "solar_toolkit.hmi.fits_rename",
     "magnetogram": "solar_toolkit.hmi.magnetogram",
     "overlay": "solar_toolkit.hmi.overlay",
+    "overlay_cli": "solar_toolkit.hmi.overlay_cli",
     "processing": "solar_toolkit.hmi.processing",
 }
 

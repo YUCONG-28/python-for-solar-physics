@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -11,12 +10,6 @@ from .entrypoint_utils import apply_output_overrides, build_common_parser
 from .provenance import resolve_provenance_output_dir, write_radio_provenance
 
 __all__ = ["build_parser", "main"]
-
-_BOUNDARY_MESSAGE = (
-    "The source-map scientific runner remains a source-repository compatibility "
-    "workflow until real-data parity validation is complete. Use "
-    "scripts/radio/run_radio_source_map.py in a source checkout."
-)
 
 
 def build_parser():
@@ -33,16 +26,18 @@ def main(
     *,
     runner: Callable[[dict], Any] | None = None,
 ) -> int:
-    """Run a supplied compatibility runner, or report the parity boundary."""
+    """Run source-map generation or an explicit compatibility hook."""
 
-    args, _unknown = build_parser().parse_known_args(argv)
-    if runner is None:
-        print(_BOUNDARY_MESSAGE, file=sys.stderr)
-        return 2
+    args, unknown = build_parser().parse_known_args(argv)
 
     user_config, newkirk_config = load_radio_user_config(args.config)
     resolved_config = apply_output_overrides(user_config, args)
-    result = runner(resolved_config)
+    if runner is None:
+        from .source_map_workflow import run_source_map
+
+        result = run_source_map(resolved_config, argv=unknown)
+    else:
+        result = runner(resolved_config)
     output_dir = resolve_provenance_output_dir(resolved_config)
     if (not isinstance(result, int) or result == 0) and output_dir is not None:
         write_radio_provenance(
@@ -53,3 +48,7 @@ def main(
             cli_overrides=vars(args),
         )
     return result if isinstance(result, int) else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

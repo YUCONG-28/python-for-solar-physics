@@ -23,6 +23,14 @@ def _actual_mode(cfg: AIAConfig) -> str:
     return "single"
 
 
+def _configure_matplotlib_backend(mode: str) -> None:
+    """Select the non-interactive backend before loading the heavy executor."""
+    if mode in ("single", "mosaic"):
+        import matplotlib
+
+        matplotlib.use("Agg", force=True)
+
+
 def _load_impl():
     """Import the heavy implementation only when processing is requested."""
     from . import _euv_processor_impl
@@ -30,7 +38,44 @@ def _load_impl():
     return _euv_processor_impl
 
 
-def process_aia_fits(cfg: AIAConfig):
-    """Run the legacy-proven AIA processor implementation."""
+def process_aia_fits(cfg: AIAConfig) -> None:
+    """Run AIA processing without changing the legacy mode semantics."""
+    actual_mode = _actual_mode(cfg)
+    _configure_matplotlib_backend(actual_mode)
 
-    return _load_impl().process_aia_fits(cfg)
+    if not cfg.draw_original and not cfg.draw_difference:
+        raise ValueError(
+            "Nothing to draw: at least one of draw_original or "
+            "draw_difference must be True."
+        )
+
+    impl = _load_impl()
+    if actual_mode == "test":
+        impl._run_test_mode(cfg)
+        if cfg.draw_difference:
+            print(
+                "Test mode: draw_difference=True detected; "
+                "full difference batch skipped."
+            )
+        return
+
+    if actual_mode == "single":
+        if cfg.draw_original:
+            impl._run_single_batch(cfg)
+        if cfg.draw_difference:
+            impl._run_difference_batch(cfg)
+        return
+
+    if actual_mode == "mosaic":
+        output_mode = cfg.difference_output_mode
+        if output_mode == "auto":
+            output_mode = "mosaic" if cfg.draw_difference else "mosaic"
+
+        if cfg.draw_difference and output_mode in ("mosaic", "both"):
+            cfg.mosaic_difference_inline = True
+            impl._run_mosaic_batch(cfg)
+        elif not cfg.draw_difference and cfg.draw_original:
+            impl._run_mosaic_batch(cfg)
+
+        if cfg.draw_difference and output_mode in ("single", "both"):
+            impl._run_difference_batch(cfg)

@@ -6,7 +6,7 @@
 ## 项目定位
 
 本仓库是一个面向太阳物理多波段事件分析的 Python 研究工具包。项目采用
-“可运行脚本 + 可复用工具函数 + 数据无关测试”的组织方式，用于把本地观测数据
+“包内唯一实现 + 薄脚本兼容入口 + 数据无关测试”的组织方式，用于把本地观测数据
 转化为论文或报告中的图像、叠加图、动态频谱、源中心诊断、光变曲线和时间演化
 产品。
 
@@ -30,6 +30,12 @@
 公开 README 只保留最小入口。更完整的脚本索引见 `script_index.md`。
 
 ```powershell
+# 安装后的包入口
+solar-aia --mode single --waves 171 193 304
+solar-radio pipeline --config radio_20250124_config --output-dir outputs\radio-pipeline
+solar-radio source-map --config radio_20250124_config --output-dir outputs\radio-map
+solar-radio overlay --config radio_20250124_config --overlay-section aia_multi_wave_gaussian_spectrogram
+
 # SDO/AIA 单波段、多波段、预览和差分产品
 python scripts/aia_hmi/run_aia_euv_processor.py --mode single --waves 171 193 304
 
@@ -43,8 +49,8 @@ python scripts/radio/run_radio_source_map.py
 python scripts/radio/run_aia_radio_hmi_overlay.py
 ```
 
-历史脚本和高风险科研入口仍保留在仓库中，用于参数审查和输出对比；新工作应优先
-使用 `run_*.py` 推荐入口。
+上述源码脚本只是包内同一实现的兼容入口。历史 recipe 统一保存在
+`examples/history/` 或 `docs/history/`；新工作应优先使用安装命令或 `solar_toolkit.*` API。
 
 ## 安装与依赖
 
@@ -68,7 +74,7 @@ python -m pip install -e ".[dev,full]"
 python -m pip install -e ".[gui]"
 ```
 
-核心依赖包括 NumPy、SciPy、AstroPy、SunPy、Matplotlib、Reproject、
+核心依赖包括 NumPy、SciPy、Astropy、SunPy、Matplotlib、Reproject、
 Scikit-image、PyYAML、Pandas 和 tqdm。下载、GUI、视频或特定数据源工作流可能
 需要额外可选依赖。
 
@@ -105,7 +111,7 @@ $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'; python -m pytest -q tests
 - `../README.md`：英文公开首页、示例图、引用和最小运行入口。
 - `README.md`：文档目录，区分当前指导和历史审计报告。
 - `script_index.md`：当前公开脚本入口、工具脚本、示例和历史保留入口。
-- `project_structure.md`：仓库结构、数据政策和脚本分组。
+- `../CODE_ORGANIZATION_MANIFEST.md`：当前仓库结构、数据政策和脚本分组。
 - `path_configuration.md`：本地路径配置说明。
 - `assets/README.md`：README 展示图和视频的存放策略。
 

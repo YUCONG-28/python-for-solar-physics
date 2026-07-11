@@ -128,7 +128,9 @@ def test_export_radio_source_video_uses_shared_writer_and_selected_range(
 
     monkeypatch.setattr(video_module, "_render_frame_rgb", fake_render)
     monkeypatch.setattr(media, "write_media_from_frames", fake_writer)
-    times = [pd.Timestamp("2025-01-24T04:48:45") + pd.Timedelta(seconds=i) for i in range(4)]
+    times = [
+        pd.Timestamp("2025-01-24T04:48:45") + pd.Timedelta(seconds=i) for i in range(4)
+    ]
 
     result = export_radio_source_video(
         _centers(),

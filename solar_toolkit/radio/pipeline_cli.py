@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -10,12 +9,6 @@ from .config import DEFAULT_CONFIG_NAME
 from .entrypoint_utils import build_common_parser
 
 __all__ = ["build_parser", "main"]
-
-_BOUNDARY_MESSAGE = (
-    "The full pipeline runner remains a source-repository compatibility workflow "
-    "until source-map real-data parity validation is complete. Use "
-    "scripts/radio/run_radio_burst_pipeline.py in a source checkout."
-)
 
 
 def build_parser():
@@ -33,13 +26,18 @@ def main(
     *,
     runner: Callable[[Sequence[str] | None], Any] | None = None,
 ) -> int:
-    """Run a supplied compatibility runner, or report the parity boundary."""
+    """Run the package pipeline or an explicitly supplied compatibility hook."""
 
     forwarded = None if argv is None else list(argv)
     build_parser().parse_known_args(forwarded)
     if runner is None:
-        print(_BOUNDARY_MESSAGE, file=sys.stderr)
-        return 2
+        from .pipeline_workflow import run_pipeline
+
+        runner = run_pipeline
 
     result = runner(forwarded)
     return result if isinstance(result, int) else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

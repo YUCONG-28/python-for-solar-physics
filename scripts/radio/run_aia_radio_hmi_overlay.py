@@ -15,25 +15,19 @@ from solar_toolkit.radio.overlay_cli import main as _package_main
 __all__ = ["build_parser", "main"]
 
 
-def _run_legacy(user_config: dict):
-    from scripts.radio.legacy import sdo_aia_radio_hmi_overlay as legacy_aia
-
-    return legacy_aia.main(user_config=user_config)
-
-
 def main(
     config_name: str | None = None,
     overlay_section: str | None = None,
     argv: Sequence[str] | None = None,
 ) -> int:
-    """Run the retained overlay through the package-owned CLI contract."""
+    """Run the package-owned overlay while preserving the historical script."""
 
     forwarded = list(sys.argv[1:] if argv is None else argv)
     if config_name is not None:
         forwarded.extend(["--config", config_name])
     if overlay_section is not None:
         forwarded.extend(["--overlay-section", overlay_section])
-    return _package_main(forwarded, runner=_run_legacy)
+    return _package_main(forwarded)
 
 
 if __name__ == "__main__":
