@@ -20,6 +20,7 @@ DEFAULT_CHINESE_FONT_CANDIDATES = [
 
 _SUBMODULES = {
     "image_web_viewer": "solar_toolkit.visualization.image_web_viewer",
+    "media": "solar_toolkit.visualization.media",
     "radio_source_trajectory": "solar_toolkit.visualization.radio_source_trajectory",
     "radio_source_video": "solar_toolkit.visualization.radio_source_video",
 }

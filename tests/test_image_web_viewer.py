@@ -5,6 +5,7 @@ import io
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -18,6 +19,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def _write_png(path: Path, color: tuple[int, int, int], size=(8, 6)) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     Image.new("RGB", size, color).save(path)
+
+
+def _materialize_frames(frame_source):
+    return list(frame_source() if callable(frame_source) else frame_source)
 
 
 def test_scan_images_filters_extensions_and_natural_sorts(tmp_path):
@@ -127,7 +132,7 @@ def test_video_export_invokes_separate_and_composite_writers(tmp_path, monkeypat
         frame_size,
         output_format,
     ):
-        frames = list(frame_iter)
+        frames = _materialize_frames(frame_iter)
         frame_calls.append(
             {
                 "output_path": str(output_path),
@@ -206,7 +211,7 @@ def test_video_export_normalizes_format_and_uses_selected_extension(
         frame_size,
         output_format,
     ):
-        list(frame_iter)
+        _materialize_frames(frame_iter)
         frame_calls.append(
             {
                 "output_path": str(output_path),
@@ -257,7 +262,7 @@ def test_video_export_defaults_unknown_format_to_mp4(tmp_path, monkeypatch):
         frame_size,
         output_format,
     ):
-        list(frame_iter)
+        _materialize_frames(frame_iter)
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         Path(output_path).write_bytes(b"fake video")
         return True
@@ -302,7 +307,7 @@ def test_composite_export_streams_generated_frames_without_temp_paths(
         frame_size,
         output_format,
     ):
-        frames = list(frame_iter)
+        frames = _materialize_frames(frame_iter)
         calls.append(
             {
                 "output_path": Path(output_path),
@@ -387,6 +392,13 @@ def test_image_web_viewer_frontend_exposes_workbench_controls():
         / "static"
         / "main.js"
     ).read_text(encoding="utf-8")
+    shared_script = (
+        REPO_ROOT
+        / "solar_toolkit"
+        / "visualization"
+        / "media_assets"
+        / "browser_media.js"
+    ).read_text(encoding="utf-8")
 
     for marker in [
         'id="sidebar"',
@@ -420,7 +432,7 @@ def test_image_web_viewer_frontend_exposes_workbench_controls():
     assert "solarToolkit.imageViewer.v1.settings" in script
     assert "requestAnimationFrame" in script
     assert "loadCachedImage" in script
-    assert "PRELOAD_SECONDS_AHEAD" in script
+    assert "PRELOAD_SECONDS_AHEAD" not in script
     assert "MAX_PRELOAD_CONCURRENCY" in script
     assert "MAX_PRELOAD_AHEAD_FRAMES" not in script
     assert "MAX_CACHE_ENTRIES" not in script
@@ -437,9 +449,23 @@ def test_image_web_viewer_frontend_exposes_workbench_controls():
     assert "waitForFrameReady" in script
     assert "Cancel Recording" in script
     assert "Recording canceled." in script
-    assert "captureStream(0)" in script
-    assert "requestFrame" in script
-    assert "requestData" in script
+    assert 'src="/media-assets/mediabunny-1.50.8.cjs"' in template
+    assert 'src="/media-assets/browser_media.js"' in template
+    assert "SolarToolkitMedia.createCanvasRecorder" in script
+    assert "Mediabunny" in shared_script
+    assert "CanvasSource" in shared_script
+    assert "AppendOnlyStreamTarget" in shared_script
+    assert "BufferTarget" in shared_script
+    assert "videoSource.add" in shared_script
+    assert "frameOffset / fps" in script
+    assert "1 / fps" in script
+    assert 'duplex: "half"' in script
+    assert 'global.location.protocol !== "https:"' in shared_script
+    assert "nextHopProtocol" in shared_script
+    assert 'new media.Mp4OutputFormat({fastStart: "fragmented"})' in shared_script
+    assert "/api/save-recording-stream" in script
+    assert "/api/cancel-recording" in script
+    assert "recording_id" in script
     assert "formatRecordingError" in script
     assert "summarizeSavedPaths" in script
     assert "Preloading frame" in script
@@ -448,9 +474,29 @@ def test_image_web_viewer_frontend_exposes_workbench_controls():
     assert "Loading..." in script
     assert "/api/client-config" in script
     assert "/api/client-close" in script
-    assert "MediaRecorder" in script
-    assert "captureStream" in script
+    assert "MediaRecorder" not in script
+    assert "captureStream" not in script
+    assert "waitForNextPaint" not in script
     assert "/api/save-recording" in script
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("flask") is None,
+    reason="Flask is optional; install the app extra to test HTTP routes.",
+)
+def test_mediabunny_vendor_asset_is_served_as_javascript():
+    from solar_toolkit.visualization.image_web_viewer.server import create_app
+
+    client = create_app().test_client()
+    response = client.get("/media-assets/mediabunny-1.50.8.cjs")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/javascript"
+    assert len(response.data) == 1_424_579
+    helper = client.get("/media-assets/browser_media.js")
+    assert helper.status_code == 200
+    assert helper.mimetype == "application/javascript"
+    assert b"createCanvasRecorder" in helper.data
 
 
 @pytest.mark.skipif(
@@ -618,19 +664,42 @@ def test_flask_export_video_passes_selected_format(tmp_path, monkeypatch):
     importlib.util.find_spec("flask") is None,
     reason="Flask is optional; install the app extra to test HTTP routes.",
 )
-def test_flask_save_recording_saves_webm_directly(tmp_path):
+def test_flask_save_recording_passes_mediabunny_metadata(tmp_path, monkeypatch):
+    from solar_toolkit.visualization.image_web_viewer import media
     from solar_toolkit.visualization.image_web_viewer.server import create_app
 
+    calls: list[dict] = []
+
+    def fake_save(recording_file, **kwargs):
+        calls.append(kwargs)
+        output_path = Path(kwargs["output_dir"]) / "stage_demo_recording.mp4"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"mp4-data")
+        return {
+            "status": "saved",
+            "path": str(output_path.resolve()),
+            "format": "mp4",
+            "codec": "h264",
+            "width": 640,
+            "height": 480,
+            "frame_count": 3,
+        }
+
+    monkeypatch.setattr(media, "save_browser_recording", fake_save)
     client = create_app(allowed_roots=[tmp_path]).test_client()
     response = client.post(
         "/api/save-recording",
         data={
-            "recording": (io.BytesIO(b"webm-data"), "recording.webm"),
-            "format": "webm",
+            "recording": (io.BytesIO(b"mp4-data"), "recording.mp4"),
+            "format": "mp4",
+            "source_format": "mp4",
             "output_dir": str(tmp_path / "videos"),
             "file_prefix": "stage demo",
-            "fps": "5",
-            "quality": "low",
+            "fps": "30",
+            "quality": "high",
+            "recording_width": "640",
+            "recording_height": "480",
+            "frame_count": "3",
         },
         content_type="multipart/form-data",
     )
@@ -638,16 +707,88 @@ def test_flask_save_recording_saves_webm_directly(tmp_path):
 
     assert response.status_code == 200
     assert payload["ok"] is True
-    assert payload["format"] == "webm"
-    assert Path(payload["path"]).name == "stage_demo_recording.webm"
-    assert Path(payload["path"]).read_bytes() == b"webm-data"
+    assert payload["format"] == "mp4"
+    assert Path(payload["path"]).is_absolute()
+    assert calls == [
+        {
+            "output_dir": str(tmp_path / "videos"),
+            "file_prefix": "stage demo",
+            "output_format": "mp4",
+            "source_format": "mp4",
+            "fps": 30.0,
+            "quality": "high",
+            "recording_size": (640, 480),
+            "expected_frame_count": 3,
+        }
+    ]
 
 
 @pytest.mark.skipif(
     importlib.util.find_spec("flask") is None,
     reason="Flask is optional; install the app extra to test HTTP routes.",
 )
-def test_flask_save_recording_transcodes_mp4_and_gif(tmp_path, monkeypatch):
+def test_flask_stream_recording_passes_raw_body_and_metadata(tmp_path, monkeypatch):
+    from solar_toolkit.visualization.image_web_viewer import media
+    from solar_toolkit.visualization.image_web_viewer.server import create_app
+
+    calls: list[dict] = []
+
+    def fake_save(stream, **kwargs):
+        calls.append({"body": stream.read(), **kwargs})
+        output_path = Path(kwargs["output_dir"]) / "stage_recording.webm"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"clean-webm")
+        return {
+            "status": "saved",
+            "path": str(output_path.resolve()),
+            "format": "webm",
+            "codec": "vp9",
+            "width": 640,
+            "height": 480,
+            "frame_count": 4,
+        }
+
+    monkeypatch.setattr(media, "save_browser_recording_stream", fake_save, raising=False)
+    client = create_app(allowed_roots=[tmp_path]).test_client()
+    response = client.post(
+        "/api/save-recording-stream",
+        query_string={
+            "format": "webm",
+            "source_format": "webm",
+            "output_dir": str(tmp_path / "videos"),
+            "file_prefix": "stage",
+            "fps": "30",
+            "quality": "low",
+            "recording_width": "640",
+            "recording_height": "480",
+            "frame_count": "4",
+        },
+        data=b"append-only-webm",
+        content_type="video/webm",
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True
+    assert calls == [
+        {
+            "body": b"append-only-webm",
+            "output_dir": str(tmp_path / "videos"),
+            "file_prefix": "stage",
+            "output_format": "webm",
+            "source_format": "webm",
+            "fps": 30.0,
+            "quality": "low",
+            "recording_size": (640, 480),
+            "expected_frame_count": 4,
+        }
+    ]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("flask") is None,
+    reason="Flask is optional; install the app extra to test HTTP routes.",
+)
+def test_flask_save_recording_finalizes_mp4_and_gif(tmp_path, monkeypatch):
     from solar_toolkit.visualization.image_web_viewer import media
     from solar_toolkit.visualization.image_web_viewer.server import create_app
 
@@ -660,6 +801,7 @@ def test_flask_save_recording_transcodes_mp4_and_gif(tmp_path, monkeypatch):
         fps,
         quality,
         recording_size=None,
+        source_format="webm",
     ):
         transcode_calls.append(
             {
@@ -669,20 +811,37 @@ def test_flask_save_recording_transcodes_mp4_and_gif(tmp_path, monkeypatch):
                 "fps": fps,
                 "quality": quality,
                 "recording_size": recording_size,
+                "source_format": source_format,
             }
         )
         Path(output_path).write_bytes(b"converted")
         return True
 
     monkeypatch.setattr(media, "transcode_recording", fake_transcode)
+    monkeypatch.setattr(
+        media,
+        "probe_video",
+        lambda path, **kwargs: {
+            "codec": "vp9" if Path(path).suffix == ".webm" else "h264",
+            "width": 640,
+            "height": 480,
+            "frame_count": 1,
+            "duration": 1 / 7,
+        },
+        raising=False,
+    )
 
     client = create_app(allowed_roots=[tmp_path]).test_client()
-    for output_format in ["mp4", "gif"]:
+    for output_format, source_format in [("mp4", "mp4"), ("gif", "webm")]:
         response = client.post(
             "/api/save-recording",
             data={
-                "recording": (io.BytesIO(b"webm-data"), "recording.webm"),
+                "recording": (
+                    io.BytesIO(b"recording-data"),
+                    f"recording.{source_format}",
+                ),
                 "format": output_format,
+                "source_format": source_format,
                 "output_dir": str(tmp_path / "videos"),
                 "file_prefix": "stage",
                 "fps": "7",
@@ -701,6 +860,7 @@ def test_flask_save_recording_transcodes_mp4_and_gif(tmp_path, monkeypatch):
         assert Path(payload["path"]).read_bytes() == b"converted"
 
     assert [call["output_format"] for call in transcode_calls] == ["mp4", "gif"]
+    assert [call["source_format"] for call in transcode_calls] == ["mp4", "webm"]
     assert {call["fps"] for call in transcode_calls} == {7.0}
     assert {call["quality"] for call in transcode_calls} == {"high"}
     assert {call["recording_size"] for call in transcode_calls} == {(641, 479)}
@@ -773,10 +933,23 @@ def test_write_media_from_frames_streams_mp4_with_safe_ffmpeg_args(
         consumed_frames.extend(frame.shape for frame, _size in frame_iter)
         assert width == 7
         assert height == 5
+        Path(cmd[-1]).write_bytes(b"encoded")
         return True
 
     monkeypatch.setattr(media, "resolve_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(media, "resolve_ffprobe", lambda: "ffprobe")
     monkeypatch.setattr(media, "_run_ffmpeg_stream", fake_run_ffmpeg_stream)
+    monkeypatch.setattr(
+        media,
+        "probe_video",
+        lambda *args, **kwargs: {
+            "codec": "h264",
+            "width": 6,
+            "height": 4,
+            "frame_count": 1,
+            "duration": 1 / 30,
+        },
+    )
 
     frame = np.zeros((5, 7, 3), dtype=np.uint8)
     ok = media.write_media_from_frames(
@@ -800,3 +973,268 @@ def test_write_media_from_frames_streams_mp4_with_safe_ffmpeg_args(
     assert "fps=30" in filter_expr
     assert "scale=trunc(iw/2)*2:trunc(ih/2)*2" in filter_expr
     assert "format=yuv420p" in filter_expr
+
+
+def test_failed_recording_validation_preserves_existing_output(tmp_path, monkeypatch):
+    from solar_toolkit.visualization.image_web_viewer import media
+
+    output_dir = tmp_path / "videos"
+    output_dir.mkdir()
+    final_path = output_dir / "stage_recording.webm"
+    final_path.write_bytes(b"existing-good-video")
+
+    class UploadedRecording:
+        def save(self, path):
+            Path(path).write_bytes(b"not-a-video")
+
+    monkeypatch.setattr(
+        media,
+        "probe_video",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("Recording contains no decodable video frames.")
+        ),
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError, match="decodable video"):
+        media.save_browser_recording(
+            UploadedRecording(),
+            output_dir=output_dir,
+            file_prefix="stage",
+            output_format="webm",
+            source_format="webm",
+            fps=30,
+            quality="low",
+            recording_size=(640, 480),
+            expected_frame_count=3,
+        )
+
+    assert final_path.read_bytes() == b"existing-good-video"
+    assert not list(output_dir.glob("*.partial*"))
+
+
+def test_separate_prefetch_preserves_order_and_repeats_damaged_frames(monkeypatch):
+    from scripts.tools import image_sequence_to_video as sequence_video
+
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+
+    def fake_process(path, target_size):
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        try:
+            time.sleep(0.01 if path != "slow" else 0.03)
+            if path.startswith("bad"):
+                return sequence_video.FrameResult(
+                    None, None, path=path, error=ValueError("damaged")
+                )
+            value = 11 if path == "slow" else 22
+            frame = np.full((2, 4, 3), value, dtype=np.uint8)
+            return sequence_video.FrameResult(
+                frame, (4, 2), path=path, resized=False
+            )
+        finally:
+            with lock:
+                active -= 1
+
+    monkeypatch.setattr(sequence_video, "process_single_frame", fake_process)
+    frames = list(
+        sequence_video.iter_processed_frames(
+            ["bad-first", "slow", "fast", "bad-last"],
+            (4, 2),
+            workers=3,
+            batch_size=2,
+            missing_frame_policy="repeat",
+        )
+    )
+
+    assert len(frames) == 4
+    assert [int(frame[0, 0, 0]) for frame, _size in frames] == [0, 11, 22, 22]
+    assert max_active <= 2
+
+
+def test_sequence_validation_failure_preserves_existing_output(tmp_path, monkeypatch):
+    from solar_toolkit.visualization.image_web_viewer import media
+
+    output_path = tmp_path / "sequence.mp4"
+    output_path.write_bytes(b"existing-video")
+    frame = np.zeros((2, 4, 3), dtype=np.uint8)
+
+    def fake_run(cmd, frame_iter, *, width, height):
+        assert list(frame_iter)
+        Path(cmd[-1]).write_bytes(b"invalid-new-video")
+        return True
+
+    monkeypatch.setattr(media, "resolve_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(media, "resolve_ffprobe", lambda: "ffprobe")
+    monkeypatch.setattr(media, "_run_ffmpeg_stream", fake_run)
+    monkeypatch.setattr(
+        media,
+        "probe_video",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            media.MediaProcessingError("Recording contains no decodable video frames.")
+        ),
+    )
+
+    assert not media.write_frames_ffmpeg_stream(
+        [(frame, (4, 2))],
+        output_path,
+        fps=30,
+        width=4,
+        height=2,
+        output_format="mp4",
+        quality="low",
+    )
+    assert output_path.read_bytes() == b"existing-video"
+    assert not list(tmp_path.glob("*.partial-*"))
+    assert media._encoded_size("mp4", 1, 1) == (2, 2)
+
+
+def test_cancelled_recording_does_not_publish_or_leave_temporary_files(
+    tmp_path, monkeypatch
+):
+    from solar_toolkit.visualization.image_web_viewer import media
+
+    output_dir = tmp_path / "videos"
+    output_dir.mkdir()
+    output_path = output_dir / "stage_recording.webm"
+    output_path.write_bytes(b"existing-video")
+    canceled = False
+
+    monkeypatch.setattr(
+        media,
+        "probe_video",
+        lambda *args, **kwargs: {
+            "codec": "vp9",
+            "width": 4,
+            "height": 2,
+            "frame_count": 2,
+            "duration": 2 / 30,
+        },
+    )
+
+    def fake_transcode(input_path, temporary_output, *args, **kwargs):
+        nonlocal canceled
+        Path(temporary_output).write_bytes(b"new-video")
+        canceled = True
+        return True
+
+    monkeypatch.setattr(media, "transcode_recording", fake_transcode)
+
+    with pytest.raises(media.MediaProcessingError, match="canceled"):
+        media.save_browser_recording_stream(
+            io.BytesIO(b"valid-source"),
+            output_dir=output_dir,
+            file_prefix="stage",
+            output_format="webm",
+            source_format="webm",
+            fps=30,
+            quality="low",
+            recording_size=(4, 2),
+            expected_frame_count=2,
+            cancel_check=lambda: canceled,
+        )
+
+    assert output_path.read_bytes() == b"existing-video"
+    assert not list(output_dir.glob(".*.upload-*"))
+    assert not list(output_dir.glob("*.partial-*"))
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("flask") is None,
+    reason="Flask is optional; install the app extra to test HTTP routes.",
+)
+def test_flask_recording_cancel_reaches_active_save(tmp_path, monkeypatch):
+    from solar_toolkit.visualization.image_web_viewer import media
+    from solar_toolkit.visualization.image_web_viewer.server import create_app
+
+    save_started = threading.Event()
+    responses = []
+
+    def fake_save(recording_file, **kwargs):
+        cancel_check = kwargs["cancel_check"]
+        save_started.set()
+        deadline = time.monotonic() + 2
+        while not cancel_check() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if cancel_check():
+            raise media.MediaProcessingError("Recording canceled.")
+        raise AssertionError("Cancellation did not reach the active save")
+
+    monkeypatch.setattr(media, "save_browser_recording", fake_save)
+    app = create_app(allowed_roots=[tmp_path])
+
+    def post_recording():
+        with app.test_client() as client:
+            responses.append(
+                client.post(
+                    "/api/save-recording",
+                    data={
+                        "recording": (io.BytesIO(b"video"), "recording.webm"),
+                        "format": "webm",
+                        "source_format": "webm",
+                        "output_dir": str(tmp_path),
+                        "recording_id": "recording-test-1234",
+                    },
+                    content_type="multipart/form-data",
+                )
+            )
+
+    worker = threading.Thread(target=post_recording)
+    worker.start()
+    assert save_started.wait(timeout=1)
+    with app.test_client() as client:
+        canceled_response = client.post(
+            "/api/cancel-recording",
+            json={"recording_id": "recording-test-1234"},
+        )
+    worker.join(timeout=3)
+
+    assert not worker.is_alive()
+    assert canceled_response.status_code == 200
+    assert responses[0].status_code == 400
+    assert responses[0].get_json()["error"] == "Recording canceled."
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("flask") is None,
+    reason="Flask is optional; install the app extra to test HTTP routes.",
+)
+def test_flask_stream_rejects_nonempty_invalid_media_and_partial_size(tmp_path):
+    from solar_toolkit.visualization.image_web_viewer import media
+    from solar_toolkit.visualization.image_web_viewer.server import create_app
+
+    if not media.resolve_ffprobe():
+        pytest.skip("FFprobe is not available")
+    client = create_app(allowed_roots=[tmp_path]).test_client()
+    invalid_media = client.post(
+        "/api/save-recording-stream",
+        query_string={
+            "format": "webm",
+            "source_format": "webm",
+            "output_dir": str(tmp_path / "videos"),
+            "file_prefix": "invalid",
+        },
+        data=b"not-a-webm-stream",
+        content_type="video/webm",
+    )
+    partial_size = client.post(
+        "/api/save-recording-stream",
+        query_string={
+            "format": "webm",
+            "source_format": "webm",
+            "output_dir": str(tmp_path / "videos"),
+            "file_prefix": "partial-size",
+            "recording_width": "640",
+        },
+        data=b"nonempty",
+        content_type="video/webm",
+    )
+
+    assert invalid_media.status_code == 400
+    assert "decodable video" in invalid_media.get_json()["error"]
+    assert partial_size.status_code == 400
+    assert partial_size.get_json()["error"] == "Width and height must be set together."

@@ -97,8 +97,9 @@ Use these only after local data paths are configured:
 - AIA EUV products: `scripts/aia_hmi/run_aia_euv_processor.py`
 - Full radio burst processing: `scripts/radio/run_radio_burst_pipeline.py`
 - Radio-source center extraction: `scripts/radio/extract_radio_centers.py`
-- Radio-source trajectory playback: `scripts/radio/run_radio_source_app.py`
-- Multi-folder image review and MP4 export:
+- Radio-source trajectory playback plus MP4/WebM browser recording and
+  MP4/GIF/WebM backend export: `scripts/radio/run_radio_source_app.py`
+- Multi-folder image review and MP4/GIF/WebM recording or export:
   `scripts/tools/run_image_web_viewer.py`
 - Unified local English web GUI:
   `scripts/tools/run_solar_webapp.py`

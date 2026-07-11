@@ -12,6 +12,7 @@ import os
 import sys
 import time
 from copy import deepcopy
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,7 @@ from solar_toolkit.radio.trajectory import (
     select_visible_centers,
     summarize_motion,
 )
+from solar_toolkit.visualization.media_assets import read_asset_text
 from solar_toolkit.visualization.radio_source_trajectory import (
     FACET_BY_OPTIONS,
     MARKER_SYMBOL_OPTIONS,
@@ -51,7 +53,7 @@ from solar_toolkit.visualization.radio_source_trajectory import (
 )
 from solar_toolkit.visualization.radio_source_video import (
     VideoExportOptions,
-    export_radio_source_video_mp4,
+    export_radio_source_video,
 )
 
 THEME_MODES = ("light", "dark", "auto")
@@ -60,6 +62,9 @@ PLAYBACK_RENDERERS = ("preloaded", "streamlit")
 VIDEO_DEFAULT_WIDTH = 1280
 VIDEO_DEFAULT_HEIGHT = 720
 VIDEO_DEFAULT_FPS = 6.0
+VIDEO_OUTPUT_FORMATS = ("mp4", "gif", "webm")
+BROWSER_RECORDING_FORMATS = ("mp4", "webm")
+VIDEO_QUALITY_OPTIONS = ("low", "high")
 DEFAULT_MARKER_SIZE = 8
 DEFAULT_TRAIL_MIN_OPACITY = 0.25
 DEFAULT_PLAYBACK_AIA_MAX_PIXELS = 384
@@ -96,6 +101,10 @@ DEFAULT_APP_SETTINGS: dict[str, Any] = {
     "video_width": VIDEO_DEFAULT_WIDTH,
     "video_height": VIDEO_DEFAULT_HEIGHT,
     "video_fps": VIDEO_DEFAULT_FPS,
+    "video_output_format": "mp4",
+    "video_browser_format": "webm",
+    "video_quality": "high",
+    "video_output_path": "",
     "video_include_aia": True,
     "playback_renderer": "preloaded",
     "playback_aia_max_pixels": DEFAULT_PLAYBACK_AIA_MAX_PIXELS,
@@ -537,10 +546,26 @@ def build_preloaded_playback_payload(
     }
 
 
+@lru_cache(maxsize=1)
+def bundled_browser_media_scripts() -> tuple[str, str]:
+    """Return the bundled Mediabunny and shared recorder scripts."""
+
+    return (
+        read_asset_text("mediabunny-1.50.8.cjs"),
+        read_asset_text("browser_media.js"),
+    )
+
+
+def _escape_inline_script(source: str) -> str:
+    return str(source).replace("</script", "<\\/script")
+
+
 def build_preloaded_playback_html(
     payload: dict[str, object],
     *,
     plotly_js: str | None = None,
+    mediabunny_js: str | None = None,
+    browser_media_js: str | None = None,
 ) -> str:
     """Return standalone HTML for the browser-side preloaded player."""
 
@@ -548,6 +573,13 @@ def build_preloaded_playback_html(
         from plotly.offline import get_plotlyjs
 
         plotly_js = get_plotlyjs()
+    if mediabunny_js is None or browser_media_js is None:
+        bundled_mediabunny, bundled_browser_media = bundled_browser_media_scripts()
+        mediabunny_js = mediabunny_js or bundled_mediabunny
+        browser_media_js = browser_media_js or bundled_browser_media
+    plotly_js = _escape_inline_script(plotly_js)
+    mediabunny_js = _escape_inline_script(mediabunny_js)
+    browser_media_js = _escape_inline_script(browser_media_js)
     payload_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
     return f"""<!doctype html>
 <html>
@@ -595,7 +627,9 @@ html, body {{
 .radio-status {{
   color: #475569;
   font-size: 13px;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }}
 #radio-preloaded-plot {{
   width: 100%;
@@ -603,6 +637,8 @@ html, body {{
 }}
 </style>
 <script>{plotly_js}</script>
+<script>{mediabunny_js}</script>
+<script>{browser_media_js}</script>
 </head>
 <body>
 <div class="radio-player">
@@ -619,8 +655,8 @@ html, body {{
     <button id="radio-reset-view" type="button" title="Reset all plot axes to the initial data range." aria-label="Reset all plot axes">Reset</button>
     <button id="radio-sync-view" type="button" title="Synchronize all facet plots to the last adjusted view." aria-label="Synchronize facet plot views">Sync</button>
     <button id="radio-link-views" type="button" title="Toggle live synchronization between facet plot views." aria-label="Toggle linked facet views">Link</button>
-    <button id="radio-record" type="button" title="Record the current smooth playback as WebM." aria-label="Record WebM video">Record</button>
-    <a id="radio-download" href="#" download="radio-source-trajectory.webm" aria-disabled="true" title="Download the recorded WebM after recording finishes." aria-label="Download recorded WebM">WebM</a>
+    <button id="radio-record" type="button" title="Record the selected frame range." aria-label="Record selected frame range">Record</button>
+    <a id="radio-download" href="#" download="radio-source-trajectory.webm" aria-disabled="true" title="Download the completed browser recording." aria-label="Download browser recording">Download</a>
     <div id="radio-status" class="radio-status"></div>
   </div>
   <div id="radio-preloaded-plot"></div>
@@ -645,6 +681,10 @@ let plotInitialized = false;
 let lastRelayoutAxis = 0;
 let relayoutGuard = false;
 let linkViews = Boolean(radioPayload.config.link_views);
+let recordingSession = null;
+let recordingActive = false;
+let recordingCancelRequested = false;
+let recordingDownloadUrl = null;
 
 function activeTheme() {{
   const themes = radioPayload.layout.themes || {{}};
@@ -936,10 +976,6 @@ function startPlayback() {{
   }}, intervalMs());
 }}
 
-function delay(ms) {{
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}}
-
 async function blobToImage(blob) {{
   const url = URL.createObjectURL(blob);
   try {{
@@ -961,96 +997,173 @@ async function dataUrlToImage(dataUrl) {{
   return blobToImage(blob);
 }}
 
-function releaseRecordingFrames(images) {{
-  for (const image of images) {{
-    if (image && typeof image.close === "function") {{
-      image.close();
-    }}
-  }}
-}}
-
-async function prepareRecordingFrames(width, height) {{
-  const images = [];
-  for (let i = 0; i < radioPayload.frames.length; i += 1) {{
-    statusEl.textContent = `Preloading recording frame ${{i + 1}} / ${{radioPayload.frames.length}}`;
-    await renderFrame(i);
-    await delay(20);
-    const dataUrl = await Plotly.toImage(plotEl, {{
-      format: "png",
-      width,
-      height,
-      scale: 1
-    }});
-    images.push(await dataUrlToImage(dataUrl));
-  }}
-  return images;
-}}
-
 function drawRecordingFrame(ctx, image, width, height) {{
   ctx.fillStyle = activeTheme().paper_bgcolor || "#ffffff";
   ctx.fillRect(0, 0, width, height);
-  ctx.drawImage(image, 0, 0, width, height);
+  const sourceWidth = Math.max(1, Number(image.naturalWidth || image.width || width));
+  const sourceHeight = Math.max(1, Number(image.naturalHeight || image.height || height));
+  const scale = Math.min(width / sourceWidth, height / sourceHeight);
+  const drawWidth = Math.max(1, Math.round(sourceWidth * scale));
+  const drawHeight = Math.max(1, Math.round(sourceHeight * scale));
+  const offsetX = Math.floor((width - drawWidth) / 2);
+  const offsetY = Math.floor((height - drawHeight) / 2);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
 }}
 
-async function recordWebm() {{
-  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) {{
-    statusEl.textContent = "Browser recording is not supported here.";
-    return;
+function recordingOptions() {{
+  const configured = radioPayload.config.recording || {{}};
+  const total = radioPayload.frames.length;
+  const startFrame = Math.max(0, Math.min(total, Math.floor(Number(configured.start_frame || 0))));
+  const requestedEnd = Number.isFinite(Number(configured.end_frame))
+    ? Math.floor(Number(configured.end_frame))
+    : total;
+  const endFrame = Math.max(startFrame, Math.min(total, requestedEnd));
+  const normalizedFormat = SolarToolkitMedia.normalizeOutputFormat(configured.format, "webm");
+  const format = normalizedFormat === "mp4" ? "mp4" : "webm";
+  const size = SolarToolkitMedia.normalizeEvenSize(
+    configured.width || plotEl.clientWidth || 960,
+    configured.height || radioPayload.layout.height || 760,
+    320,
+    240
+  );
+  return {{
+    startFrame,
+    endFrame,
+    frameCount: Math.max(0, endFrame - startFrame),
+    fps: Math.max(0.2, Number(configured.fps || radioPayload.config.fps || 2)),
+    quality: SolarToolkitMedia.normalizeQuality(configured.quality, "high"),
+    format,
+    width: size.width,
+    height: size.height
+  }};
+}}
+
+function setRecordingControls(active) {{
+  for (const control of [playEl, prevEl, progressEl, speedEl, resetViewEl, syncViewEl, linkViewsEl]) {{
+    control.disabled = active;
   }}
-  stopPlayback();
-  recordEl.disabled = true;
+}}
+
+function clearRecordingDownload() {{
+  if (recordingDownloadUrl) URL.revokeObjectURL(recordingDownloadUrl);
+  recordingDownloadUrl = null;
   downloadEl.removeAttribute("href");
   downloadEl.setAttribute("aria-disabled", "true");
-  const width = Math.max(320, Math.round(plotEl.clientWidth || 960));
-  const height = Math.max(240, Number(radioPayload.layout.height || 760));
+  downloadEl.textContent = "Download";
+}}
+
+async function cancelRangeRecording() {{
+  if (!recordingActive) return;
+  recordingCancelRequested = true;
+  recordEl.disabled = true;
+  recordEl.textContent = "Canceling...";
+  if (recordingSession) {{
+    try {{
+      await recordingSession.cancel();
+    }} catch (_cancelError) {{}}
+  }}
+}}
+
+async function recordSelectedRange() {{
+  if (recordingActive) {{
+    await cancelRangeRecording();
+    return;
+  }}
+  if (!window.SolarToolkitMedia || !window.Mediabunny) {{
+    statusEl.textContent = "Deterministic browser recording is unavailable.";
+    return;
+  }}
+  const options = recordingOptions();
+  if (options.frameCount <= 0) {{
+    statusEl.textContent = "The selected recording range is empty.";
+    return;
+  }}
+
+  stopPlayback();
+  recordingActive = true;
+  const originalFrame = frameIndex;
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  const fps = Math.max(0.2, Number(radioPayload.config.fps || 2));
-  const preparedImages = [];
-  let stream = null;
-  let recorder = null;
+  canvas.width = options.width;
+  canvas.height = options.height;
+  const ctx = canvas.getContext("2d", {{alpha: false}});
+  if (!ctx) {{
+    statusEl.textContent = "Could not create the recording canvas.";
+    return;
+  }}
+
+  clearRecordingDownload();
+  recordingCancelRequested = false;
+  setRecordingControls(true);
+  recordEl.textContent = "Cancel";
+  let finalMessage = "Recording canceled.";
   try {{
-    preparedImages.push(...await prepareRecordingFrames(width, height));
-    stream = canvas.captureStream(fps);
-    const chunks = [];
-    recorder = new MediaRecorder(stream, {{mimeType: "video/webm"}});
-    recorder.ondataavailable = (event) => {{
-      if (event.data && event.data.size > 0) chunks.push(event.data);
-    }};
-    statusEl.textContent = "Recording preloaded frames...";
-    recorder.start();
-    for (let i = 0; i < preparedImages.length; i += 1) {{
-      drawRecordingFrame(ctx, preparedImages[i], width, height);
-      const tracks = stream.getVideoTracks ? stream.getVideoTracks() : [];
-      for (const track of tracks) {{
-        if (typeof track.requestFrame === "function") track.requestFrame();
-      }}
-      await delay(1000 / fps);
-    }}
-    await new Promise((resolve) => {{
-      recorder.onstop = resolve;
-      recorder.stop();
+    recordingSession = await SolarToolkitMedia.createCanvasRecorder({{
+      canvas,
+      format: options.format,
+      quality: options.quality,
+      fps: options.fps,
+      targetMode: "buffer",
+      contentHint: "detail"
     }});
-    const blob = new Blob(chunks, {{type: "video/webm"}});
-    const url = URL.createObjectURL(blob);
-    downloadEl.href = url;
-    downloadEl.setAttribute("aria-disabled", "false");
-    statusEl.textContent = `WebM ready (${{(blob.size / 1024 / 1024).toFixed(2)}} MB)`;
-  }} catch (error) {{
-    if (recorder && recorder.state !== "inactive") {{
+    for (let index = options.startFrame; index < options.endFrame; index += 1) {{
+      if (recordingCancelRequested) throw new DOMException("Recording canceled.", "AbortError");
+      await renderFrame(index);
+      const dataUrl = await Plotly.toImage(plotEl, {{
+        format: "png",
+        width: Math.max(320, Math.round(plotEl.clientWidth || 960)),
+        height: Math.max(240, Number(radioPayload.layout.height || 760)),
+        scale: 1
+      }});
+      const image = await dataUrlToImage(dataUrl);
       try {{
-        recorder.stop();
-      }} catch (_stopError) {{}}
+        drawRecordingFrame(ctx, image, options.width, options.height);
+        const offset = index - options.startFrame;
+        await recordingSession.addFrame(offset / options.fps, 1 / options.fps, {{
+          keyFrame: offset === 0
+        }});
+        statusEl.textContent = `Encoding ${{offset + 1}} / ${{options.frameCount}}`;
+      }} finally {{
+        if (image && typeof image.close === "function") image.close();
+      }}
     }}
-    statusEl.textContent = `WebM recording failed: ${{error && error.message ? error.message : error}}`;
+    const result = await recordingSession.finalize();
+    if (recordingCancelRequested) throw new DOMException("Recording canceled.", "AbortError");
+    if (!(result.buffer instanceof ArrayBuffer) || result.buffer.byteLength === 0) {{
+      throw new Error("The browser encoder produced an empty recording.");
+    }}
+    const mimeType = options.format === "mp4" ? "video/mp4" : "video/webm";
+    const blob = new Blob([result.buffer], {{type: mimeType}});
+    recordingDownloadUrl = URL.createObjectURL(blob);
+    downloadEl.href = recordingDownloadUrl;
+    downloadEl.download = `radio-source-trajectory-${{options.startFrame + 1}}-${{options.endFrame}}.${{options.format}}`;
+    downloadEl.textContent = options.format.toUpperCase();
+    downloadEl.setAttribute("aria-disabled", "false");
+    finalMessage = `${{options.format.toUpperCase()}} ready: ${{options.frameCount}} frames, ${{result.codec}}, ${{(blob.size / 1024 / 1024).toFixed(2)}} MB`;
+  }} catch (error) {{
+    if (!recordingCancelRequested) {{
+      const detail = error && error.message ? error.message : String(error);
+      finalMessage = `Browser recording failed: ${{detail}}`;
+    }}
   }} finally {{
-    if (stream) {{
-      stream.getTracks().forEach((track) => track.stop());
+    const session = recordingSession;
+    recordingSession = null;
+    if (session && !["canceled", "finalized"].includes(session.state)) {{
+      try {{
+        await session.cancel();
+      }} catch (_cleanupError) {{}}
     }}
-    releaseRecordingFrames(preparedImages);
+    recordingActive = false;
+    recordingCancelRequested = false;
     recordEl.disabled = false;
+    recordEl.textContent = "Record";
+    setRecordingControls(false);
+    try {{
+      await renderFrame(originalFrame);
+    }} finally {{
+      statusEl.textContent = finalMessage;
+    }}
   }}
 }}
 
@@ -1063,7 +1176,14 @@ progressEl.addEventListener("input", () => renderFrame(Number(progressEl.value))
 speedEl.addEventListener("change", () => {{
   if (timer !== null) startPlayback();
 }});
-recordEl.addEventListener("click", () => recordWebm());
+recordEl.addEventListener("click", () => void recordSelectedRange());
+downloadEl.addEventListener("click", (event) => {{
+  if (downloadEl.getAttribute("aria-disabled") === "true") event.preventDefault();
+}});
+window.addEventListener("beforeunload", () => {{
+  if (recordingSession) void recordingSession.cancel();
+  if (recordingDownloadUrl) URL.revokeObjectURL(recordingDownloadUrl);
+}});
 resetViewEl.addEventListener("click", () => resetView());
 syncViewEl.addEventListener("click", () => syncViews());
 linkViewsEl.addEventListener("click", () => {{
@@ -1358,7 +1478,6 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         import streamlit as st
-        import streamlit.components.v1 as components
     except ImportError as exc:  # pragma: no cover - depends on optional extra.
         raise SystemExit(
             "Streamlit is required for this frontend. Install with: "
@@ -1709,13 +1828,37 @@ def main(argv: list[str] | None = None) -> None:
                 help="Keep facet zoom and pan ranges synchronized.",
             )
             st.subheader("Video Export")
+            video_output_format = st.selectbox(
+                "Backend format",
+                VIDEO_OUTPUT_FORMATS,
+                index=_choice_index(
+                    VIDEO_OUTPUT_FORMATS, settings["video_output_format"]
+                ),
+                format_func=lambda value: value.upper(),
+                help="Format used by the reproducible backend export.",
+            )
+            video_browser_format = st.selectbox(
+                "Browser format",
+                BROWSER_RECORDING_FORMATS,
+                index=_choice_index(
+                    BROWSER_RECORDING_FORMATS, settings["video_browser_format"]
+                ),
+                format_func=lambda value: value.upper(),
+                help="Format downloaded by deterministic recording in the browser player.",
+            )
+            video_quality = st.selectbox(
+                "Video quality",
+                VIDEO_QUALITY_OPTIONS,
+                index=_choice_index(VIDEO_QUALITY_OPTIONS, settings["video_quality"]),
+                help="Shared encoding quality for browser recording and backend export.",
+            )
             video_width = st.number_input(
                 "Video width / px",
                 min_value=320,
                 max_value=3840,
                 value=int(settings["video_width"]),
                 step=160,
-                help="Width of backend MP4 export.",
+                help="Width used by browser recording and backend export.",
             )
             video_height = st.number_input(
                 "Video height / px",
@@ -1723,7 +1866,7 @@ def main(argv: list[str] | None = None) -> None:
                 max_value=2160,
                 value=int(settings["video_height"]),
                 step=90,
-                help="Height of backend MP4 export.",
+                help="Height used by browser recording and backend export.",
             )
             video_fps = st.number_input(
                 "Video FPS",
@@ -1731,20 +1874,22 @@ def main(argv: list[str] | None = None) -> None:
                 max_value=60.0,
                 value=float(settings["video_fps"]),
                 step=0.5,
-                help="Frame rate used for backend MP4 export.",
+                help="Frame rate used by browser recording and backend export.",
             )
             video_include_aia = st.checkbox(
                 "Include AIA background in exported video",
                 value=bool(settings["video_include_aia"]),
-                help="Include the AIA background layer in backend MP4 export when AIA is enabled.",
+                help="Include the AIA background layer in backend video export when AIA is enabled.",
             )
-            default_video_path = (
-                settings_file.parent / "radio_source_trajectory_export.mp4"
+            configured_video_path = str(settings["video_output_path"]).strip()
+            default_video_path = configured_video_path or str(
+                settings_file.parent
+                / f"radio_source_trajectory_export.{video_output_format}"
             )
             video_output_path = st.text_input(
-                "MP4 output path",
-                value=str(default_video_path),
-                help="Output file path for backend MP4 export.",
+                "Video output path",
+                value=default_video_path,
+                help="Full backend output path; its extension follows Backend format.",
             )
             show_debug_tables = st.checkbox(
                 "Show debug tables",
@@ -1879,6 +2024,10 @@ def main(argv: list[str] | None = None) -> None:
             "video_width": int(video_width),
             "video_height": int(video_height),
             "video_fps": float(video_fps),
+            "video_output_format": str(video_output_format),
+            "video_browser_format": str(video_browser_format),
+            "video_quality": str(video_quality),
+            "video_output_path": str(video_output_path),
             "video_include_aia": bool(video_include_aia),
             "playback_renderer": str(playback_renderer),
             "playback_aia_max_pixels": int(playback_aia_max_pixels),
@@ -1927,20 +2076,74 @@ def main(argv: list[str] | None = None) -> None:
 
     motion_summary = _cached_summarize_motion(selected)
 
+    video_frame_count = len(times)
+    current_start = min(
+        max(1, int(st.session_state.get("video_start_frame", 1))),
+        video_frame_count,
+    )
+    current_end = min(
+        max(current_start, int(st.session_state.get("video_end_frame", video_frame_count))),
+        video_frame_count,
+    )
+    st.session_state.video_start_frame = current_start
+    st.session_state.video_end_frame = current_end
+    st.session_state.video_start_frame_input = min(
+        max(
+            1,
+            int(st.session_state.get("video_start_frame_input", current_start)),
+        ),
+        video_frame_count,
+    )
+    st.session_state.video_end_frame_input = min(
+        max(
+            current_start,
+            int(st.session_state.get("video_end_frame_input", current_end)),
+        ),
+        video_frame_count,
+    )
+
     with st.expander("Video Export", expanded=False):
         st.caption(
-            "MP4 uses the current filters, time window, layout, tail length, "
-            "theme, and playback timeline. WebM recording is available inside "
-            "the preloaded browser player."
+            "Browser recording and backend export use the same frame range, "
+            "size, frame rate, and quality."
         )
+        range_start_col, range_end_col = st.columns(2)
+        with range_start_col:
+            video_start_frame = int(
+                st.number_input(
+                    "Start frame",
+                    min_value=1,
+                    max_value=video_frame_count,
+                    step=1,
+                    key="video_start_frame_input",
+                )
+            )
+        st.session_state.video_end_frame_input = min(
+            max(video_start_frame, int(st.session_state.video_end_frame_input)),
+            video_frame_count,
+        )
+        with range_end_col:
+            video_end_frame = int(
+                st.number_input(
+                    "End frame",
+                    min_value=video_start_frame,
+                    max_value=video_frame_count,
+                    step=1,
+                    key="video_end_frame_input",
+                )
+            )
+        st.session_state.video_start_frame = video_start_frame
+        st.session_state.video_end_frame = video_end_frame
         if st.button(
-            "Export MP4",
+            "Export Video",
             width="stretch",
-            help="Render a backend MP4 using the current filters, layout, theme, and timeline.",
+            help="Render the selected range with the current filters, layout, theme, and timeline.",
         ):
             try:
-                with st.spinner("Exporting MP4 video..."):
-                    exported = export_radio_source_video_mp4(
+                with st.spinner(
+                    f"Exporting {str(video_output_format).upper()} video..."
+                ):
+                    exported = export_radio_source_video(
                         selected,
                         times,
                         frame_mode=frame_mode,
@@ -1950,6 +2153,8 @@ def main(argv: list[str] | None = None) -> None:
                         aia_table=aia_table if bool(use_aia and aia_dir) else None,
                         options=VideoExportOptions(
                             out_path=video_output_path,
+                            output_format=str(video_output_format),
+                            quality=str(video_quality),
                             fps=float(video_fps),
                             width=int(video_width),
                             height=int(video_height),
@@ -1967,11 +2172,13 @@ def main(argv: list[str] | None = None) -> None:
                             ),
                             log_scale=bool(log_scale),
                             wcs_mode=wcs_mode,
+                            start_frame=video_start_frame - 1,
+                            end_frame=video_end_frame,
                         ),
                     )
-                st.success(f"MP4 exported: {exported}")
+                st.success(f"Video exported: {exported}")
             except Exception as exc:
-                st.error(f"MP4 export failed: {exc}")
+                st.error(f"Video export failed: {exc}")
 
     playback_interval = playback_interval_seconds(
         float(fps),
@@ -2261,11 +2468,28 @@ def main(argv: list[str] | None = None) -> None:
             )
 
         if isinstance(session_payload, dict):
-            html = build_preloaded_playback_html(session_payload)
+            player_payload = dict(session_payload)
+            player_config = dict(player_payload.get("config", {}))
+            player_config["recording"] = {
+                "format": str(video_browser_format),
+                "quality": str(video_quality),
+                "fps": float(video_fps),
+                "width": int(video_width),
+                "height": int(video_height),
+                "start_frame": int(video_start_frame) - 1,
+                "end_frame": int(video_end_frame),
+            }
+            player_payload["config"] = player_config
+            html = build_preloaded_playback_html(player_payload)
             component_height = (
                 int(session_payload.get("layout", {}).get("height", 760)) + 112
             )
-            components.html(html, height=component_height, scrolling=False)
+            if hasattr(st, "iframe"):
+                st.iframe(html, height=component_height, width="stretch")
+            else:  # pragma: no cover - compatibility with Streamlit < 1.58.
+                from streamlit.components.v1 import html as render_component_html
+
+                render_component_html(html, height=component_height, scrolling=False)
             stats = dict(session_payload.get("stats", {}))
             stats["payload_size_mb"] = round(
                 _preloaded_payload_size_mb(session_payload),
@@ -2388,6 +2612,22 @@ def _coerce_app_settings(settings: dict[str, Any]) -> dict[str, Any]:
         60.0,
         max(0.2, _safe_float(result["video_fps"], VIDEO_DEFAULT_FPS)),
     )
+    result["video_output_format"] = _choice_value(
+        VIDEO_OUTPUT_FORMATS,
+        result["video_output_format"],
+        "mp4",
+    )
+    result["video_browser_format"] = _choice_value(
+        BROWSER_RECORDING_FORMATS,
+        result["video_browser_format"],
+        "webm",
+    )
+    result["video_quality"] = _choice_value(
+        VIDEO_QUALITY_OPTIONS,
+        result["video_quality"],
+        "high",
+    )
+    result["video_output_path"] = str(result["video_output_path"] or "").strip()
     result["percentile_limits"] = _coerce_percentile_limits(result["percentile_limits"])
     for key in (
         "use_aia",

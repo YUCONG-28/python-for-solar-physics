@@ -78,6 +78,7 @@ exclude = ["tests*", "examples*", "docs*"]
     "static/*.css",
     "static/*.js",
 ]
+"solar_toolkit.visualization.media_assets" = ["*.cjs", "*.js", "*.txt"]
 "solar_toolkit.webapp" = [
     "templates/*.html",
     "static/*.css",

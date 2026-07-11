@@ -11,8 +11,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from solar_toolkit.visualization import media, media_assets
+
 from . import export as export_mod
-from . import media
 from .export import ExportConfig
 
 IMAGE_EXTENSIONS = {
@@ -186,7 +187,7 @@ def create_app(
 ):
     """Create the Flask app. Flask is imported lazily because it is optional."""
 
-    from flask import Flask, jsonify, render_template, request, send_file
+    from flask import Flask, Response, jsonify, render_template, request, send_file
 
     package_dir = Path(__file__).resolve().parent
     app = Flask(
@@ -195,6 +196,8 @@ def create_app(
         static_folder=str(package_dir / "static"),
     )
     sessions: dict[str, list[dict[str, Any]]] = {}
+    cancelled_recordings: dict[str, float] = {}
+    cancellation_lock = threading.Lock()
     roots = normalize_allowed_roots(allowed_roots)
     default_output_format = media.normalize_output_format(default_output_format)
     lifecycle = ClientLifecycle(
@@ -204,12 +207,45 @@ def create_app(
         heartbeat_timeout_seconds=heartbeat_timeout_seconds,
     )
 
+    def prune_recording_cancellations(now: float) -> None:
+        expired = [
+            recording_id
+            for recording_id, canceled_at in cancelled_recordings.items()
+            if now - canceled_at > 600.0
+        ]
+        for recording_id in expired:
+            cancelled_recordings.pop(recording_id, None)
+
+    def mark_recording_cancelled(recording_id: str) -> None:
+        with cancellation_lock:
+            now = time.monotonic()
+            prune_recording_cancellations(now)
+            cancelled_recordings[recording_id] = now
+
+    def is_recording_cancelled(recording_id: str) -> bool:
+        with cancellation_lock:
+            prune_recording_cancellations(time.monotonic())
+            return recording_id in cancelled_recordings
+
+    def clear_recording_cancellation(recording_id: str) -> None:
+        with cancellation_lock:
+            cancelled_recordings.pop(recording_id, None)
+
     @app.get("/")
     def index():
         return render_template(
             "index.html",
             default_output_format=default_output_format,
         )
+
+    @app.get("/media-assets/<name>")
+    def media_asset(name: str):
+        try:
+            content = media_assets.read_asset_bytes(name)
+            content_type = media_assets.asset_mimetype(name)
+        except FileNotFoundError:
+            return "media asset not found", 404
+        return Response(content, content_type=content_type)
 
     @app.post("/api/load")
     def load_folders():
@@ -325,25 +361,91 @@ def create_app(
         output_dir = request.form.get("output_dir") or "outputs/image_web_viewer"
         file_prefix = request.form.get("file_prefix") or "image_viewer"
         output_format = request.form.get("format") or default_output_format
+        source_format = request.form.get("source_format") or "webm"
         fps = _float_form(request.form.get("fps"), default=5.0)
         quality = request.form.get("quality") or "low"
 
+        recording_id: str | None = None
         try:
+            recording_id = _optional_recording_id(request.form.get("recording_id"))
             recording_size = _optional_size(
                 request.form.get("recording_width"),
                 request.form.get("recording_height"),
             )
-            result = media.save_browser_recording(
-                recording_file,
-                output_dir=output_dir,
-                file_prefix=file_prefix,
-                output_format=output_format,
-                fps=fps,
-                quality=quality,
-                recording_size=recording_size,
-            )
+            save_kwargs = {
+                "output_dir": output_dir,
+                "file_prefix": file_prefix,
+                "output_format": output_format,
+                "source_format": source_format,
+                "fps": fps,
+                "quality": quality,
+                "recording_size": recording_size,
+                "expected_frame_count": _optional_positive_int(
+                    request.form.get("frame_count")
+                ),
+            }
+            if recording_id:
+                save_kwargs["cancel_check"] = lambda: is_recording_cancelled(
+                    recording_id
+                )
+            result = media.save_browser_recording(recording_file, **save_kwargs)
             return jsonify({"ok": True, **result})
         except Exception as exc:
+            return jsonify(_media_error_payload(exc)), 400
+        finally:
+            if recording_id:
+                clear_recording_cancellation(recording_id)
+
+    @app.post("/api/save-recording-stream")
+    def save_recording_stream():
+        output_dir = request.args.get("output_dir") or "outputs/image_web_viewer"
+        file_prefix = request.args.get("file_prefix") or "image_viewer"
+        output_format = request.args.get("format") or default_output_format
+        source_format = request.args.get("source_format") or "webm"
+        fps = _float_form(request.args.get("fps"), default=5.0)
+        quality = request.args.get("quality") or "low"
+
+        recording_id: str | None = None
+        try:
+            recording_id = _optional_recording_id(request.args.get("recording_id"))
+            recording_size = _optional_size(
+                request.args.get("recording_width"),
+                request.args.get("recording_height"),
+            )
+            save_kwargs = {
+                "output_dir": output_dir,
+                "file_prefix": file_prefix,
+                "output_format": output_format,
+                "source_format": source_format,
+                "fps": fps,
+                "quality": quality,
+                "recording_size": recording_size,
+                "expected_frame_count": _optional_positive_int(
+                    request.args.get("frame_count")
+                ),
+            }
+            if recording_id:
+                save_kwargs["cancel_check"] = lambda: is_recording_cancelled(
+                    recording_id
+                )
+            result = media.save_browser_recording_stream(request.stream, **save_kwargs)
+            return jsonify({"ok": True, **result})
+        except Exception as exc:
+            return jsonify(_media_error_payload(exc)), 400
+        finally:
+            if recording_id:
+                clear_recording_cancellation(recording_id)
+
+    @app.post("/api/cancel-recording")
+    def cancel_recording():
+        payload = request.get_json(force=True, silent=True) or {}
+        try:
+            recording_id = _optional_recording_id(payload.get("recording_id"))
+            if not recording_id:
+                raise ValueError("recording_id is required")
+            mark_recording_cancelled(recording_id)
+            return jsonify({"ok": True, "recording_id": recording_id})
+        except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 
     @app.get("/api/health")
@@ -415,9 +517,16 @@ def _export_config_from_payload(
 
 
 def _optional_size(width, height) -> tuple[int, int] | None:
-    if width in (None, "") or height in (None, ""):
+    width_missing = width in (None, "")
+    height_missing = height in (None, "")
+    if width_missing and height_missing:
         return None
-    return int(width), int(height)
+    if width_missing or height_missing:
+        raise ValueError("Width and height must be set together.")
+    parsed = int(width), int(height)
+    if parsed[0] <= 0 or parsed[1] <= 0:
+        raise ValueError("Width and height must be positive integers.")
+    return parsed
 
 
 def _float_form(value: str | None, *, default: float) -> float:
@@ -425,3 +534,31 @@ def _float_form(value: str | None, *, default: float) -> float:
         return float(value) if value not in (None, "") else default
     except (TypeError, ValueError):
         return default
+
+
+def _optional_positive_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _optional_recording_id(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9_-]{8,128}", text):
+        raise ValueError("recording_id is invalid")
+    return text
+
+
+def _media_error_payload(exc: Exception) -> dict[str, Any]:
+    error = getattr(exc, "user_message", None) or str(exc)
+    detail = getattr(exc, "detail", "")
+    payload: dict[str, Any] = {"ok": False, "error": str(error)}
+    if detail:
+        payload["detail"] = str(detail)
+    return payload

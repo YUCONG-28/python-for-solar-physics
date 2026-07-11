@@ -106,6 +106,10 @@ def test_radio_source_app_settings_roundtrip_and_cli_override(tmp_path):
     assert missing["video_width"] == 1280
     assert missing["video_height"] == 720
     assert missing["video_fps"] == 6.0
+    assert missing["video_output_format"] == "mp4"
+    assert missing["video_browser_format"] == "webm"
+    assert missing["video_quality"] == "high"
+    assert missing["video_output_path"] == ""
     assert missing["video_include_aia"] is True
     assert missing["marker_size"] == 8
     assert missing["frequency_marker_symbols"] == {}
@@ -127,6 +131,10 @@ def test_radio_source_app_settings_roundtrip_and_cli_override(tmp_path):
             "video_width": 960,
             "video_height": 640,
             "video_fps": 4.0,
+            "video_output_format": "gif",
+            "video_browser_format": "mp4",
+            "video_quality": "low",
+            "video_output_path": str(tmp_path / "remembered.webm"),
             "video_include_aia": False,
             "marker_size": 13,
             "frequency_marker_symbols": {"149": "x", "164": "triangle-up"},
@@ -153,6 +161,10 @@ def test_radio_source_app_settings_roundtrip_and_cli_override(tmp_path):
     assert resolved["video_width"] == 960
     assert resolved["video_height"] == 640
     assert resolved["video_fps"] == 4.0
+    assert resolved["video_output_format"] == "gif"
+    assert resolved["video_browser_format"] == "mp4"
+    assert resolved["video_quality"] == "low"
+    assert resolved["video_output_path"] == str(tmp_path / "remembered.webm")
     assert resolved["video_include_aia"] is False
     assert resolved["marker_size"] == 13
     assert resolved["frequency_marker_symbols"] == {
@@ -496,10 +508,24 @@ def test_preloaded_player_html_contains_single_plotly_root_and_payload():
             "marker_size": 8,
             "trail_min_opacity": 0.25,
             "link_views": False,
+            "recording": {
+                "format": "mp4",
+                "quality": "high",
+                "fps": 30.0,
+                "width": 640,
+                "height": 480,
+                "start_frame": 0,
+                "end_frame": 1,
+            },
         },
     }
 
-    html = module.build_preloaded_playback_html(payload, plotly_js="/* plotly */")
+    html = module.build_preloaded_playback_html(
+        payload,
+        plotly_js="/* plotly */",
+        mediabunny_js="window.Mediabunny = {};",
+        browser_media_js="window.SolarToolkitMedia = {};",
+    )
 
     assert html.count('id="radio-preloaded-plot"') == 1
     assert "const radioPayload =" in html
@@ -511,21 +537,27 @@ def test_preloaded_player_html_contains_single_plotly_root_and_payload():
     assert 'aria-label="Play or pause smooth playback"' in html
     assert 'title="Reset all plot axes to the initial data range."' in html
     assert 'title="Synchronize all facet plots to the last adjusted view."' in html
-    assert 'title="Download the recorded WebM after recording finishes."' in html
+    assert 'title="Download the completed browser recording."' in html
     assert "function aspectCorrectRange" in html
     assert "aspectCorrectedAxis" in html
     assert "aspectCorrectRange(axis.x0, axis.x1, axis.y0, axis.y1" in html
     assert "plotly_relayout" in html
     assert "Plotly.relayout" in html
     assert "opacityForPoints" in html
-    assert "MediaRecorder" in html
-    assert "captureStream" in html
+    assert "MediaRecorder" not in html
+    assert "captureStream" not in html
     assert "Plotly.toImage" in html
     assert "Radio source time:" in html
     assert "marker_symbol" in html
     assert "symbol: trace.marker_symbol" in html
-    assert "prepareRecordingFrames" in html
-    assert "Recording preloaded frames" in html
+    assert "prepareRecordingFrames" not in html
+    assert "SolarToolkitMedia.createCanvasRecorder" in html
+    assert "recordingSession.addFrame(offset / options.fps, 1 / options.fps" in html
+    assert 'recordEl.textContent = "Cancel"' in html
+    assert 'typeof image.close === "function"' in html
+    assert '"start_frame": 0' in html
+    assert '"end_frame": 1' in html
+    assert '"format": "mp4"' in html
     assert "radio-record" in html
     assert "radio-play" in html
 
@@ -556,7 +588,7 @@ def test_radio_source_app_visible_copy_is_english():
         "Radio Trajectory",
         "Video Export",
         "Apply & Preload",
-        "Export MP4",
+        "Export Video",
         "Previous Frame",
         "Motion Summary",
     ]:
@@ -571,6 +603,7 @@ def test_radio_source_app_visible_copy_is_english():
         "运动摘要",
     ]:
         assert forbidden not in source
+    assert 'st.iframe(html, height=component_height, width="stretch")' in source
 
 
 def test_radio_source_light_theme_css_covers_streamlit_surfaces():

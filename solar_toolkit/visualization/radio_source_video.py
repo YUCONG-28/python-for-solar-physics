@@ -1,9 +1,10 @@
-"""MP4 export helpers for radio-source trajectory playback."""
+"""Shared-media video export for radio-source trajectory playback."""
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from collections import OrderedDict
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ import pandas as pd
 
 from solar_toolkit.aia.background import find_nearest_aia, read_aia_background
 from solar_toolkit.radio.trajectory import select_visible_centers
+from solar_toolkit.visualization import media
 from solar_toolkit.visualization.radio_source_trajectory import (
     FACET_BY_OPTIONS,
     PLOT_LAYOUTS,
@@ -19,10 +21,18 @@ from solar_toolkit.visualization.radio_source_trajectory import (
     resolve_theme_palette,
 )
 
+__all__ = [
+    "VideoExportOptions",
+    "export_radio_source_video",
+    "export_radio_source_video_mp4",
+]
+
 
 @dataclass(frozen=True)
 class VideoExportOptions:
     out_path: str | Path
+    output_format: str = "mp4"
+    quality: str = "high"
     fps: float = 6.0
     width: int = 1280
     height: int = 720
@@ -37,9 +47,11 @@ class VideoExportOptions:
     percentile_limits: tuple[float, float] = (1.0, 99.7)
     log_scale: bool = True
     wcs_mode: str = "header"
+    start_frame: int = 0
+    end_frame: int | None = None
 
 
-def export_radio_source_video_mp4(
+def export_radio_source_video(
     centers: pd.DataFrame,
     times: list[Any],
     *,
@@ -51,23 +63,31 @@ def export_radio_source_video_mp4(
     aia_table: pd.DataFrame | None = None,
     background_loader=None,
 ) -> Path:
-    """Export the current radio-source playback state to an MP4 file."""
-
-    import cv2
+    """Export the current radio-source playback state to MP4, GIF, or WebM."""
 
     normalized_times = [pd.Timestamp(value) for value in times]
     if not normalized_times:
-        raise ValueError("At least one playback time is required for MP4 export.")
-    out_path = Path(options.out_path).expanduser().resolve()
+        raise ValueError("At least one playback time is required for video export.")
+    start = min(max(0, int(options.start_frame)), len(normalized_times))
+    stop = (
+        len(normalized_times)
+        if options.end_frame is None
+        else min(max(start, int(options.end_frame)), len(normalized_times))
+    )
+    selected_times = normalized_times[start:stop]
+    if not selected_times:
+        raise ValueError("The selected video frame range is empty.")
+
+    output_format = media.normalize_output_format(options.output_format)
+    out_path = Path(options.out_path).expanduser().resolve().with_suffix(
+        f".{output_format}"
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    width = max(320, int(options.width))
-    height = max(240, int(options.height))
+    width, height = media.normalize_even_size(
+        (max(320, int(options.width)), max(240, int(options.height)))
+    )
     fps = max(0.2, float(options.fps))
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(str(out_path), fourcc, fps, (width, height))
-    if not writer.isOpened():
-        raise RuntimeError(f"Could not open VideoWriter for {out_path}")
 
     resolved_layout = _choice_value(PLOT_LAYOUTS, plot_layout, "overlay")
     resolved_facet_by = _choice_value(FACET_BY_OPTIONS, facet_by, "freq_mhz")
@@ -76,30 +96,50 @@ def export_radio_source_video_mp4(
         _facet_values(centers, resolved_facet_by) if resolved_layout == "facets" else []
     )
     background_loader = background_loader or read_aia_background
+    background_paths: list[str | None] = []
+    for frame_time in selected_times:
+        path = None
+        if options.include_aia and aia_table is not None and not aia_table.empty:
+            nearest = find_nearest_aia(
+                aia_table,
+                frame_time,
+                max_dt_seconds=float(options.max_aia_dt_sec),
+            )
+            if nearest.status == "matched" and nearest.path:
+                path = str(nearest.path)
+        background_paths.append(path)
 
-    try:
-        for frame_time in normalized_times:
+    background_cache: OrderedDict[str, Any] = OrderedDict()
+
+    def load_background(path: str | None):
+        if not path:
+            return None
+        if path in background_cache:
+            background_cache.move_to_end(path)
+            return background_cache[path]
+        background = background_loader(
+            path,
+            max_pixels=int(options.aia_max_pixels),
+            percentile_limits=tuple(options.percentile_limits),
+            log_scale=bool(options.log_scale),
+            wcs_mode=options.wcs_mode,
+        )
+        background_cache[path] = background
+        background_cache.move_to_end(path)
+        while len(background_cache) > 8:
+            background_cache.popitem(last=False)
+        return background
+
+    def frame_factory():
+        for frame_time, background_path in zip(
+            selected_times, background_paths, strict=True
+        ):
             visible = select_visible_centers(
                 centers,
                 frame_time,
                 mode=frame_mode,
                 tail_n=int(tail_n),
             )
-            aia_background = None
-            if options.include_aia and aia_table is not None and not aia_table.empty:
-                nearest = find_nearest_aia(
-                    aia_table,
-                    frame_time,
-                    max_dt_seconds=float(options.max_aia_dt_sec),
-                )
-                if nearest.status == "matched" and nearest.path:
-                    aia_background = background_loader(
-                        nearest.path,
-                        max_pixels=int(options.aia_max_pixels),
-                        percentile_limits=tuple(options.percentile_limits),
-                        log_scale=bool(options.log_scale),
-                        wcs_mode=options.wcs_mode,
-                    )
             rgb = _render_frame_rgb(
                 visible,
                 frame_time,
@@ -114,12 +154,50 @@ def export_radio_source_video_mp4(
                 facet_by=resolved_facet_by,
                 facet_values=facet_values,
                 axis=axis,
-                aia_background=aia_background,
+                aia_background=load_background(background_path),
             )
-            writer.write(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
-    finally:
-        writer.release()
+            yield rgb, (width, height)
+
+    written = media.write_media_from_frames(
+        frame_factory,
+        out_path,
+        fps=fps,
+        quality=options.quality,
+        frame_size=(width, height),
+        output_format=output_format,
+    )
+    if not written:
+        raise media.MediaProcessingError(
+            f"Could not export the radio-source video as {output_format.upper()}."
+        )
     return out_path
+
+
+def export_radio_source_video_mp4(
+    centers: pd.DataFrame,
+    times: list[Any],
+    *,
+    frame_mode: str,
+    tail_n: int,
+    plot_layout: str,
+    facet_by: str,
+    options: VideoExportOptions,
+    aia_table: pd.DataFrame | None = None,
+    background_loader=None,
+) -> Path:
+    """Compatibility wrapper that exports an MP4 file."""
+
+    return export_radio_source_video(
+        centers,
+        times,
+        frame_mode=frame_mode,
+        tail_n=tail_n,
+        plot_layout=plot_layout,
+        facet_by=facet_by,
+        options=replace(options, output_format="mp4"),
+        aia_table=aia_table,
+        background_loader=background_loader,
+    )
 
 
 def _render_frame_rgb(
@@ -151,25 +229,42 @@ def _render_frame_rgb(
         dpi=dpi,
         facecolor=theme["paper_bgcolor"],
     )
-    fig.suptitle(
-        f"Radio source trajectory | {pd.Timestamp(frame_time).isoformat()}",
-        color=theme["font_color"],
-        fontsize=12,
-    )
-    if plot_layout == "facets" and facet_values:
-        cols = min(3, max(1, len(facet_values)))
-        rows = int(math.ceil(len(facet_values) / cols))
-        axes = fig.subplots(rows, cols, squeeze=False)
-        for index, facet_value in enumerate(facet_values):
-            row = index // cols
-            col = index % cols
-            ax = axes[row][col]
-            subset = visible[visible[facet_by].astype(str) == str(facet_value)]
+    try:
+        fig.suptitle(
+            f"Radio source trajectory | {pd.Timestamp(frame_time).isoformat()}",
+            color=theme["font_color"],
+            fontsize=12,
+        )
+        if plot_layout == "facets" and facet_values:
+            cols = min(3, max(1, len(facet_values)))
+            rows = int(math.ceil(len(facet_values) / cols))
+            axes = fig.subplots(rows, cols, squeeze=False)
+            for index, facet_value in enumerate(facet_values):
+                row = index // cols
+                col = index % cols
+                ax = axes[row][col]
+                subset = visible[visible[facet_by].astype(str) == str(facet_value)]
+                _draw_axes(
+                    ax,
+                    subset,
+                    axis=axis,
+                    title=_format_facet_label(facet_by, facet_value),
+                    theme=theme,
+                    draw_lines=draw_lines,
+                    marker_size=marker_size,
+                    marker_symbol_by_freq=marker_symbol_by_freq,
+                    trail_min_opacity=trail_min_opacity,
+                    aia_background=aia_background,
+                )
+            for index in range(len(facet_values), rows * cols):
+                axes[index // cols][index % cols].set_visible(False)
+        else:
+            ax = fig.subplots(1, 1)
             _draw_axes(
                 ax,
-                subset,
+                visible,
                 axis=axis,
-                title=_format_facet_label(facet_by, facet_value),
+                title="Overlay",
                 theme=theme,
                 draw_lines=draw_lines,
                 marker_size=marker_size,
@@ -177,28 +272,12 @@ def _render_frame_rgb(
                 trail_min_opacity=trail_min_opacity,
                 aia_background=aia_background,
             )
-        for index in range(len(facet_values), rows * cols):
-            axes[index // cols][index % cols].set_visible(False)
-    else:
-        ax = fig.subplots(1, 1)
-        _draw_axes(
-            ax,
-            visible,
-            axis=axis,
-            title="Overlay",
-            theme=theme,
-            draw_lines=draw_lines,
-            marker_size=marker_size,
-            marker_symbol_by_freq=marker_symbol_by_freq,
-            trail_min_opacity=trail_min_opacity,
-            aia_background=aia_background,
-        )
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
-    fig.canvas.draw()
-    rgba = np.asarray(fig.canvas.buffer_rgba())
-    rgb = np.ascontiguousarray(rgba[:, :, :3])
-    plt.close(fig)
-    return rgb
+        fig.tight_layout(rect=(0, 0, 1, 0.95))
+        fig.canvas.draw()
+        rgba = np.asarray(fig.canvas.buffer_rgba())
+        return np.ascontiguousarray(rgba[:, :, :3])
+    finally:
+        plt.close(fig)
 
 
 def _draw_axes(

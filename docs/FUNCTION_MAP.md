@@ -35,7 +35,7 @@ building blocks instead of duplicating glue code in scripts.
 | `solar_toolkit.cme` | Public boundary for LASCO/CME file scanning, timestamp parsing, running differences, and plotting helpers. |
 | `solar_toolkit.net` | Archive query, link collection, filtering, and download helper boundary. |
 | `solar_toolkit.modeling` | Shared science-model boundary for Gaussian and density-model helpers. |
-| `solar_toolkit.visualization` | Shared plotting, media generation, image-sequence viewing, video export, and interactive HTML visualization helpers. |
+| `solar_toolkit.visualization` | Shared plotting plus FFmpeg/FFprobe media generation, deterministic browser recording, image-sequence viewing, video validation, and interactive HTML helpers. |
 
 ## Runnable Entrypoints
 
@@ -45,11 +45,13 @@ building blocks instead of duplicating glue code in scripts.
 | `scripts/radio/run_radio_burst_pipeline.py` | `solar_toolkit.radio` plus compatibility workflows | Full radio burst analysis pipeline. |
 | `scripts/radio/run_radio_source_map.py` | `scripts.radio.legacy.radio_source_map_plot_gaussian_overlay` | Compatibility source-map runner. |
 | `scripts/radio/extract_radio_centers.py` | `solar_toolkit.radio.centers` | Threshold/contour radio-source center extraction to CSV/XLSX. |
-| `scripts/radio/run_radio_source_app.py` | `solar_toolkit.radio.trajectory`, `solar_toolkit.aia.background`, `solar_toolkit.visualization.radio_source_trajectory` | Streamlit playback frontend for radio-source trajectories with optional AIA background. |
+| `scripts/radio/run_radio_source_app.py` | `solar_toolkit.radio.trajectory`, `solar_toolkit.aia.background`, `solar_toolkit.visualization.radio_source_trajectory`, `solar_toolkit.visualization.radio_source_video`, `solar_toolkit.visualization.media_assets` | Streamlit trajectory playback with optional AIA background, exact-timestamp MP4/WebM browser recording, and MP4/GIF/WebM backend export. |
 | `scripts/radio/export_radio_source_trajectory.py` | `solar_toolkit.radio.trajectory`, `solar_toolkit.aia.background`, `solar_toolkit.visualization.radio_source_trajectory` | Static Plotly HTML export for selected trajectory frames. |
 | `scripts/radio/run_aia_radio_hmi_overlay.py` | `scripts.radio.legacy.sdo_aia_radio_hmi_overlay` | Compatibility AIA/radio/HMI overlay runner. |
 | `scripts/radio/run_radio_raw_quality.py` | `solar_toolkit.radio.raw_quality` | Raw radio FITS quality diagnostics. |
 | `scripts/tools/run_image_web_viewer.py` | `solar_toolkit.visualization.image_web_viewer` | Local multi-folder image-sequence browser with synchronized playback, ROI review, live-stage recording, and composite/separate MP4/GIF/WebM export. |
+
+`solar_toolkit.visualization.image_web_viewer.media` remains an import-compatible alias of `solar_toolkit.visualization.media`, including shared monkeypatch behavior in downstream tests.
 
 ## Compatibility Policy
 

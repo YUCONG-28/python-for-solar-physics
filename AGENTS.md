@@ -69,3 +69,17 @@ guideline conflicts with them.
   `tests\test_radio_*.py` files, then broaden only when shared behavior changed.
 - If a broader suite fails, isolate whether the failure is in the changed path
   before treating it as a task blocker.
+
+## Cross-repository and presentation routing
+
+- Use Codex, not a Work deliverable, as the completion surface for code edits,
+  tests, compatibility checks, and Git state in this repository.
+- When work spans the sibling `Paper` repository, treat Paper as the evidence
+  layer and this repository as the implementation layer. Keep proposed methods
+  separate from behavior that has actually been implemented and tested.
+- Use `academic-paper-director` for manuscript or citation-sensitive text and
+  `ppt-style-director` for research-deck style. Create or edit a real `.pptx`
+  with `presentation-skill` or `Presentations`, followed by render-based QA.
+- Do not expose raw observations, large generated outputs, local paths, or
+  private research artifacts through Calendar or Sites. Publish only a
+  separately reviewed export after an explicit request.

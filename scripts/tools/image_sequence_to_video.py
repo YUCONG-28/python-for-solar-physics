@@ -233,6 +233,7 @@ def iter_processed_frames(
     stats: FrameStats | None = None,
     workers: int = 1,
     batch_size: int = 8,
+    missing_frame_policy: str = "skip",
 ) -> Iterator[tuple[np.ndarray, tuple[int, int]]]:
     """
     Yield processed RGB uint8 frames in path order without retaining all frames.
@@ -241,16 +242,25 @@ def iter_processed_frames(
     workers = max(1, int(workers))
     batch_size = max(1, int(batch_size))
 
+    last_frame: np.ndarray | None = None
+
     def handle_result(result: FrameResult):
+        nonlocal last_frame
         if result.frame is None:
             if stats is not None:
                 stats.skipped_count += 1
             print(f"  Skipped: {os.path.basename(result.path)}  [{result.error}]")
+            if missing_frame_policy == "repeat" and target_size_tuple is not None:
+                if last_frame is None:
+                    width, height = target_size_tuple
+                    last_frame = np.zeros((height, width, 3), dtype=np.uint8)
+                return last_frame, target_size_tuple
             return None
         if stats is not None:
             stats.valid_count += 1
             if result.resized:
                 stats.resized_count += 1
+        last_frame = result.frame
         return result.frame, result.original_size
 
     if workers <= 1:
@@ -510,6 +520,7 @@ def make_frame_iter_from_paths(
     size: tuple[int, int],
     workers: int = 1,
     batch_size: int = 8,
+    missing_frame_policy: str = "skip",
 ):
     return iter_processed_frames(
         paths,
@@ -517,6 +528,7 @@ def make_frame_iter_from_paths(
         stats=stats,
         workers=workers,
         batch_size=batch_size,
+        missing_frame_policy=missing_frame_policy,
     )
 
 

@@ -4,7 +4,6 @@ const STORAGE_KEYS = {
   theme: "solarToolkit.imageViewer.v1.theme",
 };
 
-const SUPPORTED_OUTPUT_FORMATS = new Set(["mp4", "gif", "webm"]);
 const DEFAULT_OUTPUT_FORMAT = normalizeOutputFormat(document.body?.dataset.defaultOutputFormat || "mp4");
 
 const DEFAULT_SETTINGS = {
@@ -25,9 +24,6 @@ const DEFAULT_SETTINGS = {
 };
 
 const PRELOAD_BEHIND_FRAMES = 2;
-const PRELOAD_SECONDS_AHEAD = 0.75;
-const MIN_PRELOAD_AHEAD_FRAMES = 4;
-const MIN_CACHE_ENTRIES = 96;
 const MAX_PRELOAD_CONCURRENCY = 6;
 const PRELOAD_QUEUE_CHUNK_SIZE = 120;
 
@@ -49,12 +45,12 @@ const state = {
   serverStopOnClose: true,
   heartbeatTimer: null,
   recording: false,
-  mediaRecorder: null,
-  recordingChunks: [],
   recordingCanvas: null,
-  recordingTimer: null,
-  recordingStream: null,
-  recordingMimeType: "",
+  recordingOutput: null,
+  recordingAbortController: null,
+  recordingUploadPromise: null,
+  recordingId: null,
+  recordingUploadStarted: false,
   recordingCancelRequested: false,
 };
 
@@ -120,8 +116,7 @@ function clamp(value, min, max) {
 }
 
 function normalizeOutputFormat(value) {
-  const outputFormat = String(value || "mp4").trim().toLowerCase();
-  return SUPPORTED_OUTPUT_FORMATS.has(outputFormat) ? outputFormat : "mp4";
+  return window.SolarToolkitMedia.normalizeOutputFormat(value, "mp4");
 }
 
 function getPlaybackFps() {
@@ -162,6 +157,13 @@ function setRecordingStatus(text, isError = false, detail = "") {
 
 function formatRecordingError(error) {
   const detail = String(error?.message || error || "Recording save failed.");
+  const backendDetail = String(error?.detail || "");
+  if (backendDetail) {
+    return {
+      summary: detail.length > 160 ? "Recording save failed." : detail,
+      detail: backendDetail,
+    };
+  }
   if (detail.includes("FFmpeg failed while saving recording")) {
     return {
       summary: "Recording save failed in FFmpeg.",
@@ -498,9 +500,23 @@ function readOptionalInt(element) {
   return value === "" ? null : Number.parseInt(value, 10);
 }
 
+function readTargetSize() {
+  const width = readOptionalInt(els.targetWidthInput);
+  const height = readOptionalInt(els.targetHeightInput);
+  if ((width && !height) || (!width && height)) {
+    throw new Error("Set both Width and Height, or leave both blank.");
+  }
+  if (!width || !height) return null;
+  return {
+    width: evenRecordingDimension(width, 2),
+    height: evenRecordingDimension(height, 2),
+  };
+}
+
 function buildExportPayload() {
   const startOneBased = Math.max(1, readOptionalInt(els.startFrameInput) || 1);
   const endOneBased = readOptionalInt(els.endFrameInput);
+  const targetSize = readTargetSize();
   return {
     session_id: state.sessionId,
     mode: els.exportModeInput.value,
@@ -511,8 +527,8 @@ function buildExportPayload() {
     quality: els.qualityInput.value,
     start_frame: startOneBased - 1,
     end_frame: endOneBased,
-    target_width: readOptionalInt(els.targetWidthInput),
-    target_height: readOptionalInt(els.targetHeightInput),
+    target_width: targetSize?.width || null,
+    target_height: targetSize?.height || null,
     use_roi: els.exportRoiInput.checked && !!state.activeRoiNorm,
     roi: state.activeRoiNorm,
   };
@@ -553,18 +569,6 @@ async function exportVideo() {
   }
 }
 
-function chooseRecordingMimeType() {
-  if (!window.MediaRecorder) return "";
-  for (const mimeType of [
-    "video/webm;codecs=vp9",
-    "video/webm;codecs=vp8",
-    "video/webm",
-  ]) {
-    if (MediaRecorder.isTypeSupported(mimeType)) return mimeType;
-  }
-  return "";
-}
-
 function recordingFrameBounds() {
   const rects = state.panels
     .map((panel) => panel.canvas.getBoundingClientRect())
@@ -583,20 +587,21 @@ function recordingFrameBounds() {
 }
 
 function evenRecordingDimension(value, minValue) {
-  const size = Math.max(minValue, Math.floor(Number(value) || minValue));
-  return size % 2 === 0 ? size : Math.max(minValue, size - 1);
+  return window.SolarToolkitMedia.evenDimension(value, minValue);
 }
 
-function ensureRecordingCanvas() {
+function ensureRecordingCanvas(options = {}) {
   if (!state.recordingCanvas) {
     state.recordingCanvas = document.createElement("canvas");
   }
   const bounds = recordingFrameBounds();
   const ratio = window.devicePixelRatio || 1;
-  const width = evenRecordingDimension(bounds.width * ratio, 320);
-  const height = evenRecordingDimension(bounds.height * ratio, 220);
+  const width = options.targetSize?.width
+    || evenRecordingDimension(bounds.width * ratio, 320);
+  const height = options.targetSize?.height
+    || evenRecordingDimension(bounds.height * ratio, 220);
   if (
-    !state.recording
+    (options.forceResize || !state.recording)
     && (state.recordingCanvas.width !== width || state.recordingCanvas.height !== height)
   ) {
     state.recordingCanvas.width = width;
@@ -610,42 +615,31 @@ function renderRecordingFrame() {
   const ctx = canvas.getContext("2d", {alpha: false});
   ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--stage").trim() || "#11161f";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const stageWidth = Math.max(1, bounds.width * ratio);
+  const stageHeight = Math.max(1, bounds.height * ratio);
+  const stageScale = Math.min(canvas.width / stageWidth, canvas.height / stageHeight);
+  const offsetX = (canvas.width - stageWidth * stageScale) / 2;
+  const offsetY = (canvas.height - stageHeight * stageScale) / 2;
   for (const panel of state.panels) {
     const rect = panel.canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) continue;
     ctx.drawImage(
       panel.canvas,
-      (rect.left - bounds.left) * ratio,
-      (rect.top - bounds.top) * ratio,
-      rect.width * ratio,
-      rect.height * ratio,
+      offsetX + (rect.left - bounds.left) * ratio * stageScale,
+      offsetY + (rect.top - bounds.top) * ratio * stageScale,
+      rect.width * ratio * stageScale,
+      rect.height * ratio * stageScale,
     );
   }
   return canvas;
 }
 
-function requestRecordingFrame() {
-  const tracks = state.recordingStream?.getVideoTracks ? state.recordingStream.getVideoTracks() : [];
-  for (const track of tracks) {
-    if (typeof track.requestFrame === "function") track.requestFrame();
-  }
-}
-
-function renderAndRequestRecordingFrame() {
-  const canvas = renderRecordingFrame();
-  requestRecordingFrame();
-  return canvas;
-}
-
 function resetRecordingState() {
-  if (state.recordingTimer !== null) window.clearInterval(state.recordingTimer);
-  state.recordingTimer = null;
-  if (state.recordingStream) {
-    for (const track of state.recordingStream.getTracks()) track.stop();
-  }
-  state.recordingStream = null;
-  state.mediaRecorder = null;
-  state.recordingMimeType = "";
+  state.recordingOutput = null;
+  state.recordingAbortController = null;
+  state.recordingUploadPromise = null;
+  state.recordingId = null;
+  state.recordingUploadStarted = false;
   state.recording = false;
   state.recordingCancelRequested = false;
   els.recordBtn.textContent = "Start Recording";
@@ -665,12 +659,6 @@ function waitMs(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function waitForNextPaint() {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(resolve));
-  });
-}
-
 async function waitForFrameReady(frameIndex, timeoutMs = 15000) {
   const startMs = performance.now();
   warmFrameWindow(frameIndex, {direction: 1, highPriority: true});
@@ -684,114 +672,207 @@ async function waitForFrameReady(frameIndex, timeoutMs = 15000) {
   }
 }
 
-async function captureRangeRecordingFrame(frameIndex, fps) {
+async function captureRangeRecordingFrame(frameIndex) {
   await waitForFrameReady(frameIndex);
   if (state.recordingCancelRequested) throw new Error("Recording canceled.");
   if (!showFrame(frameIndex, {deferUntilReady: true, direction: 1})) {
     throw new Error(`Frame ${frameIndex + 1} is not ready for recording.`);
   }
-  await waitForNextPaint();
   for (const panel of state.panels) panel.drawNow();
-  renderAndRequestRecordingFrame();
-  await waitMs(Math.max(10, Math.round(1000 / fps)));
+  return renderRecordingFrame();
 }
 
-function startRecordingStream(fps) {
-  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) {
-    throw new Error("This browser cannot record canvas streams.");
+function buildRecordingMetadata(sourceFormat, range, fps) {
+  return {
+    format: normalizeOutputFormat(els.formatInput.value),
+    source_format: sourceFormat,
+    output_dir: els.outputDirInput.value.trim() || DEFAULT_SETTINGS.outputDir,
+    file_prefix: els.prefixInput.value.trim() || DEFAULT_SETTINGS.prefix,
+    fps: String(fps),
+    quality: els.qualityInput.value,
+    recording_width: String(state.recordingCanvas.width),
+    recording_height: String(state.recordingCanvas.height),
+    frame_count: String(range.frameCount),
+    recording_id: state.recordingId,
+  };
+}
+
+function makeRecordingId() {
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+  const suffix = Math.random().toString(36).slice(2, 14);
+  return `recording-${Date.now().toString(36)}-${suffix}`;
+}
+
+async function parseRecordingResponse(response) {
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    payload = {};
+  }
+  if (!response.ok || !payload.ok) {
+    const error = new Error(payload.error || "Recording save failed.");
+    error.detail = payload.detail || "";
+    throw error;
+  }
+  return payload;
+}
+
+function recordingSuccessStatus(payload) {
+  const codec = payload.codec ? ` (${payload.codec})` : "";
+  const outputPath = payload.path ? `: ${payload.path}` : "";
+  return `Saved ${payload.format.toUpperCase()} recording${codec}${outputPath}`;
+}
+
+async function createMediabunnyRecording(range, fps) {
+  const outputFormat = normalizeOutputFormat(els.formatInput.value);
+  const sourceFormat = outputFormat === "mp4" ? "mp4" : "webm";
+  const useStreaming = window.SolarToolkitMedia.supportsStreamingUpload();
+  let transform = null;
+  let uploadPromise = null;
+  if (useStreaming) {
+    transform = new TransformStream();
+    const params = new URLSearchParams(buildRecordingMetadata(sourceFormat, range, fps));
+    const abortController = new AbortController();
+    state.recordingAbortController = abortController;
+    state.recordingUploadStarted = true;
+    uploadPromise = fetch(`/api/save-recording-stream?${params.toString()}`, {
+      method: "POST",
+      headers: {"Content-Type": sourceFormat === "mp4" ? "video/mp4" : "video/webm"},
+      body: transform.readable,
+      duplex: "half",
+      signal: abortController.signal,
+    }).then(parseRecordingResponse);
+    uploadPromise.catch(() => {});
+    state.recordingUploadPromise = uploadPromise;
   }
 
-  renderRecordingFrame();
-  const mimeType = chooseRecordingMimeType();
-  let stream = state.recordingCanvas.captureStream(0);
-  let tracks = stream.getVideoTracks ? stream.getVideoTracks() : [];
-  if (!tracks.some((track) => typeof track.requestFrame === "function")) {
-    for (const track of stream.getTracks()) track.stop();
-    stream = state.recordingCanvas.captureStream(fps);
-    tracks = stream.getVideoTracks ? stream.getVideoTracks() : [];
+  const recorder = await window.SolarToolkitMedia.createCanvasRecorder({
+    canvas: state.recordingCanvas,
+    format: outputFormat,
+    quality: els.qualityInput.value,
+    fps,
+    targetMode: useStreaming ? "stream" : "buffer",
+    writable: transform?.writable,
+  });
+  state.recordingOutput = recorder;
+  return {recorder, uploadPromise, useStreaming, sourceFormat};
+}
+
+async function uploadBufferedRecording(buffer, sourceFormat, range, fps) {
+  if (!buffer || buffer.byteLength === 0) {
+    throw new Error("Recording produced no frames.");
   }
-  const options = mimeType ? {mimeType} : {};
-  state.recordingChunks = [];
-  state.recordingStream = stream;
-  state.recordingMimeType = mimeType || "video/webm";
-  state.mediaRecorder = new MediaRecorder(stream, options);
-  state.mediaRecorder.addEventListener("dataavailable", (event) => {
-    if (event.data && event.data.size > 0) state.recordingChunks.push(event.data);
-  });
-  state.mediaRecorder.start(1000);
-  renderAndRequestRecordingFrame();
+  const metadata = buildRecordingMetadata(sourceFormat, range, fps);
+  const formData = new FormData();
+  const mimeType = sourceFormat === "mp4" ? "video/mp4" : "video/webm";
+  formData.append(
+    "recording",
+    new Blob([buffer], {type: mimeType}),
+    `recording.${sourceFormat}`,
+  );
+  for (const [key, value] of Object.entries(metadata)) formData.append(key, value);
+  const abortController = new AbortController();
+  state.recordingAbortController = abortController;
+  state.recordingUploadStarted = true;
+  const uploadPromise = fetch("/api/save-recording", {
+    method: "POST",
+    body: formData,
+    signal: abortController.signal,
+  }).then(parseRecordingResponse);
+  state.recordingUploadPromise = uploadPromise;
+  return uploadPromise;
 }
 
-function stopRecordingStream() {
-  return new Promise((resolve) => {
-    if (!state.mediaRecorder || state.mediaRecorder.state === "inactive") {
-      resolve(new Blob([], {type: state.recordingMimeType || "video/webm"}));
-      return;
-    }
-    const recorder = state.mediaRecorder;
-    recorder.addEventListener("stop", () => {
-      resolve(new Blob(state.recordingChunks, {type: state.recordingMimeType || "video/webm"}));
-    }, {once: true});
-    if (typeof recorder.requestData === "function") {
-      recorder.requestData();
-    }
-    recorder.stop();
-  });
+async function finishMediabunnyRecording(context, range, fps) {
+  const result = await context.recorder.finalize();
+  if (context.useStreaming) return context.uploadPromise;
+  return uploadBufferedRecording(result.buffer, context.sourceFormat, range, fps);
 }
 
-function cancelRangeRecording() {
-  if (!state.recording) return;
+async function cancelRangeRecording() {
+  if (!state.recording || state.recordingCancelRequested) return;
   state.recordingCancelRequested = true;
   els.recordBtn.disabled = true;
   setRecordingStatus("Canceling...");
+  if (state.recordingUploadStarted && state.recordingId) {
+    try {
+      await fetch("/api/cancel-recording", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({recording_id: state.recordingId}),
+        keepalive: true,
+      });
+    } catch {
+      // Aborting the active upload still makes the server discard partial input.
+    }
+  }
+  if (state.recordingAbortController) state.recordingAbortController.abort();
+  const output = state.recordingOutput;
+  if (output && !["canceled", "finalized"].includes(output.state)) {
+    try {
+      await output.cancel();
+    } catch {
+      // The encoder may already be finalizing; the outer recording flow handles it.
+    }
+  }
 }
 
 async function recordSelectedFrameRange() {
   if (!state.sessionId || state.maxFrames <= 0) return;
   if (state.recording) {
-    cancelRangeRecording();
+    await cancelRangeRecording();
     return;
   }
 
   const range = getSelectedFrameRange();
   if (!range) return;
   const fps = getPlaybackFps();
+  const targetSize = readTargetSize();
   stopPlayback();
   saveRememberedSettings(false);
+  ensureRecordingCanvas({forceResize: true, targetSize});
   state.recording = true;
+  state.recordingId = makeRecordingId();
+  state.recordingUploadStarted = false;
   state.recordingCancelRequested = false;
   els.recordBtn.textContent = "Cancel Recording";
   setRecordingStatus(`Recording frames ${range.start + 1}-${range.end + 1}...`);
   warmFrameWindow(range.start, {direction: 1, highPriority: true});
 
+  let context = null;
   try {
-    startRecordingStream(fps);
-    for (let frameIndex = range.start; frameIndex <= range.end; frameIndex += 1) {
+    context = await createMediabunnyRecording(range, fps);
+    for (let frameOffset = 0; frameOffset < range.frameCount; frameOffset += 1) {
       if (state.recordingCancelRequested) throw new Error("Recording canceled.");
+      const frameIndex = range.start + frameOffset;
       setRecordingStatus(
-        `Recording frame ${frameIndex - range.start + 1} of ${range.frameCount}...`,
+        `Encoding frame ${frameOffset + 1} of ${range.frameCount}...`,
       );
-      await captureRangeRecordingFrame(frameIndex, fps);
+      await captureRangeRecordingFrame(frameIndex);
+      await context.recorder.addFrame(frameOffset / fps, 1 / fps, {
+        keyFrame: frameOffset === 0,
+      });
     }
-    els.recordBtn.disabled = true;
-    setRecordingStatus("Saving...");
-    renderAndRequestRecordingFrame();
-    const blob = await stopRecordingStream();
-    if (state.recordingCancelRequested) {
-      setRecordingStatus("Recording canceled.");
-      return;
-    }
-    await uploadLiveRecording(blob);
+    setRecordingStatus("Finalizing recording...");
+    const payload = await finishMediabunnyRecording(context, range, fps);
+    if (state.recordingCancelRequested) throw new Error("Recording canceled.");
+    setRecordingStatus(recordingSuccessStatus(payload));
   } catch (error) {
-    if (String(error?.message || error) === "Recording canceled.") {
-      await stopRecordingStream();
+    if (state.recordingCancelRequested || String(error?.message || error) === "Recording canceled.") {
       setRecordingStatus("Recording canceled.");
     } else {
       const formatted = formatRecordingError(error);
       setRecordingStatus(formatted.summary, true, formatted.detail);
-      await stopRecordingStream();
     }
   } finally {
+    if (context?.recorder && !["canceled", "finalized"].includes(context.recorder.state)) {
+      try {
+        await context.recorder.cancel();
+      } catch {
+        // The final status above already contains the actionable error.
+      }
+    }
     resetRecordingState();
   }
 }
@@ -802,43 +883,6 @@ function stopLiveRecording() {
 
 function toggleRecording() {
   recordSelectedFrameRange();
-}
-
-async function uploadLiveRecording(blob) {
-  if (!blob || blob.size === 0) {
-    setRecordingStatus("Recording produced no frames.", true);
-    return;
-  }
-
-  const outputFormat = normalizeOutputFormat(els.formatInput.value);
-  const formData = new FormData();
-  formData.append("recording", blob, "recording.webm");
-  formData.append("format", outputFormat);
-  formData.append("output_dir", els.outputDirInput.value.trim() || DEFAULT_SETTINGS.outputDir);
-  formData.append("file_prefix", els.prefixInput.value.trim() || DEFAULT_SETTINGS.prefix);
-  formData.append("fps", String(getPlaybackFps()));
-  formData.append("quality", els.qualityInput.value);
-  if (state.recordingCanvas) {
-    formData.append("recording_width", String(state.recordingCanvas.width));
-    formData.append("recording_height", String(state.recordingCanvas.height));
-  }
-
-  try {
-    saveRememberedSettings(false);
-    const response = await fetch("/api/save-recording", {
-      method: "POST",
-      body: formData,
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) throw new Error(payload.error || "Recording save failed.");
-    const outputPath = payload.path ? `: ${payload.path}` : "";
-    setRecordingStatus(`Saved ${payload.format.toUpperCase()} recording${outputPath}`);
-  } catch (error) {
-    const formatted = formatRecordingError(error);
-    setRecordingStatus(formatted.summary, true, formatted.detail);
-  } finally {
-    els.recordBtn.disabled = !state.sessionId;
-  }
 }
 
 function cacheKey(groupIndex, frameIndex) {
@@ -864,10 +908,10 @@ function getFrameCacheCapacity() {
 function getDynamicFrameCacheCapacity() {
   const groupCount = Math.max(1, state.groups.length);
   const windowFrames = getPreloadAheadFrameCount() + PRELOAD_BEHIND_FRAMES + 1;
-  const requested = Math.max(MIN_CACHE_ENTRIES, windowFrames * groupCount * 2);
+  const requested = windowFrames * groupCount + MAX_PRELOAD_CONCURRENCY;
   const available = state.groups.reduce((total, group) => total + group.count, 0);
   if (available <= 0) return requested;
-  return Math.max(Math.min(requested, available), Math.min(MIN_CACHE_ENTRIES, available));
+  return Math.min(Math.max(groupCount, requested), available);
 }
 
 function normalizePreloadFrame(frameIndex) {
@@ -994,6 +1038,8 @@ function warmFrameWindow(frameIndex, options = {}) {
   if (!state.sessionId) return;
   preloadGeneration += 1;
   const generation = preloadGeneration;
+  preloadQueue.length = 0;
+  queuedPreloadKeys.clear();
   const ahead = getPreloadAheadFrameCount();
   const direction = options.direction === -1 ? -1 : 1;
   const startOffset = direction > 0 ? -PRELOAD_BEHIND_FRAMES : -ahead;
@@ -1029,6 +1075,12 @@ function resetFramePreloadState() {
 function warmCurrentFrameWindow() {
   if (!state.sessionId) return;
   warmFrameWindow(state.frame, {direction: 1, highPriority: true});
+}
+
+function warmSelectedRangeStart() {
+  if (!state.sessionId) return;
+  const range = getSelectedFrameRange();
+  warmFrameWindow(range ? range.start : state.frame, {direction: 1, highPriority: true});
 }
 
 class ImagePanel {
@@ -1215,7 +1267,7 @@ class ImagePanel {
   showFrame(frameIndex, options = {}) {
     this.currentFrameIndex = frameIndex;
     if (frameIndex >= this.group.count) {
-      this.imageLoaded = false;
+      if (!(options.deferUntilReady && this.imageLoaded)) this.imageLoaded = false;
       this.badge.textContent = "Missing";
       this.draw();
       return;
@@ -1231,7 +1283,7 @@ class ImagePanel {
     }
     const cachedEntry = frameCache.get(cacheKey(this.group.index, frameIndex));
     if (cachedEntry?.status === "error") {
-      this.imageLoaded = false;
+      if (!(options.deferUntilReady && this.imageLoaded)) this.imageLoaded = false;
       this.badge.textContent = "Missing";
       this.draw();
       return;
@@ -1475,6 +1527,8 @@ function installEventHandlers() {
     els.preloadFrameInput.value = String(getPreloadFrameCount());
     warmCurrentFrameWindow();
   });
+  els.startFrameInput.addEventListener("change", warmSelectedRangeStart);
+  els.endFrameInput.addEventListener("change", warmSelectedRangeStart);
   els.fitLayoutBtn.addEventListener("click", () => applyLayoutMode("fit"));
   els.landscapeLayoutBtn.addEventListener("click", () => applyLayoutMode("landscape"));
   els.portraitLayoutBtn.addEventListener("click", () => applyLayoutMode("portrait"));

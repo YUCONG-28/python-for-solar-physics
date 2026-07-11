@@ -39,6 +39,7 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
   - Threshold/contour radio-source center extraction to CSV/XLSX.
 - `scripts/radio/run_radio_source_app.py`
   - Streamlit trajectory playback frontend that reads existing center tables.
+  - Uses the selected Start/End, size, FPS, and quality for deterministic browser MP4/WebM recording and backend MP4/GIF/WebM export.
 - `scripts/radio/export_radio_source_trajectory.py`
   - Static Plotly HTML export for selected trajectory frames.
 - `scripts/radio/run_aia_radio_hmi_overlay.py`
@@ -47,6 +48,11 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
   - Raw radio FITS quality-diagnostic workflow.
 - `scripts/tools/run_image_web_viewer.py`
   - Local Flask/Canvas image sequence viewer for multi-folder playback, ROI review, live-stage recording, and composite/separate MP4/GIF/WebM export.
+- `solar_toolkit/visualization/media.py`
+  - Shared FFmpeg/FFprobe resolution, atomic media writing, validation, cancellation, and frame-factory support used by radio and image-sequence video workflows.
+  - Honors `SOLAR_TOOLKIT_FFMPEG` and `SOLAR_TOOLKIT_FFPROBE`, with the older image-viewer environment variable names retained as fallbacks.
+- `solar_toolkit/visualization/media_assets/`
+  - Bundled Mediabunny recorder, shared browser recorder API, and license files; no runtime CDN or npm build is required.
 - `scripts/tools/run_solar_webapp.py`
   - Unified local English web GUI for registered public workflows.
 

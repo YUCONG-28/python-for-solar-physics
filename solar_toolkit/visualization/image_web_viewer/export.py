@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import math
 import re
+from collections import deque
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -18,7 +20,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from . import media
+from solar_toolkit.visualization import media
 
 
 @dataclass
@@ -147,7 +149,15 @@ def export_composite_video(
     frame_size = (panel_size[0] * max(1, len(groups)), panel_size[1])
     frame_count = stop - start
     ok = media.write_media_from_frames(
-        _iter_composite_frames(groups, start, stop, panel_size, config.roi),
+        lambda: _iter_composite_frames(
+            groups,
+            start,
+            stop,
+            panel_size,
+            config.roi,
+            workers=config.workers,
+            batch_size=config.batch_size,
+        ),
         output_path,
         fps=_video_fps(config.fps),
         quality=config.quality,
@@ -194,15 +204,40 @@ def _iter_composite_frames(
     stop: int,
     panel_size: tuple[int, int],
     roi: dict[str, float] | None,
+    *,
+    workers: int = 1,
+    batch_size: int = 8,
 ):
-    for frame_index in range(start, stop):
+    def build(frame_index: int):
         frame = build_composite_frame(
             groups,
             frame_index,
             panel_size=panel_size,
             roi=roi,
         )
-        yield frame, (frame.shape[1], frame.shape[0])
+        return frame, (frame.shape[1], frame.shape[0])
+
+    workers = max(1, int(workers))
+    batch_size = max(1, int(batch_size))
+    if workers == 1:
+        for frame_index in range(start, stop):
+            yield build(frame_index)
+        return
+
+    indexes = iter(range(start, stop))
+    pending: deque[Future] = deque()
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        for _ in range(batch_size):
+            try:
+                pending.append(executor.submit(build, next(indexes)))
+            except StopIteration:
+                break
+        while pending:
+            yield pending.popleft().result()
+            try:
+                pending.append(executor.submit(build, next(indexes)))
+            except StopIteration:
+                continue
 
 
 def _write_video_from_paths(
