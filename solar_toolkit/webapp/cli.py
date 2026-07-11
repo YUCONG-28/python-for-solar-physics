@@ -11,6 +11,8 @@ from pathlib import Path
 
 from .runner import default_python_executable
 
+__all__ = ["build_parser", "main", "parse_allowed_roots"]
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(

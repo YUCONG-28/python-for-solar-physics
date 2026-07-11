@@ -41,7 +41,7 @@ def make_relative_symlink(target: Path, link: Path) -> None:
     link.symlink_to(relative_target)
 
 
-def main() -> None:
+def main(argv=None) -> int:
     fits_files = sorted(DATA_DIR.glob("*.fts"))
     if not fits_files:
         raise FileNotFoundError(f"No .fts files found in {DATA_DIR}")
@@ -84,6 +84,8 @@ def main() -> None:
     for wavelength in sorted(counts, key=int):
         print(f"{wavelength}: {counts[wavelength]}")
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

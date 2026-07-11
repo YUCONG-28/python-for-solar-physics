@@ -58,6 +58,22 @@ def test_registered_modules_build_safe_argument_list_commands(tmp_path):
         assert module.category.isascii()
         assert module.risk_level in {"standard", "advanced", "deprecated"}
         assert module.input_schema
+        assert module.available is True
+
+
+def test_installed_registry_marks_source_only_recipes_unavailable(tmp_path):
+    from solar_toolkit.webapp.registry import default_registry
+    from solar_toolkit.webapp.runner import JobContext
+
+    registry = default_registry(tmp_path)
+    module = registry.get("aia-euv-processor")
+    context = JobContext(repo_root=tmp_path, python_executable=sys.executable)
+
+    assert module.available is False
+    assert "not included" in module.unavailable_reason
+    assert module.to_public_dict()["available"] is False
+    with pytest.raises(RuntimeError, match="is unavailable"):
+        module.build_command({"arguments": "--help"}, context=context)
 
 
 def test_path_payloads_must_stay_inside_allowed_roots(tmp_path):

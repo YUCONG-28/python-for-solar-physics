@@ -96,8 +96,9 @@ function renderCategories() {
 
 function renderModules() {
   const modules = visibleModules();
+  const availableCount = modules.filter((item) => item.available).length;
   els.categoryTitle.textContent = els.moduleSearch.value.trim() || "Workflow Library";
-  els.categorySummary.textContent = `${modules.length} workflow modules available`;
+  els.categorySummary.textContent = `${availableCount} available / ${modules.length} listed`;
   els.moduleGrid.innerHTML = modules
     .map((item) => {
       const active = state.selectedModule && state.selectedModule.id === item.id;
@@ -105,7 +106,7 @@ function renderModules() {
         <span class="module-meta">${escapeHtml(item.category)} / ${escapeHtml(item.status)}</span>
         <strong>${escapeHtml(item.title)}</strong>
         <span>${escapeHtml(item.description)}</span>
-        <span class="risk ${escapeHtml(item.risk_level)}">${escapeHtml(item.risk_level)}</span>
+        <span class="risk ${escapeHtml(item.risk_level)}">${escapeHtml(item.available ? item.risk_level : "unavailable")}</span>
       </button>`;
     })
     .join("");
@@ -140,8 +141,10 @@ async function selectModule(moduleId) {
       <dt>Script</dt><dd><code>${escapeHtml(payload.module.script_path)}</code></dd>
       <dt>Command</dt><dd><code>${escapeHtml(payload.module.command_path)}</code></dd>
       <dt>Risk</dt><dd>${escapeHtml(payload.module.risk_level)}</dd>
+      <dt>Availability</dt><dd>${escapeHtml(payload.module.available ? "Available" : payload.module.unavailable_reason)}</dd>
     </dl>`;
   els.jobForm.hidden = false;
+  els.runJobBtn.disabled = !payload.module.available;
   els.argumentsInput.value = "--help";
   els.pathsInput.value = "";
 }

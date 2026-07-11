@@ -10,6 +10,14 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .runner import JobContext
 
+__all__ = [
+    "ArchivedReference",
+    "FeatureModule",
+    "WorkflowRegistry",
+    "default_registry",
+    "split_cli_arguments",
+]
+
 
 COMMON_INPUT_SCHEMA = [
     {
@@ -43,6 +51,8 @@ class FeatureModule:
     input_schema: list[dict[str, Any]] = field(default_factory=list)
     launch_mode: str = "job"
     command_path: Path | None = None
+    available: bool = True
+    unavailable_reason: str | None = None
 
     def __post_init__(self) -> None:
         if self.command_path is None:
@@ -58,6 +68,9 @@ class FeatureModule:
 
         from .runner import normalize_arguments, validate_payload_paths
 
+        if not self.available:
+            reason = self.unavailable_reason or "workflow command is unavailable"
+            raise RuntimeError(f"Workflow {self.id!r} is unavailable: {reason}")
         payload = payload or {}
         validate_payload_paths(payload, context=context)
         args = normalize_arguments(payload.get("arguments", ""))
@@ -80,6 +93,8 @@ class FeatureModule:
             "risk_level": self.risk_level,
             "launch_mode": self.launch_mode,
             "input_schema": self.input_schema,
+            "available": self.available,
+            "unavailable_reason": self.unavailable_reason,
         }
 
 
@@ -132,7 +147,11 @@ class WorkflowRegistry:
 def default_registry(repo_root: str | Path | None = None) -> WorkflowRegistry:
     """Return the built-in workflow registry."""
 
-    _ = Path(repo_root).resolve() if repo_root is not None else None
+    resolved_root = (
+        Path(repo_root).resolve()
+        if repo_root is not None
+        else Path(__file__).resolve().parents[2]
+    )
     modules = {
         spec["id"]: FeatureModule(
             id=spec["id"],
@@ -145,6 +164,16 @@ def default_registry(repo_root: str | Path | None = None) -> WorkflowRegistry:
             risk_level=spec["risk_level"],
             launch_mode=spec.get("launch_mode", "job"),
             input_schema=[dict(item) for item in COMMON_INPUT_SCHEMA],
+            available=(
+                resolved_root / spec.get("command_path", spec["script_path"])
+            ).is_file(),
+            unavailable_reason=(
+                None
+                if (
+                    resolved_root / spec.get("command_path", spec["script_path"])
+                ).is_file()
+                else "This source-repository recipe is not included in the installed package."
+            ),
         )
         for spec in MODULE_SPECS
     }

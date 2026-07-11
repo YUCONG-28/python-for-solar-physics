@@ -1,36 +1,57 @@
-# 模块用途: 测试 FITS 头信息解析和 SunPy map 元数据处理。
-# 主要输入: FITS 测试文件或头信息样例。
-# 主要输出/运行说明: 输出头信息检查结果，辅助定位元数据问题。
-"""
-Created on Sun Nov 23 00:19:30 2025
+"""Inspect selected metadata from one or more local FITS files.
 
-@author: Severus
+The example is import-safe and reads data only after :func:`main` is called.
+FITS access is delegated to the public :mod:`solar_toolkit.io` API.
 """
 
-from astropy.io import fits
+from __future__ import annotations
 
-from solar_toolkit.path_config import load_script_config
+import argparse
+from collections.abc import Sequence
+from pathlib import Path
 
-PATH_CONFIG = load_script_config(
-    "test_fits_header_metadata",
-    {
-        "file_path0": (
-            r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450"
-            r"\149MHz\149MHz_DeclinationDegree.fits"
-        ),
-        "file_path1": (
-            r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450"
-            r"\149MHz\149MHz_RightAscensionDegree.fits"
-        ),
-    },
-)
-file_path0 = PATH_CONFIG["file_path0"]
-file_path1 = PATH_CONFIG["file_path1"]
-# 读取FITS文件
-hdul0 = fits.open(file_path0)
-header0 = hdul0[0].header
-hdul1 = fits.open(file_path1)
-header1 = hdul1[0].header
-print(header0)
-print("***********************")
-print(header1)
+from solar_toolkit.io import read_fits_data_header
+
+REQUIRES_LOCAL_DATA = True
+DEFAULT_KEYS = ("DATE-OBS", "INSTRUME", "WAVELNTH", "NAXIS1", "NAXIS2")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the real-data recipe parser."""
+
+    parser = argparse.ArgumentParser(description="Inspect local FITS headers.")
+    parser.add_argument("paths", nargs="+", help="One or more FITS files.")
+    parser.add_argument("--hdu", type=int, default=0, help="HDU index to inspect.")
+    return parser
+
+
+def inspect_headers(
+    paths: Sequence[str | Path],
+    *,
+    hdu_index: int = 0,
+) -> list[tuple[Path, tuple[int, ...], dict[str, object]]]:
+    """Return array shapes and a compact header selection for ``paths``."""
+
+    rows = []
+    for value in paths:
+        path = Path(value)
+        data, header = read_fits_data_header(path, hdu_index=hdu_index)
+        metadata = {key: header.get(key) for key in DEFAULT_KEYS}
+        shape = () if data is None else tuple(data.shape)
+        rows.append((path, shape, metadata))
+    return rows
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Print compact FITS metadata and return a process status code."""
+
+    args = build_parser().parse_args(argv)
+    for path, shape, metadata in inspect_headers(args.paths, hdu_index=args.hdu):
+        print(f"{path}: shape={shape}")
+        for key, value in metadata.items():
+            print(f"  {key}: {value}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

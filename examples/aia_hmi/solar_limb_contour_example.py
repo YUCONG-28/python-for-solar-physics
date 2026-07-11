@@ -1,24 +1,47 @@
-# 模块用途: 测试从 SunPy map 数据中提取日面轮廓/边界。
-# 主要输入: 太阳图像 map 或 FITS 测试数据。
-# 主要输出/运行说明: 输出轮廓检测结果或调试图像。
-"""
-Created on Sun Jan 18 15:21:18 2026
+"""Run the packaged HMI magnetogram workflow on local FITS files.
 
-@author: Severus
+The historical filename is retained for link compatibility.  The recipe is
+import-safe and delegates all file selection, WCS alignment, and plotting to
+the public :mod:`solar_toolkit.hmi.magnetogram` API.
 """
 
-import matplotlib.pyplot as plt
-import sunpy.data.sample
-import sunpy.map
+from __future__ import annotations
 
-# 1. Load solar image data (using SunPy's built-in AIA 171Å sample image here)
-# To use your own data, replace with: sunpy.map.Map('your_file.fits')
-aia_map = sunpy.map.Map(sunpy.data.sample.AIA_171_IMAGE)
+import argparse
+from collections.abc import Sequence
 
-# 2. Create image and draw solar limb
-fig = plt.figure()
-ax = fig.add_subplot(projection=aia_map)  # Key: use the map's own projection
-aia_map.plot(axes=ax)  # Draw base map
-aia_map.draw_limb(axes=ax, color="red")  # Draw solar limb, color can be customized
-plt.colorbar()  # Add color bar
-plt.show()
+from solar_toolkit.hmi.magnetogram import run_magnetogram_workflow
+
+REQUIRES_LOCAL_DATA = True
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the real-data recipe parser."""
+
+    parser = argparse.ArgumentParser(
+        description="Render aligned HMI magnetograms from a local FITS directory."
+    )
+    parser.add_argument("input_dir", help="Directory containing HMI FITS files.")
+    parser.add_argument("output_dir", help="Directory for generated PNG files.")
+    parser.add_argument("--frame-count", type=int, default=1)
+    parser.add_argument("--show", action="store_true")
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the packaged workflow and return a process status code."""
+
+    args = build_parser().parse_args(argv)
+    outputs = run_magnetogram_workflow(
+        args.input_dir,
+        args.output_dir,
+        frame_count=args.frame_count,
+        show_plot=args.show,
+    )
+    for output in outputs:
+        print(output)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

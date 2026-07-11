@@ -646,7 +646,7 @@ def plot_tb(
 # ============================================================
 
 
-def main() -> None:
+def main(argv=None) -> int:
     sep = "=" * 60
 
     # ── Step 1：读取 AIA ─────────────────────────────────────
@@ -732,7 +732,8 @@ def main() -> None:
 
     plt.show()
     print(sep)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

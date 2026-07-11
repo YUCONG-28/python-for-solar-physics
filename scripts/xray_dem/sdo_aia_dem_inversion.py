@@ -378,7 +378,7 @@ def plot_tb(tb_data: np.ndarray, aia_map: SolarMap) -> tuple:
 # ============================================================
 
 
-def main() -> None:
+def main(argv=None) -> int:
     sep = "=" * 60
 
     # ── Step 1：读取 AIA WCS 与太阳几何参数 ──────────────────
@@ -413,7 +413,8 @@ def main() -> None:
 
     plt.show()
     print(sep)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

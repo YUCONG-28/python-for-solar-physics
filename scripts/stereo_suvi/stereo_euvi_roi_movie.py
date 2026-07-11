@@ -143,7 +143,7 @@ def make_movie_like_opencv_mp4(frame_paths: list[Path], video_path: Path) -> Non
     video.release()
 
 
-def main() -> None:
+def main(argv=None) -> int:
     warnings.filterwarnings("ignore", category=SunpyUserWarning)
     warnings.filterwarnings("ignore", category=SunpyMetadataWarning)
     rows = load_manifest()
@@ -177,7 +177,8 @@ def main() -> None:
     summary_path = OUT_ROOT / "movie_summary.csv"
     summary_path.write_text("\n".join(summary) + "\n", encoding="utf-8")
     print(f"summary={summary_path}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

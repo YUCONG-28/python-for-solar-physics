@@ -13,6 +13,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+__all__ = [
+    "JobContext",
+    "JobRecord",
+    "JobRunner",
+    "PopenLike",
+    "default_python_executable",
+    "ensure_allowed_path",
+    "normalize_arguments",
+    "prepend_conda_dll_paths_to_env",
+    "validate_payload_paths",
+]
+
 DEFAULT_CONDA_PYTHON = Path("D:/miniforge3/envs/solarphysics_env/python.exe")
 SHELL_OPERATOR_TOKENS = {"&&", "||", "|", ";", ">", ">>", "<", "`"}
 PATH_KEY_PARTS = (

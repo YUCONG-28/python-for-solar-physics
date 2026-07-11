@@ -155,7 +155,7 @@ def write_selected_files(selections: list[SuviSelection]) -> Path:
     return out_path
 
 
-def main() -> None:
+def main(argv=None) -> int:
     OUT_ROOT.mkdir(parents=True, exist_ok=True)
     warnings.filterwarnings("ignore", category=SunpyUserWarning)
     warnings.filterwarnings("ignore", category=SunpyMetadataWarning)
@@ -185,7 +185,8 @@ def main() -> None:
         print(out_path)
     print(f"overview={overview}")
     print(f"selected_files={selected_file_log}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

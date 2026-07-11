@@ -10,6 +10,8 @@ from solar_toolkit.visualization.image_web_viewer.server import ClientLifecycle
 from .registry import default_registry
 from .runner import JobContext, JobRunner, default_python_executable
 
+__all__ = ["create_app"]
+
 
 def create_app(
     allowed_roots: list[str | Path] | None = None,

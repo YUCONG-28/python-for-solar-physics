@@ -106,7 +106,7 @@ def plot_overview(items) -> Path:
     return out
 
 
-def main() -> None:
+def main(argv=None) -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     rows = load_manifest()
     paths = [nearest_file(rows, wavelength) for wavelength in WAVELENGTHS]
@@ -134,7 +134,8 @@ def main() -> None:
         print(out)
     print(f"overview={overview}")
     print(f"selected={selected}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

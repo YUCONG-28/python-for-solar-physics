@@ -1,49 +1,47 @@
-# 模块用途: 通过 Helioviewer 下载 SOHO/LASCO 日冕仪数据。
-# 主要输入: 观测时间、仪器通道和下载目录。
-# 主要输出/运行说明: 保存 LASCO 数据文件，供 CME 成像和差分分析使用。
-"""
-Created on Mon Mar 31 11:06:15 2025
+#!/usr/bin/env python3
+"""Compatibility CLI for downloading an SOHO/LASCO C2 JP2 sequence."""
 
-@author: 李
-"""
+from __future__ import annotations
 
-from datetime import datetime, timedelta
-from pathlib import Path
+import argparse
+import datetime as dt
 
-import hvpy
-from hvpy.datasource import DataSource
-
+from solar_toolkit.cme.lasco import download_lasco_jp2_sequence
 from solar_toolkit.path_config import load_script_config
 
-# 定义起始时间和结束时间
-start_time = datetime(2024, 8, 8, 19, 00)
-end_time = datetime(2024, 8, 8, 23, 00)
+DEFAULT_START = "2024-08-08T19:00:00"
+DEFAULT_END = "2024-08-08T23:00:00"
+DEFAULT_INTERVAL_SECONDS = 720
+DEFAULT_SAVE_DIR = "<DATA_ROOT>/data/"
 
-time_interval = timedelta(seconds=720)
 
-# 确保保存文件的目录存在
-PATH_CONFIG = load_script_config(
-    "soho_lasco_data_download", {"save_dir": "<DATA_ROOT>/data/"}
-)
-save_dir = Path(PATH_CONFIG["save_dir"])
-save_dir.mkdir(parents=True, exist_ok=True)
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--start", default=DEFAULT_START, help="Inclusive ISO time.")
+    parser.add_argument("--end", default=DEFAULT_END, help="Inclusive ISO time.")
+    parser.add_argument(
+        "--interval-seconds", type=float, default=DEFAULT_INTERVAL_SECONDS
+    )
+    parser.add_argument("--save-dir", help="Override configured output directory.")
+    return parser
 
-# 当前时间初始化为起始时间
-current_time = start_time
 
-while current_time <= end_time:
-    try:
-        # 下载 JP2 图像
-        lasco_jp2_file = hvpy.save_file(
-            hvpy.getJP2Image(current_time, DataSource.LASCO_C2.value),
-            filename=str(
-                save_dir / f'LASCO_C2_{current_time.strftime("%Y%m%d_%H%M%S")}.jp2'
-            ),
-            overwrite=True,
-        )
-        print(f"成功保存文件: LASCO_C2_{current_time.strftime('%Y%m%d_%H%M%S')}.jp2")
-    except Exception as e:
-        print(f"处理 {current_time} 时出现错误: {e}")
-    # 更新当前时间
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.interval_seconds <= 0:
+        parser.error("--interval-seconds must be positive")
+    config = load_script_config(
+        "soho_lasco_data_download", {"save_dir": DEFAULT_SAVE_DIR}
+    )
+    attempted, saved = download_lasco_jp2_sequence(
+        start_time=dt.datetime.fromisoformat(args.start),
+        end_time=dt.datetime.fromisoformat(args.end),
+        interval=dt.timedelta(seconds=args.interval_seconds),
+        output_dir=args.save_dir or config["save_dir"],
+    )
+    return 0 if attempted == saved else 1
 
-    current_time += time_interval
+
+if __name__ == "__main__":
+    raise SystemExit(main())
