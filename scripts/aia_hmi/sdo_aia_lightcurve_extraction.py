@@ -168,7 +168,7 @@ def process_fits_files():
     return time_list, sum_data_list
 
 
-def main():
+def main(argv=None) -> int:
     # 检查是否有已存储的数据
     stored_time, stored_flux = load_stored_data()
 
@@ -179,7 +179,7 @@ def main():
         )
         if choice != "y":
             print("使用已有的数据，不进行重新处理")
-            return
+            return 0
 
     # 处理数据
     print("开始处理FITS文件...")
@@ -191,6 +191,8 @@ def main():
     else:
         print("没有生成有效数据，无法保存")
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

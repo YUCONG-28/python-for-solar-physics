@@ -24,6 +24,15 @@ from solar_toolkit.radio.centers import (
     pixel_to_hpc_arcsec,
 )
 
+__all__ = [
+    "AiaBackground",
+    "NearestAIA",
+    "find_nearest_aia",
+    "load_nearest_background",
+    "read_aia_background",
+    "scan_aia_folder",
+]
+
 
 @dataclass
 class AiaBackground:
@@ -92,7 +101,11 @@ def scan_aia_folder(
                 "wavelength": wavelength,
             }
         )
-    return pd.DataFrame(rows, columns=columns).sort_values("obs_time").reset_index(drop=True)
+    return (
+        pd.DataFrame(rows, columns=columns)
+        .sort_values("obs_time")
+        .reset_index(drop=True)
+    )
 
 
 def _header_time(header: fits.Header) -> pd.Timestamp | None:
@@ -114,12 +127,16 @@ def find_nearest_aia(
     if aia_table is None or aia_table.empty:
         return NearestAIA(status="no_files", reason="AIA table is empty.")
     if "obs_time" not in aia_table.columns or "path" not in aia_table.columns:
-        return NearestAIA(status="invalid_table", reason="AIA table lacks path/obs_time.")
+        return NearestAIA(
+            status="invalid_table", reason="AIA table lacks path/obs_time."
+        )
     target = pd.Timestamp(frame_time)
     times = pd.to_datetime(aia_table["obs_time"], errors="coerce")
     valid = times.notna()
     if not valid.any():
-        return NearestAIA(status="invalid_table", reason="AIA table has no valid times.")
+        return NearestAIA(
+            status="invalid_table", reason="AIA table has no valid times."
+        )
     diffs = (times[valid] - target).abs().dt.total_seconds()
     best_index = diffs.idxmin()
     best_delta = float(diffs.loc[best_index])

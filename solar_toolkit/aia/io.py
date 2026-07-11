@@ -16,6 +16,17 @@ from pathlib import Path
 
 from .config import AIAConfig
 
+__all__ = [
+    "build_multi_band_slots",
+    "discover_wavelength_dirs",
+    "parse_timestr",
+    "resolve_files",
+    "resolve_single_files",
+    "resolve_test_file",
+    "slice_band_files",
+    "sorted_fits_for_band",
+]
+
 
 @lru_cache(maxsize=8192)
 def _parse_timestr_from_name(name: str) -> str:
@@ -78,7 +89,7 @@ def sorted_fits_for_band(
     """Resolve and time-sort all FITS files for one wavelength band."""
     band_dir = (data_path / str(wave)) if use_band_subdirs else data_path
     if not band_dir.is_dir():
-        raise ValueError(f"Missing AIA band directory for {wave} A: {band_dir}")
+        raise ValueError(f"Missing AIA band directory for {wave} Å: {band_dir}")
     files = sorted(band_dir.rglob("*.fits"), key=lambda p: parse_timestr(p))
     if not files:
         raise ValueError(f"No FITS files found in band directory: {band_dir}")

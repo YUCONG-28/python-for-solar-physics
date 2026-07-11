@@ -1,73 +1,74 @@
-# 模块用途: 读取并绘制 SDO/HMI 磁图数据。
-# 主要输入: HMI magnetogram FITS 文件。
-# 主要输出/运行说明: 输出磁场背景图，为耀斑/活动区分析提供磁场环境。
-"""
-Created on Sat Apr  5 14:39:30 2025
+"""Command-line entry point for HMI magnetogram plotting."""
 
-@author: 李
-"""
+from __future__ import annotations
 
-from pathlib import Path
+import argparse
+from collections.abc import Sequence
 
-import astropy.units as u
-import matplotlib.pyplot as plt
-import sunpy.map
-from astropy.coordinates import SkyCoord
-from sunpy.coordinates import propagate_with_solar_surface
-
+from solar_toolkit.hmi.magnetogram import (
+    DEFAULT_DATA_DIR,
+    DEFAULT_OUTPUT_DIR,
+    DEFAULT_ROI_BOUNDS,
+    run_magnetogram_workflow,
+)
 from solar_toolkit.path_config import load_script_config
 
-# vmin = 10  # 最小值（对数尺度）
-# vmax = 2000  # 最大值（对数尺度）
-# norm = colors.LogNorm(vmin=vmin, vmax=vmax)
+_DEFAULT_CONFIG = {
+    "data_dir": str(DEFAULT_DATA_DIR),
+    "output_dir": str(DEFAULT_OUTPUT_DIR),
+    "roi_bounds": DEFAULT_ROI_BOUNDS,
+    "frame_count": 1,
+    "dpi": 200,
+    "show_plot": False,
+}
 
-PATH_CONFIG = load_script_config(
-    "sdo_hmi_magnetogram_plot",
-    {
-        "data_dir": "<DATA_ROOT>/JSOCdata/HMI/",
-        "output_dir": "<DATA_ROOT>/JSOCdata/HMI/plot_offset",
-        "show_plot": False,
-    },
-)
-data_dir = Path(PATH_CONFIG["data_dir"])
-file_paths = sorted(p for p in data_dir.iterdir() if p.suffix.lower() == ".fits")
-aia_sequence = sunpy.map.Map(file_paths, sequence=True)
-output_dir = Path(PATH_CONFIG["output_dir"])
-output_dir.mkdir(parents=True, exist_ok=True)
-show_plot = bool(PATH_CONFIG.get("show_plot", False))
 
-my_map = sunpy.map.Map(aia_sequence[1])
-roi_bottom_left = SkyCoord(
-    Tx=180 * u.arcsec, Ty=-340 * u.arcsec, frame=my_map.coordinate_frame
-)
-roi_top_right = SkyCoord(
-    Tx=520 * u.arcsec, Ty=20 * u.arcsec, frame=my_map.coordinate_frame
-)
-cutout_map = my_map.submap(roi_bottom_left, top_right=roi_top_right)
-
-# fig = plt.figure()
-# ax = fig.add_subplot(projection=cutout_map)
-# cutout_map.plot(axes=ax,norm=norm)
-
-with propagate_with_solar_surface():
-    aia_sequence_aligned = sunpy.map.Map(
-        [m.reproject_to(cutout_map.wcs) for m in aia_sequence], sequence=True
+def _build_parser(config: dict) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Reproject and render local SDO/HMI magnetogram FITS files."
     )
+    parser.add_argument("--data-dir", default=config["data_dir"])
+    parser.add_argument("--output-dir", default=config["output_dir"])
+    parser.add_argument(
+        "--roi-bounds",
+        nargs=4,
+        type=float,
+        metavar=("X_MIN", "Y_MIN", "X_MAX", "Y_MAX"),
+        default=config.get("roi_bounds", DEFAULT_ROI_BOUNDS),
+    )
+    parser.add_argument(
+        "--frame-count",
+        type=int,
+        default=int(config.get("frame_count", 1)),
+    )
+    parser.add_argument("--dpi", type=int, default=int(config.get("dpi", 200)))
+    parser.add_argument(
+        "--show-plot",
+        action=argparse.BooleanOptionalAction,
+        default=bool(config.get("show_plot", False)),
+    )
+    return parser
 
-for i in range(1):  # 从 0 到 4
-    fig = plt.figure()
-    ax = fig.add_subplot(projection=aia_sequence_aligned[i])
-    ani = aia_sequence_aligned[i].plot(axes=ax)  # norm=norm)
 
-    base_name = file_paths[i].name
-    output_path = output_dir / (base_name + ".png")
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the configured HMI magnetogram workflow."""
 
-    parts = base_name.split(".")
-    time_str = parts[2]
-    plt.title(time_str)
+    config = load_script_config("sdo_hmi_magnetogram_plot", _DEFAULT_CONFIG)
+    args = _build_parser(config).parse_args(argv)
+    output_paths = run_magnetogram_workflow(
+        data_dir=args.data_dir,
+        output_dir=args.output_dir,
+        roi_bounds=tuple(args.roi_bounds),
+        frame_count=args.frame_count,
+        show_plot=args.show_plot,
+        dpi=args.dpi,
+    )
+    print(f"Generated {len(output_paths)} HMI magnetogram image(s)")
+    return 0
 
-    plt.savefig(output_path, dpi=200, bbox_inches="tight")
 
-    if show_plot:
-        plt.show()
-    plt.close(fig)
+__all__ = ["main"]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -16,6 +16,7 @@ _SUBMODULES = {
     "fits_rename": "solar_toolkit.hmi.fits_rename",
     "magnetogram": "solar_toolkit.hmi.magnetogram",
     "overlay": "solar_toolkit.hmi.overlay",
+    "processing": "solar_toolkit.hmi.processing",
 }
 
 __all__ = sorted(_SUBMODULES)

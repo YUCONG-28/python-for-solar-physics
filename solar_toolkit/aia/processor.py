@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from .config import AIAConfig
 
+__all__ = ["process_aia_fits"]
+
 
 def _actual_mode(cfg: AIAConfig) -> str:
     """Normalize compatibility flags into the runtime mode used by the CLI."""

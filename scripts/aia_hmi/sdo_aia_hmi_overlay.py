@@ -1,240 +1,116 @@
-# 模块用途: 将 SDO/AIA EUV 图像与 SDO/HMI 磁图共配准并叠加显示。
-# 主要输入: AIA FITS 图像、HMI 磁场 FITS 图像和坐标/时间匹配参数。
-# 主要输出/运行说明: 输出 AIA-HMI 叠加图，用于分析活动区磁场背景。
-"""
-Created on Thu Oct 23 21:26:10 2025
+"""Command-line entry point for AIA/HMI magnetic-contour overlays."""
 
-@author: Severus
-"""
+from __future__ import annotations
 
-import time
-from pathlib import Path
+import argparse
+from collections.abc import Sequence
 
-import astropy.units as u
-import matplotlib.colors as colors
-import matplotlib.pyplot as plt
-
-# 导入必要的天文数据处理模块
-import sunpy.map
-from astropy.coordinates import SkyCoord
-from matplotlib.lines import Line2D
-from tqdm import tqdm
-
-# 导入共享工具模块
-from solar_toolkit import solar_analysis_utils as utils
+from solar_toolkit.hmi.overlay import (
+    DEFAULT_AIA_DIR,
+    DEFAULT_HMI_DIR,
+    DEFAULT_OUTPUT_DIR,
+    DEFAULT_ROI_BOUNDS,
+    run_overlay_workflow,
+)
 from solar_toolkit.path_config import load_script_config
 
-# 设置中文字体
-utils.setup_chinese_font()
-
-# 数据路径设置（使用 pathlib.Path）
-PATH_CONFIG = load_script_config(
-    "sdo_aia_hmi_overlay",
-    {
-        "input_dir_AIA": "<PROJECT_ROOT>/20250503/All/171",
-        "input_dir_HMI": "<PROJECT_ROOT>/20250503/All/hmi",
-        "output_dir": "<PROJECT_ROOT>/20250503/All/171_hmi",
-        "show_plot": False,
-    },
-)
-input_dir_AIA = Path(PATH_CONFIG["input_dir_AIA"])
-input_dir_HMI = Path(PATH_CONFIG["input_dir_HMI"])
-output_dir = Path(PATH_CONFIG["output_dir"])
-output_dir.mkdir(parents=True, exist_ok=True)
-show_plot = bool(PATH_CONFIG.get("show_plot", False))
-
-# 设置参数
-threshold = 0 * u.Gauss  # HMI数据阈值，设置最小值
-sigma = 3  # 高斯滤波标准差，越大越平滑
-vmin = 16  # 最小值（对数尺度）
-vmax = 6666  # 最大值（对数尺度）
-norm = colors.LogNorm(vmin=vmin, vmax=vmax)
+_DEFAULT_CONFIG = {
+    "input_dir_AIA": str(DEFAULT_AIA_DIR),
+    "input_dir_HMI": str(DEFAULT_HMI_DIR),
+    "output_dir": str(DEFAULT_OUTPUT_DIR),
+    "roi_bounds": DEFAULT_ROI_BOUNDS,
+    "threshold_gauss": 0.0,
+    "gaussian_sigma": 3.0,
+    "vmin": 16.0,
+    "vmax": 6666.0,
+    "contour_level_gauss": 50.0,
+    "max_time_diff_seconds": 24.0,
+    "dpi": 300,
+    "show_plot": False,
+    "show_progress": True,
+}
 
 
-# 获取排序后的文件列表
-print("加载AIA文件...")
-aia_files = utils.get_sorted_fits_files(str(input_dir_AIA))
-print("加载HMI文件...")
-hmi_files = utils.get_sorted_fits_files(str(input_dir_HMI))
-
-if not aia_files:
-    raise ValueError("AIA目录中未找到有效的FITS文件")
-if not hmi_files:
-    raise ValueError("HMI目录中未找到有效的FITS文件")
-
-print(f"找到 {len(aia_files)} 个AIA文件和 {len(hmi_files)} 个HMI文件")
-
-# 确定AIA的目标坐标系（与AIA_193.py保持一致）
-if len(aia_files) >= 2:
-    # 只加载第二个文件确定裁剪区域和目标坐标系
-    temp_map = sunpy.map.Map(aia_files[1][0])
-    roi_bottom_left = SkyCoord(
-        Tx=-700 * u.arcsec, Ty=-100 * u.arcsec, frame=temp_map.coordinate_frame
+def _build_parser(config: dict) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Render time-matched HMI magnetic contours over AIA images."
     )
-    roi_top_right = SkyCoord(
-        Tx=-100 * u.arcsec, Ty=400 * u.arcsec, frame=temp_map.coordinate_frame
+    parser.add_argument("--input-dir-aia", default=config["input_dir_AIA"])
+    parser.add_argument("--input-dir-hmi", default=config["input_dir_HMI"])
+    parser.add_argument("--output-dir", default=config["output_dir"])
+    parser.add_argument(
+        "--roi-bounds",
+        nargs=4,
+        type=float,
+        metavar=("X_MIN", "Y_MIN", "X_MAX", "Y_MAX"),
+        default=config.get("roi_bounds", DEFAULT_ROI_BOUNDS),
     )
-    cutout_map = temp_map.submap(roi_bottom_left, top_right=roi_top_right)
-    target_wcs = cutout_map.wcs  # 保存目标坐标系用于重投影
-
-    # 立即清理临时变量释放内存
-    utils.safe_delete(
-        ["temp_map", "cutout_map", "roi_bottom_left", "roi_top_right"], locals()
+    parser.add_argument(
+        "--threshold-gauss",
+        type=float,
+        default=float(config.get("threshold_gauss", 0.0)),
     )
-else:
-    raise ValueError("AIA文件数量不足，无法确定目标坐标系")
+    parser.add_argument(
+        "--gaussian-sigma",
+        type=float,
+        default=float(config.get("gaussian_sigma", 3.0)),
+    )
+    parser.add_argument("--vmin", type=float, default=float(config.get("vmin", 16.0)))
+    parser.add_argument(
+        "--vmax",
+        type=float,
+        default=float(config.get("vmax", 6666.0)),
+    )
+    parser.add_argument(
+        "--contour-level-gauss",
+        type=float,
+        default=float(config.get("contour_level_gauss", 50.0)),
+    )
+    parser.add_argument(
+        "--max-time-diff-seconds",
+        type=float,
+        default=float(config.get("max_time_diff_seconds", 24.0)),
+    )
+    parser.add_argument("--dpi", type=int, default=int(config.get("dpi", 300)))
+    parser.add_argument(
+        "--show-plot",
+        action=argparse.BooleanOptionalAction,
+        default=bool(config.get("show_plot", False)),
+    )
+    parser.add_argument(
+        "--show-progress",
+        action=argparse.BooleanOptionalAction,
+        default=bool(config.get("show_progress", True)),
+    )
+    return parser
 
 
-# 时间匹配并绘制图像
-hmi_idx = 0  # HMI索引（滑动窗口）
-total_files = len(aia_files)
-start_time = time.time()
-processed_files = 0
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the configured AIA/HMI overlay workflow."""
 
-# 预定义轮廓线参数以避免重复创建
-levels = utils.create_magnetic_contour_levels(50 * u.Gauss)
-linewidths = [1, 1]  # 绝对值大的磁场（500G）用更粗的线
-colors_list = ["b", "r"]  # 轮廓线颜色
+    config = load_script_config("sdo_aia_hmi_overlay", _DEFAULT_CONFIG)
+    args = _build_parser(config).parse_args(argv)
+    output_paths = run_overlay_workflow(
+        input_dir_aia=args.input_dir_aia,
+        input_dir_hmi=args.input_dir_hmi,
+        output_dir=args.output_dir,
+        roi_bounds=tuple(args.roi_bounds),
+        threshold_gauss=args.threshold_gauss,
+        gaussian_sigma=args.gaussian_sigma,
+        vmin=args.vmin,
+        vmax=args.vmax,
+        contour_level_gauss=args.contour_level_gauss,
+        max_time_diff_seconds=args.max_time_diff_seconds,
+        dpi=args.dpi,
+        show_plot=args.show_plot,
+        show_progress=args.show_progress,
+    )
+    print(f"Generated {len(output_paths)} AIA/HMI overlay image(s)")
+    return 0
 
-# 创建图例元素一次，避免重复创建
-legend_elements = [
-    Line2D([0], [0], color="b", lw=1, alpha=0.8, label="-50 Gauss"),
-    Line2D([0], [0], color="r", lw=1, alpha=0.8, label="50 Gauss"),
-]
 
-# 监控内存使用
-utils.monitor_memory_usage("处理开始前内存使用")
+__all__ = ["main"]
 
-for aia_path, aia_time in tqdm(aia_files, desc="处理进度", unit="文件"):
-    if hmi_idx >= len(hmi_files):
-        print("已处理完所有HMI文件，终止程序")
-        break
 
-    file_start_time = time.time()
-
-    # 滑动窗口寻找最近的HMI文件
-    while hmi_idx < len(hmi_files) - 1:
-        current_hmi_time = hmi_files[hmi_idx][1]
-        next_hmi_time = hmi_files[hmi_idx + 1][1]
-        current_diff = abs((aia_time - current_hmi_time).total_seconds())
-        next_diff = abs((aia_time - next_hmi_time).total_seconds())
-        if next_diff < current_diff:
-            hmi_idx += 1
-        else:
-            break
-
-    # 检查时间差
-    hmi_path, hmi_time = hmi_files[hmi_idx]
-    time_diff = abs((aia_time - hmi_time).total_seconds())
-    if time_diff > 24:
-        print(
-            f"AIA文件 {Path(aia_path).name} 无匹配HMI（时间差{time_diff:.1f}s），跳过"
-        )
-        processed_files += 1
-        continue
-
-    # 绘制图像
-    try:
-        # 处理AIA数据（使用与AIA_193.py一致的重投影方式）
-        try:
-            # 加载AIA文件并归一化
-            aia_map = sunpy.map.Map(aia_path)
-            normalized_aia_map = utils.normalize_aia_exposure(aia_map)
-
-            # 重投影到目标坐标系
-            aligned_aia_map = utils.align_maps_to_reference(
-                normalized_aia_map, target_wcs
-            )
-        except Exception as e:
-            print(f"AIA文件读取失败：{aia_path}，错误：{e}")
-            processed_files += 1
-            continue
-
-        # 处理HMI数据
-        try:
-            hmi_map = sunpy.map.Map(hmi_path)
-
-            # HMI数据重投影到目标坐标系
-            aligned_hmi_map = utils.align_maps_to_reference(hmi_map, target_wcs)
-
-        except Exception as e:
-            print(f"HMI文件读取失败：{hmi_path}，错误：{e}")
-            processed_files += 1
-            continue
-
-        # 应用阈值和高斯滤波
-        hmi_smoothed = utils.process_hmi_magnetic_field(
-            aligned_hmi_map, threshold, sigma
-        )
-
-        # 绘制图像
-        fig, ax = utils.create_figure_with_white_background(figsize=(10, 8))
-        ax = fig.add_subplot(projection=aligned_aia_map)
-        aligned_aia_map.plot(axes=ax, norm=norm)
-        aligned_aia_map.draw_grid(axes=ax)
-
-        # 绘制轮廓线
-        cset = hmi_smoothed.draw_contours(
-            levels,
-            axes=ax,
-            colors=colors_list,
-            alpha=0.8,
-            filled=False,
-            linewidths=linewidths,
-        )
-        ax.axis(ax.axis())  # 保持坐标范围
-
-        # 添加图例
-        ax.legend(
-            handles=legend_elements,
-            loc="upper right",
-            bbox_to_anchor=(1, 1),
-            frameon=True,
-        )
-
-        # 设置标题
-        title_time = utils.format_time_for_display(aia_time)
-        ax.set_title(f"{title_time}", fontsize=16, pad=34)
-
-        # 保存图像（使用 pathlib）
-        file_time_str = utils.format_time_for_filename(aia_time)
-        output_path = output_dir / f"{file_time_str}.png"
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-        if show_plot:
-            plt.show()
-
-        # 关闭图像并清理内存
-        plt.close(fig)
-        utils.safe_delete(
-            [
-                "aia_map",
-                "normalized_aia_map",
-                "aligned_aia_map",
-                "hmi_map",
-                "aligned_hmi_map",
-                "hmi_smoothed",
-                "ax",
-                "fig",
-            ],
-            locals(),
-        )
-
-    except Exception as e:
-        print(f"处理文件时出错: {e}")
-        plt.close("all")
-        utils.optimized_gc_collect()
-
-    processed_files += 1
-
-    # 每处理10个文件报告一次进度和内存使用
-    if processed_files % 10 == 0:
-        elapsed = time.time() - start_time
-        files_per_second = processed_files / elapsed if elapsed > 0 else 0
-        utils.monitor_memory_usage(f"已处理 {processed_files}/{total_files} 个文件")
-        print(f"处理速度: {files_per_second:.2f} 文件/秒")
-
-# 显示总耗时
-total_time = time.time() - start_time
-utils.monitor_memory_usage("处理完成后内存使用")
-print(f"处理完成！共处理 {processed_files} 个文件，耗时: {total_time:.2f} 秒")
-print(f"平均处理速度: {processed_files/total_time:.2f} 文件/秒")
+if __name__ == "__main__":
+    raise SystemExit(main())

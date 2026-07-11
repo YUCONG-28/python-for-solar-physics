@@ -203,7 +203,7 @@ def plot_multi_data(
     plt.show()
 
 
-def main():
+def main(argv=None) -> int:
     path_config = load_script_config(
         "sdo_aia_lightcurve_plot",
         {
@@ -250,14 +250,14 @@ def main():
         default=["2024-08-08 19:22:30", "2024-08-08 19:27:30"],
         help='需要标记的时间点列表（格式：YYYY-MM-DD HH:MM:SS，例如："2023-10-01 19:22:30" "2023-10-01 20:00:00"）',
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     input_dir = args.dir
     input_path = Path(input_dir)
     # 验证文件夹是否存在
     if not input_path.is_dir():
         print(f"错误：文件夹 '{input_dir}' 不存在，请检查路径是否正确")
-        return
+        return 0
 
     # 处理输出文件夹
     output_dir = args.output if args.output else input_dir
@@ -285,7 +285,7 @@ def main():
 
     if not all_csv_files:
         print(f"警告：文件夹 '{input_dir}' 中没有找到CSV文件")
-        return
+        return 0
 
     # 验证并筛选用户指定的文件
     selected_files = []
@@ -300,7 +300,7 @@ def main():
 
     if not selected_files:
         print("错误：没有有效的文件可供处理")
-        return
+        return 0
 
     print(f"已选择文件：{selected_files}")
 
@@ -315,7 +315,8 @@ def main():
     # 绘制所有数据
     plot_multi_data(all_data, output_dir, selected_files, mark_times)
     plt.show()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

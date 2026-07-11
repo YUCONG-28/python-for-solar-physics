@@ -71,7 +71,7 @@ def download_one(item: tuple[str, Path]) -> tuple[str, str, int | str]:
     return ("failed", path.name, last_error)
 
 
-def main() -> int:
+def main(argv=None) -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     records = collect_records()
     manifest = OUT / "manifest_urls.txt"

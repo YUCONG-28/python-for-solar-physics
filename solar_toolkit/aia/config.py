@@ -15,6 +15,8 @@ from pathlib import Path
 
 from solar_toolkit.path_config import apply_config_to_object
 
+__all__ = ["AIA_CONFIG", "AIAConfig", "DIFF_CONFIG"]
+
 AIA_CONFIG: dict = {
     94: {"cmap": "sdoaia94", "vmin": 0.6, "vmax": 420},
     131: {"cmap": "sdoaia131", "vmin": 0.9, "vmax": 810},

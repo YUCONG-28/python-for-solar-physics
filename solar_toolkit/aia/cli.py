@@ -16,6 +16,8 @@ from pathlib import Path
 from .config import AIAConfig, _normalize_wave_float_dict
 from .processor import _actual_mode, process_aia_fits
 
+__all__ = ["build_parser", "config_from_args", "main"]
+
 
 def _configure_matplotlib_backend(mode: str) -> None:
     if mode in ("single", "mosaic"):
@@ -473,7 +475,7 @@ def config_from_args(args: argparse.Namespace) -> AIAConfig:
     return cfg
 
 
-def main(argv: Sequence[str] | None = None) -> None:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -491,3 +493,4 @@ def main(argv: Sequence[str] | None = None) -> None:
     print(f"Mode: {actual_mode}")
     print(f"Wavelengths: {cfg.multi_band_wavelengths}")
     process_aia_fits(cfg)
+    return 0

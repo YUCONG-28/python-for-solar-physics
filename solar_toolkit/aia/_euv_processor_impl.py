@@ -127,14 +127,13 @@ Code test-mode example:
 
 import argparse
 import gc
-import math
 import multiprocessing
 import re
 import time
 import warnings
 from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import astropy.units as u
@@ -147,269 +146,37 @@ from astropy.coordinates import SkyCoord
 from sunpy.coordinates import propagate_with_solar_surface
 from tqdm import tqdm
 
-from solar_toolkit.path_config import apply_config_to_object
+from . import config as _config_helpers
+from . import difference as _difference_helpers
+from . import io as _io_helpers
+from . import mosaic as _mosaic_helpers
 
-from .io import parse_timestr as _shared_parse_timestr
+AIA_CONFIG = _config_helpers.AIA_CONFIG
+DIFF_CONFIG = _config_helpers.DIFF_CONFIG
+AIAConfig = _config_helpers.AIAConfig
+_normalize_wave_float_dict = _config_helpers._normalize_wave_float_dict
 
-# ==============================================================================
-# Configuration
-# ==============================================================================
-# AIA_CONFIG 控制颜色映射和 LogNorm 显示范围；vmin/vmax 是曝光归一化后的 DN/s。
-# 图像过曝可增大 vmax，细节太暗可减小 vmax。
-AIA_CONFIG: dict = {
-    94: {"cmap": "sdoaia94", "vmin": 0.6, "vmax": 420},
-    131: {"cmap": "sdoaia131", "vmin": 0.9, "vmax": 810},
-    171: {"cmap": "sdoaia171", "vmin": 16.0, "vmax": 2800},
-    193: {"cmap": "sdoaia193", "vmin": 49.0, "vmax": 4200},
-    211: {"cmap": "sdoaia211", "vmin": 22.0, "vmax": 2800},
-    304: {"cmap": "sdoaia304", "vmin": 1.2, "vmax": 1400},
-    335: {"cmap": "sdoaia335", "vmin": 0.5, "vmax": 700},
-    1600: {"cmap": "sdoaia1600", "vmin": 5.0, "vmax": 3500},
-}
+_diff_config_vlim = _difference_helpers.diff_config_vlim
+_resolve_fixed_difference_limits_for_wave = (
+    _difference_helpers.resolve_fixed_difference_limits_for_wave
+)
 
-# Original AIA EUV images use LogNorm because the intensity range is large.
-# Difference images contain signed values, so they must use a linear Normalize
-# with symmetric vmin/vmax around zero. SunPy examples often show AIA 193
-# differences with about +/-200, but practical science plots should adjust the
-# range by event, ROI, and wavelength. The default below is therefore an auto
-# symmetric percentile of abs(diff_data), with DIFF_CONFIG as a fallback or
-# explicit config mode. Historical fixed values such as +/-777 or +/-888 are
-# intentionally not the default because they can hide weak structure or saturate
-# strong events.
-DIFF_CONFIG: dict = {
-    94: {"cmap": "RdBu_r", "vlim": 120.0},
-    131: {"cmap": "RdBu_r", "vlim": 200.0},
-    171: {"cmap": "RdBu_r", "vlim": 250.0},
-    193: {"cmap": "RdBu_r", "vlim": 250.0},
-    211: {"cmap": "RdBu_r", "vlim": 220.0},
-    304: {"cmap": "RdBu_r", "vlim": 300.0},
-    335: {"cmap": "RdBu_r", "vlim": 120.0},
-    1600: {"cmap": "RdBu_r", "vlim": 600.0},
-}
+_build_multi_band_slots = _io_helpers.build_multi_band_slots
+_discover_wavelength_dirs = _io_helpers.discover_wavelength_dirs
+_parse_timestr = _io_helpers.parse_timestr
+_resolve_files = _io_helpers.resolve_files
+_resolve_single_files = _io_helpers.resolve_single_files
+_resolve_test_file = _io_helpers.resolve_test_file
+_slice_band_files = _io_helpers.slice_band_files
+_sorted_fits_for_band = _io_helpers.sorted_fits_for_band
 
+_auto_mosaic_ncols = _mosaic_helpers.auto_mosaic_ncols
+_layout_grid = _mosaic_helpers.layout_grid
+_layout_mosaic_grid = _mosaic_helpers.layout_mosaic_grid
+_mosaic_slot_wavelengths = _mosaic_helpers.mosaic_slot_wavelengths
+_ordered_unique = _mosaic_helpers.ordered_unique
 
-def _normalize_wave_float_dict(value, name: str) -> dict:
-    if value is None:
-        return {}
-    if isinstance(value, dict):
-        normalized = {}
-        for k, v in value.items():
-            wave = int(k)
-            normalized[wave] = float(v)
-        return normalized
-    if isinstance(value, (list, tuple)):
-        normalized = {}
-        for item in value:
-            if isinstance(item, str):
-                if ":" not in item:
-                    raise ValueError(
-                        f"{name} item must use WAVE:VALUE format, got {item!r}"
-                    )
-                wave_str, val_str = item.split(":", 1)
-                normalized[int(wave_str)] = float(val_str)
-            else:
-                raise ValueError(f"{name} must be dict or list of WAVE:VALUE strings.")
-        return normalized
-    raise ValueError(f"{name} must be dict, list, tuple, or None.")
-
-
-@dataclass
-class AIAConfig:
-    # ===== 用户最常修改区域 =====
-    root_dir: str = r"<PROJECT_ROOT>"
-    year: str = "2026"
-    date: str = "20260326"
-
-    # mode 可选 single / mosaic / test；use_test_mode=True 时优先只预览一张图。
-    mode: str = "mosaic"
-    use_test_mode: bool = False
-
-    # test_file 优先级最高；为空时从 data_path/test_wave 中按时间排序选第 test_index 个文件。
-    # Python 从 0 开始计数；若想选肉眼看到的第 100 个文件，可设置 test_index=99。
-    test_file: str | None = None
-    test_wave: int = 131
-    test_index: int = 99
-
-    data_path: str | None = None
-    output_dir: str | None = None
-    single_band_output_subdir: str = "plot"
-    mosaic_output_subdir: str = "multi_band"
-    mosaic_difference_output_subdir: str = "multi_band_difference"
-    mosaic_original_plus_difference_output_subdir: str = (
-        "multi_band_original_plus_difference"
-    )
-
-    start_idx: int = 0
-    end_idx: int | None = None
-
-    # ROI 单位 arcsec，Helioprojective 坐标，格式 (xmin, xmax, ymin, ymax)。
-    # test 模式最适合用来调 ROI。
-    roi_bounds: tuple[float, float, float, float] = (-1100, -800, -550, -200)
-
-    # 默认 None 表示使用 AIA_CONFIG；仅临时调图时手动覆盖。
-    user_vmin: float | None = None
-    user_vmax: float | None = None
-    user_cmap: str | None = None
-
-    base_fig_width: float = 8.0
-    dpi: int = 300
-    show_limb: bool = False
-    show_grid: bool = True
-    show_colorbar: bool = False
-
-    # test 模式会自动设置 save_image=False、show_image=True。
-    save_image: bool = True
-    show_image: bool = False
-    use_band_subdirs: bool = True
-    max_workers: int | None = None
-
-    draw_original: bool = False
-    multi_band_composite: bool = False
-    multi_band_wavelengths: tuple[int, ...] | None = (
-        94,
-        131,
-        171,
-        193,
-        211,
-        304,
-    )
-    multi_band_merge_axes: bool = True
-    multi_band_also_save_single: bool = False
-
-    # mosaic 每行多少张子图；None 表示自动接近方形布局，例如 3 表示每行 3 张。
-    mosaic_ncols: int | None = 3
-    # mosaic 子图之间是否无缝拼接；True 时强制 wspace/hspace=0。
-    mosaic_seamless: bool = True
-    # 是否只在拼图外边缘显示坐标轴刻度与标签。
-    mosaic_show_outer_axes: bool = True
-    # 外边缘坐标字体大小。
-    mosaic_ticklabel_fontsize: int = 7
-    mosaic_axislabel_fontsize: int = 9
-    # 内部子图通常隐藏坐标，避免无缝拼接时坐标重叠。
-    mosaic_hide_inner_axes: bool = True
-    # 不够填满网格时是否隐藏最后的空白 panel。
-    mosaic_hide_empty_panels: bool = True
-    # 使用手动 axes 布局，避免 GridSpec/WCSAxes 装饰撑开子图间距。
-    mosaic_manual_layout: bool = True
-    # 只给整张 mosaic 外侧留边，panel 之间不留空隙。
-    mosaic_left: float = 0.055
-    mosaic_right: float = 0.995
-    mosaic_bottom: float = 0.055
-    mosaic_top: float = 0.935
-    mosaic_top_no_title: float = 0.995
-    mosaic_title_y: float = 0.975
-    # mosaic 默认不使用 tight bbox，避免重新引入白边。
-    mosaic_save_tight: bool = False
-    mosaic_pad_inches: float = 0.0
-    # 默认不拉伸图像；仅展示用途可强制填满 axes。
-    mosaic_force_fill_axes: bool = False
-    # 打印 figure/panel 宽高比，排查 mosaic 内部白边。
-    mosaic_debug_layout: bool = False
-    # 减少外边缘坐标数量，避免相邻 panel 的 tick label 重叠。
-    mosaic_reduce_tick_overlap: bool = True
-    mosaic_max_ticks_per_axis: int = 3
-    mosaic_hide_boundary_ticklabels: bool = True
-    mosaic_x_tick_strategy: str = "all_bottom"
-    mosaic_y_tick_strategy: str = "all_left"
-    # 只保留整张图一次 X/Y axis label，避免边缘 panel 重复写标签。
-    mosaic_outer_axislabel_once: bool = True
-    # 兜底模式：隐藏所有 panel tick 数字，只在整张图外侧加坐标轴名称。
-    mosaic_global_outer_axes: bool = True
-    # panel 左下角波段/时间文字位置。
-    mosaic_panel_label_x: float = 0.02
-    mosaic_panel_label_y: float = 0.035
-    mosaic_panel_label_y_last_row: float = 0.08
-    # mosaic 单任务会同时打开多波段 FITS，默认限制 worker 降低内存压力。
-    mosaic_max_workers: int | None = 12
-    mosaic_max_slots: int | None = None
-    mosaic_difference_inline: bool = True
-
-    # ===== Difference image options =====
-    draw_difference: bool = True
-    difference_method: str = "running"
-    difference_output_mode: str = "auto"
-    difference_wavelengths: tuple[int, ...] | None = (
-        94,
-        131,
-        171,
-        193,
-        211,
-        304,
-    )
-    difference_base_index: int | None = None
-    difference_output_subdir: str = "difference"
-    difference_norm_mode: str = "auto"
-    difference_percentile: float = 99.5
-    difference_vmin: float | None = None
-    difference_vmax: float | None = None
-    difference_cmap: str = "RdBu_r"
-    difference_cmap_mode: str = "diverging"
-    warn_band_difference_cmap: bool = False
-    difference_save_reference: bool = False
-    difference_show_colorbar: bool = False
-    difference_derotate: bool = False
-    difference_vmin_by_wave: dict = field(default_factory=dict)
-    difference_vmax_by_wave: dict = field(default_factory=dict)
-    difference_vlim_by_wave: dict = field(default_factory=dict)
-
-    multi_band_wspace: float = 0.06
-    multi_band_hspace: float = 0.06
-    figure_pad_inches: float = 0.15
-    figure_suptitle_fontsize: float = 34
-    single_map_title_fontsize: float = 13
-
-    def __post_init__(self):
-        apply_config_to_object(self, "sdo_aia_euv_processor")
-        self.difference_vmin_by_wave = _normalize_wave_float_dict(
-            self.difference_vmin_by_wave, "difference_vmin_by_wave"
-        )
-        self.difference_vmax_by_wave = _normalize_wave_float_dict(
-            self.difference_vmax_by_wave, "difference_vmax_by_wave"
-        )
-        self.difference_vlim_by_wave = _normalize_wave_float_dict(
-            self.difference_vlim_by_wave, "difference_vlim_by_wave"
-        )
-        if self.mode not in ("single", "mosaic", "test"):
-            raise ValueError(f"Invalid mode: {self.mode}")
-        if self.data_path is None:
-            self.data_path = str(
-                Path(self.root_dir) / self.year / self.date / "SDO" / "AIA"
-            )
-        else:
-            self.data_path = str(Path(self.data_path))
-        if self.test_file is not None:
-            self.test_file = str(Path(self.test_file))
-        if self.output_dir is None:
-            self.output_dir = self.data_path
-        if self.multi_band_wavelengths is not None:
-            self.multi_band_wavelengths = tuple(
-                int(w) for w in self.multi_band_wavelengths
-            )
-        if self.difference_method not in ("base", "running"):
-            raise ValueError(f"Invalid difference_method: {self.difference_method}")
-        if self.difference_output_mode not in ("auto", "mosaic", "single", "both"):
-            raise ValueError(
-                f"Invalid difference_output_mode: {self.difference_output_mode}"
-            )
-        if self.difference_norm_mode not in ("auto", "fixed", "config"):
-            raise ValueError(
-                f"Invalid difference_norm_mode: {self.difference_norm_mode}"
-            )
-        if self.difference_cmap_mode not in ("band", "diverging", "custom"):
-            raise ValueError(
-                f"Invalid difference_cmap_mode: {self.difference_cmap_mode}"
-            )
-        if self.difference_wavelengths is not None:
-            self.difference_wavelengths = tuple(
-                int(w) for w in self.difference_wavelengths
-            )
-        if not self.draw_original and not self.draw_difference:
-            raise ValueError(
-                "Nothing to draw: at least one of draw_original or "
-                "draw_difference must be True."
-            )
-        if self.draw_difference and self.difference_percentile <= 0:
-            raise ValueError("difference_percentile must be positive.")
+# Canonical configuration and validation live in solar_toolkit.aia.config.
 
 
 def _configure_matplotlib_backend(mode: str) -> None:
@@ -431,148 +198,7 @@ class PanelData:
     is_difference: bool = False
 
 
-# ==============================================================================
-# Path / IO Utilities
-# ==============================================================================
-def _parse_timestr(file_path: Path) -> str:
-    """Extract a stable time string such as 2025-01-24T033001Z."""
-    return _shared_parse_timestr(file_path)
-
-
-def _resolve_files(input_path: Path, start_idx: int, end_idx: int | None) -> list:
-    if input_path.is_file():
-        file_list = [input_path]
-    elif input_path.is_dir():
-        file_list = sorted(input_path.rglob("*.fits"), key=lambda p: _parse_timestr(p))
-    else:
-        raise ValueError(f"Invalid path: {input_path}")
-
-    total = len(file_list)
-    if total == 0:
-        raise ValueError(f"No FITS files found under: {input_path}")
-
-    end = total if end_idx is None else min(end_idx, total)
-    selected = file_list[start_idx:end]
-    print(
-        f"Found {total} files total, selected {len(selected)} for processing "
-        f"(indices: {start_idx} ~ {end - 1})"
-    )
-    return selected
-
-
-def _discover_wavelength_dirs(data_path: Path) -> tuple[int, ...]:
-    if not data_path.is_dir():
-        raise ValueError(f"AIA data directory does not exist: {data_path}")
-    found = [
-        int(p.name) for p in data_path.iterdir() if p.is_dir() and p.name.isdigit()
-    ]
-    if not found:
-        raise ValueError(
-            f"No numeric wavelength subdirectories found under {data_path}."
-        )
-    return tuple(sorted(found))
-
-
-def _sorted_fits_for_band(
-    data_path: Path, wave: int, use_band_subdirs: bool
-) -> list[Path]:
-    band_dir = (data_path / str(wave)) if use_band_subdirs else data_path
-    if not band_dir.is_dir():
-        raise ValueError(f"Missing AIA band directory for {wave} Å: {band_dir}")
-    files = sorted(band_dir.rglob("*.fits"), key=lambda p: _parse_timestr(p))
-    if not files:
-        raise ValueError(f"No FITS files found in band directory: {band_dir}")
-    return files
-
-
-def _slice_band_files(
-    files: list[Path], start_idx: int, end_idx: int | None
-) -> list[Path]:
-    total = len(files)
-    end = total if end_idx is None else min(end_idx, total)
-    return files[start_idx:end]
-
-
-def _resolve_single_files(cfg: AIAConfig) -> list[Path]:
-    data_path = Path(cfg.data_path)
-    waves = cfg.multi_band_wavelengths
-
-    if data_path.is_file():
-        return _resolve_files(data_path, cfg.start_idx, cfg.end_idx)
-    if not cfg.use_band_subdirs or waves is None:
-        return _resolve_files(data_path, cfg.start_idx, cfg.end_idx)
-
-    selected_files: list[Path] = []
-    for wave in waves:
-        files = _sorted_fits_for_band(data_path, wave, cfg.use_band_subdirs)
-        sliced = _slice_band_files(files, cfg.start_idx, cfg.end_idx)
-        if not sliced:
-            raise ValueError(
-                f"Band {wave} has no FITS files in index range "
-                f"[{cfg.start_idx}, {cfg.end_idx})"
-            )
-        selected_files.extend(sliced)
-        print(f"Band {wave}: selected {len(sliced)} / {len(files)} files")
-    return selected_files
-
-
-def _resolve_test_file(cfg: AIAConfig) -> Path:
-    if cfg.test_file:
-        test_path = Path(cfg.test_file)
-        if not test_path.is_file():
-            raise ValueError(f"Test file does not exist: {test_path}")
-        print("Test mode selected file:")
-        print("Test wave: from FITS header")
-        print("Test index: direct file")
-        print(f"File path: {test_path}")
-        return test_path
-
-    band_dir = Path(cfg.data_path) / str(cfg.test_wave)
-    if not band_dir.is_dir():
-        raise ValueError(f"Test band directory does not exist: {band_dir}")
-
-    files = sorted(band_dir.glob("*.fits"), key=lambda p: _parse_timestr(p))
-    if not files:
-        raise ValueError(f"No FITS files found in test band directory: {band_dir}")
-
-    if cfg.test_index < 0 or cfg.test_index >= len(files):
-        raise ValueError(
-            f"test_index={cfg.test_index} is out of range. Available index "
-            f"range: 0 ~ {len(files) - 1}."
-        )
-
-    test_path = files[cfg.test_index]
-    print("Test mode selected file:")
-    print(f"Test wave: {cfg.test_wave}")
-    print(f"Test index: {cfg.test_index}")
-    print(f"File path: {test_path}")
-    return test_path
-
-
-def _build_multi_band_slots(
-    cfg: AIAConfig, wavelengths: tuple[int, ...]
-) -> list[tuple[Path, ...]]:
-    data_path = Path(cfg.data_path)
-    per_band: list[list[Path]] = []
-
-    for wave in wavelengths:
-        all_files = _sorted_fits_for_band(data_path, wave, cfg.use_band_subdirs)
-        sliced = _slice_band_files(all_files, cfg.start_idx, cfg.end_idx)
-        if not sliced:
-            raise ValueError(
-                f"Band {wave} has no FITS files in index range "
-                f"[{cfg.start_idx}, {cfg.end_idx})"
-            )
-        per_band.append(sliced)
-
-    slot_count = min(len(files) for files in per_band)
-    if any(len(files) != slot_count for files in per_band):
-        print(
-            "Note: Available file counts differ across bands; using shortest "
-            f"length {slot_count} after time sorting."
-        )
-
-    return [tuple(band[i] for band in per_band) for i in range(slot_count)]
+# Path and FITS selection helpers are imported from solar_toolkit.aia.io.
 
 
 # ==============================================================================
@@ -616,53 +242,7 @@ def _resolve_display_params(
     return final_cmap, mcolors.LogNorm(vmin=final_vmin, vmax=final_vmax)
 
 
-def _diff_config_vlim(wave_val: int) -> float:
-    config = DIFF_CONFIG.get(wave_val, {})
-    vlim = float(config.get("vlim", 200.0))
-    return vlim if np.isfinite(vlim) and vlim > 0 else 200.0
-
-
-def _resolve_fixed_difference_limits_for_wave(
-    wave_val: int,
-    cfg: AIAConfig,
-) -> tuple[float, float] | None:
-    vmin_by_wave = cfg.difference_vmin_by_wave or {}
-    vmax_by_wave = cfg.difference_vmax_by_wave or {}
-    vlim_by_wave = cfg.difference_vlim_by_wave or {}
-
-    has_vmin = wave_val in vmin_by_wave
-    has_vmax = wave_val in vmax_by_wave
-    has_vlim = wave_val in vlim_by_wave
-
-    if has_vmin or has_vmax:
-        if has_vmin and has_vmax:
-            return float(vmin_by_wave[wave_val]), float(vmax_by_wave[wave_val])
-        if has_vmin:
-            vlim = abs(float(vmin_by_wave[wave_val]))
-            return -vlim, vlim
-        vlim = abs(float(vmax_by_wave[wave_val]))
-        return -vlim, vlim
-
-    if has_vlim:
-        vlim = abs(float(vlim_by_wave[wave_val]))
-        return -vlim, vlim
-
-    if cfg.difference_vmin is not None or cfg.difference_vmax is not None:
-        if cfg.difference_vmin is not None and cfg.difference_vmax is not None:
-            return float(cfg.difference_vmin), float(cfg.difference_vmax)
-        if cfg.difference_vmin is not None:
-            vlim = abs(float(cfg.difference_vmin))
-            return -vlim, vlim
-        vlim = abs(float(cfg.difference_vmax))
-        return -vlim, vlim
-
-    if cfg.difference_norm_mode == "fixed":
-        raise ValueError(
-            "difference_norm_mode='fixed' requires per-band limits, "
-            "difference_vlim_by_wave, or global difference_vmin/difference_vmax."
-        )
-
-    return None
+# Difference-limit helpers are imported from solar_toolkit.aia.difference.
 
 
 def _resolve_difference_params(
@@ -944,44 +524,7 @@ def _plot_difference_map(
         gc.collect()
 
 
-def _layout_grid(n: int) -> tuple[int, int]:
-    if n <= 0:
-        return 1, 1
-    ncol = max(1, math.ceil(math.sqrt(n)))
-    nrow = max(1, math.ceil(n / ncol))
-    return nrow, ncol
-
-
-def _auto_mosaic_ncols(n: int) -> int:
-    if n <= 0:
-        return 1
-    if n == 3:
-        return 3
-    if n == 4:
-        return 2
-    if n == 5:
-        return 3
-    if n == 6:
-        return 3
-    if n == 7:
-        return 4
-    if n == 8:
-        return 4
-    return math.ceil(math.sqrt(n))
-
-
-def _layout_mosaic_grid(n: int, mosaic_ncols: int | None = None) -> tuple[int, int]:
-    if n <= 0:
-        return 1, 1
-    if mosaic_ncols is not None:
-        if mosaic_ncols <= 0:
-            raise ValueError("mosaic_ncols must be a positive integer or None.")
-        ncol = min(mosaic_ncols, n)
-        nrow = math.ceil(n / ncol)
-        return nrow, ncol
-    ncol = _auto_mosaic_ncols(n)
-    nrow = math.ceil(n / ncol)
-    return nrow, ncol
+# Mosaic grid helpers are imported from solar_toolkit.aia.mosaic.
 
 
 def _compute_mosaic_axes_rects(
@@ -1559,30 +1102,7 @@ def _save_mosaic_figure(fig, save_path: Path, cfg: AIAConfig) -> None:
     )
 
 
-def _ordered_unique(values: Sequence[int]) -> tuple[int, ...]:
-    seen = set()
-    ordered: list[int] = []
-    for value in values:
-        int_value = int(value)
-        if int_value not in seen:
-            seen.add(int_value)
-            ordered.append(int_value)
-    return tuple(ordered)
-
-
-def _mosaic_slot_wavelengths(cfg: AIAConfig) -> tuple[int, ...]:
-    data_path = Path(cfg.data_path)
-    original_waves = cfg.multi_band_wavelengths
-    if original_waves is None:
-        original_waves = _discover_wavelength_dirs(data_path)
-
-    if cfg.mosaic_difference_inline and cfg.draw_difference:
-        diff_waves = cfg.difference_wavelengths or original_waves
-        if cfg.draw_original:
-            return _ordered_unique(tuple(original_waves) + tuple(diff_waves))
-        return _ordered_unique(diff_waves)
-
-    return tuple(original_waves)
+# Mosaic wavelength ordering is imported from solar_toolkit.aia.mosaic.
 
 
 def _mosaic_save_prefix(cfg: AIAConfig) -> str:
@@ -2728,7 +2248,7 @@ def config_from_args(args: argparse.Namespace) -> AIAConfig:
     return cfg
 
 
-def main(argv: Sequence[str] | None = None) -> None:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -2746,7 +2266,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     print(f"Mode: {actual_mode}")
     print(f"Wavelengths: {cfg.multi_band_wavelengths}")
     process_aia_fits(cfg)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

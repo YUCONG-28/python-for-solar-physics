@@ -8,9 +8,18 @@ English: Layout and wavelength-slot helpers for multi-band AIA panels.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 from .config import AIAConfig
 from .io import discover_wavelength_dirs
+
+__all__ = [
+    "auto_mosaic_ncols",
+    "layout_grid",
+    "layout_mosaic_grid",
+    "mosaic_slot_wavelengths",
+    "ordered_unique",
+]
 
 
 def layout_grid(n: int) -> tuple[int, int]:
@@ -65,9 +74,10 @@ def ordered_unique(values) -> tuple[int, ...]:
 
 
 def mosaic_slot_wavelengths(cfg: AIAConfig) -> tuple[int, ...]:
+    data_path = Path(cfg.data_path)
     original_waves = cfg.multi_band_wavelengths
     if original_waves is None:
-        original_waves = discover_wavelength_dirs(cfg.data_path)
+        original_waves = discover_wavelength_dirs(data_path)
     if cfg.mosaic_difference_inline and cfg.draw_difference:
         diff_waves = cfg.difference_wavelengths or original_waves
         if cfg.draw_original:
