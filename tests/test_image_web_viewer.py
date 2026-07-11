@@ -396,7 +396,7 @@ def test_image_web_viewer_frontend_exposes_workbench_controls():
         REPO_ROOT
         / "solar_toolkit"
         / "visualization"
-        / "media_assets"
+        / "_media_assets"
         / "browser_media.js"
     ).read_text(encoding="utf-8")
 
@@ -605,6 +605,7 @@ def test_flask_routes_load_images_and_export_video(tmp_path, monkeypatch):
     assert payload["ok"] is True
     assert image.status_code == 200
     assert exported.get_json()["ok"] is True
+    image.close()
 
 
 @pytest.mark.skipif(
@@ -748,7 +749,9 @@ def test_flask_stream_recording_passes_raw_body_and_metadata(tmp_path, monkeypat
             "frame_count": 4,
         }
 
-    monkeypatch.setattr(media, "save_browser_recording_stream", fake_save, raising=False)
+    monkeypatch.setattr(
+        media, "save_browser_recording_stream", fake_save, raising=False
+    )
     client = create_app(allowed_roots=[tmp_path]).test_client()
     response = client.post(
         "/api/save-recording-stream",
@@ -1033,9 +1036,7 @@ def test_separate_prefetch_preserves_order_and_repeats_damaged_frames(monkeypatc
                 )
             value = 11 if path == "slow" else 22
             frame = np.full((2, 4, 3), value, dtype=np.uint8)
-            return sequence_video.FrameResult(
-                frame, (4, 2), path=path, resized=False
-            )
+            return sequence_video.FrameResult(frame, (4, 2), path=path, resized=False)
         finally:
             with lock:
                 active -= 1

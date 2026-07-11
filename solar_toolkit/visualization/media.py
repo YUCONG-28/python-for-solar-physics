@@ -17,6 +17,14 @@ from typing import Any
 
 import numpy as np
 
+from .frames import (
+    FrameStats,
+    determine_target_size_for_paths,
+    make_frame_iter_from_paths,
+    write_video_imageio_stream,
+    write_video_opencv_stream,
+)
+
 SUPPORTED_OUTPUT_FORMATS = {"mp4", "gif", "webm"}
 SUPPORTED_RECORDING_SOURCE_FORMATS = {"mp4", "webm"}
 CONDA_BIN = Path(r"D:\miniforge3\envs\solarphysics_env\Library\bin")
@@ -67,9 +75,7 @@ def normalize_recording_source_format(value: str | None) -> str:
 
     source_format = str(value or "webm").strip().lower().lstrip(".")
     return (
-        source_format
-        if source_format in SUPPORTED_RECORDING_SOURCE_FORMATS
-        else "webm"
+        source_format if source_format in SUPPORTED_RECORDING_SOURCE_FORMATS else "webm"
     )
 
 
@@ -126,7 +132,9 @@ def resolve_ffprobe() -> str | None:
 
     ffmpeg = resolve_ffmpeg()
     if ffmpeg:
-        sibling_name = "ffprobe.exe" if Path(ffmpeg).suffix.lower() == ".exe" else "ffprobe"
+        sibling_name = (
+            "ffprobe.exe" if Path(ffmpeg).suffix.lower() == ".exe" else "ffprobe"
+        )
         sibling = Path(ffmpeg).with_name(sibling_name)
         if sibling.exists():
             return str(sibling)
@@ -166,12 +174,6 @@ def write_media_from_paths(
     selected_paths = list(paths)
     if not selected_paths:
         return False
-
-    from scripts.tools.image_sequence_to_video import (
-        FrameStats,
-        determine_target_size_for_paths,
-        make_frame_iter_from_paths,
-    )
 
     width, height, _sample_size, _native_count = determine_target_size_for_paths(
         selected_paths,
@@ -236,16 +238,9 @@ def write_media_from_frames(
     if output_format == "gif":
         return _write_fallback_atomic(
             output_path,
-            lambda path: write_gif_imageio_stream(
-                frame_factory(), path, fps=fps_value
-            ),
+            lambda path: write_gif_imageio_stream(frame_factory(), path, fps=fps_value),
         )
     if output_format == "mp4":
-        from scripts.tools.image_sequence_to_video import (
-            write_video_imageio_stream,
-            write_video_opencv_stream,
-        )
-
         if _write_fallback_atomic(
             output_path,
             lambda path: write_video_imageio_stream(
@@ -547,9 +542,7 @@ def transcode_recording(
 
     ffmpeg = resolve_ffmpeg()
     if not ffmpeg:
-        raise MediaProcessingError(
-            "FFmpeg is required to finalize browser recordings."
-        )
+        raise MediaProcessingError("FFmpeg is required to finalize browser recordings.")
 
     output_format = normalize_output_format(output_format)
     source_format = normalize_recording_source_format(source_format)
@@ -919,9 +912,7 @@ def _run_ffmpeg_file(
         stderr = _compact_ffmpeg_stderr(
             stderr_file.read().decode("utf-8", errors="replace")
         )
-        raise MediaProcessingError(
-            "FFmpeg failed while saving recording.", stderr
-        )
+        raise MediaProcessingError("FFmpeg failed while saving recording.", stderr)
 
 
 def _terminate_process(proc: subprocess.Popen) -> None:
@@ -938,9 +929,7 @@ def _raise_if_recording_cancelled(cancel_check: CancelCheck | None) -> None:
         raise MediaProcessingError("Recording canceled.")
 
 
-def _write_fallback_atomic(
-    output_path: Path, writer: Callable[[Path], bool]
-) -> bool:
+def _write_fallback_atomic(output_path: Path, writer: Callable[[Path], bool]) -> bool:
     temporary_path = _partial_output_path(output_path)
     try:
         if not writer(temporary_path):

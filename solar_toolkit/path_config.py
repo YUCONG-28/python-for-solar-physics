@@ -10,6 +10,8 @@ from typing import Any
 
 import yaml
 
+__all__ = ["apply_config_to_object", "load_script_config"]
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]

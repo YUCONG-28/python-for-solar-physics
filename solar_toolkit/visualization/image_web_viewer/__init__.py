@@ -12,6 +12,7 @@ from __future__ import annotations
 from importlib import import_module
 
 _SUBMODULES = {
+    "cli": "solar_toolkit.visualization.image_web_viewer.cli",
     "export": "solar_toolkit.visualization.image_web_viewer.export",
     "media": "solar_toolkit.visualization.media",
     "server": "solar_toolkit.visualization.image_web_viewer.server",

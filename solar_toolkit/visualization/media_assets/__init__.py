@@ -1,42 +1,17 @@
-"""Bundled browser-media assets shared by local visualization frontends."""
+"""Compatibility alias for :mod:`solar_toolkit.visualization._media_assets`.
+
+This module path is retained during the compatibility window. New internal
+code should use the private canonical resource package instead.
+
+.. deprecated:: 0.2.0
+   This alias will remain available until at least version 1.0.0 and until
+   compatibility validation permits its removal.
+"""
 
 from __future__ import annotations
 
-from importlib.resources import files
+import sys as _sys
+from importlib import import_module as _import_module
 
-ASSET_MIME_TYPES = {
-    "browser_media.js": "application/javascript",
-    "mediabunny-1.50.8.cjs": "application/javascript",
-    "mediabunny-MPL-2.0.txt": "text/plain; charset=utf-8",
-    "NOTICE.txt": "text/plain; charset=utf-8",
-}
-
-
-def read_asset_bytes(name: str) -> bytes:
-    """Read one allow-listed bundled media asset."""
-
-    if name not in ASSET_MIME_TYPES:
-        raise FileNotFoundError(f"Unknown media asset: {name}")
-    return files(__package__).joinpath(name).read_bytes()
-
-
-def read_asset_text(name: str) -> str:
-    """Read one allow-listed text media asset as UTF-8."""
-
-    return read_asset_bytes(name).decode("utf-8")
-
-
-def asset_mimetype(name: str) -> str:
-    """Return the HTTP content type for an allow-listed media asset."""
-
-    if name not in ASSET_MIME_TYPES:
-        raise FileNotFoundError(f"Unknown media asset: {name}")
-    return ASSET_MIME_TYPES[name]
-
-
-__all__ = [
-    "ASSET_MIME_TYPES",
-    "asset_mimetype",
-    "read_asset_bytes",
-    "read_asset_text",
-]
+_target = _import_module("solar_toolkit.visualization._media_assets")
+_sys.modules[__name__] = _target

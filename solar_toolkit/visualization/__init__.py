@@ -1,16 +1,16 @@
-"""Visualization helper namespace.
+"""Public visualization helper namespace.
 
 English: Shared plotting, font configuration, media-generation, and
 interactive visualization helpers.
 
-中文: 可复用绘图、字体配置、媒体生成和交互式可视化辅助工具命名空间。
+中文：共享绘图、字体配置、媒体生成和交互式可视化工具的公共命名空间。
 """
 
 from __future__ import annotations
 
-from importlib import import_module
+from importlib import import_module as _import_module
 
-DEFAULT_CHINESE_FONT_CANDIDATES = [
+_DEFAULT_CHINESE_FONT_CANDIDATES = [
     "SimHei",
     "Microsoft YaHei",
     "Noto Sans CJK SC",
@@ -19,10 +19,16 @@ DEFAULT_CHINESE_FONT_CANDIDATES = [
 ]
 
 _SUBMODULES = {
+    "frames": "solar_toolkit.visualization.frames",
     "image_web_viewer": "solar_toolkit.visualization.image_web_viewer",
     "media": "solar_toolkit.visualization.media",
+    "plotting": "solar_toolkit.visualization.plotting",
     "radio_source_trajectory": "solar_toolkit.visualization.radio_source_trajectory",
     "radio_source_video": "solar_toolkit.visualization.radio_source_video",
+}
+
+_COMPATIBILITY_SUBMODULES = {
+    "media_assets": "solar_toolkit.visualization._media_assets",
 }
 
 __all__ = ["configure_chinese_fonts", *_SUBMODULES]
@@ -34,7 +40,7 @@ def configure_chinese_fonts(candidates: list[str] | None = None) -> str | None:
     import matplotlib.font_manager
     from matplotlib import rcParams
 
-    candidates = candidates or DEFAULT_CHINESE_FONT_CANDIDATES
+    candidates = candidates or _DEFAULT_CHINESE_FONT_CANDIDATES
     available = {font.name for font in matplotlib.font_manager.fontManager.ttflist}
     selected = next((font for font in candidates if font in available), None)
     if selected is None:
@@ -47,8 +53,17 @@ def configure_chinese_fonts(candidates: list[str] | None = None) -> str | None:
 
 
 def __getattr__(name: str):
-    if name in _SUBMODULES:
-        module = import_module(_SUBMODULES[name])
+    """Lazily import public modules and compatibility aliases."""
+
+    target = _SUBMODULES.get(name) or _COMPATIBILITY_SUBMODULES.get(name)
+    if target is not None:
+        module = _import_module(target)
         globals()[name] = module
         return module
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """Return the stable public visualization namespace."""
+
+    return sorted(__all__)

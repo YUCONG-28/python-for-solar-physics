@@ -11,10 +11,22 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from solar_toolkit.visualization import media, media_assets
+from solar_toolkit.visualization import _media_assets as media_assets
+from solar_toolkit.visualization import media
 
 from . import export as export_mod
 from .export import ExportConfig
+
+__all__ = [
+    "ClientLifecycle",
+    "IMAGE_EXTENSIONS",
+    "configured_roots",
+    "create_app",
+    "is_under_allowed_root",
+    "natural_key",
+    "normalize_allowed_roots",
+    "scan_images",
+]
 
 IMAGE_EXTENSIONS = {
     ".jpg",

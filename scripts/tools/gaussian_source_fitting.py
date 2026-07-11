@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compatibility import for shared rotated 2D Gaussian fitting helpers."""
 
-from solar_toolkit.gaussian import (
+from solar_toolkit.modeling.gaussian import (
     IntArray,
     _true_indices,
     _unravel_2d_index,

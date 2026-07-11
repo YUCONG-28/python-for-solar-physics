@@ -1,36 +1,65 @@
-"""Package metadata and lightweight public namespaces for solar analysis."""
+"""Top-level public API for the solar physics toolkit.
+
+The science-domain namespaces are imported lazily so that ``import
+solar_toolkit`` remains lightweight and free of workflow side effects.
+"""
 
 from __future__ import annotations
 
-import warnings
+from importlib import import_module as _import_module
+from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
+from importlib.metadata import version as _distribution_version
 
-__version__ = "0.1.0"
+try:
+    __version__ = _distribution_version("solar-physics-toolkit")
+except _PackageNotFoundError:  # pragma: no cover - source tree without install
+    __version__ = "0+unknown"
+
 __author__ = "Solar Physics Research Team"
 __email__ = "solar-physics@example.com"
 
-warnings.filterwarnings("ignore", category=UserWarning, module="astropy")
+_SUBMODULES = {
+    "aia": "solar_toolkit.aia",
+    "cme": "solar_toolkit.cme",
+    "coordinates": "solar_toolkit.coordinates",
+    "cso": "solar_toolkit.cso",
+    "data": "solar_toolkit.data",
+    "exceptions": "solar_toolkit.exceptions",
+    "gaussian": "solar_toolkit.gaussian",
+    "hmi": "solar_toolkit.hmi",
+    "io": "solar_toolkit.io",
+    "map": "solar_toolkit.map",
+    "modeling": "solar_toolkit.modeling",
+    "net": "solar_toolkit.net",
+    "path_config": "solar_toolkit.path_config",
+    "radio": "solar_toolkit.radio",
+    "solar_analysis_utils": "solar_toolkit.solar_analysis_utils",
+    "time": "solar_toolkit.time",
+    "timeseries": "solar_toolkit.timeseries",
+    "visualization": "solar_toolkit.visualization",
+    "webapp": "solar_toolkit.webapp",
+    "xray_dem": "solar_toolkit.xray_dem",
+}
 
 __all__ = [
     "__version__",
     "__author__",
     "__email__",
-    "coordinates",
-    "aia",
-    "cme",
-    "cso",
-    "data",
-    "gaussian",
-    "hmi",
-    "io",
-    "map",
-    "modeling",
-    "net",
-    "path_config",
-    "radio",
-    "solar_analysis_utils",
-    "time",
-    "timeseries",
-    "visualization",
-    "webapp",
-    "xray_dem",
+    *_SUBMODULES,
 ]
+
+
+def __getattr__(name: str):
+    """Lazily import a public top-level namespace."""
+
+    if name in _SUBMODULES:
+        module = _import_module(_SUBMODULES[name])
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """Return the stable public namespace advertised by this package."""
+
+    return sorted(__all__)

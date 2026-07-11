@@ -18,6 +18,24 @@ import pandas as pd
 from solar_toolkit.aia.background import AiaBackground
 from solar_toolkit.radio.trajectory import make_lr_compare_table
 
+__all__ = [
+    "FACET_BY_OPTIONS",
+    "MARKER_SYMBOL_OPTIONS",
+    "PLOT_LAYOUT_FACETS",
+    "PLOT_LAYOUT_OVERLAY",
+    "PLOT_LAYOUTS",
+    "add_lr_compare_segments",
+    "aia_colormap_name",
+    "aia_plotly_colorscale",
+    "apply_aia_colormap_to_uint8",
+    "build_trajectory_figure",
+    "export_trajectory_html",
+    "frequency_marker_key",
+    "marker_symbol_for_frequency",
+    "normalize_marker_symbol_by_frequency",
+    "resolve_theme_palette",
+]
+
 PLOT_LAYOUT_OVERLAY = "overlay"
 PLOT_LAYOUT_FACETS = "facets"
 PLOT_LAYOUTS = (PLOT_LAYOUT_OVERLAY, PLOT_LAYOUT_FACETS)

@@ -22,6 +22,15 @@ from PIL import Image
 
 from solar_toolkit.visualization import media
 
+__all__ = [
+    "ExportConfig",
+    "build_composite_frame",
+    "export_composite_video",
+    "export_separate_videos",
+    "normalize_roi",
+    "sanitize_filename",
+]
+
 
 @dataclass
 class ExportConfig:

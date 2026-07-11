@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from solar_toolkit.gaussian import (
+from solar_toolkit.modeling.gaussian import (
     elliptical_gaussian_2d,
     fit_elliptical_gaussian,
     initial_guess_from_peak,

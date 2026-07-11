@@ -1,15 +1,27 @@
-"""Modeling helper namespace.
+"""Reusable mathematical and physical model namespace.
 
-English: Shared modeling boundary for Gaussian, density-model, and future
-science-model helpers that should not depend on script entrypoints.
-
-中文：高斯模型、密度模型以及后续科学模型辅助逻辑的共享边界，避免公共模型
-代码依赖脚本入口。
+中文：与具体仪器工作流解耦的高斯模型和密度模型公共边界。
 """
 
 from __future__ import annotations
 
-from solar_toolkit import gaussian
-from solar_toolkit.radio import gaussian_models, newkirk
+from importlib import import_module
 
-__all__ = ["gaussian", "gaussian_models", "newkirk"]
+_SUBMODULES = {
+    "gaussian": "solar_toolkit.modeling.gaussian",
+    "newkirk": "solar_toolkit.radio.newkirk",
+}
+
+__all__ = sorted(_SUBMODULES)
+
+
+def __getattr__(name: str):
+    if name in _SUBMODULES:
+        module = import_module(_SUBMODULES[name])
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(__all__)
