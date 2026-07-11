@@ -11,7 +11,10 @@ from importlib import import_module
 
 _SUBMODULES = {
     "centers": "solar_toolkit.radio.centers",
+    "cli": "solar_toolkit.radio.cli",
+    "config": "solar_toolkit.radio.config",
     "coordinates": "solar_toolkit.radio.coordinates",
+    "cso": "solar_toolkit.radio.cso",
     "frequency_priority_diagnostics": "solar_toolkit.radio.frequency_priority_diagnostics",
     "gaussian": "solar_toolkit.radio.gaussian",
     "gaussian_background": "solar_toolkit.radio.gaussian_background",
@@ -25,12 +28,19 @@ _SUBMODULES = {
     "io": "solar_toolkit.radio.io",
     "newkirk": "solar_toolkit.radio.newkirk",
     "output_paths": "solar_toolkit.radio.output_paths",
+    "overlay_cli": "solar_toolkit.radio.overlay_cli",
+    "pipeline_cli": "solar_toolkit.radio.pipeline_cli",
+    "provenance": "solar_toolkit.radio.provenance",
     "quicklook": "solar_toolkit.radio.quicklook",
     "raw_quality": "solar_toolkit.radio.raw_quality",
+    "raw_quality_cli": "solar_toolkit.radio.raw_quality_cli",
     "spectrogram": "solar_toolkit.radio.spectrogram",
+    "source_map_cli": "solar_toolkit.radio.source_map_cli",
     "trajectory": "solar_toolkit.radio.trajectory",
+    "trajectory_cli": "solar_toolkit.radio.trajectory_cli",
     "drift_rate": "solar_toolkit.radio.drift_rate",
     "drift_products": "solar_toolkit.radio.drift_products",
+    "entrypoint_utils": "solar_toolkit.radio.entrypoint_utils",
 }
 
 __all__ = sorted(_SUBMODULES)

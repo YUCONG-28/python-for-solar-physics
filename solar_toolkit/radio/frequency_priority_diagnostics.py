@@ -27,6 +27,29 @@ from .newkirk import (
     plasma_density_from_frequency_mhz,
 )
 
+__all__ = [
+    "DEFAULT_COMPARISON_FREQUENCIES_MHZ",
+    "apply_frequency_priority_drift_matching",
+    "build_frequency_priority_summary",
+    "build_newkirk_physical_consistency_report",
+    "build_selected_band_newkirk_height_speed_table",
+    "format_newkirk_case_label",
+    "model_label",
+    "plot_drift_frequency_band_matching",
+    "plot_event_gaussian_newkirk_height_comparison",
+    "plot_event_newkirk_speed_frequency",
+    "plot_frequency_priority_summary",
+    "plot_gaussian_center_by_frequency_facets",
+    "plot_gaussian_center_trajectory_by_frequency",
+    "plot_height_time_by_frequency_facets",
+    "resolve_comparison_frequencies",
+    "resolve_drift_frequency_tolerance",
+    "save_frequency_priority_summary_csv",
+    "save_newkirk_physical_consistency_report",
+    "save_selected_band_newkirk_height_speed_table",
+    "write_frequency_priority_dashboard",
+]
+
 DEFAULT_COMPARISON_FREQUENCIES_MHZ = [149, 164, 190, 205, 223, 238]
 
 

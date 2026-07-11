@@ -39,7 +39,7 @@ from solar_toolkit.radio.trajectory import (
     select_visible_centers,
     summarize_motion,
 )
-from solar_toolkit.visualization.media_assets import read_asset_text
+from solar_toolkit.visualization._media_assets import read_asset_text
 from solar_toolkit.visualization.radio_source_trajectory import (
     FACET_BY_OPTIONS,
     MARKER_SYMBOL_OPTIONS,
@@ -1461,7 +1461,7 @@ def _advance_playback_index_if_due(
     session_state.radio_source_last_tick = now
 
 
-def main(argv: list[str] | None = None) -> None:
+def _run_streamlit_app(argv: list[str] | None = None) -> None:
     """Run the Streamlit app. The app reads existing center tables only."""
 
     args = build_parser().parse_args(argv)
@@ -2082,7 +2082,10 @@ def main(argv: list[str] | None = None) -> None:
         video_frame_count,
     )
     current_end = min(
-        max(current_start, int(st.session_state.get("video_end_frame", video_frame_count))),
+        max(
+            current_start,
+            int(st.session_state.get("video_end_frame", video_frame_count)),
+        ),
         video_frame_count,
     )
     st.session_state.video_start_frame = current_start
@@ -2887,12 +2890,12 @@ def _theme_css(
 """
 
 
-def _direct_help_requested() -> bool:
-    return any(arg in {"-h", "--help"} for arg in sys.argv[1:])
+def main(argv: list[str] | None = None) -> int:
+    """Run the Streamlit app and return zero after normal completion."""
+
+    _run_streamlit_app(argv)
+    return 0
 
 
 if __name__ == "__main__":
-    if _direct_help_requested():
-        build_parser().parse_args()
-    else:
-        main()
+    raise SystemExit(main())

@@ -24,6 +24,14 @@ from .io import (
     parse_datetime_value,
 )
 
+__all__ = [
+    "SpectrogramCache",
+    "build_spectrogram_cache",
+    "get_spectrogram_cache",
+    "overlay_spectrogram_panel",
+    "resolve_spectrogram_time_window_multi",
+]
+
 _parse_datetime_value = parse_datetime_value
 _index_range_from_values = index_range_from_values
 _index_range_from_time_values = index_range_from_time_values

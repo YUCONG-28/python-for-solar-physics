@@ -1,0 +1,208 @@
+"""Stable public-export contracts for non-Gaussian radio modules."""
+
+from __future__ import annotations
+
+import importlib
+
+import pytest
+
+PUBLIC_EXPORTS = {
+    "centers": {
+        "FITS_SUFFIXES",
+        "POL_LCP",
+        "POL_RCP",
+        "POL_SUM",
+        "POL_UNKNOWN",
+        "RadioImage",
+        "build_parser",
+        "choose_mask_component",
+        "compute_source_center",
+        "extract_radio_centers",
+        "filter_radio_images",
+        "find_files",
+        "first_existing_header_value",
+        "infer_parent_directory_polarization",
+        "infer_pol_from_stokes_axis",
+        "infer_polarization",
+        "iter_images_in_hdu",
+        "iter_radio_images",
+        "main",
+        "maybe_make_sum_images",
+        "normalize_pol_text",
+        "parse_datetime_value",
+        "parse_frequency_mhz",
+        "parse_observation_time",
+        "parse_time_from_filename",
+        "pixel_to_hpc_arcsec",
+        "record_from_radio_image",
+        "run_center_extraction",
+        "select_radio_files",
+        "stokes_code_to_pol",
+        "to_arcsec",
+        "write_centers_table",
+    },
+    "coordinates": {
+        "arcsec_to_rsun",
+        "compute_position_residual",
+        "compute_radial_unit_vector",
+        "coordinate_roundtrip_error_pixel",
+        "data_coord_to_pixel",
+        "normalize_roi_bounds_arcsec",
+        "pixel_to_data_coord",
+        "rsun_to_arcsec",
+        "unravel_2d_index",
+        "validate_plot_extent_and_origin",
+    },
+    "drift_products": {
+        "ANNOTATED_PREVIEW_NAME",
+        "DEFAULT_DRIFT_PRODUCT_CONFIG",
+        "METADATA_JSON_NAME",
+        "RAW_PREVIEW_NAME",
+        "SELECTION_CSV_NAME",
+        "save_drift_selection_artifacts",
+    },
+    "drift_rate": {
+        "DriftRateResult",
+        "assert_spectrogram_mapping_not_flipped",
+        "calculate_drift_rate_from_line",
+        "get_or_load_drift_rate_results",
+        "launch_drift_selection_server",
+        "load_drift_selection_json",
+        "overlay_drift_rate_results",
+        "render_spectrogram_selection_preview",
+        "save_drift_rate_diagnostics_once",
+        "save_drift_selection_json",
+    },
+    "frequency_priority_diagnostics": {
+        "DEFAULT_COMPARISON_FREQUENCIES_MHZ",
+        "apply_frequency_priority_drift_matching",
+        "build_frequency_priority_summary",
+        "build_newkirk_physical_consistency_report",
+        "build_selected_band_newkirk_height_speed_table",
+        "format_newkirk_case_label",
+        "model_label",
+        "plot_drift_frequency_band_matching",
+        "plot_event_gaussian_newkirk_height_comparison",
+        "plot_event_newkirk_speed_frequency",
+        "plot_frequency_priority_summary",
+        "plot_gaussian_center_by_frequency_facets",
+        "plot_gaussian_center_trajectory_by_frequency",
+        "plot_height_time_by_frequency_facets",
+        "resolve_comparison_frequencies",
+        "resolve_drift_frequency_tolerance",
+        "save_frequency_priority_summary_csv",
+        "save_newkirk_physical_consistency_report",
+        "save_selected_band_newkirk_height_speed_table",
+        "write_frequency_priority_dashboard",
+    },
+    "height_comparison": {
+        "DEFAULT_SELECTED_MODELS",
+        "HEIGHT_COLUMNS",
+        "build_gaussian_newkirk_height_summary_table",
+        "build_gaussian_newkirk_height_table",
+        "classify_source_type",
+        "compute_gaussian_projected_height",
+        "model_label",
+    },
+    "height_plots": {
+        "plot_gaussian_vs_newkirk_height_frequency",
+        "plot_gaussian_vs_newkirk_height_time",
+        "plot_height_residual_vs_frequency",
+    },
+    "io": {
+        "BoolArray",
+        "DRIFT_RATE_DIAGNOSTIC_FIELDS",
+        "FloatArray",
+        "GAUSSIAN_DIAGNOSTIC_FIELDS",
+        "IntArray",
+        "MULTI_GAUSSIAN_DIAGNOSTIC_FIELDS",
+        "background_enabled_for_display",
+        "background_enabled_for_fit",
+        "drift_output_path",
+        "ensure_output_dir",
+        "index_range_from_time_values",
+        "index_range_from_values",
+        "log_skipped_row",
+        "normalize_path",
+        "parse_datetime_value",
+        "plot_output_subdir",
+        "read_csv_dataframe",
+        "read_json_file",
+        "resolve_background_workflow",
+        "safe_series",
+        "spectrogram_panel_enabled",
+        "summarize_invalid_reasons",
+        "truthy",
+        "write_csv_rows",
+        "write_json_file",
+    },
+    "output_paths": {
+        "background_enabled_for_display",
+        "background_enabled_for_fit",
+        "drift_output_path",
+        "plot_output_subdir",
+        "resolve_background_workflow",
+        "spectrogram_panel_enabled",
+    },
+    "raw_quality": {
+        "RawFileQualityRow",
+        "RawQualityAnalysisResult",
+        "RawQualityClassification",
+        "RawQualityFilterResult",
+        "RawQualityMetrics",
+        "RawQualityThresholds",
+        "RawSlotQualityRow",
+        "analyze_radio_raw_quality",
+        "classify_raw_metrics",
+        "compute_raw_quality_metrics",
+        "filter_bad_radio_fits_files",
+        "read_radio_fits_image",
+    },
+    "spectrogram": {
+        "SpectrogramCache",
+        "build_spectrogram_cache",
+        "get_spectrogram_cache",
+        "overlay_spectrogram_panel",
+        "resolve_spectrogram_time_window_multi",
+    },
+    "trajectory": {
+        "FRAME_MODE_ALL",
+        "FRAME_MODE_CURRENT",
+        "FRAME_MODE_LABELS",
+        "FRAME_MODE_TAIL",
+        "STANDARD_COLUMNS",
+        "filter_centers",
+        "filter_time_range",
+        "frame_times",
+        "load_centers_table",
+        "make_lr_compare_table",
+        "normalize_centers_dataframe",
+        "normalize_frame_mode",
+        "normalize_polarization_label",
+        "select_visible_centers",
+        "summarize_motion",
+    },
+}
+
+
+@pytest.mark.parametrize("module_name", sorted(PUBLIC_EXPORTS))
+def test_radio_module_has_exact_explicit_public_exports(module_name):
+    """Each module exposes only its stable project-owned API."""
+    module = importlib.import_module(f"solar_toolkit.radio.{module_name}")
+    exports = module.__all__
+
+    assert isinstance(exports, list)
+    assert len(exports) == len(set(exports))
+    assert set(exports) == PUBLIC_EXPORTS[module_name]
+    assert all(not name.startswith("_") for name in exports)
+    assert all(hasattr(module, name) for name in exports)
+
+
+@pytest.mark.parametrize("module_name", sorted(PUBLIC_EXPORTS))
+def test_radio_star_import_matches_explicit_public_exports(module_name):
+    """Star imports cannot leak NumPy, pandas, plotting, or stdlib helpers."""
+    namespace: dict[str, object] = {}
+
+    exec(f"from solar_toolkit.radio.{module_name} import *", {}, namespace)
+
+    assert set(namespace) == PUBLIC_EXPORTS[module_name]

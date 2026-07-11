@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from matplotlib.figure import Figure
 
 import scripts.radio.core.radio_frequency_priority_diagnostics as diagnostics
@@ -251,11 +252,12 @@ def test_center_facets_accept_radio_compact_time_strings():
     )
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "gaussian_center_by_frequency_facets.png"
-        result = plot_gaussian_center_by_frequency_facets(
-            gaussian_df,
-            path,
-            {"comparison_frequency_mhz": [149]},
-        )
+        with pytest.warns(UserWarning, match="not compatible with tight_layout"):
+            result = plot_gaussian_center_by_frequency_facets(
+                gaussian_df,
+                path,
+                {"comparison_frequency_mhz": [149]},
+            )
 
         assert result["status"] == "saved"
         assert path.exists()
@@ -264,11 +266,12 @@ def test_center_facets_accept_radio_compact_time_strings():
 def test_center_facets_report_solar_radius_annotation_config():
     gaussian_df = pd.DataFrame([_gaussian_row("2025-01-24T04:48:40", 149.0)])
     with tempfile.TemporaryDirectory() as tmp:
-        result = plot_gaussian_center_by_frequency_facets(
-            gaussian_df,
-            Path(tmp) / "gaussian_center_by_frequency_facets.png",
-            {"comparison_frequency_mhz": [149], "solar_radius_arcsec": 959.63},
-        )
+        with pytest.warns(UserWarning, match="not compatible with tight_layout"):
+            result = plot_gaussian_center_by_frequency_facets(
+                gaussian_df,
+                Path(tmp) / "gaussian_center_by_frequency_facets.png",
+                {"comparison_frequency_mhz": [149], "solar_radius_arcsec": 959.63},
+            )
 
         assert result["status"] == "saved"
         assert result["solar_radius_arcsec"] == pytest_approx(959.63)

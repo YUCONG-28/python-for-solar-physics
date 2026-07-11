@@ -9,6 +9,15 @@ from __future__ import annotations
 
 import os
 
+__all__ = [
+    "background_enabled_for_display",
+    "background_enabled_for_fit",
+    "drift_output_path",
+    "plot_output_subdir",
+    "resolve_background_workflow",
+    "spectrogram_panel_enabled",
+]
+
 
 def spectrogram_panel_enabled(cfg: dict) -> bool:
     """Return whether the source-map plot should include a spectrogram panel."""

@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
-from scripts.radio.configs import (
+from .config import (
     DEFAULT_CONFIG_NAME,
     load_newkirk_height_comparison_config,
     load_radio_diagnostic_presentation_config,
     load_radio_output_config,
     load_radio_user_config,
 )
-
 from .frequency_priority_diagnostics import (
     plot_event_gaussian_newkirk_height_comparison,
 )
@@ -28,6 +28,43 @@ HEIGHT_ROWS_NAME = "gaussian_newkirk_height_rows.csv"
 HEIGHT_PLOT_NAME = "event_gaussian_newkirk_height_comparison.png"
 TRAJECTORY_PLOT_NAME = "gaussian_center_trajectory.png"
 DEFAULT_ANALYSIS_SUBDIR = "gaussian_spectrogram_overlay"
+
+__all__ = [
+    "build_parser",
+    "build_quicklook_config",
+    "build_quicklook_summary",
+    "filter_valid_gaussian_centers",
+    "plot_gaussian_center_trajectory",
+    "resolve_gaussian_csv",
+    "run_gaussian_newkirk_quicklook",
+    "main",
+]
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the isolated Gaussian/Newkirk quicklook CLI parser."""
+
+    parser = argparse.ArgumentParser(
+        description="Generate Gaussian center and Newkirk quicklook products."
+    )
+    parser.add_argument("--gaussian-csv")
+    parser.add_argument("--config", default=DEFAULT_CONFIG_NAME)
+    parser.add_argument("--output-dir", default="quicklook_outputs")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the quicklook workflow from command-line arguments."""
+
+    args = build_parser().parse_args(argv)
+    result = run_gaussian_newkirk_quicklook(
+        gaussian_csv=args.gaussian_csv,
+        config_name=args.config,
+        output_dir=args.output_dir,
+    )
+    print(f"Quicklook input: {result['input_csv']}")
+    print(f"Quicklook output: {Path(args.output_dir).resolve()}")
+    return 0
 
 
 def build_quicklook_config(config_name: str = DEFAULT_CONFIG_NAME) -> dict[str, Any]:

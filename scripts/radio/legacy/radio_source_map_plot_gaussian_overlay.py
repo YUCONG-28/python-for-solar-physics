@@ -15,6 +15,8 @@ This script keeps the original radio source map plotting workflow and adds backg
 新增功能: 左右旋数据加和（可配置加权平均）
 """
 
+# ruff: noqa: F811 -- retained definitions are intentionally rebound below.
+
 import argparse
 import csv
 import datetime
@@ -31,6 +33,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 from dataclasses import dataclass
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib import import_module
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -7746,6 +7749,123 @@ def _migrate_config(cfg):
     return cfg
 
 
+# Keep this historical workflow importable, but make its parity-validated
+# scientific helpers resolve to the canonical package implementations.  The
+# assignments intentionally live after the retained definitions: old readers
+# can still inspect the historical orchestration in one file, while every
+# runtime lookup below this boundary uses ``solar_toolkit``.
+_canonical_gaussian_model = import_module("solar_toolkit.modeling.gaussian")
+_canonical_radio_coordinates = import_module("solar_toolkit.radio.coordinates")
+_canonical_radio_drift = import_module("solar_toolkit.radio.drift_rate")
+_canonical_radio_gaussian = import_module("solar_toolkit.radio.gaussian")
+_canonical_radio_gaussian_background = import_module(
+    "solar_toolkit.radio.gaussian_background"
+)
+_canonical_radio_gaussian_masks = import_module("solar_toolkit.radio.gaussian_masks")
+_canonical_radio_gaussian_models = import_module("solar_toolkit.radio.gaussian_models")
+_canonical_radio_io = import_module("solar_toolkit.radio.io")
+_canonical_radio_output_paths = import_module("solar_toolkit.radio.output_paths")
+_canonical_radio_spectrogram = import_module("solar_toolkit.radio.spectrogram")
+
+# Gaussian models, background statistics, masks, fitting, and diagnostics.
+GaussianFitResult = _canonical_radio_gaussian.GaussianFitResult
+elliptical_gaussian_2d = _canonical_gaussian_model.elliptical_gaussian_2d
+elliptical_gaussian_2d_with_constant_bg = (
+    _canonical_radio_gaussian_models.elliptical_gaussian_2d_with_constant_bg
+)
+elliptical_gaussian_2d_with_plane_bg = (
+    _canonical_radio_gaussian_models.elliptical_gaussian_2d_with_plane_bg
+)
+gaussian_only_from_popt = _canonical_radio_gaussian_models.gaussian_only_from_popt
+estimate_background_noise = (
+    _canonical_radio_gaussian_background.estimate_background_noise
+)
+_safe_rms_map = _canonical_radio_gaussian_background._safe_rms_map
+_unravel_2d_index = _canonical_radio_coordinates.unravel_2d_index
+_true_indices = _canonical_gaussian_model.true_indices
+_select_peak_connected_mask = (
+    _canonical_radio_gaussian_masks._select_peak_connected_mask
+)
+create_source_mask = _canonical_radio_gaussian_masks.create_source_mask
+_gaussian_fit_diag_defaults = _canonical_radio_gaussian._gaussian_fit_diag_defaults
+_roi_slices_from_mask = _canonical_radio_gaussian._roi_slices_from_mask
+_weighted_moment_initial_guess = (
+    _canonical_radio_gaussian._weighted_moment_initial_guess
+)
+_limit_fit_pixels = _canonical_radio_gaussian._limit_fit_pixels
+_attach_gaussian_fit_metadata = _canonical_radio_gaussian._attach_gaussian_fit_metadata
+_gaussian_fwhm_arcsec = _canonical_radio_gaussian._gaussian_fwhm_arcsec
+_center_peak_distance_arcsec = _canonical_radio_gaussian._center_peak_distance_arcsec
+_gaussian_quality_config = _canonical_radio_gaussian._gaussian_quality_config
+_update_gaussian_quality = _canonical_radio_gaussian._update_gaussian_quality
+_set_gaussian_failure_diag = _canonical_radio_gaussian._set_gaussian_failure_diag
+fit_elliptical_gaussian_on_radio_image = (
+    _canonical_radio_gaussian.fit_elliptical_gaussian_on_radio_image
+)
+overlay_gaussian_fit_on_axis = _canonical_radio_gaussian.overlay_gaussian_fit_on_axis
+_acquire_csv_lock = _canonical_radio_gaussian._acquire_csv_lock
+_release_csv_lock = _canonical_radio_gaussian._release_csv_lock
+save_gaussian_diagnostics_row = _canonical_radio_gaussian.save_gaussian_diagnostics_row
+
+# Coordinate and neutral parsing helpers used by the spectrogram/drift paths.
+pixel_to_data_coord = _canonical_radio_coordinates.pixel_to_data_coord
+data_coord_to_pixel = _canonical_radio_coordinates.data_coord_to_pixel
+coordinate_roundtrip_error_pixel = (
+    _canonical_radio_coordinates.coordinate_roundtrip_error_pixel
+)
+_parse_datetime_value = _canonical_radio_io.parse_datetime_value
+_index_range_from_values = _canonical_radio_io.index_range_from_values
+_index_range_from_time_values = _canonical_radio_io.index_range_from_time_values
+_spectrogram_panel_enabled = _canonical_radio_output_paths.spectrogram_panel_enabled
+
+# Spectrogram loading remains wired to the legacy module-level cache because
+# ``main`` explicitly owns that cache.  The actual parsing/rebinning/build work
+# is canonical; ``get_spectrogram_cache`` stays local to preserve cache identity.
+SpectrogramCache = _canonical_radio_spectrogram.SpectrogramCache
+_normalize_spectrogram_paths = _canonical_radio_spectrogram._normalize_spectrogram_paths
+_read_spectrogram_file_metadata = (
+    _canonical_radio_spectrogram._read_spectrogram_file_metadata
+)
+resolve_spectrogram_time_window_multi = (
+    _canonical_radio_spectrogram.resolve_spectrogram_time_window_multi
+)
+_spectrogram_overlap_segments = (
+    _canonical_radio_spectrogram._spectrogram_overlap_segments
+)
+_rebinned_axis_values = _canonical_radio_spectrogram._rebinned_axis_values
+_read_rebinned_plane = _canonical_radio_spectrogram._read_rebinned_plane
+build_spectrogram_cache = _canonical_radio_spectrogram.build_spectrogram_cache
+_spectrogram_time_locator = _canonical_radio_spectrogram._spectrogram_time_locator
+_date_num_to_datetime = _canonical_radio_spectrogram._date_num_to_datetime
+_spectrogram_display_data_extent = (
+    _canonical_radio_spectrogram._spectrogram_display_data_extent
+)
+
+# Drift calculations and persistence use the canonical module.  The local
+# ``get_or_load_drift_rate_results`` retains its historical CLI hint text.
+DriftRateResult = _canonical_radio_drift.DriftRateResult
+_datetime_iso_ms = _canonical_radio_drift._datetime_iso_ms
+_drift_line_time = _canonical_radio_drift._drift_line_time
+calculate_drift_rate_from_line = _canonical_radio_drift.calculate_drift_rate_from_line
+_mark_drift_range_warnings = _canonical_radio_drift._mark_drift_range_warnings
+_spectrogram_coord_from_pixel = _canonical_radio_drift._spectrogram_coord_from_pixel
+assert_spectrogram_mapping_not_flipped = (
+    _canonical_radio_drift.assert_spectrogram_mapping_not_flipped
+)
+save_drift_selection_json = _canonical_radio_drift.save_drift_selection_json
+load_drift_selection_json = _canonical_radio_drift.load_drift_selection_json
+_load_drift_selection_payload = _canonical_radio_drift._load_drift_selection_payload
+render_spectrogram_selection_preview = (
+    _canonical_radio_drift.render_spectrogram_selection_preview
+)
+_drift_selection_html = _canonical_radio_drift._drift_selection_html
+launch_drift_selection_server = _canonical_radio_drift.launch_drift_selection_server
+overlay_drift_rate_results = _canonical_radio_drift.overlay_drift_rate_results
+save_drift_rate_diagnostics_once = (
+    _canonical_radio_drift.save_drift_rate_diagnostics_once
+)
+
+
 def test_coordinate_roundtrip():
     shape = (256, 256)
     extent = [-3000.0, 3000.0, -3000.0, 3000.0]
@@ -8169,7 +8289,7 @@ def _run_select_drift_workflow(cfg):
         )
 
 
-def main(user_config=None):
+def _run_source_map_workflow(user_config=None, *, argv=None):
     """
     Main function: process single-band or multi-band radio data according to configuration mode, parallel plotting and saving results.
     """
@@ -8193,7 +8313,7 @@ def main(user_config=None):
     )
     parser.add_argument("--disable-drift", action="store_true")
     parser.add_argument("--enable-drift", action="store_true")
-    args, _unknown = parser.parse_known_args()
+    args, _unknown = parser.parse_known_args(argv)
     cfg = CONFIG
     cfg = _migrate_config(cfg)
     if args.disable_drift:
@@ -8584,6 +8704,13 @@ def main(user_config=None):
             print(f"  {name}: {msg}")
 
 
+def main(user_config=None, *, argv=None) -> int:
+    """Run the retained source-map workflow and return a process status code."""
+
+    _run_source_map_workflow(user_config=user_config, argv=argv)
+    return 0
+
+
 if __name__ == "__main__":
     # On Windows, multiprocessing must start main() inside this guard block
-    main()
+    raise SystemExit(main())

@@ -27,6 +27,15 @@ from .io import (
     write_json_file,
 )
 
+__all__ = [
+    "ANNOTATED_PREVIEW_NAME",
+    "DEFAULT_DRIFT_PRODUCT_CONFIG",
+    "METADATA_JSON_NAME",
+    "RAW_PREVIEW_NAME",
+    "SELECTION_CSV_NAME",
+    "save_drift_selection_artifacts",
+]
+
 RAW_PREVIEW_NAME = "spectrogram_drift_rate_selection_preview_raw.png"
 ANNOTATED_PREVIEW_NAME = "spectrogram_drift_rate_selection_preview_annotated.png"
 SELECTION_CSV_NAME = "spectrogram_drift_rate_selection_points.csv"

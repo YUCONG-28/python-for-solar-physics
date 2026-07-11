@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from solar_toolkit.coordinates import (
+from solar_toolkit.map.coordinates import (
     calculate_fits_extent_from_header,
     infer_image_origin_from_header,
     normalize_radio_extent,

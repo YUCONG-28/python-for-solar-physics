@@ -6,6 +6,19 @@ import math
 
 import numpy as np
 
+__all__ = [
+    "arcsec_to_rsun",
+    "compute_position_residual",
+    "compute_radial_unit_vector",
+    "coordinate_roundtrip_error_pixel",
+    "data_coord_to_pixel",
+    "normalize_roi_bounds_arcsec",
+    "pixel_to_data_coord",
+    "rsun_to_arcsec",
+    "unravel_2d_index",
+    "validate_plot_extent_and_origin",
+]
+
 
 def _finite(*values) -> bool:
     return bool(np.isfinite(np.asarray(values, dtype=float)).all())

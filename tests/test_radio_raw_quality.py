@@ -4,6 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
+import pytest
 from astropy.io import fits
 
 from scripts.radio.legacy import radio_source_map_plot_gaussian_overlay as legacy
@@ -214,12 +215,18 @@ def test_multi_band_bad_frame_saves_to_comparison_folder_and_skips_gaussian(
         }
     )
 
-    out_path = legacy.plot_multi_band_slot(
-        0,
-        [str(good_path), str(bad_path)],
-        str(tmp_path / "plots"),
-        cfg,
+    with pytest.warns(UserWarning) as warning_records:
+        out_path = legacy.plot_multi_band_slot(
+            0,
+            [str(good_path), str(bad_path)],
+            str(tmp_path / "plots"),
+            cfg,
+        )
+    warning_messages = [str(item.message) for item in warning_records]
+    assert any(
+        "Header lacks WCS coordinate keywords" in msg for msg in warning_messages
     )
+    assert any("颜色范围过小" in msg for msg in warning_messages)
 
     assert Path(out_path).is_file()
     assert "raw_quality_bad_frames" in Path(out_path).parts
@@ -280,7 +287,8 @@ def test_single_bad_frame_saves_to_comparison_folder_and_skips_gaussian(
         }
     )
 
-    out_path = legacy.plot_single_band(str(bad_path), str(tmp_path / "plots"), cfg)
+    with pytest.warns(UserWarning, match="Header lacks WCS coordinate keywords"):
+        out_path = legacy.plot_single_band(str(bad_path), str(tmp_path / "plots"), cfg)
 
     assert Path(out_path).is_file()
     assert "raw_quality_bad_frames" in Path(out_path).parts
@@ -341,7 +349,8 @@ def test_fixed_band_ranges_use_raw_quality_filtered_files(monkeypatch):
         }
     )
 
-    band_vmins, band_vmaxs = legacy._compute_fixed_band_ranges(cfg)
+    with pytest.warns(UserWarning, match="颜色范围过小"):
+        band_vmins, band_vmaxs = legacy._compute_fixed_band_ranges(cfg)
 
     assert band_vmins == [np.log10(2.0e3)]
     assert band_vmaxs == [np.log10(2.0e3)]

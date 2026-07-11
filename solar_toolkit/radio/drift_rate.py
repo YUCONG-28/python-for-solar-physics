@@ -34,6 +34,19 @@ from .spectrogram import (
     _spectrogram_time_locator,
 )
 
+__all__ = [
+    "DriftRateResult",
+    "assert_spectrogram_mapping_not_flipped",
+    "calculate_drift_rate_from_line",
+    "get_or_load_drift_rate_results",
+    "launch_drift_selection_server",
+    "load_drift_selection_json",
+    "overlay_drift_rate_results",
+    "render_spectrogram_selection_preview",
+    "save_drift_rate_diagnostics_once",
+    "save_drift_selection_json",
+]
+
 _DRIFT_RATE_RESULTS_CACHE = {}
 _DRIFT_RATE_DIAGNOSTIC_WRITTEN_KEYS = set()
 

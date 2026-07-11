@@ -4658,7 +4658,8 @@ def test_gaussian_fit_synthetic_source():
 
 
 # ---- 主流程：创建配置、构建匹配任务、串行处理所有 AIA 文件 ----
-def main(user_config=None):
+def _run_overlay_workflow(user_config=None, *, argv=None):
+    del argv  # Reserved for a stable CLI-compatible workflow signature.
     cfg = Config()
     cfg = apply_aia_radio_hmi_user_config(cfg, user_config)
     os.makedirs(cfg.output_dir, exist_ok=True)
@@ -4708,5 +4709,12 @@ def main(user_config=None):
     return frame_paths
 
 
+def main(user_config=None, *, argv=None) -> int:
+    """Run the retained overlay workflow and return a process status code."""
+
+    _run_overlay_workflow(user_config=user_config, argv=argv)
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

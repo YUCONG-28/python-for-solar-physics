@@ -16,6 +16,12 @@ from .height_comparison import model_label
 from .io import ensure_output_dir
 from .newkirk import newkirk_height_from_frequency_mhz
 
+__all__ = [
+    "plot_gaussian_vs_newkirk_height_frequency",
+    "plot_gaussian_vs_newkirk_height_time",
+    "plot_height_residual_vs_frequency",
+]
+
 
 def plot_gaussian_vs_newkirk_height_frequency(height_df, output_path, config=None):
     cfg = dict(config or {})

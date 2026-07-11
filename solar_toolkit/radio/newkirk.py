@@ -7,6 +7,19 @@ import math
 import numpy as np
 import pandas as pd
 
+__all__ = [
+    "attach_newkirk_height_to_gaussian",
+    "effective_density_factor",
+    "extrapolate_drift_line_with_newkirk",
+    "newkirk_assumption_label",
+    "newkirk_density_cm3",
+    "newkirk_height_from_frequency_mhz",
+    "newkirk_radius_from_density",
+    "newkirk_radius_from_frequency_mhz",
+    "newkirk_speed_from_drift_rate",
+    "plasma_density_from_frequency_mhz",
+]
+
 RSUN_KM = 695_700.0
 SPEED_OF_LIGHT_KM_S = 299_792.458
 NEWKIRK_BASE_DENSITY_CM3 = 4.2e4

@@ -12,23 +12,75 @@ from dataclasses import dataclass
 
 import matplotlib.patches as patches
 import numpy as np
-from scipy.ndimage import binary_dilation, find_objects, label, maximum_filter
+from scipy.ndimage import label, maximum_filter
 from scipy.optimize import OptimizeWarning, curve_fit
 
+from solar_toolkit.modeling.gaussian import elliptical_gaussian_2d
+
+from . import gaussian_masks as _gaussian_mask_helpers
 from .coordinates import (
     coordinate_roundtrip_error_pixel,
     pixel_to_data_coord,
     unravel_2d_index,
 )
+from .gaussian_background import _safe_rms_map, estimate_background_noise
+from .gaussian_models import (
+    elliptical_gaussian_2d_with_constant_bg,
+    elliptical_gaussian_2d_with_plane_bg,
+    gaussian_only_from_popt,
+)
 from .io import (
     GAUSSIAN_DIAGNOSTIC_FIELDS,
     MULTI_GAUSSIAN_DIAGNOSTIC_FIELDS,
-    BoolArray,
-    FloatArray,
 )
 from .io import plot_output_subdir as _plot_output_subdir
 
+__all__ = [
+    "GaussianFitResult",
+    "GaussianSourceCandidate",
+    "MultiGaussianFitResult",
+    "_acquire_csv_lock",
+    "_attach_candidate_metadata",
+    "_attach_gaussian_fit_metadata",
+    "_candidate_detection_masks",
+    "_candidate_failure_row",
+    "_center_peak_distance_arcsec",
+    "_fit_failure_warning",
+    "_gaussian_fit_diag_defaults",
+    "_gaussian_fwhm_arcsec",
+    "_gaussian_quality_config",
+    "_limit_fit_pixels",
+    "_local_peak_coordinates",
+    "_multi_source_limit",
+    "_release_csv_lock",
+    "_requested_multi_source_count",
+    "_roi_slices_from_mask",
+    "_safe_rms_map",
+    "_select_peak_connected_mask",
+    "_set_gaussian_failure_diag",
+    "_unravel_2d_index",
+    "_update_gaussian_quality",
+    "_watershed_candidate_labels",
+    "_weighted_moment_initial_guess",
+    "create_source_mask",
+    "detect_gaussian_source_candidates",
+    "elliptical_gaussian_2d",
+    "elliptical_gaussian_2d_with_constant_bg",
+    "elliptical_gaussian_2d_with_plane_bg",
+    "estimate_background_noise",
+    "fit_elliptical_gaussian_on_radio_image",
+    "fit_multiple_gaussians_on_radio_image",
+    "gaussian_only_from_popt",
+    "multi_gaussian_diagnostics_rows",
+    "overlay_gaussian_fit_on_axis",
+    "overlay_multi_gaussian_fit_on_axis",
+    "save_gaussian_diagnostics_row",
+    "save_multi_gaussian_diagnostics_row",
+]
+
 _unravel_2d_index = unravel_2d_index
+_select_peak_connected_mask = _gaussian_mask_helpers._select_peak_connected_mask
+create_source_mask = _gaussian_mask_helpers.create_source_mask
 _GAUSSIAN_WARNING_COUNTS = {}
 
 
@@ -75,370 +127,7 @@ class MultiGaussianFitResult:
     failure_rows: list[dict]
 
 
-def elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta):
-    x, y = xy
-    cos_t = np.cos(theta)
-    sin_t = np.sin(theta)
-    x_shift = x - x0
-    y_shift = y - y0
-    x_rot = cos_t * x_shift + sin_t * y_shift
-    y_rot = -sin_t * x_shift + cos_t * y_shift
-    exponent = -0.5 * ((x_rot / sigma_x) ** 2 + (y_rot / sigma_y) ** 2)
-    return A * np.exp(exponent)
-
-
-def elliptical_gaussian_2d_with_constant_bg(xy, A, x0, y0, sigma_x, sigma_y, theta, b0):
-    return elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta) + b0
-
-
-def elliptical_gaussian_2d_with_plane_bg(
-    xy, A, x0, y0, sigma_x, sigma_y, theta, b0, bx, by
-):
-    x, y = xy
-    return (
-        elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta)
-        + b0
-        + bx * x
-        + by * y
-    )
-
-
-def gaussian_only_from_popt(xy, popt, background_model):
-    return elliptical_gaussian_2d(xy, *popt[:6])
-
-
-def estimate_background_noise(data, source_exclusion_mask=None):
-    work = np.asarray(data, dtype=np.float64)
-    valid_mask = np.isfinite(work)
-    if source_exclusion_mask is not None:
-        valid_mask &= ~source_exclusion_mask
-    finite_data = work[valid_mask]
-    if finite_data.size == 0:
-        return np.nan, np.nan
-    background_level = float(np.nanmedian(finite_data))
-    mad = float(np.nanmedian(np.abs(finite_data - background_level)))
-    noise_sigma = 1.4826 * mad
-    if not np.isfinite(noise_sigma) or noise_sigma <= 0:
-        noise_sigma = float(np.nanstd(finite_data))
-    return background_level, noise_sigma
-
-
-def _safe_rms_map(rms_map):
-    safe = np.asarray(rms_map, dtype=np.float64).copy()
-    finite_positive = safe[np.isfinite(safe) & (safe > 0)]
-    fallback = float(np.nanmedian(finite_positive)) if finite_positive.size else 1.0
-    if not np.isfinite(fallback) or fallback <= 0:
-        fallback = 1.0
-    safe[~np.isfinite(safe) | (safe <= 0)] = fallback
-    return safe
-
-
-def _select_peak_connected_mask(
-    source_mask_bool,
-    grow_mask,
-    peak_y,
-    peak_x,
-    use_snr=False,
-    snr_map=None,
-    work=None,
-):
-    labeled, _ = label(source_mask_bool)
-    peak_label = labeled[peak_y, peak_x]
-    if peak_label == 0:
-        object_slices = find_objects(labeled)
-        if not object_slices:
-            main_mask = source_mask_bool
-        else:
-            labels = np.arange(1, int(labeled.max()) + 1)
-            scores = []
-            for lab in labels:
-                component = labeled == lab
-                if use_snr and snr_map is not None:
-                    score = float(np.nanmax(np.where(component, snr_map, np.nan)))
-                else:
-                    score = float(np.nanmax(np.where(component, work, np.nan)))
-                if not np.isfinite(score):
-                    score = float(np.count_nonzero(component))
-                scores.append(score)
-            peak_label = int(labels[int(np.argmax(scores))]) if len(scores) else 0
-            main_mask = np.asarray(labeled == peak_label, dtype=np.bool_)
-    else:
-        main_mask = np.asarray(labeled == peak_label, dtype=np.bool_)
-
-    if use_snr:
-        grown_labels, _ = label(grow_mask)
-        grow_label = grown_labels[peak_y, peak_x]
-        if grow_label == 0 and peak_label > 0:
-            overlap = grown_labels[main_mask]
-            overlap = overlap[overlap > 0]
-            if overlap.size:
-                grow_label = int(np.bincount(overlap).argmax())
-        if grow_label > 0:
-            main_mask = np.asarray(grown_labels == grow_label, dtype=np.bool_)
-    return np.asarray(main_mask, dtype=np.bool_)
-
-
-def create_source_mask(
-    data: FloatArray | np.ndarray,
-    cfg: dict,
-    background_map=None,
-    rms_map=None,
-) -> tuple[BoolArray | None, dict]:
-    work = np.asarray(data, dtype=np.float64)
-    finite_data = work[np.isfinite(work)]
-    diagnostics = {
-        "quality_flag": "ok",
-        "background_level": np.nan,
-        "noise_sigma": np.nan,
-        "threshold": np.nan,
-        "peak": np.nan,
-        "mask_pixel_count": 0,
-        "source_snr_peak": np.nan,
-        "source_snr_mean": np.nan,
-        "background_rms_median": np.nan,
-        "background_level_median": np.nan,
-        "mask_method": "raw_threshold",
-        "fit_peak_fraction_threshold_used": np.nan,
-        "fit_peak_fraction_candidate_counts": "",
-    }
-    if finite_data.size == 0:
-        diagnostics["quality_flag"] = "non_finite_data"
-        return None, diagnostics
-
-    peak = float(np.max(finite_data))
-    if not np.isfinite(peak):
-        diagnostics["quality_flag"] = "non_finite_data"
-        return None, diagnostics
-
-    use_snr = False
-    snr_map = None
-    bg = None
-    rms = None
-    if (
-        cfg.get("background_use_for_mask", True)
-        and background_map is not None
-        and rms_map is not None
-    ):
-        bg = np.asarray(background_map, dtype=np.float64)
-        rms = _safe_rms_map(rms_map)
-        use_snr = bg.shape == work.shape and rms.shape == work.shape
-
-    finite_peak_work = np.where(np.isfinite(work), work, -np.inf)
-    peak_y, peak_x = _unravel_2d_index(int(np.argmax(finite_peak_work)), work.shape)
-
-    base_peak_fraction = float(cfg.get("fit_peak_fraction_threshold", 0.60))
-    grow_peak_fraction = float(cfg.get("fit_grow_peak_fraction_threshold", 0.25))
-    min_peak_fraction = float(
-        cfg.get("fit_peak_fraction_threshold_min", base_peak_fraction)
-    )
-    max_peak_fraction = float(
-        cfg.get("fit_peak_fraction_threshold_max", base_peak_fraction)
-    )
-    step_peak_fraction = abs(float(cfg.get("fit_peak_fraction_threshold_step", 0.05)))
-    min_peak_fraction, max_peak_fraction = sorted(
-        (min_peak_fraction, max_peak_fraction)
-    )
-    base_peak_fraction = min(
-        max(base_peak_fraction, min_peak_fraction), max_peak_fraction
-    )
-    grow_peak_fraction = min(max(grow_peak_fraction, 0.0), base_peak_fraction)
-    target_min_pixels = int(cfg.get("fit_mask_target_min_pixels", 30))
-    target_max_pixels = int(cfg.get("fit_mask_target_max_pixels", 300))
-    if target_max_pixels < target_min_pixels:
-        target_min_pixels, target_max_pixels = target_max_pixels, target_min_pixels
-
-    if use_snr:
-        snr_map = (work - bg) / rms
-        fit_threshold = float(cfg.get("fit_snr_threshold", 5.0))
-        grow_threshold = float(cfg.get("fit_grow_snr_threshold", 3.0))
-        diagnostics.update(
-            {
-                "background_level": float(np.nanmedian(bg[np.isfinite(bg)])),
-                "noise_sigma": float(np.nanmedian(rms[np.isfinite(rms) & (rms > 0)])),
-                "threshold": fit_threshold,
-                "background_rms_median": float(
-                    np.nanmedian(rms[np.isfinite(rms) & (rms > 0)])
-                ),
-                "background_level_median": float(np.nanmedian(bg[np.isfinite(bg)])),
-                "mask_method": "snr_mesh",
-            }
-        )
-    else:
-        background_level, noise_sigma = estimate_background_noise(work)
-        if not np.isfinite(noise_sigma) or noise_sigma <= 0:
-            noise_sigma = max(float(np.std(finite_data)), 1e-12)
-        diagnostics.update(
-            {
-                "background_level": background_level,
-                "noise_sigma": noise_sigma,
-                "threshold": np.nan,
-                "background_rms_median": noise_sigma,
-                "background_level_median": background_level,
-                "mask_method": "raw_threshold",
-            }
-        )
-
-    def build_mask_for_peak_fraction(peak_fraction):
-        intensity_threshold = float(peak_fraction * peak)
-        grow_intensity_threshold = float(grow_peak_fraction * peak)
-        if use_snr:
-            core_intensity_mask = np.isfinite(work) & (work > intensity_threshold)
-            grow_intensity_mask = np.isfinite(work) & (work > grow_intensity_threshold)
-            core_mask = np.asarray(
-                np.isfinite(snr_map) & (snr_map >= fit_threshold) & core_intensity_mask,
-                dtype=np.bool_,
-            )
-            grow_mask_local = np.asarray(
-                np.isfinite(snr_map)
-                & (snr_map >= grow_threshold)
-                & grow_intensity_mask,
-                dtype=np.bool_,
-            )
-            threshold_used = fit_threshold
-        else:
-            threshold_used = max(
-                float(cfg.get("fit_snr_threshold", 5.0)) * noise_sigma,
-                intensity_threshold,
-            )
-            core_mask = np.asarray(
-                np.isfinite(work) & (work > threshold_used), dtype=np.bool_
-            )
-            grow_threshold_used = max(
-                float(cfg.get("fit_grow_snr_threshold", 3.0)) * noise_sigma,
-                grow_intensity_threshold,
-            )
-            grow_mask_local = np.asarray(
-                np.isfinite(work) & (work > grow_threshold_used), dtype=np.bool_
-            )
-
-        if not np.any(core_mask):
-            return None, 0, threshold_used
-
-        candidate_mask = _select_peak_connected_mask(
-            core_mask,
-            grow_mask_local,
-            peak_y,
-            peak_x,
-            use_snr=use_snr,
-            snr_map=snr_map,
-            work=work,
-        )
-        dilation_pixels_local = int(cfg.get("fit_mask_dilation_pixels", 3))
-        if dilation_pixels_local > 0:
-            candidate_mask = np.asarray(
-                binary_dilation(candidate_mask, iterations=dilation_pixels_local),
-                dtype=np.bool_,
-            )
-        return candidate_mask, int(np.count_nonzero(candidate_mask)), threshold_used
-
-    candidate_fractions = []
-    if step_peak_fraction <= 0:
-        candidate_fractions = [base_peak_fraction]
-    else:
-        frac = min_peak_fraction
-        while frac <= max_peak_fraction + 1e-12:
-            candidate_fractions.append(round(frac, 10))
-            frac += step_peak_fraction
-        if candidate_fractions[-1] < max_peak_fraction - 1e-12:
-            candidate_fractions.append(max_peak_fraction)
-    candidate_fractions = sorted(set(candidate_fractions))
-
-    candidates = []
-    for candidate_fraction in candidate_fractions:
-        candidate_mask, candidate_count, candidate_threshold = (
-            build_mask_for_peak_fraction(candidate_fraction)
-        )
-        candidates.append(
-            {
-                "fraction": float(candidate_fraction),
-                "mask": candidate_mask,
-                "count": int(candidate_count),
-                "threshold": float(candidate_threshold),
-            }
-        )
-
-    target_mid_pixels = 0.5 * (target_min_pixels + target_max_pixels)
-    in_target_candidates = [
-        item
-        for item in candidates
-        if item["mask"] is not None
-        and target_min_pixels <= item["count"] <= target_max_pixels
-    ]
-    usable_candidates = [
-        item
-        for item in candidates
-        if item["mask"] is not None
-        and item["count"] >= int(cfg.get("fit_min_mask_pixels", 20))
-    ]
-    nonempty_candidates = [
-        item for item in candidates if item["mask"] is not None and item["count"] > 0
-    ]
-
-    if in_target_candidates:
-        selected = min(
-            in_target_candidates,
-            key=lambda item: (
-                abs(item["count"] - target_mid_pixels),
-                abs(item["fraction"] - base_peak_fraction),
-            ),
-        )
-    elif usable_candidates:
-        selected = min(
-            usable_candidates,
-            key=lambda item: (
-                abs(item["count"] - target_min_pixels),
-                abs(item["fraction"] - base_peak_fraction),
-            ),
-        )
-    elif nonempty_candidates:
-        selected = max(nonempty_candidates, key=lambda item: item["count"])
-    else:
-        selected = {
-            "fraction": base_peak_fraction,
-            "mask": None,
-            "count": 0,
-            "threshold": np.nan,
-        }
-
-    main_mask = selected["mask"]
-    mask_pixel_count = int(selected["count"])
-    threshold = selected["threshold"]
-    peak_fraction_used = float(selected["fraction"])
-    candidate_count_text = ";".join(
-        f"{item['fraction']:.3f}:{item['count']}" for item in candidates
-    )
-
-    diagnostics["fit_peak_fraction_threshold_used"] = float(peak_fraction_used)
-    diagnostics["fit_peak_fraction_candidate_counts"] = candidate_count_text
-    diagnostics["threshold"] = threshold
-
-    if main_mask is None or not np.any(main_mask):
-        diagnostics.update(
-            {
-                "quality_flag": "mask_too_small",
-                "peak": peak,
-            }
-        )
-        return None, diagnostics
-
-    diagnostics.update(
-        {
-            "peak": peak,
-            "mask_pixel_count": mask_pixel_count,
-        }
-    )
-    if use_snr and snr_map is not None:
-        source_snr = snr_map[main_mask & np.isfinite(snr_map)]
-        diagnostics["source_snr_peak"] = (
-            float(np.nanmax(source_snr)) if source_snr.size else np.nan
-        )
-        diagnostics["source_snr_mean"] = (
-            float(np.nanmean(source_snr)) if source_snr.size else np.nan
-        )
-    if mask_pixel_count < int(cfg.get("fit_min_mask_pixels", 20)):
-        diagnostics["quality_flag"] = "mask_too_small"
-
-    return np.asarray(main_mask, dtype=np.bool_), diagnostics
+# Canonical models, background estimators, and masks are imported above.
 
 
 def _requested_multi_source_count(cfg):

@@ -1,19 +1,8 @@
-"""Gaussian source models.
-
-English: Public facade for analytic Gaussian model functions used by radio
-source fitting.
-
-中文：射电源拟合中使用的解析高斯模型函数门面模块。
-"""
+"""Analytic Gaussian models used by radio-source fitting."""
 
 from __future__ import annotations
 
-from .gaussian import (
-    elliptical_gaussian_2d,
-    elliptical_gaussian_2d_with_constant_bg,
-    elliptical_gaussian_2d_with_plane_bg,
-    gaussian_only_from_popt,
-)
+from solar_toolkit.modeling.gaussian import elliptical_gaussian_2d
 
 __all__ = [
     "elliptical_gaussian_2d",
@@ -21,3 +10,23 @@ __all__ = [
     "elliptical_gaussian_2d_with_plane_bg",
     "gaussian_only_from_popt",
 ]
+
+
+def elliptical_gaussian_2d_with_constant_bg(xy, A, x0, y0, sigma_x, sigma_y, theta, b0):
+    return elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta) + b0
+
+
+def elliptical_gaussian_2d_with_plane_bg(
+    xy, A, x0, y0, sigma_x, sigma_y, theta, b0, bx, by
+):
+    x, y = xy
+    return (
+        elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta)
+        + b0
+        + bx * x
+        + by * y
+    )
+
+
+def gaussian_only_from_popt(xy, popt, background_model):
+    return elliptical_gaussian_2d(xy, *popt[:6])

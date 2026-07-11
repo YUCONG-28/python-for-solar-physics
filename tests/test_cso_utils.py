@@ -7,7 +7,7 @@ import datetime as dt
 import numpy as np
 import pytest
 
-from solar_toolkit.cso import (
+from solar_toolkit.radio.cso import (
     cso_base_datetime,
     normalize_cso_polarization,
     read_cso_spectrogram_hdul,

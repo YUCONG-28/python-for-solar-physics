@@ -13,6 +13,16 @@ from .newkirk import (
     plasma_density_from_frequency_mhz,
 )
 
+__all__ = [
+    "DEFAULT_SELECTED_MODELS",
+    "HEIGHT_COLUMNS",
+    "build_gaussian_newkirk_height_summary_table",
+    "build_gaussian_newkirk_height_table",
+    "classify_source_type",
+    "compute_gaussian_projected_height",
+    "model_label",
+]
+
 DEFAULT_SELECTED_MODELS = [
     {"multiplier": 1.0, "harmonic": 1},
     {"multiplier": 1.0, "harmonic": 2},

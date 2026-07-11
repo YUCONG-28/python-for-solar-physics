@@ -18,38 +18,23 @@ if TYPE_CHECKING:
 if __package__ in {None, ""}:  # direct ``python scripts/radio/...`` execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-if __package__ in {None, ""}:
-    from scripts.radio.configs import (
-        DEFAULT_CONFIG_NAME,
-        load_drift_selection_product_config,
-        load_newkirk_height_comparison_config,
-        load_radio_diagnostic_presentation_config,
-        load_radio_output_config,
-        load_radio_user_config,
-    )
-    from scripts.radio.entrypoint_utils import (
-        apply_output_overrides,
-        apply_pipeline_output_overrides,
-        build_legacy_config,
-        parse_known_common_args,
-        resolve_analysis_dir,
-    )
-else:
-    from .configs import (
-        DEFAULT_CONFIG_NAME,
-        load_drift_selection_product_config,
-        load_newkirk_height_comparison_config,
-        load_radio_diagnostic_presentation_config,
-        load_radio_output_config,
-        load_radio_user_config,
-    )
-    from .entrypoint_utils import (
-        apply_output_overrides,
-        apply_pipeline_output_overrides,
-        build_legacy_config,
-        parse_known_common_args,
-        resolve_analysis_dir,
-    )
+from solar_toolkit.radio.config import (
+    DEFAULT_CONFIG_NAME,
+    load_drift_selection_product_config,
+    load_newkirk_height_comparison_config,
+    load_radio_diagnostic_presentation_config,
+    load_radio_output_config,
+    load_radio_user_config,
+)
+from solar_toolkit.radio.entrypoint_utils import (
+    apply_output_overrides,
+    apply_pipeline_output_overrides,
+    build_legacy_config,
+    parse_known_common_args,
+    resolve_analysis_dir,
+)
+from solar_toolkit.radio.pipeline_cli import main as _package_main
+from solar_toolkit.radio.provenance import write_radio_provenance
 
 
 def _pd():
@@ -86,22 +71,23 @@ def _mdates():
     return mdates
 
 
-def _parse_args():
+def _parse_args(argv=None):
     """Parse the shared radio pipeline CLI surface."""
     return parse_known_common_args(
         "Run the full radio burst Gaussian, drift-rate, and Newkirk-height pipeline.",
         default_config=DEFAULT_CONFIG_NAME,
         include_pipeline_outputs=True,
+        argv=argv,
     )
 
 
-def main(config_name: str | None = None):
+def _run_pipeline(argv=None, *, config_name: str | None = None):
     pd = _pd()
     # Source-map generation is still delegated to the validated legacy runner;
     # downstream tables and figures are built from its diagnostic CSV outputs.
     from scripts.radio.legacy import radio_source_map_plot_gaussian_overlay as legacy
 
-    args = _parse_args()
+    args = _parse_args(argv)
     # Load the event config in layers: legacy source-map settings, output naming,
     # Newkirk diagnostics, drift-selection products, and presentation toggles.
     selected_config = config_name or args.config
@@ -133,6 +119,13 @@ def main(config_name: str | None = None):
     # re-fitting radio images, preserving the legacy scientific decision path.
     analysis_dir = resolve_analysis_dir(cfg)
     analysis_dir.mkdir(parents=True, exist_ok=True)
+    write_radio_provenance(
+        analysis_dir,
+        cfg,
+        newkirk_config=newkirk_cfg,
+        config_source=selected_config,
+        cli_overrides=vars(args),
+    )
 
     gaussian_csv = analysis_dir / cfg.get(
         "gaussian_diagnostics_csv", "radio_gaussian_fit_diagnostics.csv"
@@ -926,5 +919,14 @@ def _truthy(value) -> bool:
     return truthy(value)
 
 
+def main(config_name: str | None = None, argv=None) -> int:
+    """Run the retained pipeline through the package-owned CLI contract."""
+
+    forwarded = list(sys.argv[1:] if argv is None else argv)
+    if config_name is not None:
+        forwarded.extend(["--config", config_name])
+    return _package_main(forwarded, runner=_run_pipeline)
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

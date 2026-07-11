@@ -27,6 +27,41 @@ try:  # pragma: no cover - SciPy is expected in the project env, but optional he
 except Exception:  # pragma: no cover
     ndimage = None
 
+__all__ = [
+    "FITS_SUFFIXES",
+    "POL_LCP",
+    "POL_RCP",
+    "POL_SUM",
+    "POL_UNKNOWN",
+    "RadioImage",
+    "build_parser",
+    "choose_mask_component",
+    "compute_source_center",
+    "extract_radio_centers",
+    "filter_radio_images",
+    "find_files",
+    "first_existing_header_value",
+    "infer_parent_directory_polarization",
+    "infer_pol_from_stokes_axis",
+    "infer_polarization",
+    "iter_images_in_hdu",
+    "iter_radio_images",
+    "main",
+    "maybe_make_sum_images",
+    "normalize_pol_text",
+    "parse_datetime_value",
+    "parse_frequency_mhz",
+    "parse_observation_time",
+    "parse_time_from_filename",
+    "pixel_to_hpc_arcsec",
+    "record_from_radio_image",
+    "run_center_extraction",
+    "select_radio_files",
+    "stokes_code_to_pol",
+    "to_arcsec",
+    "write_centers_table",
+]
+
 POL_LCP = "LCP"
 POL_RCP = "RCP"
 POL_SUM = "L+R"
@@ -1020,8 +1055,13 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> pd.DataFrame:
-    """CLI entrypoint for threshold radio-source center extraction."""
+def run_center_extraction(argv: list[str] | None = None) -> pd.DataFrame:
+    """Run threshold center extraction and return the generated table.
+
+    This function preserves the former programmatic return contract of
+    :func:`main`.  Command-line callers should use :func:`main`, which returns
+    an integer process status code.
+    """
 
     args = build_parser().parse_args(argv)
     freqs = _parse_float_csv(args.freqs)
@@ -1063,6 +1103,13 @@ def main(argv: list[str] | None = None) -> pd.DataFrame:
     return df
 
 
+def main(argv: list[str] | None = None) -> int:
+    """Run the threshold center-extraction command."""
+
+    run_center_extraction(argv)
+    return 0
+
+
 def _parse_str_csv(raw: str | None) -> list[str]:
     if not raw:
         return []
@@ -1074,4 +1121,4 @@ def _parse_float_csv(raw: str | None) -> list[float]:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
