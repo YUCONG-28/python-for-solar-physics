@@ -32,6 +32,7 @@ dev = [
     "jupyter>=1.0.0",
     "ipython>=8.14.0",
     "opencv-python>=4.8.0",
+    "plotly>=5.18",
 ]
 full = [
     "xarray>=2023.6.0",
