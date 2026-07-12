@@ -456,6 +456,17 @@ MODULE_SPECS = [
         "description": "Launch the managed Streamlit trajectory playback app.",
     },
     {
+        "id": "radio-roi-lightcurve-app",
+        "title": "Radio ROI Light Curve App",
+        "category": "Radio Analysis",
+        "status": "main",
+        "risk_level": "standard",
+        "script_path": "scripts/radio/run_radio_roi_lightcurve_app.py",
+        "command_module": "solar_toolkit.radio.roi_lightcurve_launcher",
+        "launch_mode": "interactive",
+        "description": "Launch the managed Streamlit app for user-selected radio FITS ROI light curves.",
+    },
+    {
         "id": "radio-trajectory-html-export",
         "title": "Radio Trajectory HTML Export",
         "category": "Radio Analysis",

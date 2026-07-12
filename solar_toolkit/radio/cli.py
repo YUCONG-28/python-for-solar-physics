@@ -14,6 +14,7 @@ _COMMANDS = {
     "pipeline": ("solar_toolkit.radio.pipeline_cli", "main"),
     "quicklook": ("solar_toolkit.radio.quicklook", "main"),
     "raw-quality": ("solar_toolkit.radio.raw_quality_cli", "main"),
+    "roi-lightcurve": ("solar_toolkit.radio.roi_lightcurve_launcher", "main"),
     "source-map": ("solar_toolkit.radio.source_map_cli", "main"),
     "trajectory": ("solar_toolkit.radio.trajectory_cli", "main"),
 }

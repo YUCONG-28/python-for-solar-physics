@@ -35,6 +35,7 @@ def test_radio_source_entrypoint_modules_import_without_streamlit_runtime():
     for module_name in [
         "scripts.radio.extract_radio_centers",
         "scripts.radio.export_radio_source_trajectory",
+        "scripts.radio.run_radio_roi_lightcurve_app",
         "scripts.radio.run_radio_source_app",
         "scripts.radio.run_radio_source_app_managed",
     ]:
@@ -46,6 +47,7 @@ def test_radio_source_entrypoint_help_commands_run():
     for script in [
         "scripts/radio/extract_radio_centers.py",
         "scripts/radio/export_radio_source_trajectory.py",
+        "scripts/radio/run_radio_roi_lightcurve_app.py",
         "scripts/radio/run_radio_source_app.py",
         "scripts/radio/run_radio_source_app_managed.py",
     ]:
@@ -56,12 +58,16 @@ def test_radio_source_entrypoint_help_commands_run():
 
 def test_radio_center_and_app_entrypoint_help_exposes_event_filters():
     center_help = _run_help("scripts/radio/extract_radio_centers.py")
+    roi_help = _run_help("scripts/radio/run_radio_roi_lightcurve_app.py")
     app_help = _run_help("scripts/radio/run_radio_source_app.py")
 
     assert center_help.returncode == 0, center_help.stderr
+    assert roi_help.returncode == 0, roi_help.stderr
     assert app_help.returncode == 0, app_help.stderr
     for marker in ["--freqs", "--time-start", "--time-end", "--polarizations"]:
         assert marker in center_help.stdout
+    for marker in ["--time-start", "--time-end", "--radio-dir", "--polarization"]:
+        assert marker in roi_help.stdout
     for marker in ["--time-start", "--time-end", "--aia-dir", "--frame-mode"]:
         assert marker in app_help.stdout
 

@@ -13,6 +13,7 @@ EXPECTED_COMMANDS = {
     "pipeline",
     "quicklook",
     "raw-quality",
+    "roi-lightcurve",
     "source-map",
     "trajectory",
 }

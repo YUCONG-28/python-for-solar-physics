@@ -25,6 +25,9 @@ __all__ = [
 
 _ROI_MARKERS = ("roi", "extent")
 _THRESHOLD_MARKERS = (
+    "color_range",
+    "fixed_band_vmin",
+    "fixed_band_vmax",
     "threshold",
     "percentile",
     "sigma_clip",
