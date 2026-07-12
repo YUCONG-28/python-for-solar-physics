@@ -37,7 +37,7 @@ An earlier pytest run reported a partial result:
 - The repeated setup failure was:
 
 ```text
-PermissionError: [WinError 5] Access is denied: '<USER_HOME>\AppData\Local\Temp\pytest-of-Lee'
+PermissionError: [WinError 5] Access is denied: '<system-temp>\pytest-of-user'
 ```
 
 That failure occurred while pytest was preparing the `tmp_path` fixture / base
@@ -45,25 +45,25 @@ temporary directory.
 
 Temporary directory follow-up:
 
-- `<PROJECT_ROOT>\Python\.pytest_tmp`: not found during cleanup
+- `<repository>\.pytest_tmp`: not found during cleanup
   check; no removal was needed.
-- `<PROJECT_ROOT>\Python\.pytest_tmp_fresh_20260529`: not found
+- `<repository>\.pytest_tmp_fresh_20260529`: not found
   during cleanup check; no removal was needed.
-- `<PROJECT_ROOT>\Python\.pytest_tmp_run`: not found during cleanup
+- `<repository>\.pytest_tmp_run`: not found during cleanup
   check; no removal was needed.
-- `<USER_HOME>\AppData\Local\Temp\pytest-of-Lee`: still exists.
+- `<system-temp>\pytest-of-user`: still exists.
 
 A fresh project-local base temp directory was created and write-tested:
 
 ```text
-<PROJECT_ROOT>\Python\.pytest_tmp_run_final
+<repository>\.pytest_tmp_run_final
 ```
 
 Final pytest rerun command:
 
 ```powershell
 conda activate solarphysics_env
-python -m pytest --basetemp <PROJECT_ROOT>\Python\.pytest_tmp_run_final
+python -m pytest --basetemp <repository>\.pytest_tmp_run_final
 ```
 
 Final result:

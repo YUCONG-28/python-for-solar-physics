@@ -43,7 +43,7 @@ does not load the FITS-processing stack until a wrapper is actually executed.
 | --- | --- | --- | --- | --- |
 | 主科学操作 | `current_data - base_data` | `current_data - prev_data` | 是 | wrapper 设置 `difference_method="base"` 或 `"running"` |
 | 参考帧/参考时间 | `sliced_files[0]`，即选中范围内第一帧；旧配置 `start_idx=99`, `end_idx=200` | 每一帧减去选中序列中前一帧；旧配置 `start_idx=150`, `end_idx=450` | 是 | base wrapper 使用 `difference_base_index=None`，与主处理器“选中范围第一帧”为 base 的逻辑一致；running wrapper 使用主处理器相邻帧规则 |
-| 单波段目录结构 | `data_dir` 直接指向单个波段 FITS 目录 `<DATA_ROOT>/JSOCdata/All/AIA_131_pro/` | `data_dir` 直接指向单个波段 FITS 目录 `<PROJECT_ROOT>/20250124/All/94/1/` | 是，通过程序接口覆盖 | wrapper 设置 `use_band_subdirs=False`，避免主处理器默认寻找 `data_path/<wave>/` |
+| 单波段目录结构 | `data_dir` 直接指向单个波段 FITS 目录 `data/aia/131` | `data_dir` 直接指向单个波段 FITS 目录 `data/aia/94` | 是，通过程序接口覆盖 | wrapper 设置 `use_band_subdirs=False`，避免主处理器默认寻找 `data_path/<wave>/` |
 | 波段 | 131 A | 94 A | 是 | wrapper 设置 `multi_band_wavelengths` 和 `difference_wavelengths` 为单波段 |
 | ROI/submap | `(Tx 180, 520; Ty -340, 20)` | `(Tx 600, 1210; Ty -280, 100)` | 是 | wrapper 设置 `roi_bounds=(xmin, xmax, ymin, ymax)` |
 | vmin/vmax | `Normalize(vmin=-888, vmax=888)` | `Normalize(vmin=-777, vmax=777)` | 是 | wrapper 设置 `difference_norm_mode="fixed"`，并保留对应 `difference_vmin`/`difference_vmax` |
@@ -51,7 +51,7 @@ does not load the FITS-processing stack until a wrapper is actually executed.
 | percentile scaling | 无；固定 vmin/vmax | 无；固定 vmin/vmax | 是 | wrapper 不使用主处理器自动 percentile 模式 |
 | exposure correction | `map.data / map.exposure_time` | `map.data / map.exposure_time` | 是 | 主处理器 `_load_exposure_normalized_map` 统一处理 |
 | derotation/reprojection | 对 cutout 使用 `propagate_with_solar_surface()` 后 reproject 到 base cutout WCS | 注释称删除消自转；直接把 cutout reproject 到 first cutout WCS | 部分覆盖 | 主处理器支持 `difference_derotate`，但语义是 full-map derotation 后 ROI cutout。wrapper 保持 `difference_derotate=False`，避免引入新的 full-map derotation行为；旧 base 的 cutout-level propagate 作为复现风险记录 |
-| 输出目录 | `<DATA_ROOT>/JSOCdata/All/AIA_131_pro/difference_two_plot_min/` | `<PROJECT_ROOT>/20250124/All/94/1/differnce_plot/` | 部分覆盖 | 旧路径保存在 `LEGACY_DEFAULTS` 和本文档；主处理器使用标准 `difference/<wave>/<method>_difference` 输出布局 |
+| 输出目录 | `outputs/aia/base_difference/131` | `outputs/aia/running_difference/94` | 部分覆盖 | 可移植占位路径保存在 `LEGACY_DEFAULTS` 和本文档；主处理器使用标准 `difference/<wave>/<method>_difference` 输出布局 |
 | 输出命名 | base 参考图保存语句被注释；差分为 `{current_filename}_diff_from_base.png` | 第一帧保存为 `{first_filename}.png`；差分为 `{current_filename}_diff.png` | 部分覆盖 | 主处理器标准命名为 `{current_time}_base_diff.png` 或 `{current_time}_running_diff.png`；旧命名保存在 `LEGACY_DEFAULTS` 和本文档，不在 wrapper 中重写主输出逻辑 |
 | show_plot | `False` | `False` | 是 | 主处理器默认非交互后端运行，wrapper 不打开 GUI/交互显示 |
 | 输出 DPI | 300 | 300 | 是 | 主处理器默认 `dpi=300` |

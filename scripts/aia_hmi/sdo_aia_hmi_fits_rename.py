@@ -31,7 +31,7 @@ from solar_toolkit.hmi.fits_rename import main as _package_main
 
 # Historical direct-run configuration. Keep these names local so existing
 # workflows and tests can override them without mutating the public package.
-TARGET_FOLDER = r"<PROJECT_ROOT>\2026\20260326\SDO"
+TARGET_FOLDER = "data/sdo"
 DRY_RUN = True
 
 

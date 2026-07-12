@@ -11,8 +11,8 @@ from solar_toolkit.cme import extract_lasco_timestamp, scan_lasco_files
 from solar_toolkit.cme.lasco import render_lasco_running_differences
 from solar_toolkit.path_config import load_script_config
 
-DEFAULT_INPUT_DIR = "<DATA_ROOT>/data/"
-DEFAULT_OUTPUT_DIR = "<DATA_ROOT>/difference_plot/"
+DEFAULT_INPUT_DIR = "data/lasco"
+DEFAULT_OUTPUT_DIR = "outputs/lasco/difference"
 
 
 def extract_timestamp_from_filename(filename: str) -> dt.datetime:

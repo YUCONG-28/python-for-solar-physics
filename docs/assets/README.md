@@ -1,41 +1,27 @@
-# README Display Assets
+# Documentation Assets
 
-This directory is reserved for small, curated assets used by `README.md` and
-project documentation.
+This directory is reserved for reviewed, non-observational assets used by
+project documentation. Research observations, derived figures, diagnostic
+plots, and data tables must remain outside Git even when they are compressed.
 
 ## `docs/assets/images/`
 
-Use this folder for compressed example figures:
-
-- AIA single-band or mosaic previews
-- AIA base/running difference examples
-- AIA/radio/HMI overlay examples
-- CSO dynamic spectrogram examples
-- Radio Gaussian fitting diagnostic examples
-
-Recommended image size:
-
-- Prefer widths around 1200-1800 px for README figures.
-- Prefer each image under 500 KB.
-- Special cases should stay under 2 MB to avoid pre-commit large-file checks.
+This folder is intentionally empty. Before adding an image, confirm that it is
+not an observation, a derived science product, or a visualization of private
+research data, and add its exact path to the repository data-policy allowlist.
 
 ## `docs/assets/videos/`
 
-Use this folder for short README demonstration videos only:
-
-- Short MP4 clips
-- Short GIF previews when MP4 is not practical
-
-Do not upload full science batch outputs, long time-series videos, or raw
-processing products.
+This folder is intentionally empty. Do not add recordings of research data or
+local workflows. Any future non-sensitive demonstration must be reviewed and
+explicitly allowlisted before it is tracked.
 
 ## Data Policy
 
 - Do not place real raw observation data here.
-- Do not place FITS, JP2, NetCDF, NPY/NPZ, HDF5, or local path configs here.
-- Example figures must be compressed, desensitized if needed, and have a clear
-  source or generation note in documentation.
-
-The current root-level files `HXR.png`, `SXR.png`, `SXR to HXR.png`, and
-`SXR to HXR enhance.png` need manual review before any future move into
-`docs/assets/images/`. This cleanup phase intentionally leaves them in place.
+- Do not place generated figures, tables, videos, or interactive exports here.
+- Do not place FITS, JP2, NetCDF, NPY/NPZ, HDF5, local path configs, or
+  credential material here.
+- Keep local research products in ignored output directories.
+- Treat the repository data-policy allowlist as an explicit review boundary,
+  not as a general exemption for this directory.

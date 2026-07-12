@@ -27,9 +27,9 @@ Daily edits should go in `configs/radio_20250124_config.py`. Do not put a new
 ## Run Commands
 
 ```powershell
-cd <PROJECT_ROOT>\Python
+cd <repository-root>
 conda activate solarphysics_env
-$env:PYTHONPATH = "<PROJECT_ROOT>\Python"
+$env:PYTHONPATH = "<repository-root>"
 
 python scripts\radio\run_radio_source_map.py --config radio_20250124_config
 python scripts\radio\run_radio_burst_pipeline.py --config radio_20250124_config

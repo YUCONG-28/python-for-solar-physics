@@ -196,10 +196,10 @@ class Config:
     """主要配置参数类"""
 
     # ── 目录配置 ──────────────────────────────────────────────
-    radio_base_dir: str = r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450"
-    aia_base_dir: str = r"<PROJECT_ROOT>\2025\20250124\AIA\171\1"
-    hmi_base_dir: str = r"<PROJECT_ROOT>\2025\20250124\AIA\hmi\1"
-    output_dir: str = r"<PROJECT_ROOT>\2025\20250124\AIA_RS_HMI\test"
+    radio_base_dir: str = "data/radio"
+    aia_base_dir: str = "data/aia/171"
+    hmi_base_dir: str = "data/hmi"
+    output_dir: str = "outputs/aia_radio_hmi"
     aia_wavelength: str = "171"
     aia_panel_base_dir_template: str | None = None
 

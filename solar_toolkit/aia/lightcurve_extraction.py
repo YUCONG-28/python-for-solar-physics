@@ -33,8 +33,8 @@ __all__ = [
 ]
 
 DEFAULT_LIGHTCURVE_CONFIG = {
-    "data_dir": "<DATA_ROOT>/JSOCdata/All/AIA_1600/",
-    "output_dir": "<DATA_ROOT>/JSOCdata/All/Flux_data/",
+    "data_dir": "data/aia/1600",
+    "output_dir": "outputs/aia/flux",
     "data_filename": "aia_1600_the third region.csv",
 }
 

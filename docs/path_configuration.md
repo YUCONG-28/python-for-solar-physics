@@ -40,6 +40,20 @@ Missing config files or missing sections leave the script defaults unchanged.
 For long batch jobs, scripts that support `show_plot` default to `false` so
 figures are saved and closed without blocking the run with GUI windows.
 
+## Radio Event Paths
+
+The packaged `radio_20250124_config` and `radio_20250503_config` modules also
+read their matching section from this file. These sections are intentionally
+path-only: nested path leaves such as `multi_band_root`, `file_path`,
+`output_dir`, and the AIA/HMI/radio base directories may be overridden, while
+scientific thresholds, fitting settings, frequency lists, and display choices
+remain fixed in the event module. An unknown field or a non-path leaf raises an
+error instead of silently changing the scientific configuration.
+
+The complete supported nesting is shown in `configs/paths.example.yaml`. Keep
+the same section names and omit any path that should retain its portable
+default.
+
 ## Module Templates
 
 The repository also includes module-level example templates:

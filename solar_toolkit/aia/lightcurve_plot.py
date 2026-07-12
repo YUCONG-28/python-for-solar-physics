@@ -219,8 +219,8 @@ def main(argv=None) -> int:
     path_config = load_script_config(
         "sdo_aia_lightcurve_plot",
         {
-            "input_dir": "<DATA_ROOT>/JSOCdata/All/Flux_data/",
-            "output_dir": "<DATA_ROOT>/JSOCdata/All/Flux/",
+            "input_dir": "data/aia/flux",
+            "output_dir": "outputs/aia/flux",
         },
     )
     # 解析命令行参数（修改为按文件名选取）

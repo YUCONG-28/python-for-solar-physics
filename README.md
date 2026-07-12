@@ -99,22 +99,12 @@ observation archive is required.
 - Keep data-independent tests in `tests/`; full scientific products require
   local observations and explicit path configuration.
 
-## Example Research Products
+## Data Provenance
 
-Curated README figures live under `docs/assets/images/`. Full-resolution
-science outputs remain local and are not tracked by Git.
-
-![2025-01-24 multi-band radio Gaussian centers over a CSO dynamic spectrum](docs/assets/images/20250124-radio-gaussian-spectrogram-overlay.jpg)
-
-**Figure 1.** Multi-band DART/DSRT radio-source Gaussian centers aligned with a
-CSO dynamic spectrum near 2025-01-24 04:48:37 UT.
-
-![2025-01-24 SDO/AIA six-band context with DART/DSRT radio-source contours and CSO spectrum](docs/assets/images/20250124-aia-radio-spectrogram-sixband.jpg)
-
-**Figure 2.** SDO/AIA six-band EUV context with DART/DSRT radio-source contours
-and the matching CSO dynamic spectrum.
-
-Data provenance:
+Research observations and generated science products are not distributed in
+this repository. Users obtain observations from the appropriate data provider,
+configure local paths, and keep derived figures and tables outside Git. The
+toolkit currently supports data from the following sources:
 
 - **SDO**: AIA extreme-ultraviolet images and HMI magnetic context are from the
   NASA Solar Dynamics Observatory mission. Instrument and data references:

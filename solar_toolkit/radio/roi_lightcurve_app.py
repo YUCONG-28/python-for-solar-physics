@@ -570,7 +570,7 @@ def _render_load_step(
         radio_dir = st.text_input(
             "Radio FITS folder",
             value=str(settings["radio_dir"]),
-            placeholder=r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450",
+            placeholder="data/radio",
             help="Folder that contains the radio source FITS files. Subfolders such as 149MHz/LL are supported.",
         )
     with c2:

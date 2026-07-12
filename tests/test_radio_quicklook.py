@@ -140,7 +140,7 @@ def test_resolves_default_gaussian_csv_from_config_without_requiring_local_data(
 
     assert (
         resolved
-        == Path(r"<PROJECT_ROOT>\2025\20250124\output")
+        == Path("outputs/radio/2025-01-24")
         / "gaussian_spectrogram_overlay"
         / "radio_gaussian_fit_diagnostics.csv"
     )

@@ -15,7 +15,7 @@ from .processing import calculate_derivative as _calculate_derivative
 from .processing import smooth_flux_data as _smooth_flux_data
 from .sxr import load_goes_sxr_dataset
 
-DEFAULT_INPUT = "<DATA_ROOT>/dn_xrsf-l2-flx1s_g16_d20240808_v2-2-0.nc"
+DEFAULT_INPUT = "data/xray/goes-sxr.nc"
 START_TIME = "2024-08-08T19:00:00"
 END_TIME = "2024-08-08T20:00:00"
 SMOOTH_WINDOW = 22

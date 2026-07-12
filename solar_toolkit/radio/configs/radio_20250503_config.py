@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from solar_toolkit.radio.configs._path_overrides import apply_event_path_overrides
+
 __all__ = [
     "AIA_MULTI_WAVE_RAW_RADIO_SPECTROGRAM_CONFIG",
     "AIA_RADIO_HMI_CONFIG",
@@ -18,7 +20,7 @@ __all__ = [
 
 OUTPUT_CONFIG = {
     # Common output controls used by both radio entrypoints.
-    "output_dir": r"<PROJECT_ROOT>\2025\20250503\output",
+    "output_dir": "outputs/radio/2025-05-03",
     "analysis_subdir": "auto",
     "gaussian_diagnostics_csv": "radio_gaussian_fit_diagnostics.csv",
     "valid_centers_csv": "radio_gaussian_valid_centers.csv",
@@ -32,14 +34,11 @@ OUTPUT_CONFIG = {
 USER_CONFIG = {
     "mode": "multi_band",
     "data": {
-        "multi_band_root": r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600",
+        "multi_band_root": "data/radio/2025-05-03",
         "multi_band_freqs": [149, 164, 190, 205, 223, 238],
         "polarization": "RR+LL",
-        "single_file_path": (
-            r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600"
-            r"\149MHz\RR\149MHz_202553_071600_353.fits"
-        ),
-        "data_dir": r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600\149MHz\RR",
+        "single_file_path": "data/radio/2025-05-03/149MHz/RR/example.fits",
+        "data_dir": "data/radio/2025-05-03/149MHz/RR",
         "start_idx": 648,
         "end_idx": 944,
         "multi_band_time_tolerance_seconds": 0.1,
@@ -178,10 +177,10 @@ USER_CONFIG = {
     },
     "spectrogram": {
         "file_paths": [
-            r"<PROJECT_ROOT>\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503071510_V01.01.fits",
-            r"<PROJECT_ROOT>\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503072013_V01.01.fits",
+            "data/radio/2025-05-03/spectrogram-1.fits",
+            "data/radio/2025-05-03/spectrogram-2.fits",
         ],
-        "file_path": r"<PROJECT_ROOT>\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503071510_V01.01.fits",
+        "file_path": "data/radio/2025-05-03/spectrogram-1.fits",
         "time_display_mode": "user",
         "time_start": "2025-05-03T07:20:25",
         "time_end": "2025-05-03T07:22:25",
@@ -247,10 +246,10 @@ USER_CONFIG = {
 
 AIA_RADIO_HMI_CONFIG = {
     "paths": {
-        "radio_base_dir": r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600",
-        "aia_base_dir": r"<PROJECT_ROOT>\2025\20250503\SDO\AIA\171",
-        "hmi_base_dir": r"<PROJECT_ROOT>\2025\20250503\SDO\HMI",
-        "output_dir": r"<PROJECT_ROOT>\2025\20250503\output\AIA_Raw_Radio_Overlay",
+        "radio_base_dir": "data/radio/2025-05-03",
+        "aia_base_dir": "data/aia/2025-05-03/171",
+        "hmi_base_dir": "data/hmi/2025-05-03",
+        "output_dir": "outputs/radio/2025-05-03/AIA_Raw_Radio_Overlay",
     },
     "aia": {
         "wavelength": "171",
@@ -377,7 +376,7 @@ AIA_RADIO_HMI_CONFIG = {
         "animation_quality": "high",
     },
     "output": {
-        "output_dir": r"<PROJECT_ROOT>\2025\20250503\AIA_RS_HMI\output\AIA_Raw_Radio_Overlay",
+        "output_dir": "outputs/radio/2025-05-03/AIA_Raw_Radio_Overlay",
         "save_figure": True,
         "dpi": 300,
     },
@@ -391,7 +390,7 @@ AIA_RAW_RADIO_SPECTROGRAM_CONFIG = {
     **AIA_RADIO_HMI_CONFIG,
     "paths": {
         **AIA_RADIO_HMI_CONFIG["paths"],
-        "output_dir": r"<PROJECT_ROOT>\2025\20250503\output\AIA_Raw_Radio_Spectrogram",
+        "output_dir": "outputs/radio/2025-05-03/AIA_Raw_Radio_Spectrogram",
     },
     "radio": {
         **AIA_RADIO_HMI_CONFIG["radio"],
@@ -422,7 +421,7 @@ AIA_RAW_RADIO_SPECTROGRAM_CONFIG = {
     },
     "output": {
         **AIA_RADIO_HMI_CONFIG["output"],
-        "output_dir": r"<PROJECT_ROOT>\2025\20250503\AIA_RS_HMI\output\AIA_Raw_Radio_Spectrogram",
+        "output_dir": "outputs/radio/2025-05-03/AIA_Raw_Radio_Spectrogram",
     },
 }
 
@@ -430,8 +429,8 @@ AIA_MULTI_WAVE_RAW_RADIO_SPECTROGRAM_CONFIG = {
     **AIA_RADIO_HMI_CONFIG,
     "paths": {
         **AIA_RADIO_HMI_CONFIG["paths"],
-        "aia_panel_base_dir_template": r"<PROJECT_ROOT>\2025\20250503\SDO\AIA\{wave}",
-        "output_dir": r"<PROJECT_ROOT>\2025\20250503\output",
+        "aia_panel_base_dir_template": "data/aia/2025-05-03/{wave}",
+        "output_dir": "outputs/radio/2025-05-03",
     },
     "aia": {
         **AIA_RADIO_HMI_CONFIG["aia"],
@@ -493,7 +492,7 @@ AIA_MULTI_WAVE_RAW_RADIO_SPECTROGRAM_CONFIG = {
     },
     "output": {
         **AIA_RADIO_HMI_CONFIG["output"],
-        "output_dir": r"<PROJECT_ROOT>\2025\20250503\output",
+        "output_dir": "outputs/radio/2025-05-03",
     },
 }
 
@@ -591,17 +590,20 @@ RADIO_DIAGNOSTIC_PRESENTATION_CONFIG = {
     "summary_csv_name": "radio_newkirk_frequency_priority_summary.csv",
 }
 
-EVENT_CONFIG = {
-    "user": USER_CONFIG,
-    "output": OUTPUT_CONFIG,
-    "aia_radio_hmi": AIA_RADIO_HMI_CONFIG,
-    "aia_raw_radio_spectrogram": AIA_RAW_RADIO_SPECTROGRAM_CONFIG,
-    "aia_multi_wave_raw_radio_spectrogram": AIA_MULTI_WAVE_RAW_RADIO_SPECTROGRAM_CONFIG,
-    "newkirk": NEWKIRK_CONFIG,
-    "newkirk_height_comparison": NEWKIRK_HEIGHT_COMPARISON_CONFIG,
-    "drift_selection_products": DRIFT_SELECTION_PRODUCT_CONFIG,
-    "diagnostic_presentation": RADIO_DIAGNOSTIC_PRESENTATION_CONFIG,
-}
+EVENT_CONFIG = apply_event_path_overrides(
+    {
+        "user": USER_CONFIG,
+        "output": OUTPUT_CONFIG,
+        "aia_radio_hmi": AIA_RADIO_HMI_CONFIG,
+        "aia_raw_radio_spectrogram": AIA_RAW_RADIO_SPECTROGRAM_CONFIG,
+        "aia_multi_wave_raw_radio_spectrogram": AIA_MULTI_WAVE_RAW_RADIO_SPECTROGRAM_CONFIG,
+        "newkirk": NEWKIRK_CONFIG,
+        "newkirk_height_comparison": NEWKIRK_HEIGHT_COMPARISON_CONFIG,
+        "drift_selection_products": DRIFT_SELECTION_PRODUCT_CONFIG,
+        "diagnostic_presentation": RADIO_DIAGNOSTIC_PRESENTATION_CONFIG,
+    },
+    "radio_20250503_config",
+)
 
 USER_CONFIG = EVENT_CONFIG["user"]
 OUTPUT_CONFIG = EVENT_CONFIG["output"]

@@ -82,7 +82,7 @@ overlays.
 
 - `python` is not available on PATH in the current PowerShell environment, so
   the bundled Codex Python was used for syntax verification.
-- `compileall` passed for `<PROJECT_ROOT>\Python\scripts\radio`.
+- `compileall` passed for the repository's `scripts/radio` directory.
 - Root-level runtime artifact checks found no selection JSON, preview PNG, or
   diagnostics CSV files left in `scripts/radio`.
 - Direct entrypoint smoke runs reached dependency import and then stopped with

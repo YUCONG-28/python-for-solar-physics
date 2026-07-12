@@ -15,8 +15,8 @@ from __future__ import annotations
 from pathlib import Path
 
 LEGACY_DEFAULTS = {
-    "data_dir": "<DATA_ROOT>/JSOCdata/All/AIA_131_pro/",
-    "output_dir": "<DATA_ROOT>/JSOCdata/All/AIA_131_pro/difference_two_plot_min/",
+    "data_dir": "data/aia/131",
+    "output_dir": "outputs/aia/base_difference/131",
     "show_plot": False,
     "start_idx": 99,
     "end_idx": 200,

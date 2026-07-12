@@ -59,8 +59,8 @@ __all__ = [
 ]
 
 fps = 10
-input_dir = r"<PROJECT_ROOT>\2025\20250503\output\AIA_6band_GaussianRadio_Spectrogram"
-output_dir = r"<PROJECT_ROOT>\2025\20250503\video"
+input_dir = "data/images"
+output_dir = "outputs/video"
 video_name = "AIA_spectrogram_overlay.mp4"
 target_suffix = ".png"
 video_quality = "low"

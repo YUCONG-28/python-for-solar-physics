@@ -64,11 +64,8 @@ CONFIG = {
     # ┌─────────────────────────────────────────────────────────┐
     # │  文件路径                                                │
     # └─────────────────────────────────────────────────────────┘
-    "aia_fits_path": (
-        r"<PROJECT_ROOT>\2025\20250124\DEM\aia_data"
-        r"\aia.lev1_euv_12s.2025-01-24T044747Z.211.image_lev1.fits"
-    ),
-    "tb_data_path": (r"<PROJECT_ROOT>\2025\20250124\DEM\Tb_223000000.0.npy"),
+    "aia_fits_path": "data/aia/example.fits",
+    "tb_data_path": "data/radio/Tb_223MHz.npy",
     # ┌─────────────────────────────────────────────────────────┐
     # │  射电源叠加开关 & 路径                                   │
     # │                                                          │
@@ -76,10 +73,7 @@ CONFIG = {
     # │                  False → 仅显示 Tb 图，跳过射电相关步骤 │
     # └─────────────────────────────────────────────────────────┘
     "overlay_radio": True,
-    "radio_sources_dir": (
-        r"<PROJECT_ROOT>\2025\20250124\share\Data\UnPack"
-        r"\20250124UT0447-0450\ImageData_RRLL\223MHz\RR"
-    ),
+    "radio_sources_dir": "data/radio/223MHz/RR",
     "radio_sources_pattern": "223MHz_*.fits",
     # ┌─────────────────────────────────────────────────────────┐
     # │  射电源时间匹配策略                                      │

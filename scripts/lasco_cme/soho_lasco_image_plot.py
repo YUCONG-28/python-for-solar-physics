@@ -8,8 +8,8 @@ import argparse
 from solar_toolkit.cme.lasco import plot_lasco_images
 from solar_toolkit.path_config import load_script_config
 
-DEFAULT_INPUT_DIR = "<DATA_ROOT>/data/"
-DEFAULT_OUTPUT_DIR = "<DATA_ROOT>/plot/"
+DEFAULT_INPUT_DIR = "data/lasco"
+DEFAULT_OUTPUT_DIR = "outputs/lasco/plots"
 
 
 def build_parser() -> argparse.ArgumentParser:

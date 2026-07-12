@@ -17,9 +17,9 @@ from .hxi import load_hxi_lightcurve
 from .processing import calculate_derivative, smooth_flux_data
 from .sxr import load_goes_sxr_dataset
 
-DEFAULT_SXR = "<DATA_ROOT>/dn_xrsf-l2-flx1s_g16_d20240808_v2-2-0.nc"
-DEFAULT_HXI = "<DATA_ROOT>/hxi_qld_levq1_20240808_19_hly_v03.fits"
-DEFAULT_AIA_DIR = "<DATA_ROOT>/JSOCdata/All/Flux_data/"
+DEFAULT_SXR = "data/xray/goes-sxr.nc"
+DEFAULT_HXI = "data/xray/hxi.fits"
+DEFAULT_AIA_DIR = "data/aia/flux"
 DEFAULT_START = "2024-08-08T19:00:00"
 DEFAULT_END = "2024-08-08T20:00:00"
 DEFAULT_WINDOW = 22

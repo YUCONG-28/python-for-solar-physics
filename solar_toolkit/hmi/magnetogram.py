@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-DEFAULT_DATA_DIR = Path("<DATA_ROOT>/JSOCdata/HMI/")
-DEFAULT_OUTPUT_DIR = Path("<DATA_ROOT>/JSOCdata/HMI/plot_offset")
+DEFAULT_DATA_DIR = Path("data/hmi")
+DEFAULT_OUTPUT_DIR = Path("outputs/hmi")
 DEFAULT_ROI_BOUNDS = (180.0, -340.0, 520.0, 20.0)
 
 

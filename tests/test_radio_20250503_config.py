@@ -63,16 +63,11 @@ def test_20250503_config_has_real_event_paths_and_full_event_sections():
 
     assert not _contains_todo(module.EVENT_CONFIG)
     assert user_config["data"]["multi_band_freqs"] == [149, 164, 190, 205, 223, 238]
-    assert user_config["data"]["multi_band_root"] == (
-        r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600"
-    )
+    assert user_config["data"]["multi_band_root"] == "data/radio/2025-05-03"
     assert user_config["data"]["single_file_path"] == (
-        r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600"
-        r"\149MHz\RR\149MHz_202553_071600_353.fits"
+        "data/radio/2025-05-03/149MHz/RR/example.fits"
     )
-    assert user_config["data"]["data_dir"] == (
-        r"<PROJECT_ROOT>\2025\20250503\20250503UT071600-072600\149MHz\RR"
-    )
+    assert user_config["data"]["data_dir"] == ("data/radio/2025-05-03/149MHz/RR")
     assert user_config["data"]["start_idx"] == 648
     assert user_config["data"]["end_idx"] == 944
     assert user_config["data"]["multi_band_time_tolerance_seconds"] == 0.1
@@ -102,18 +97,16 @@ def test_20250503_config_has_real_event_paths_and_full_event_sections():
         == 0.10
     )
     assert user_config["spectrogram"]["file_paths"] == [
-        r"<PROJECT_ROOT>\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503071510_V01.01.fits",
-        r"<PROJECT_ROOT>\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503072013_V01.01.fits",
+        "data/radio/2025-05-03/spectrogram-1.fits",
+        "data/radio/2025-05-03/spectrogram-2.fits",
     ]
     assert user_config["spectrogram"]["file_path"] == (
-        r"<PROJECT_ROOT>\2025\20250503\OROCH_MWRS01_SRSP_L1_05M_20250503071510_V01.01.fits"
+        "data/radio/2025-05-03/spectrogram-1.fits"
     )
     assert user_config["spectrogram"]["time_start"] == "2025-05-03T07:20:25"
     assert user_config["spectrogram"]["time_end"] == "2025-05-03T07:22:25"
     assert user_config["output"]["output_dir"] == module.OUTPUT_CONFIG["output_dir"]
-    assert module.OUTPUT_CONFIG["output_dir"] == (
-        r"<PROJECT_ROOT>\2025\20250503\output"
-    )
+    assert module.OUTPUT_CONFIG["output_dir"] == "outputs/radio/2025-05-03"
 
 
 def test_radio_event_configs_expose_central_output_config_without_spatial():
@@ -326,12 +319,8 @@ def test_20250503_multi_wave_raw_radio_spectrogram_config_is_opt_in():
     assert default_config["radio"]["use_radec_maps"] is False
     assert default_config["wcs_reproject"]["use_radec_maps"] is False
     assert default_config.get("spectrogram", {}).get("enabled", False) is False
-    assert default_config["paths"]["aia_base_dir"] == (
-        r"<PROJECT_ROOT>\2025\20250503\SDO\AIA\171"
-    )
-    assert default_config["paths"]["hmi_base_dir"] == (
-        r"<PROJECT_ROOT>\2025\20250503\SDO\HMI"
-    )
+    assert default_config["paths"]["aia_base_dir"] == "data/aia/2025-05-03/171"
+    assert default_config["paths"]["hmi_base_dir"] == "data/hmi/2025-05-03"
 
     assert multi_wave["aia"]["aia_panel_wavelengths"] == [
         94,
@@ -342,11 +331,9 @@ def test_20250503_multi_wave_raw_radio_spectrogram_config_is_opt_in():
         304,
     ]
     assert multi_wave["paths"]["aia_panel_base_dir_template"] == (
-        r"<PROJECT_ROOT>\2025\20250503\SDO\AIA\{wave}"
+        "data/aia/2025-05-03/{wave}"
     )
-    assert multi_wave["paths"]["hmi_base_dir"] == (
-        r"<PROJECT_ROOT>\2025\20250503\SDO\HMI"
-    )
+    assert multi_wave["paths"]["hmi_base_dir"] == "data/hmi/2025-05-03"
     assert multi_wave["aia"]["aia_panel_layout_style"] == "mosaic"
     assert multi_wave["aia"]["aia_panel_wspace"] == 0.0
     assert multi_wave["aia"]["aia_panel_hspace"] == 0.0
@@ -370,7 +357,7 @@ def test_20250503_multi_wave_raw_radio_spectrogram_config_is_opt_in():
     assert multi_wave["spectrogram"]["enabled"] is True
     assert multi_wave["spectrogram"]["time_display_mode"] == "user"
     assert multi_wave["spectrogram"]["panel_height_ratio"] >= 0.5
-    expected_output = r"<PROJECT_ROOT>\2025\20250503\output"
+    expected_output = "outputs/radio/2025-05-03"
     assert multi_wave["paths"]["output_dir"] == expected_output
     assert multi_wave["output"]["output_dir"] == expected_output
 
@@ -394,7 +381,7 @@ def test_20250124_multi_wave_gaussian_spectrogram_config_is_opt_in():
         304,
     ]
     assert multi_wave["paths"]["aia_panel_base_dir_template"].endswith(
-        r"SDO\AIA\{wave}"
+        "aia/2025-01-24/{wave}"
     )
     assert multi_wave["hmi"]["overlay_hmi"] is False
     assert multi_wave["radio"]["radio_overlay_mode"] == "gaussian"
@@ -411,10 +398,7 @@ def test_20250124_multi_wave_gaussian_spectrogram_config_is_opt_in():
     assert multi_wave["display"]["mark_radio_center"] is True
     assert multi_wave["spectrogram"]["enabled"] is True
     assert multi_wave["spectrogram"]["time_display_mode"] == "user"
-    expected_output = (
-        r"<PROJECT_ROOT>\2025\20250124"
-        r"\output\AIA_6band_GaussianRadio_Spectrogram"
-    )
+    expected_output = "outputs/radio/2025-01-24/AIA_6band_GaussianRadio_Spectrogram"
     assert multi_wave["paths"]["output_dir"] == expected_output
     assert multi_wave["output"]["output_dir"] == expected_output
     assert multi_wave["aia"]["aia_panel_layout_style"] == "mosaic"

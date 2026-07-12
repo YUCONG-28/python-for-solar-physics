@@ -15,8 +15,8 @@ from __future__ import annotations
 from pathlib import Path
 
 LEGACY_DEFAULTS = {
-    "data_dir": "<PROJECT_ROOT>/20250124/All/94/1/",
-    "output_dir": "<PROJECT_ROOT>/20250124/All/94/1/differnce_plot/",
+    "data_dir": "data/aia/94",
+    "output_dir": "outputs/aia/running_difference/94",
     "show_plot": False,
     "start_idx": 150,
     "end_idx": 450,

@@ -13,9 +13,9 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-DEFAULT_AIA_DIR = Path("<PROJECT_ROOT>/20250503/All/171")
-DEFAULT_HMI_DIR = Path("<PROJECT_ROOT>/20250503/All/hmi")
-DEFAULT_OUTPUT_DIR = Path("<PROJECT_ROOT>/20250503/All/171_hmi")
+DEFAULT_AIA_DIR = Path("data/aia/171")
+DEFAULT_HMI_DIR = Path("data/hmi")
+DEFAULT_OUTPUT_DIR = Path("outputs/aia_hmi")
 DEFAULT_ROI_BOUNDS = (-700.0, -100.0, -100.0, 400.0)
 
 

@@ -1,7 +1,7 @@
 # Radio Entrypoints
 
 This directory now keeps three root-level entrypoints. Run them from
-`<PROJECT_ROOT>\Python` with `PYTHONPATH` set to that same directory.
+the repository root with `PYTHONPATH` set to that same directory.
 All three entrypoints default to `--config radio_20250124_config`.
 
 The reusable Gaussian/Newkirk quicklook logic lives in

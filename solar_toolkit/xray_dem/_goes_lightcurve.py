@@ -10,7 +10,7 @@ from solar_toolkit.path_config import load_script_config
 
 from .sxr import load_goes_sxr_dataset
 
-DEFAULT_INPUT = "<DATA_ROOT>/dn_xrsf-l2-flx1s_g16_d20240808_v2-2-0.nc"
+DEFAULT_INPUT = "data/xray/goes-sxr.nc"
 DEFAULT_START = "2024-08-08T19:00:00"
 DEFAULT_END = "2024-08-08T20:00:00"
 DEFAULT_OUTPUT = "SXR.png"

@@ -94,7 +94,7 @@ Do not reintroduce a large `USER_CONFIG` block into:
 - `python -m compileall scripts\radio` could not run because `python` is not on
   PATH in the current PowerShell environment.
 - The equivalent bundled-Python command passed:
-  `<USER_HOME>\.cache\runtime-cache\codex-primary-runtime\dependencies\python\python.exe -m compileall scripts\radio`.
+  `<python> -m compileall scripts\radio`.
 - Config loader test passed for short config names:
   `load_radio_user_config("radio_20250124_config")` returned `mode=multi_band`
   and `multipliers=[1, 2, 4]`.

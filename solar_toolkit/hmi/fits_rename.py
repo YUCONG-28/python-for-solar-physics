@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-TARGET_FOLDER = r"<PROJECT_ROOT>\2026\20260326\SDO"
+TARGET_FOLDER = "data/sdo"
 DRY_RUN = True
 
 AIA_UV_PREFIX = "aia.lev1_uv_24s"

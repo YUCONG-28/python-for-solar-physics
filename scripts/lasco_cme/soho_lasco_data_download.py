@@ -12,7 +12,7 @@ from solar_toolkit.path_config import load_script_config
 DEFAULT_START = "2024-08-08T19:00:00"
 DEFAULT_END = "2024-08-08T23:00:00"
 DEFAULT_INTERVAL_SECONDS = 720
-DEFAULT_SAVE_DIR = "<DATA_ROOT>/data/"
+DEFAULT_SAVE_DIR = "data/lasco"
 
 
 def build_parser() -> argparse.ArgumentParser:

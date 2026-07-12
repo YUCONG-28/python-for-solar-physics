@@ -13,8 +13,8 @@ from pathlib import Path
 
 from .hxi import HXI_ENERGY_CHANNELS, load_hxi_lightcurve
 
-DEFAULT_INPUT_DIRECTORY = "<PROJECT_ROOT>/HXR/2025_05_03"
-DEFAULT_OUTPUT_DIRECTORY = "<PROJECT_ROOT>/HXR/2025_05_03"
+DEFAULT_INPUT_DIRECTORY = "data/hxi"
+DEFAULT_OUTPUT_DIRECTORY = "outputs/hxi"
 
 
 def process_hxi_fits(input_dir, output_dir):

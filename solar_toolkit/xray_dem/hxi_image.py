@@ -10,11 +10,7 @@ from solar_toolkit.path_config import load_script_config
 
 from .aia_hxi_overlay import convert_date
 
-DEFAULT_CONFIG = {
-    "file_path": (
-        "<DATA_ROOT>/HXI_CLEAN/" "hxi_imgcube_04e09t_20240808_192000_HXI_CLEAN.fits"
-    )
-}
+DEFAULT_CONFIG = {"file_path": ("data/hxi/image_cube.fits")}
 
 
 def run_hxi_image_plot(config: Mapping[str, Any] | None = None) -> None:

@@ -78,7 +78,7 @@ def _normalize_wave_float_dict(value, name: str) -> dict:
 class AIAConfig:
     # User-facing defaults. Keep these values behavior-compatible with the
     # historical processor unless a real-data comparison approves a change.
-    root_dir: str = r"<PROJECT_ROOT>"
+    root_dir: str = "data/aia"
     year: str = "2026"
     date: str = "20260326"
 

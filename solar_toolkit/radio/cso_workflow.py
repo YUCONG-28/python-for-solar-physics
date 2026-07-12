@@ -91,13 +91,10 @@ class PlotConfig:
     # Multi-file mode: set file_paths to a list of FITS files ordered or unordered.
     # The program will automatically select the portions overlapping t_start~t_end
     # and concatenate them along the time axis.
-    file_path: str = (
-        r"<PROJECT_ROOT>\2025\20250124"
-        r"\OROCH_MWRS01_SRSP_L1_05M_20250124041219_V01.01.fits"
-    )
+    file_path: str = "data/radio/spectrogram.fits"
     # file_paths: list[str] | None = field(default_factory=lambda: [
-    #     r"<PROJECT_ROOT>\2026\20260326\OROCH_MWRS01_SRSP_L1_05M_20260326065020_V01.01.fits",
-    #     r"<PROJECT_ROOT>\2026\20260326\OROCH_MWRS01_SRSP_L1_05M_20260326065509_V01.01.fits"
+    #     "data/radio/spectrogram-part-1.fits",
+    #     "data/radio/spectrogram-part-2.fits"
     #     ])
 
     # Time range (UTC)

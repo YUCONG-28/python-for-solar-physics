@@ -33,7 +33,7 @@ Use `--output-dir <path>` to send the generated CSV and PNG files elsewhere.
 To test a specific diagnostics CSV, pass it explicitly:
 
 ```powershell
-D:\miniforge3\envs\solarphysics_env\python.exe examples\gaussian_newkirk_quicklook\quicklook_gaussian_newkirk.py --config radio_20250124_config --gaussian-csv <PROJECT_ROOT>\2025\20250124\output\gaussian_spectrogram_overlay\radio_gaussian_fit_diagnostics.csv
+D:\miniforge3\envs\solarphysics_env\python.exe examples\gaussian_newkirk_quicklook\quicklook_gaussian_newkirk.py --config radio_20250124_config --gaussian-csv outputs\radio\gaussian_spectrogram_overlay\radio_gaussian_fit_diagnostics.csv
 ```
 
 The `verification_output\20250503_retune_*` CSV files are small retune

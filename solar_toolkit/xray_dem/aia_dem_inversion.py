@@ -59,11 +59,8 @@ def _setup_font() -> None:
 # ============================================================
 CONFIG = {
     # ── 文件路径 ─────────────────────────────────────────────
-    "aia_fits_path": (
-        r"<PROJECT_ROOT>\2025\20250124\DEM\aia_data"
-        r"\aia.lev1_euv_12s.2025-01-24T044747Z.211.image_lev1.fits"
-    ),
-    "tb_data_path": (r"<PROJECT_ROOT>\2025\20250124\DEM\Tb_149000000.0.npy"),
+    "aia_fits_path": "data/aia/example.fits",
+    "tb_data_path": "data/radio/Tb_149MHz.npy",
     # ── Tb 网格参数（来自生成 Tb 数据时的配置文件）─────────────
     # 像素尺度：3 arcsec/pixel
     # 空间范围：X/Y ∈ [-1150, 1150] arcsec

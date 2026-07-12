@@ -11,7 +11,7 @@ from solar_toolkit.path_config import load_script_config
 from .hxi import HXI_ENERGY_CHANNELS, load_hxi_lightcurve
 
 DEFAULT_CONFIG = {
-    "file_path": "<DATA_ROOT>/hxi_qld_levq1_20240808_19_hly_v03.fits",
+    "file_path": "data/hxi/lightcurve.fits",
 }
 
 

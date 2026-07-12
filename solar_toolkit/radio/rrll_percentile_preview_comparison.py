@@ -30,7 +30,7 @@ __all__ = [
 ]
 
 CONFIG_NAME = "radio_20250124_center_pm2min_9band_raw_rrll_full_config"
-DEFAULT_OUTPUT_DIR = Path(r"<PROJECT_ROOT>\2025\20250124\output")
+DEFAULT_OUTPUT_DIR = Path("outputs/radio/2025-01-24")
 DEFAULT_RUN_STEM = "rrll_spec_percentile_compare_20260712"
 PERCENTILE_GROUPS: tuple[tuple[float, float], ...] = (
     (99.0, 99.99),
@@ -43,10 +43,7 @@ PREVIEW_SLOTS: tuple[tuple[str, int], ...] = (
     ("middle", 294),
     ("last", 587),
 )
-SPECTROGRAM_FILE = (
-    r"<PROJECT_ROOT>\2025\20250124"
-    r"\OROCH_MWRS01_SRSP_L1_05M_20250124044743_V01.01.fits"
-)
+SPECTROGRAM_FILE = "data/radio/2025-01-24/spectrogram.fits"
 SPECTROGRAM_START = "2025-01-24T04:47:43"
 SPECTROGRAM_END = "2025-01-24T04:50:35"
 

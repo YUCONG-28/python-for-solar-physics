@@ -15,10 +15,10 @@ from typing import Any
 from solar_toolkit.path_config import load_script_config
 
 DEFAULT_CONFIG = {
-    "input_dir_AIA": "<DATA_ROOT>/JSOCdata/AIA_304/fits/44/",
-    "output_dir": "<DATA_ROOT>/HXI_CLEAN/25_4_24/plot/all_pro/304/",
-    "hxi_file_path": "<DATA_ROOT>/HXI_CLEAN/25_4_24/10-20.fits",
-    "hxi_file_path_pro": "<DATA_ROOT>/HXI_CLEAN/25_4_24/20-30.fits",
+    "input_dir_AIA": "data/aia/304",
+    "output_dir": "outputs/aia_hxi/304",
+    "hxi_file_path": "data/hxi/10-20.fits",
+    "hxi_file_path_pro": "data/hxi/20-30.fits",
 }
 
 

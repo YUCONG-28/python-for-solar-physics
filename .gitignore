@@ -7,6 +7,59 @@ config.json
 secrets.json
 configs/paths.local.yaml
 
+# Credentials, tokens, and authentication exports
+credentials*.json
+*credentials*.json
+service-account*.json
+service_account*.json
+client_secret*.json
+oauth*.json
+token*.json
+auth*.json
+cookies.txt
+cookies.json
+cookiejar*
+*.cookies
+.netrc
+.pypirc
+.npmrc
+.yarnrc
+.yarnrc.yml
+.gem/credentials
+pip/pip.conf
+NuGet.Config
+
+# Private keys, certificates, and encrypted credential stores
+id_rsa*
+id_ed25519*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.kdbx
+*.crt
+*.cer
+
+# Cloud and cluster CLI state
+.aws/
+.azure/
+.config/gcloud/
+.oci/
+.kube/
+
+# Experiment tracking and local run state
+wandb/
+.wandb/
+mlruns/
+.mlflow/
+lightning_logs/
+ray_results/
+runs/
+.dvc/cache/
+.dvc/config.local
+
 # Python cache and build artifacts
 __pycache__/
 *.py[cod]

@@ -123,14 +123,14 @@ DEFAULT_CONFIG = {
     "raw_quality_bad_frame_output_subdir": "raw_quality_bad_frames",
     # ---------- Single-band mode configuration ----------
     # Single-file mode: if you only want to plot a single file, fill in the full absolute path here
-    "single_file_path": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450\149MHz\RR\149MHz_2025124_045710_093.fits",
+    "single_file_path": "data/radio/149MHz/RR/example.fits",
     # Batch single-band mode: directory containing FITS files
-    "data_dir": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450\149MHz\RR",
+    "data_dir": "data/radio/149MHz/RR",
     # File range (only effective in batch mode)
     "start_idx": 1588,  # start index (inclusive)
     "end_idx": 1666,  # end index (exclusive)
     # ---------- Multi-band mode configuration ----------
-    "multi_band_root": r"<PROJECT_ROOT>\2025\20250124\RS_0447-0450",
+    "multi_band_root": "data/radio",
     "multi_band_freqs": [149, 164, 190, 205, 223, 238],
     "band_dir_pattern": "{freq}MHz/{polar}",
     "multi_band_output_subdir": "multi_band_{polar}",
@@ -191,7 +191,7 @@ DEFAULT_CONFIG = {
         0.03,
     ],  # [x, y, width, height] 相对于子图内部
     # ---------- Output configuration ----------
-    "output_dir": r"<PROJECT_ROOT>\2025\20250124\RS_test_0",
+    "output_dir": "outputs/radio/source_maps",
     "multi_band_also_save_single": False,
     # ---------- Color range ----------
     # "auto": adjust per frame automatically
@@ -331,7 +331,7 @@ DEFAULT_CONFIG = {
     # 上半部分为射电源图像，下半部分为动态频谱；频谱数据只缓存一次，逐帧只更新当前时间虚线。
     "enable_spectrogram_panel": True,
     "spectrogram_file_paths": [],
-    "spectrogram_file_path": r"<PROJECT_ROOT>\2025\20250124\OROCH_MWRS01_SRSP_L1_05M_20250124044743_V01.01.fits",
+    "spectrogram_file_path": "data/radio/spectrogram.fits",
     "spectrogram_time_display_mode": "user",
     "spectrogram_time_start": "2025-01-24T04:48:30",  # 例如 "2025-05-03T07:16:00"；None 表示自动从射电图像时间范围推断
     "spectrogram_time_end": "2025-01-24T04:49:00",
