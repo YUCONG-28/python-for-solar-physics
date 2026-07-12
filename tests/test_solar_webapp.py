@@ -12,7 +12,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def _public_script_paths_from_index() -> set[str]:
     index = (REPO_ROOT / "docs" / "script_index.md").read_text(encoding="utf-8")
-    matches = re.findall(r"`((?:scripts|examples)/[^`]+\.py)`", index)
+    public_index = re.sub(
+        r"(?ms)^## Deprecated Compatibility Entrypoints\n.*?(?=^## |\Z)",
+        "",
+        index,
+    )
+    matches = re.findall(r"`((?:scripts|examples)/[^`]+\.py)`", public_index)
     return {Path(match).as_posix() for match in matches}
 
 

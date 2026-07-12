@@ -67,7 +67,6 @@ Do not automatically delete:
 - `archive/`
 - `data dowload/`
 - `scripts/radio/outputs/`
-- `.automated-tool*`
 - `.vscode/`
 - any FITS, JP2, NetCDF, CSV, JSON selection, PNG, MP4, or local output that may
   belong to a research run.

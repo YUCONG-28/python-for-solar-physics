@@ -49,6 +49,18 @@ Status labels:
 | main | `scripts/data_download/stereo_a_euvi_download_20250124.py` | Download STEREO-A SECCHI/EUVI files for the 2025-01-24 event window. | SunPy/Fido query to STEREO/EUVI archive. | EUVI FTS files and `selected_files.txt`. |
 | main | `scripts/data_download/goes_suvi_download_20250124.py` | Download GOES-16/18 SUVI L2 composite FITS files for the event window. | NOAA GOES SUVI public data directory. | SUVI FITS files grouped by satellite, channel, and date. |
 
+## Deprecated Compatibility Entrypoints
+
+These historical executable paths remain available for 0.x compatibility, but
+new work should call the package-owned implementations or the recommended
+wrappers listed above. They are not separate local-workbench workflows because
+the recommended entries already expose the same implementations.
+
+| Status | Script | Canonical implementation |
+| --- | --- | --- |
+| deprecated | `scripts/radio/legacy/radio_source_map_plot_gaussian_overlay.py` | `solar_toolkit.radio.source_map_workflow` |
+| deprecated | `scripts/radio/legacy/sdo_aia_radio_hmi_overlay.py` | `solar_toolkit.radio.overlay_workflow` |
+
 ## Utility Scripts
 
 | Status | Script | Purpose | Main inputs | Main outputs |

@@ -126,10 +126,6 @@
 │   ├── test_imports.py
 │   ├── test_observation_time_parsing.py
 │   └── test_path_config.py
-├── .automated-tool-conventions.md
-├── .automated-tool.conf.yml
-├── .automated-tool.model.settings.yml
-├── .aiderignore
 ├── .gitignore
 ├── .pre-commit-config.yaml
 ├── AIA.xlsx

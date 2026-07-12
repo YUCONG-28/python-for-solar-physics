@@ -57,7 +57,6 @@ automatic deletion targets.
 | `archive/` | Ignored local archive area with existing files. | Do not delete automatically. |
 | `data dowload/` | Ignored local folder with its own `src/`, `docs/`, `data/`, and requirements; the misspelling suggests a historical local copy, but it is not empty. | Do not delete automatically without user confirmation. |
 | `scripts/radio/outputs/` | Ignored radio output tree containing drift-selection JSON and related local products. | Keep as local output unless the user confirms it can be regenerated or discarded. |
-| `.automated-tool*` | Ignored automated-tool configuration and convention files. | Keep unless the user wants AI-tool config removed from the workspace. |
 | `.vscode/` | Ignored editor configuration. | Keep unless the user wants local editor settings removed. |
 
 ## Review Principles

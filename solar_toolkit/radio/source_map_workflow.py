@@ -6297,6 +6297,12 @@ def _compute_fixed_band_ranges(cfg: dict) -> tuple:
 # ──────────────────────────────────────────────────────────────
 
 
+def _should_precompute_fixed_band_ranges(cfg: dict) -> bool:
+    """Return whether multi-band plotting should reuse cross-frame color ranges."""
+
+    return str(cfg.get("color_range_mode", "auto") or "auto").lower() != "auto"
+
+
 def _combine_polarization_data(rr_data, ll_data, cfg):
     """组合RR和LL数据（加权平均或简单相加）"""
     weighted = cfg.get("weighted_average", False)
@@ -8414,9 +8420,10 @@ def _run_source_map_workflow(user_config=None, *, argv=None):
         print(f"Output directory: {output_dir}")
 
         # 计算每个波段的固定颜色范围
-        fixed_band_vmins, fixed_band_vmaxs = _compute_fixed_band_ranges(cfg)
-        cfg["fixed_band_vmins"] = fixed_band_vmins
-        cfg["fixed_band_vmaxs"] = fixed_band_vmaxs
+        if _should_precompute_fixed_band_ranges(cfg):
+            fixed_band_vmins, fixed_band_vmaxs = _compute_fixed_band_ranges(cfg)
+            cfg["fixed_band_vmins"] = fixed_band_vmins
+            cfg["fixed_band_vmaxs"] = fixed_band_vmaxs
 
         if cfg.get("multi_band_also_save_single", False):
             print(

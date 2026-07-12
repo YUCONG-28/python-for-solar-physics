@@ -74,13 +74,9 @@ logs/
 .static/
 .streamlit/
 
-# Temporary files and AI tool caches
+# Temporary files
 temp/
 tmp/
-.automated-tool*
-.automated-tool.tags.cache.v4
-.automated-tool.chat.history.md
-.automated-tool.input.history
 
 # Solar physics data products
 *.fits
@@ -96,6 +92,7 @@ observations/
 # Generated outputs
 output/
 outputs/
+/verification_output/
 output/plots/
 outputs/generated/
 output_images/

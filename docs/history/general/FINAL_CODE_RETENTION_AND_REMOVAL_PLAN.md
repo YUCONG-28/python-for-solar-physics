@@ -88,7 +88,6 @@ confirmation:
 - `archive/`
 - `data dowload/`
 - `scripts/radio/outputs/`
-- `.automated-tool*`
 - `.vscode/`
 - any FITS, JP2, NetCDF, CSV, PNG, MP4, JSON selection, or local output that may
   be part of a research run.

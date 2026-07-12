@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path, PurePosixPath
 
@@ -53,11 +54,50 @@ MAINTAINED_MARKDOWN_DOCS = sorted(
     }
 )
 
+INTERNAL_EXECUTABLE_SCRIPTS = {
+    "scripts/radio/run_radio_source_app_managed.py",
+}
+
 
 def _extract_script_paths(text: str) -> set[str]:
     paths = set(re.findall(r"`(scripts[/\\][^`]+?\.py)`", text))
     paths.update(re.findall(r"python\s+(scripts[/\\][^\s`]+?\.py)", text))
     return {path.replace("\\", "/") for path in paths}
+
+
+def _is_main_guard(test: ast.expr) -> bool:
+    if (
+        not isinstance(test, ast.Compare)
+        or len(test.ops) != 1
+        or not isinstance(test.ops[0], ast.Eq)
+        or len(test.comparators) != 1
+    ):
+        return False
+
+    left = test.left
+    right = test.comparators[0]
+    return (
+        isinstance(left, ast.Name)
+        and left.id == "__name__"
+        and isinstance(right, ast.Constant)
+        and right.value == "__main__"
+    ) or (
+        isinstance(right, ast.Name)
+        and right.id == "__name__"
+        and isinstance(left, ast.Constant)
+        and left.value == "__main__"
+    )
+
+
+def _executable_script_paths() -> set[str]:
+    executable_scripts = set()
+    for path in (REPO_ROOT / "scripts").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        if any(
+            isinstance(node, ast.If) and _is_main_guard(node.test) for node in tree.body
+        ):
+            executable_scripts.add(path.relative_to(REPO_ROOT).as_posix())
+    return executable_scripts
 
 
 def _extract_local_markdown_links(text: str) -> set[str]:
@@ -91,6 +131,15 @@ def test_current_doc_script_paths_exist(doc_path):
     missing = sorted(path for path in paths if not (REPO_ROOT / path).exists())
 
     assert missing == []
+
+
+def test_executable_scripts_are_documented_or_internal():
+    documented_scripts = _extract_script_paths(
+        (REPO_ROOT / "docs" / "script_index.md").read_text(encoding="utf-8")
+    )
+    undocumented_scripts = _executable_script_paths() - documented_scripts
+
+    assert undocumented_scripts == INTERNAL_EXECUTABLE_SCRIPTS
 
 
 @pytest.mark.parametrize("doc_path", CURRENT_DOCS)

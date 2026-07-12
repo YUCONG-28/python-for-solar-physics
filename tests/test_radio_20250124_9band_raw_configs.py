@@ -29,12 +29,16 @@ def test_20250124_9band_preview_configs_are_gated_by_polarization():
         output_config = load_radio_output_config(config_name)
 
         assert user_config["data"]["multi_band_freqs"] == FREQUENCIES_9_BAND
-        assert user_config["data"]["start_idx"] == 1588
-        assert user_config["data"]["end_idx"] == 1589
+        assert user_config["data"]["start_idx"] == 1589
+        assert user_config["data"]["end_idx"] == 1590
         assert user_config["data"]["polarization"] == case["polarization"]
         assert user_config["data"]["combine_polarizations"] is case["combine"]
         assert user_config["data"]["multi_band_layout"] == (3, 3)
         assert user_config["data"]["multi_band_time_tolerance_seconds"] == 0.3
+        assert user_config["display"]["color_range_mode"] == "auto"
+        assert user_config["display"]["use_per_band_colormap"] is True
+        assert user_config["display"]["per_band_range_method"] == "fixed_percentile"
+        assert user_config["display"]["per_band_percentiles"] == [99.6, 99.99]
         assert user_config["features"]["gaussian_overlay"] is False
         assert user_config["features"]["save_gaussian_diagnostics"] is False
         assert user_config["features"]["spectrogram_panel"] is False
@@ -66,12 +70,16 @@ def test_20250124_9band_full_configs_use_full_centered_window():
         output_config = load_radio_output_config(config_name)
 
         assert user_config["data"]["multi_band_freqs"] == FREQUENCIES_9_BAND
-        assert user_config["data"]["start_idx"] == 1333
-        assert user_config["data"]["end_idx"] == 1919
+        assert user_config["data"]["start_idx"] == 1296
+        assert user_config["data"]["end_idx"] == 1884
         assert user_config["data"]["polarization"] == case["polarization"]
         assert user_config["data"]["combine_polarizations"] is case["combine"]
         assert user_config["data"]["multi_band_layout"] == (3, 3)
         assert user_config["data"]["multi_band_time_tolerance_seconds"] == 0.3
+        assert user_config["display"]["color_range_mode"] == "auto"
+        assert user_config["display"]["use_per_band_colormap"] is True
+        assert user_config["display"]["per_band_range_method"] == "fixed_percentile"
+        assert user_config["display"]["per_band_percentiles"] == [99.6, 99.99]
         assert user_config["features"]["gaussian_overlay"] is False
         assert user_config["features"]["save_gaussian_diagnostics"] is False
         assert user_config["features"]["spectrogram_panel"] is False

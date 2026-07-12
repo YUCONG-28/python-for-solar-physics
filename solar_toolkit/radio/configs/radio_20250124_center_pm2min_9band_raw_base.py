@@ -17,8 +17,8 @@ __all__ = [
 FREQUENCIES_9_BAND = [149, 164, 190, 223, 238, 285, 300, 324, 309]
 OUTPUT_DIR = r"<PROJECT_ROOT>\2025\20250124\output"
 
-PREVIEW_RANGE = (1588, 1589)
-FULL_RANGE = (1333, 1919)
+PREVIEW_RANGE = (1589, 1590)
+FULL_RANGE = (1296, 1884)
 
 
 def build_event_config(*, polarization: str, phase: str) -> dict:
@@ -58,6 +58,14 @@ def build_event_config(*, polarization: str, phase: str) -> dict:
             "save_gaussian_diagnostics": False,
             "save_background_products": False,
             "save_individual_pols": False,
+        }
+    )
+    user_config["display"].update(
+        {
+            "color_range_mode": "auto",
+            "use_per_band_colormap": True,
+            "per_band_range_method": "fixed_percentile",
+            "per_band_percentiles": [99.6, 99.99],
         }
     )
     user_config["background"].update(

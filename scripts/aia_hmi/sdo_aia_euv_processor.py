@@ -1,7 +1,8 @@
 """Compatibility entrypoint for the SDO/AIA EUV FITS processor.
 
-The implementation is organized under ``scripts.aia_hmi.core``. This file
-keeps the historical command and import path working.
+The canonical implementation lives under ``solar_toolkit.aia``. The imports
+through ``scripts.aia_hmi.core`` below are retained as compatibility aliases so
+the historical command and import path keep working.
 """
 
 from __future__ import annotations

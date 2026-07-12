@@ -24,8 +24,8 @@ This cleanup is intentionally conservative:
   `__pycache__/`, `.ruff_cache/`, pytest temporary folders, and old
   `pytest-cache-files-*` style directories.
 - Kept non-empty local or research-sensitive ignored paths:
-  `archive/`, `data dowload/`, `scripts/radio/outputs/`, `.automated-tool*`,
-  `.vscode/`, `AIA.xlsx`, and `CSO.xlsx`.
+  `archive/`, `data dowload/`, `scripts/radio/outputs/`, `.vscode/`,
+  `AIA.xlsx`, and `CSO.xlsx`.
 - Stopped tracking generated-looking root products while leaving local copies in
   place: `HXR.png`, `SXR.png`, `SXR to HXR.png`,
   `SXR to HXR enhance.png`, and the root drift-selection JSON/PNG products.

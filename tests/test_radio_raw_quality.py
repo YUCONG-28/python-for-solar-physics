@@ -356,6 +356,20 @@ def test_fixed_band_ranges_use_raw_quality_filtered_files(monkeypatch):
     assert band_vmaxs == [np.log10(2.0e3)]
 
 
+def test_auto_multi_band_color_ranges_use_current_slot_minmax():
+    all_log_data = [
+        np.array([[1.0, 2.0], [np.nan, 3.0]]),
+        np.array([[4.0, np.nan], [5.0, 6.0]]),
+    ]
+    cfg = {"color_range_mode": "auto", "per_band_range_method": "minmax"}
+
+    assert legacy._should_precompute_fixed_band_ranges(cfg) is False
+    assert legacy._calculate_per_band_ranges(all_log_data, cfg) == (
+        [1.0, 4.0],
+        [3.0, 6.0],
+    )
+
+
 def test_multi_band_time_matching_defaults_to_100ms():
     slots = legacy._build_slots_by_common_time(
         [
