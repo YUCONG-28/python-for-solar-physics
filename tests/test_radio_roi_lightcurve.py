@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from astropy.io import fits
 
+from solar_toolkit.radio.centers import iter_radio_images
 from solar_toolkit.radio.roi_lightcurve import (
     RadioRoi,
     build_radio_roi_artifacts,
@@ -19,6 +20,8 @@ from solar_toolkit.radio.roi_lightcurve import (
 )
 from solar_toolkit.radio.roi_lightcurve_app import (
     build_file_manifest,
+    discover_frequency_options,
+    parse_row_selection_expression,
     selection_to_radio_roi,
 )
 
@@ -111,6 +114,19 @@ def test_missing_spatial_wcs_is_reported_as_quality_flag():
     assert "CTYPE1" in measurement["quality_detail"]
 
 
+def test_radec_wcs_is_rejected_for_hpln_roi_measurement():
+    header = _header()
+    header["CTYPE1"] = "RA---TAN"
+    header["CTYPE2"] = "DEC--TAN"
+    data = np.ones((4, 4), dtype=float)
+    roi = RadioRoi.from_box(0.0, 0.0, 1.0, 1.0)
+
+    measurement = measure_radio_roi(data, header, roi)
+
+    assert measurement["quality_flag"] == "invalid_wcs"
+    assert "non-HPLN" in measurement["quality_detail"]
+
+
 def test_extract_radio_roi_lightcurve_pairs_lcp_rcp_as_raw_sum(tmp_path):
     root = tmp_path / "radio"
     data_l = np.ones((4, 4), dtype=float)
@@ -144,8 +160,12 @@ def test_extract_radio_roi_lightcurve_records_mismatched_pairs(tmp_path):
 
 def test_extract_radio_roi_lightcurve_uses_exact_selected_files(tmp_path):
     root = tmp_path / "radio"
-    selected = _write_fits(root / "selected_20250124044845.fits", np.ones((4, 4)), _header())
-    ignored = _write_fits(root / "ignored_20250124044846.fits", np.full((4, 4), 9.0), _header())
+    selected = _write_fits(
+        root / "selected_20250124044845.fits", np.ones((4, 4)), _header()
+    )
+    ignored = _write_fits(
+        root / "ignored_20250124044846.fits", np.full((4, 4), 9.0), _header()
+    )
     roi = RadioRoi.from_box(-0.5, -0.5, 3.5, 3.5)
 
     df = extract_radio_roi_lightcurve(
@@ -162,9 +182,13 @@ def test_extract_radio_roi_lightcurve_uses_exact_selected_files(tmp_path):
     assert df.iloc[0]["raw_sum"] == pytest.approx(16.0)
 
 
-def test_file_manifest_is_path_only_and_does_not_load_image_arrays(tmp_path, monkeypatch):
+def test_file_manifest_is_path_only_and_does_not_load_image_arrays(
+    tmp_path, monkeypatch
+):
     root = tmp_path / "radio"
-    _write_fits(root / "149MHz" / "LL" / "l_20250124044845.fits", np.ones((4, 4)), _header())
+    _write_fits(
+        root / "149MHz" / "LL" / "l_20250124044845.fits", np.ones((4, 4)), _header()
+    )
 
     import solar_toolkit.radio.roi_lightcurve_app as app
 
@@ -179,6 +203,50 @@ def test_file_manifest_is_path_only_and_does_not_load_image_arrays(tmp_path, mon
     assert len(manifest) == 1
     assert manifest.iloc[0]["relative_path"].endswith("l_20250124044845.fits")
     assert manifest.iloc[0]["inferred_polarization"] == "LCP"
+
+
+def test_frequency_discovery_and_manifest_frequency_filter_are_path_only(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "radio"
+    _write_fits(
+        root / "149MHz" / "LL" / "149MHz_20250124044845.fits",
+        np.ones((4, 4)),
+        _header(freq=149.0),
+    )
+    _write_fits(
+        root / "238MHz" / "RR" / "238MHz_20250124044846.fits",
+        np.ones((4, 4)),
+        _header(freq=238.0),
+    )
+
+    import solar_toolkit.radio.roi_lightcurve_app as app
+
+    monkeypatch.setattr(
+        app,
+        "iter_radio_images",
+        lambda *_args, **_kwargs: pytest.fail(
+            "frequency scan should not load image arrays"
+        ),
+    )
+
+    frequencies = discover_frequency_options(root, recursive=True)
+    manifest = build_file_manifest(root, recursive=True, freqs=[238.0])
+
+    assert list(frequencies["freq_mhz"]) == [149.0, 238.0]
+    assert list(frequencies["file_count"]) == [1, 1]
+    assert len(manifest) == 1
+    assert manifest.iloc[0]["row"] == 1
+    assert manifest.iloc[0]["inferred_freq_mhz"] == pytest.approx(238.0)
+
+
+def test_quick_file_number_parser_supports_single_values_and_ranges():
+    assert parse_row_selection_expression("1, 3, 8-10, 3") == [1, 3, 8, 9, 10]
+    assert parse_row_selection_expression("") == []
+    with pytest.raises(ValueError, match="increasing"):
+        parse_row_selection_expression("10-8")
+    with pytest.raises(ValueError, match="Invalid"):
+        parse_row_selection_expression("1, x")
 
 
 def test_write_radio_roi_products_roundtrips_json_csv_and_pngs(tmp_path):
@@ -241,3 +309,43 @@ def test_export_artifacts_and_product_writer_support_selected_outputs(tmp_path):
             selected_products=("fits",),
             unique_run=False,
         )
+
+
+def test_reference_artifact_supports_multi_reference_display_config(tmp_path):
+    root = tmp_path / "radio"
+    first = _write_fits(
+        root / "149MHz" / "LL" / "149MHz_20250124044845.fits",
+        np.ones((4, 4)),
+        _header(freq=149.0),
+    )
+    second = _write_fits(
+        root / "238MHz" / "LL" / "238MHz_20250124044845.fits",
+        np.full((4, 4), 2.0),
+        _header(freq=238.0),
+    )
+    roi = RadioRoi.from_box(-0.5, -0.5, 3.5, 3.5)
+    df = extract_radio_roi_lightcurve(root, roi, polarization="LCP", recursive=True)
+    references = [next(iter_radio_images(first)), next(iter_radio_images(second))]
+
+    artifacts = build_radio_roi_artifacts(
+        df,
+        roi,
+        reference_images=references,
+        display_config={
+            "colormap": "hot",
+            "range_mode": "Auto percentile",
+            "range_scope": "Shared/global",
+            "shared_limits": [0.0, 2.0],
+            "use_custom_fov": True,
+            "x_min_arcsec": -1.0,
+            "x_max_arcsec": 4.0,
+            "y_min_arcsec": -1.0,
+            "y_max_arcsec": 4.0,
+        },
+        selected_products=("reference_png", "json"),
+        run_metadata={"display_config": {"colormap": "hot"}},
+    )
+
+    saved = json.loads(artifacts["json"].decode("utf-8"))
+    assert artifacts["reference_png"].startswith(b"\x89PNG")
+    assert saved["settings"]["display_config"]["colormap"] == "hot"

@@ -32,7 +32,6 @@ from .centers import (
     parse_datetime_value,
     parse_frequency_mhz,
     parse_observation_time,
-    pixel_to_hpc_arcsec,
     select_radio_files,
 )
 from .coordinates import normalize_roi_bounds_arcsec
@@ -79,7 +78,7 @@ _ANGULAR_UNITS = {
     "radian",
     "radians",
 }
-_SPATIAL_CTYPE_MARKERS = (("HPLN", "SOLX", "RA"), ("HPLT", "SOLY", "DEC"))
+_SPATIAL_CTYPE_MARKERS = (("HPLN", "SOLX"), ("HPLT", "SOLY"))
 _WCS_KEYS = (
     "CTYPE1",
     "CTYPE2",
@@ -100,6 +99,8 @@ _WCS_KEYS = (
     "CD2_1",
     "CD2_2",
 )
+_GRID_CACHE: dict[tuple[Any, ...], tuple[np.ndarray, np.ndarray]] = {}
+_GRID_CACHE_MAX_ITEMS = 32
 
 
 @dataclass(frozen=True)
@@ -136,7 +137,14 @@ class RadioRoi:
         """Build a rectangular ROI from HPLN/HPLT arcsec bounds."""
 
         bounds = normalize_roi_bounds_arcsec(
-            {"roi_bounds_arcsec": {"left": left, "bottom": bottom, "right": right, "top": top}}
+            {
+                "roi_bounds_arcsec": {
+                    "left": left,
+                    "bottom": bottom,
+                    "right": right,
+                    "top": top,
+                }
+            }
         )
         return cls(
             kind="box",
@@ -151,7 +159,10 @@ class RadioRoi:
 
     @classmethod
     def from_polygon(
-        cls, vertices: list[tuple[float, float]] | tuple[tuple[float, float], ...], *, label: str = ""
+        cls,
+        vertices: list[tuple[float, float]] | tuple[tuple[float, float], ...],
+        *,
+        label: str = "",
     ) -> RadioRoi:
         """Build a lasso-style polygon ROI from HPLN/HPLT arcsec vertices."""
 
@@ -274,7 +285,9 @@ def measure_radio_roi(
 
     arr = np.asarray(image, dtype=float)
     if arr.ndim != 2:
-        return _empty_measurement("invalid_image", f"expected 2D image, got {arr.ndim}D")
+        return _empty_measurement(
+            "invalid_image", f"expected 2D image, got {arr.ndim}D"
+        )
     try:
         mask = build_radio_roi_mask(header, arr.shape, roi)
     except Exception as exc:  # noqa: BLE001 - row-level quality is the contract.
@@ -400,10 +413,7 @@ def extract_radio_roi_lightcurve(
             for left, right in paired
         )
 
-    rows = [
-        _row_from_metadata(item, roi, default_pol=default_pol)
-        for item in selected
-    ]
+    rows = [_row_from_metadata(item, roi, default_pol=default_pol) for item in selected]
     rows.extend(paired_rows)
     rows.extend(skipped_pair_rows)
     if not rows:
@@ -423,6 +433,8 @@ def write_radio_roi_products(
     output_dir: str | Path,
     *,
     reference_image: RadioImage | None = None,
+    reference_images: list[RadioImage] | tuple[RadioImage, ...] | None = None,
+    display_config: dict[str, Any] | None = None,
     run_metadata: dict[str, Any] | None = None,
     metric: str = "raw_sum",
     selected_products: list[str] | tuple[str, ...] | set[str] | None = None,
@@ -436,6 +448,8 @@ def write_radio_roi_products(
         df,
         roi,
         reference_image=reference_image,
+        reference_images=reference_images,
+        display_config=display_config,
         run_metadata=run_metadata,
         metric=metric,
         selected_products=product_keys,
@@ -454,6 +468,8 @@ def build_radio_roi_artifacts(
     roi: RadioRoi,
     *,
     reference_image: RadioImage | None = None,
+    reference_images: list[RadioImage] | tuple[RadioImage, ...] | None = None,
+    display_config: dict[str, Any] | None = None,
     run_metadata: dict[str, Any] | None = None,
     metric: str = "raw_sum",
     selected_products: list[str] | tuple[str, ...] | set[str] | None = None,
@@ -485,7 +501,10 @@ def build_radio_roi_artifacts(
         tmp_dir = Path(tmp)
         if "reference_png" in product_keys:
             path = tmp_dir / PRODUCT_FILENAMES["reference_png"]
-            _plot_reference_image(reference_image or _load_reference_from_rows(df), roi, path)
+            refs = list(reference_images or [])
+            if not refs:
+                refs = [reference_image or _load_reference_from_rows(df)]
+            _plot_reference_images(refs, roi, path, display_config=display_config)
             artifacts["reference_png"] = path.read_bytes()
         if "lightcurve_png" in product_keys:
             path = tmp_dir / PRODUCT_FILENAMES["lightcurve_png"]
@@ -500,9 +519,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Extract raw radio FITS ROI light curves from HPLN/HPLT selections."
     )
-    parser.add_argument("--radio-dir", required=True, help="Folder containing radio FITS files.")
+    parser.add_argument(
+        "--radio-dir", required=True, help="Folder containing radio FITS files."
+    )
     parser.add_argument("--out-dir", default="radio_roi_lightcurve_outputs")
-    parser.add_argument("--pattern", default="*.fits", help="FITS filename glob pattern.")
+    parser.add_argument(
+        "--pattern", default="*.fits", help="FITS filename glob pattern."
+    )
     parser.add_argument("--recursive", action="store_true", default=True)
     parser.add_argument("--no-recursive", dest="recursive", action="store_false")
     parser.add_argument("--freqs", help="Comma-separated frequencies in MHz.")
@@ -514,7 +537,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--time-start", help="Inclusive observation-time start.")
     parser.add_argument("--time-end", help="Inclusive observation-time end.")
-    parser.add_argument("--pair-time-tolerance-sec", type=float, default=DEFAULT_PAIR_TOLERANCE_SEC)
+    parser.add_argument(
+        "--pair-time-tolerance-sec", type=float, default=DEFAULT_PAIR_TOLERANCE_SEC
+    )
     roi_group = parser.add_mutually_exclusive_group(required=True)
     roi_group.add_argument(
         "--roi-bounds",
@@ -527,7 +552,9 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["raw_sum", "raw_mean", "raw_peak"],
         help="Metric used in the default PNG curve.",
     )
-    parser.add_argument("--overwrite", action="store_true", help="Write directly into --out-dir.")
+    parser.add_argument(
+        "--overwrite", action="store_true", help="Write directly into --out-dir."
+    )
     return parser
 
 
@@ -650,7 +677,9 @@ def _index_radio_image_metadata(
     return metas
 
 
-def _iter_radio_image_metadata(path: Path, *, default_pol: str) -> list[_RadioImageMeta]:
+def _iter_radio_image_metadata(
+    path: Path, *, default_pol: str
+) -> list[_RadioImageMeta]:
     metas: list[_RadioImageMeta] = []
     image_index = 0
     try:
@@ -709,11 +738,21 @@ def _iter_hdu_metadata_planes(
     if len(arr_shape) < 2:
         return []
     if len(arr_shape) == 2:
-        return [(tuple(arr_shape), infer_polarization(path, header, default_pol=default_pol))]
+        return [
+            (
+                tuple(arr_shape),
+                infer_polarization(path, header, default_pol=default_pol),
+            )
+        ]
 
     squeezed_shape = tuple(dim for dim in arr_shape if dim != 1)
     if len(squeezed_shape) == 2:
-        return [(tuple(squeezed_shape), infer_polarization(path, header, default_pol=default_pol))]
+        return [
+            (
+                tuple(squeezed_shape),
+                infer_polarization(path, header, default_pol=default_pol),
+            )
+        ]
 
     naxis = int(header.get("NAXIS", len(arr_shape)) or len(arr_shape))
     stokes_fits_axis = None
@@ -738,7 +777,10 @@ def _iter_hdu_metadata_planes(
     ]
     if candidate_axes:
         pol = infer_polarization(path, header, default_pol=default_pol)
-        return [(tuple(squeezed_shape[-2:]), pol) for _ in range(squeezed_shape[candidate_axes[-1]])]
+        return [
+            (tuple(squeezed_shape[-2:]), pol)
+            for _ in range(squeezed_shape[candidate_axes[-1]])
+        ]
 
     pol = infer_polarization(path, header, default_pol=default_pol)
     return [(tuple(squeezed_shape[-2:]), pol)]
@@ -826,16 +868,73 @@ def _validate_spatial_wcs(header: fits.Header) -> None:
 def _pixel_center_grid_hpc_arcsec(
     header: fits.Header, shape: tuple[int, int]
 ) -> tuple[np.ndarray, np.ndarray]:
+    key = _wcs_signature(header, shape)
+    cached = _GRID_CACHE.get(key)
+    if cached is not None:
+        return cached
+
     y_pix, x_pix = np.indices(shape, dtype=float)
-    x_flat = x_pix.ravel()
-    y_flat = y_pix.ravel()
-    coords = [
-        pixel_to_hpc_arcsec(header, x, y)
-        for x, y in zip(x_flat, y_flat, strict=True)
-    ]
-    x_arcsec = np.asarray([item[0] for item in coords], dtype=float).reshape(shape)
-    y_arcsec = np.asarray([item[1] for item in coords], dtype=float).reshape(shape)
+    x_arcsec, y_arcsec = _pixel_coordinates_hpc_arcsec(header, x_pix, y_pix)
+    if len(_GRID_CACHE) >= _GRID_CACHE_MAX_ITEMS:
+        _GRID_CACHE.pop(next(iter(_GRID_CACHE)))
+    _GRID_CACHE[key] = (x_arcsec, y_arcsec)
     return x_arcsec, y_arcsec
+
+
+def _pixel_coordinates_hpc_arcsec(
+    header: fits.Header,
+    x_pix: np.ndarray,
+    y_pix: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    x_values = np.asarray(x_pix, dtype=float)
+    y_values = np.asarray(y_pix, dtype=float)
+    if x_values.shape != y_values.shape:
+        raise ValueError("x/y pixel coordinate arrays must have identical shapes")
+    crpix1 = float(header.get("CRPIX1", 1.0))
+    crpix2 = float(header.get("CRPIX2", 1.0))
+    crval1 = float(header.get("CRVAL1", 0.0))
+    crval2 = float(header.get("CRVAL2", 0.0))
+    cdelt1 = float(header.get("CDELT1", 1.0))
+    cdelt2 = float(header.get("CDELT2", 1.0))
+    dx = x_values + 1.0 - crpix1
+    dy = y_values + 1.0 - crpix2
+
+    if all(key_name in header for key_name in ("CD1_1", "CD1_2", "CD2_1", "CD2_2")):
+        wx = float(header["CD1_1"]) * dx + float(header["CD1_2"]) * dy
+        wy = float(header["CD2_1"]) * dx + float(header["CD2_2"]) * dy
+    else:
+        pc11 = float(header.get("PC1_1", 1.0))
+        pc12 = float(header.get("PC1_2", 0.0))
+        pc21 = float(header.get("PC2_1", 0.0))
+        pc22 = float(header.get("PC2_2", 1.0))
+        if not any(
+            key_name in header for key_name in ("PC1_1", "PC1_2", "PC2_1", "PC2_2")
+        ):
+            theta = math.radians(float(header.get("CROTA2", 0.0)))
+            pc11, pc12 = math.cos(theta), -math.sin(theta)
+            pc21, pc22 = math.sin(theta), math.cos(theta)
+        x_int = cdelt1 * dx
+        y_int = cdelt2 * dy
+        wx = pc11 * x_int + pc12 * y_int
+        wy = pc21 * x_int + pc22 * y_int
+
+    x_arcsec = _to_arcsec_array(crval1 + wx, str(header.get("CUNIT1", "arcsec")))
+    y_arcsec = _to_arcsec_array(crval2 + wy, str(header.get("CUNIT2", "arcsec")))
+    return x_arcsec, y_arcsec
+
+
+def _to_arcsec_array(values: np.ndarray, unit: str) -> np.ndarray:
+    unit_norm = (unit or "arcsec").strip().lower()
+    arr = np.asarray(values, dtype=float)
+    if unit_norm in {"arcsec", "arcsecs", "arcsecond", "arcseconds", "asec"}:
+        return arr
+    if unit_norm in {"deg", "degree", "degrees"}:
+        return arr * 3600.0
+    if unit_norm in {"arcmin", "arcminute", "arcminutes", "amin"}:
+        return arr * 60.0
+    if unit_norm in {"rad", "radian", "radians"}:
+        return np.degrees(arr) * 3600.0
+    return arr
 
 
 def _empty_measurement(flag: str, detail: str) -> dict[str, Any]:
@@ -929,7 +1028,8 @@ def _row_from_paired_metadata(
     paired = RadioImage(
         path=left_item.path,
         hdu_index=left_item.hdu_index,
-        image=np.asarray(left_item.image, dtype=float) + np.asarray(right_item.image, dtype=float),
+        image=np.asarray(left_item.image, dtype=float)
+        + np.asarray(right_item.image, dtype=float),
         header=header,
         pol=POL_SUM,
         freq_mhz=left_item.freq_mhz,
@@ -960,9 +1060,7 @@ def _row_from_radio_image(item: RadioImage, roi: RadioRoi) -> dict[str, Any]:
         bunit=str(item.header.get("BUNIT", "")),
         filepath=str(item.path),
         paired_filepath=(
-            str(item.header.get("ROIPAIR", ""))
-            if item.header.get("ROIPAIR")
-            else ""
+            str(item.header.get("ROIPAIR", "")) if item.header.get("ROIPAIR") else ""
         ),
         hdu_index=item.hdu_index,
     )
@@ -1054,12 +1152,16 @@ def _make_paired_sum_images(
     left_items = [
         item
         for item in images
-        if item.pol == POL_LCP and item.obs_time is not None and np.isfinite(item.freq_mhz)
+        if item.pol == POL_LCP
+        and item.obs_time is not None
+        and np.isfinite(item.freq_mhz)
     ]
     right_items = [
         item
         for item in images
-        if item.pol == POL_RCP and item.obs_time is not None and np.isfinite(item.freq_mhz)
+        if item.pol == POL_RCP
+        and item.obs_time is not None
+        and np.isfinite(item.freq_mhz)
     ]
     paired: list[RadioImage] = []
     skipped: list[tuple[RadioImage, str, str, str]] = []
@@ -1068,7 +1170,9 @@ def _make_paired_sum_images(
         candidate_index = None
         candidate_dt = None
         for index, right in enumerate(right_items):
-            if index in used_right or not _same_frequency(left.freq_mhz, right.freq_mhz):
+            if index in used_right or not _same_frequency(
+                left.freq_mhz, right.freq_mhz
+            ):
                 continue
             dt = abs((left.obs_time - right.obs_time).total_seconds())
             if dt <= tolerance_sec and (candidate_dt is None or dt < candidate_dt):
@@ -1098,7 +1202,8 @@ def _make_paired_sum_images(
             RadioImage(
                 path=left.path,
                 hdu_index=left.hdu_index,
-                image=np.asarray(left.image, dtype=float) + np.asarray(right.image, dtype=float),
+                image=np.asarray(left.image, dtype=float)
+                + np.asarray(right.image, dtype=float),
                 header=header,
                 pol=POL_SUM,
                 freq_mhz=left.freq_mhz,
@@ -1121,16 +1226,23 @@ def _make_paired_sum_images(
 
 def _make_paired_sum_metadata(
     metas: list[_RadioImageMeta], *, tolerance_sec: float
-) -> tuple[list[tuple[_RadioImageMeta, _RadioImageMeta]], list[tuple[_RadioImageMeta, str, str, str]]]:
+) -> tuple[
+    list[tuple[_RadioImageMeta, _RadioImageMeta]],
+    list[tuple[_RadioImageMeta, str, str, str]],
+]:
     left_items = [
         item
         for item in metas
-        if item.pol == POL_LCP and item.obs_time is not None and np.isfinite(item.freq_mhz)
+        if item.pol == POL_LCP
+        and item.obs_time is not None
+        and np.isfinite(item.freq_mhz)
     ]
     right_items = [
         item
         for item in metas
-        if item.pol == POL_RCP and item.obs_time is not None and np.isfinite(item.freq_mhz)
+        if item.pol == POL_RCP
+        and item.obs_time is not None
+        and np.isfinite(item.freq_mhz)
     ]
     paired: list[tuple[_RadioImageMeta, _RadioImageMeta]] = []
     skipped: list[tuple[_RadioImageMeta, str, str, str]] = []
@@ -1139,7 +1251,9 @@ def _make_paired_sum_metadata(
         candidate_index = None
         candidate_dt = None
         for index, right in enumerate(right_items):
-            if index in used_right or not _same_frequency(left.freq_mhz, right.freq_mhz):
+            if index in used_right or not _same_frequency(
+                left.freq_mhz, right.freq_mhz
+            ):
                 continue
             dt = abs((left.obs_time - right.obs_time).total_seconds())
             if dt <= tolerance_sec and (candidate_dt is None or dt < candidate_dt):
@@ -1175,14 +1289,18 @@ def _make_paired_sum_metadata(
     return paired, skipped
 
 
-def _metadata_pair_incompatibility(left: _RadioImageMeta, right: _RadioImageMeta) -> str:
+def _metadata_pair_incompatibility(
+    left: _RadioImageMeta, right: _RadioImageMeta
+) -> str:
     if left.image_shape != right.image_shape:
         return f"shape mismatch: {left.image_shape} vs {right.image_shape}"
     left_bunit = str(left.header.get("BUNIT", "")).strip().casefold()
     right_bunit = str(right.header.get("BUNIT", "")).strip().casefold()
     if left_bunit != right_bunit:
         return f"BUNIT mismatch: {left.header.get('BUNIT', '')!r} vs {right.header.get('BUNIT', '')!r}"
-    if _wcs_signature(left.header, left.image_shape) != _wcs_signature(right.header, right.image_shape):
+    if _wcs_signature(left.header, left.image_shape) != _wcs_signature(
+        right.header, right.image_shape
+    ):
         return "spatial WCS mismatch"
     return ""
 
@@ -1194,7 +1312,9 @@ def _pair_incompatibility(left: RadioImage, right: RadioImage) -> str:
     right_bunit = str(right.header.get("BUNIT", "")).strip().casefold()
     if left_bunit != right_bunit:
         return f"BUNIT mismatch: {left.header.get('BUNIT', '')!r} vs {right.header.get('BUNIT', '')!r}"
-    if _wcs_signature(left.header, left.image.shape) != _wcs_signature(right.header, right.image.shape):
+    if _wcs_signature(left.header, left.image.shape) != _wcs_signature(
+        right.header, right.image.shape
+    ):
         return "spatial WCS mismatch"
     return ""
 
@@ -1244,12 +1364,28 @@ def _plot_radio_roi_lightcurve(df: pd.DataFrame, path: Path, *, metric: str) -> 
     ok = data["quality_flag"].astype(str).str.lower().eq("ok")
     data = data.loc[ok & data["obs_time_dt"].notna() & data[metric].notna()]
     if data.empty:
-        ax.text(0.5, 0.5, "No valid ROI samples", ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "No valid ROI samples",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
     else:
-        for (freq, pol), group in data.groupby(["freq_mhz", "polarization"], dropna=False):
+        for (freq, pol), group in data.groupby(
+            ["freq_mhz", "polarization"], dropna=False
+        ):
             label = f"{freq:g} MHz {pol}" if np.isfinite(freq) else str(pol)
             ordered = group.sort_values("obs_time_dt")
-            ax.plot(ordered["obs_time_dt"], ordered[metric], marker="o", linewidth=1.2, markersize=3, label=label)
+            ax.plot(
+                ordered["obs_time_dt"],
+                ordered[metric],
+                marker="o",
+                linewidth=1.2,
+                markersize=3,
+                label=label,
+            )
         ax.legend(fontsize=7, loc="best")
     unit = _metric_unit_label(data, metric)
     ax.set_title("Radio ROI light curve")
@@ -1265,26 +1401,54 @@ def _plot_radio_roi_lightcurve(df: pd.DataFrame, path: Path, *, metric: str) -> 
 def _metric_unit_label(df: pd.DataFrame, metric: str) -> str:
     bunit = ""
     if "bunit" in df.columns and not df.empty:
-        units = [str(item).strip() for item in df["bunit"].dropna().unique() if str(item).strip()]
+        units = [
+            str(item).strip()
+            for item in df["bunit"].dropna().unique()
+            if str(item).strip()
+        ]
         bunit = units[0] if units else ""
     if metric == "raw_sum":
         return f"{bunit} pixel".strip()
     return bunit
 
 
-def _plot_reference_image(item: RadioImage | None, roi: RadioRoi, path: Path) -> None:
+def _plot_reference_images(
+    items: list[RadioImage | None],
+    roi: RadioRoi,
+    path: Path,
+    *,
+    display_config: dict[str, Any] | None = None,
+) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from matplotlib.patches import Polygon, Rectangle
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(6, 5.5), dpi=180)
-    if item is None:
-        ax.text(0.5, 0.5, "No reference image", ha="center", va="center", transform=ax.transAxes)
+    refs = items or [None]
+    column_count = min(3, max(1, len(refs)))
+    row_count = int(math.ceil(len(refs) / column_count))
+    fig, axes = plt.subplots(
+        row_count,
+        column_count,
+        figsize=(5.2 * column_count, 4.8 * row_count),
+        dpi=180,
+        squeeze=False,
+    )
+    for ax in axes.ravel()[len(refs) :]:
         ax.set_axis_off()
-    else:
+    for ax, item in zip(axes.ravel(), refs, strict=False):
+        if item is None:
+            ax.text(
+                0.5,
+                0.5,
+                "No reference image",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
+            ax.set_axis_off()
+            continue
         arr = np.asarray(item.image, dtype=float)
         try:
             x_arcsec, y_arcsec = _pixel_center_grid_hpc_arcsec(item.header, arr.shape)
@@ -1294,38 +1458,207 @@ def _plot_reference_image(item: RadioImage | None, roi: RadioRoi, path: Path) ->
                 float(np.nanmin(y_arcsec)),
                 float(np.nanmax(y_arcsec)),
             )
-            image = ax.imshow(arr, origin="lower", extent=extent, cmap="viridis", aspect="auto")
+            display_arr = _reference_display_array(arr, display_config)
+            zmin, zmax = _reference_display_limits(item, display_arr, display_config)
+            cmap = _matplotlib_cmap(plt, display_config)
+            image = ax.imshow(
+                display_arr,
+                origin="lower",
+                extent=extent,
+                cmap=cmap,
+                aspect="auto",
+                vmin=zmin,
+                vmax=zmax,
+            )
             ax.set_xlabel("HPLN / arcsec")
             ax.set_ylabel("HPLT / arcsec")
+            _apply_reference_fov(ax, display_config)
+            _add_reference_roi_patch(ax, roi)
         except Exception:
-            warnings.warn("Reference image WCS is invalid; plotting in pixel coordinates.", stacklevel=2)
-            image = ax.imshow(arr, origin="lower", cmap="viridis", aspect="auto")
+            warnings.warn(
+                "Reference image WCS is invalid; plotting in pixel coordinates.",
+                stacklevel=2,
+            )
+            display_arr = _reference_display_array(arr, display_config)
+            zmin, zmax = _reference_display_limits(item, display_arr, display_config)
+            image = ax.imshow(
+                display_arr,
+                origin="lower",
+                cmap=_matplotlib_cmap(plt, display_config),
+                aspect="auto",
+                vmin=zmin,
+                vmax=zmax,
+            )
             ax.set_xlabel("x pixel")
             ax.set_ylabel("y pixel")
-        fig.colorbar(image, ax=ax, label=str(item.header.get("BUNIT", "")).strip() or "raw intensity")
-        bounds = roi.bounds_arcsec
-        if roi.kind == "box":
-            patch = Rectangle(
-                (bounds["left"], bounds["bottom"]),
-                bounds["right"] - bounds["left"],
-                bounds["top"] - bounds["bottom"],
-                fill=False,
-                edgecolor="white",
-                linewidth=1.5,
-            )
-        else:
-            patch = Polygon(roi.vertices_arcsec, closed=True, fill=False, edgecolor="white", linewidth=1.5)
-        ax.add_patch(patch)
-        ax.set_title("Radio reference image and ROI")
+        fig.colorbar(
+            image, ax=ax, label=_reference_colorbar_label(item, display_config)
+        )
+        ax.set_title(_reference_plot_title(item))
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
 
 
+def _plot_reference_image(item: RadioImage | None, roi: RadioRoi, path: Path) -> None:
+    _plot_reference_images([item], roi, path)
+
+
+def _reference_display_array(
+    arr: np.ndarray, display_config: dict[str, Any] | None
+) -> np.ndarray:
+    config = display_config or {}
+    values = np.asarray(arr, dtype=float)
+    transform = str(config.get("transform", "linear")).strip().lower()
+    if transform in {"log10", "log10 positive", "log"}:
+        return np.where(values > 0.0, np.log10(values), np.nan)
+    return values
+
+
+def _reference_display_limits(
+    item: RadioImage,
+    display_arr: np.ndarray,
+    display_config: dict[str, Any] | None,
+) -> tuple[float, float]:
+    config = display_config or {}
+    freq_key = _display_frequency_key(item.freq_mhz)
+    for key in ("limits_by_frequency", "per_frequency_limits"):
+        limits = config.get(key, {})
+        if isinstance(limits, dict) and freq_key in limits:
+            return _clean_display_limits(limits[freq_key])
+    shared = config.get("shared_limits")
+    if shared is not None:
+        return _clean_display_limits(shared)
+
+    finite = display_arr[np.isfinite(display_arr)]
+    if not finite.size:
+        return 0.0, 1.0
+    mode = str(config.get("range_mode", "auto")).strip().lower()
+    if mode.startswith("manual"):
+        raw_min = config.get("manual_min")
+        raw_max = config.get("manual_max")
+        if raw_min not in (None, "") and raw_max not in (None, ""):
+            return _clean_display_limits(
+                [
+                    _transform_display_limit(float(raw_min), config),
+                    _transform_display_limit(float(raw_max), config),
+                ]
+            )
+    low = float(config.get("low_percentile", 1.0))
+    high = float(config.get("high_percentile", 99.7))
+    return _clean_display_limits(np.nanpercentile(finite, [low, high]))
+
+
+def _clean_display_limits(values: Any) -> tuple[float, float]:
+    zmin, zmax = [float(item) for item in list(values)[:2]]
+    if not np.isfinite(zmin) or not np.isfinite(zmax):
+        return 0.0, 1.0
+    if zmin > zmax:
+        zmin, zmax = zmax, zmin
+    if zmin == zmax:
+        pad = abs(zmin) * 0.01 or 1.0
+        zmin -= pad
+        zmax += pad
+    return zmin, zmax
+
+
+def _transform_display_limit(value: float, display_config: dict[str, Any]) -> float:
+    transform = str(display_config.get("transform", "linear")).strip().lower()
+    if transform in {"log10", "log10 positive", "log"}:
+        return math.log10(value) if value > 0.0 else math.nan
+    return value
+
+
+def _matplotlib_cmap(plt: Any, display_config: dict[str, Any] | None) -> Any:
+    config = display_config or {}
+    cmap_name = str(config.get("colormap", "viridis")).strip() or "viridis"
+    try:
+        cmap = plt.get_cmap(cmap_name).copy()
+    except ValueError:
+        cmap = plt.get_cmap(cmap_name.lower()).copy()
+    bad_color = str(config.get("bad_color", "")).strip()
+    if bad_color:
+        cmap.set_bad(bad_color)
+    return cmap
+
+
+def _apply_reference_fov(ax: Any, display_config: dict[str, Any] | None) -> None:
+    config = display_config or {}
+    if not bool(config.get("use_custom_fov", False)):
+        return
+    try:
+        left = float(config["x_min_arcsec"])
+        right = float(config["x_max_arcsec"])
+        bottom = float(config["y_min_arcsec"])
+        top = float(config["y_max_arcsec"])
+    except (KeyError, TypeError, ValueError):
+        return
+    ax.set_xlim(min(left, right), max(left, right))
+    ax.set_ylim(min(bottom, top), max(bottom, top))
+
+
+def _add_reference_roi_patch(ax: Any, roi: RadioRoi) -> None:
+    from matplotlib.patches import Polygon, Rectangle
+
+    bounds = roi.bounds_arcsec
+    if roi.kind == "box":
+        patch = Rectangle(
+            (bounds["left"], bounds["bottom"]),
+            bounds["right"] - bounds["left"],
+            bounds["top"] - bounds["bottom"],
+            fill=False,
+            edgecolor="white",
+            linewidth=1.5,
+        )
+    else:
+        patch = Polygon(
+            roi.vertices_arcsec,
+            closed=True,
+            fill=False,
+            edgecolor="white",
+            linewidth=1.5,
+        )
+    ax.add_patch(patch)
+
+
+def _reference_colorbar_label(
+    item: RadioImage, display_config: dict[str, Any] | None
+) -> str:
+    bunit = str(item.header.get("BUNIT", "")).strip() or "raw intensity"
+    transform = str((display_config or {}).get("transform", "linear")).strip().lower()
+    if transform in {"log10", "log10 positive", "log"}:
+        return f"log10({bunit})"
+    return bunit
+
+
+def _reference_plot_title(item: RadioImage) -> str:
+    time_label = (
+        item.obs_time.isoformat(timespec="milliseconds")
+        if item.obs_time
+        else "unknown time"
+    )
+    freq_label = (
+        f"{item.freq_mhz:g} MHz" if np.isfinite(item.freq_mhz) else "unknown frequency"
+    )
+    source = str(getattr(item, "source_label", "") or "").strip()
+    prefix = f"{source} | " if source and source.lower() != "main" else ""
+    return f"{prefix}{freq_label} {item.pol} {time_label}"
+
+
+def _display_frequency_key(freq_mhz: float) -> str:
+    if not np.isfinite(freq_mhz):
+        return "nan"
+    return f"{float(freq_mhz):.6g}"
+
+
 def _load_reference_from_rows(df: pd.DataFrame) -> RadioImage | None:
     if "filepath" not in df.columns:
         return None
-    ok = df[df.get("quality_flag", "").astype(str).str.lower().eq("ok")] if "quality_flag" in df.columns else df
+    ok = (
+        df[df.get("quality_flag", "").astype(str).str.lower().eq("ok")]
+        if "quality_flag" in df.columns
+        else df
+    )
     for value in ok["filepath"].dropna():
         path = Path(str(value))
         if not path.exists():
@@ -1372,7 +1705,9 @@ def _parse_float_csv(raw: str | None) -> list[float]:
     return [float(item.strip()) for item in raw.split(",") if item.strip()]
 
 
-def _parse_optional_datetime(value: str | datetime | None, label: str) -> datetime | None:
+def _parse_optional_datetime(
+    value: str | datetime | None, label: str
+) -> datetime | None:
     if value in (None, ""):
         return None
     parsed = parse_datetime_value(value)
