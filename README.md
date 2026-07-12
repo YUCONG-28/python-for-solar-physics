@@ -240,69 +240,13 @@ Precedence is CLI arguments, explicit config file/object/mapping, path-only
 environment configuration, then defaults; scientific ROI, threshold, Gaussian,
 and Newkirk assumptions are not inferred from environment variables.
 
-Data and product policy:
-
-- Do not commit raw FITS, FTS, JP2, NetCDF, CDF, NumPy, HDF5, or local archive
-  products.
-- Do not commit generated figures, videos, large CSV/XLSX products, or local
-  cache folders.
-- The image web viewer reads local folders and writes exported MP4/GIF/WebM
-  products to a user-selected output directory; those products remain outside
-  Git.
-- Use local, ignored data/product directories for reproducible products; keep
-  public repository content limited to code, tests, configuration templates,
-  documentation, and curated display assets.
-- Keep README-ready images and short videos under `docs/assets/` only after
-  compression, source review, and documentation.
-
-## Validation
-
-Lightweight checks are designed to run without local science data:
-
-```powershell
-$env:PATH="D:\miniforge3\envs\solarphysics_env;D:\miniforge3\envs\solarphysics_env\Library\mingw-w64\bin;D:\miniforge3\envs\solarphysics_env\Library\usr\bin;D:\miniforge3\envs\solarphysics_env\Library\bin;D:\miniforge3\envs\solarphysics_env\Scripts;$env:PATH"
-$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
-D:\miniforge3\envs\solarphysics_env\python.exe -m compileall -q solar_toolkit scripts tests examples
-D:\miniforge3\envs\solarphysics_env\python.exe -m ruff check solar_toolkit scripts tests examples
-D:\miniforge3\envs\solarphysics_env\python.exe -m pytest -q tests
-```
-
-These checks cover imports, documentation consistency, path configuration,
-coordinate helpers, Gaussian fitting utilities, and other data-independent
-logic. Focused real-data comparisons against baseline `301765a` found exact
-array/table equality and exact PNG hashes for the recorded AIA 2024-01-10 and
-Radio/CSO 2025-01-24 and 2025-05-03 products. The scope and exclusions are in
-[`docs/validation/astropy_sunpy_reorg_parity.md`](docs/validation/astropy_sunpy_reorg_parity.md);
-the result is not a full end-to-end radio pipeline parity claim.
-
 ## Documentation Map
 
 - `docs/quickstart.md`: beginner path for environment setup, safe checks,
   first imports, path configuration, and recommended entrypoints.
 - `docs/README.md`: documentation index that separates current guidance from
   historical audit reports.
-- `docs/FUNCTION_MAP.md`: bilingual package/function map and compatibility
-  policy for the public library layer.
-- `docs/script_index.md`: public runnable scripts, compatibility entrypoints,
-  utility scripts, examples, and legacy-risk workflows.
-- `docs/validation/astropy_sunpy_reorg_parity.md`: focused real-data parity
-  evidence and the explicit end-to-end exclusions.
-- `CODE_ORGANIZATION_MANIFEST.md`: repository layout, data policy, and script group
-  boundaries.
-- `docs/path_configuration.md`: local path configuration and
-  `configs/paths.local.yaml` guidance.
-- `docs/assets/README.md`: policy for README-ready images and videos.
 - `CONTRIBUTING.md`: development environment, checks, and contribution notes.
-- `CHANGELOG.md`: release and change history.
-- `docs/README.zh-CN.md`: Chinese project overview and usage summary.
-
-## Chinese Note
-
-This README is English-first for GitHub presentation. A Chinese project overview
-is available in `docs/README.zh-CN.md`.
-
-本项目用于本地太阳物理多波段事件分析。完整科学流程需要本地观测数据和路径配置；原始观测、
-批量生成图像、视频和表格不进入 Git。公开展示素材只保留在 `docs/assets/`。
 
 ## Citation
 
