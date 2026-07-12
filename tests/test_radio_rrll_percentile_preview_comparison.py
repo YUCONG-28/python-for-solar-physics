@@ -22,9 +22,12 @@ def test_resolve_available_run_tag_skips_existing_target(tmp_path):
         resolve_available_run_tag,
     )
 
-    (tmp_path / _analysis_subdir("rrll_spec_percentile_compare_20260712_r01", (99.0, 99.99), "first")).mkdir(
-        parents=True
-    )
+    (
+        tmp_path
+        / _analysis_subdir(
+            "rrll_spec_percentile_compare_20260712_r01", (99.0, 99.99), "first"
+        )
+    ).mkdir(parents=True)
 
     assert (
         resolve_available_run_tag(tmp_path, "rrll_spec_percentile_compare_20260712")

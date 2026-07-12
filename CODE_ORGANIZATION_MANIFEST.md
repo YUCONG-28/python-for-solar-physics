@@ -123,15 +123,15 @@ Installed commands are registered in `pyproject.toml`:
 | Command | Package entry point | Installed behavior |
 | --- | --- | --- |
 | `solar-aia` | `solar_toolkit.aia.cli:main` | Packaged AIA processing CLI. |
-| `solar-radio` | `solar_toolkit.radio.cli:main` | Dispatcher for `centers`, `pipeline`, `source-map`, `overlay`, `quicklook`, `raw-quality`, and `trajectory`. |
+| `solar-radio` | `solar_toolkit.radio.cli:main` | Dispatcher for `centers`, `pipeline`, `source-map`, `overlay`, `quicklook`, `raw-quality`, `roi-lightcurve`, and `trajectory`. |
 | `solar-image-viewer` | `solar_toolkit.visualization.image_web_viewer.cli:main` | Packaged local image viewer. |
 | `solar-webapp` | `solar_toolkit.webapp.cli:main` | Packaged local workbench; source-only recipes are shown as unavailable when their scripts are absent. |
 
-All seven `solar-radio` subcommands dispatch to installable package runners.
+All eight `solar-radio` subcommands dispatch to installable package runners.
 They do not require a source checkout or `scripts.radio`; source scripts call
 the same command/workflow modules for compatibility.
 
-`solar-radio` 的七个子命令均直接调用 wheel 内的包实现，不再依赖源码仓库或
+`solar-radio` 的八个子命令均直接调用 wheel 内的包实现，不再依赖源码仓库或
 `scripts.radio`；旧脚本入口调用同一模块以保持兼容。
 
 ## Scientific Parity Status / 科学等价验证状态

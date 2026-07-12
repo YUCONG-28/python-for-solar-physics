@@ -120,12 +120,13 @@ solar-radio source-map --help
 solar-radio overlay --help
 solar-radio quicklook --help
 solar-radio raw-quality --help
+solar-radio roi-lightcurve --help
 solar-radio trajectory --help
 solar-image-viewer --help
 solar-webapp --help
 ```
 
-安装后的四个主命令及全部七个 `solar-radio` 子命令都支持无数据的 `--help` 检查；
+安装后的四个主命令及全部八个 `solar-radio` 子命令都支持无数据的 `--help` 检查；
 `pipeline/source-map/overlay` 的实现和默认事件配置均包含在 wheel 中。
 
 Source-checkout compatibility commands remain available:
@@ -151,6 +152,8 @@ Use these only after local data paths are configured:
 - Radio-source center extraction: `scripts/radio/extract_radio_centers.py`
 - Radio-source trajectory playback plus MP4/WebM browser recording and
   MP4/GIF/WebM backend export: `scripts/radio/run_radio_source_app.py`
+- Radio ROI selection and light-curve export: `solar-radio roi-lightcurve` or
+  `scripts/radio/run_radio_roi_lightcurve_app.py`
 - Multi-folder image review and MP4/GIF/WebM recording or export:
   `scripts/tools/run_image_web_viewer.py`
 - Unified local English web GUI:

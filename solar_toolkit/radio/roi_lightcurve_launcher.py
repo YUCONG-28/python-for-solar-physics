@@ -27,7 +27,9 @@ def build_parser() -> argparse.ArgumentParser:
     recursive.add_argument("--recursive", dest="recursive", action="store_true")
     recursive.add_argument("--no-recursive", dest="recursive", action="store_false")
     parser.set_defaults(recursive=None)
-    parser.add_argument("--time-start", default=None, help="Default inclusive time start.")
+    parser.add_argument(
+        "--time-start", default=None, help="Default inclusive time start."
+    )
     parser.add_argument("--time-end", default=None, help="Default inclusive time end.")
     parser.add_argument("--output-dir", default=None, help="Default output folder.")
     parser.add_argument(
@@ -48,7 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Default plotted metric.",
     )
-    parser.add_argument("--settings-file", default=None, help="Local JSON settings file.")
+    parser.add_argument(
+        "--settings-file", default=None, help="Local JSON settings file."
+    )
     parser.add_argument("--reset-settings", action="store_true")
     parser.add_argument(
         "--port",
@@ -70,7 +74,9 @@ def build_parser() -> argparse.ArgumentParser:
     browser.add_argument("--browser", dest="browser", action="store_true")
     browser.add_argument("--no-browser", dest="browser", action="store_false")
     parser.set_defaults(browser=True)
-    parser.add_argument("--dry-run", action="store_true", help="Print the Streamlit command.")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print the Streamlit command."
+    )
     return parser
 
 
@@ -125,7 +131,9 @@ def main(argv: list[str] | None = None) -> int:
         webbrowser.open(url)
     try:
         if args.auto_stop:
-            _wait_with_auto_stop(process, port=port, idle_seconds=args.auto_stop_idle_sec)
+            _wait_with_auto_stop(
+                process, port=port, idle_seconds=args.auto_stop_idle_sec
+            )
         else:
             process.wait()
     except KeyboardInterrupt:

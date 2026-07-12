@@ -5,7 +5,7 @@ selected examples that users are expected to run directly. It intentionally does
 not list every internal `core/` module or event-specific config module. Most
 workflows expect local observation data and should be configured through
 `configs/paths.local.yaml` or the `SOLAR_PHYSICS_CONFIG` environment variable.
-The bilingual `README.md` links to the main workflows listed here.
+The project `README.md` links to the main workflows listed here.
 For a beginner-safe path that starts with no-data checks, see
 `docs/quickstart.md`.
 
@@ -26,7 +26,7 @@ Status labels:
 | Command | Purpose | Boundary / 当前边界 |
 | --- | --- | --- |
 | `solar-aia` | AIA single-band, mosaic, and difference processing. | Package-owned runner. |
-| `solar-radio` | `centers`, `pipeline`, `source-map`, `overlay`, `quicklook`, `raw-quality`, and `trajectory`. | All seven runners and default event configs are installed with the package. |
+| `solar-radio` | `centers`, `pipeline`, `source-map`, `overlay`, `quicklook`, `raw-quality`, `roi-lightcurve`, and `trajectory`. | All eight runners and default event configs are installed with the package. |
 | `solar-image-viewer` | Local multi-folder image viewer and media export. | Package-owned runner. |
 | `solar-webapp` | Local English workflow workbench. | Source-only recipes are listed as unavailable when their files are absent from the installed package. |
 
@@ -76,7 +76,6 @@ the recommended entries already expose the same implementations.
 | utility | `scripts/stereo_suvi/stereo_euvi_0448_overview_plot.py` | Plot STEREO-A/EUVI context images nearest the 2025-01-24 04:48 UT event time. | EUVI manifest from the wavelength organizer. | Single-channel and 2x2 overview PNG products. |
 | utility | `scripts/stereo_suvi/stereo_euvi_roi_movie.py` | Generate fixed-ROI EUVI frame sequences and MP4 movies for event evolution. | EUVI manifest and local EUVI FTS files. | ROI PNG frames, MP4 movies, and `movie_summary.csv`. |
 | utility | `scripts/stereo_suvi/goes_suvi_0448_quadrant_plot.py` | Plot GOES-16/18 SUVI lower-right quadrant event context images. | Local SUVI L2 FITS files. | Single-channel and overview PNG products. |
-| utility | `scripts/tools/gaussian_source_fitting.py` | Compatibility wrapper for the pure model in `solar_toolkit.modeling.gaussian`; radio-domain fitting lives under `solar_toolkit.radio.gaussian_*`. | 2D intensity array and coordinate axes. | Gaussian parameters, covariance, and fitted source center/shape. |
 | utility | `scripts/tools/image_sequence_to_video.py` | Convert an ordered image sequence to MP4 with FFmpeg/imageio/OpenCV fallbacks. | PNG/JPG image sequence and video settings. | MP4 time-evolution video. |
 | utility | `scripts/tools/run_image_web_viewer.py` | Launch the local Flask/Canvas image sequence viewer with synchronized multi-folder playback, ROI selection, and recording/export controls for MP4, GIF, or WebM. | One or more local image folders, optional allowed-root boundary, playback/export settings. | Interactive browser view plus optional live-stage recordings, composite exports, and per-folder media files in the selected output directory. |
 | utility | `scripts/tools/run_solar_webapp.py` | Launch the unified local English web GUI for registered AIA/HMI, radio, data-download, LASCO/CME, X-ray/DEM, example, and media workflows. | Optional allowed-root boundary and workbench port. | Local browser dashboard with workflow forms, job status, and logs. |
@@ -119,6 +118,15 @@ the recommended entries already expose the same implementations.
 | utility | `solar_toolkit/visualization/image_web_viewer/` | Flask app factory, folder scanner, Canvas frontend, and compatibility integration with shared MP4/GIF/WebM recording/export helpers. | `scripts/tools/run_image_web_viewer.py` and browser API routes under `/api/*`. |
 | utility | `solar_toolkit/visualization/` | Shared plotting/media namespace for reusable visual helpers. | Scripts and tools that generate figures, videos, or interactive HTML. |
 
+## Import-Only Compatibility Helpers
+
+These paths preserve historical imports but are not runnable commands and are
+therefore not exposed by the local workbench.
+
+| Status | Module | Purpose | Canonical implementation |
+| --- | --- | --- | --- |
+| deprecated | `scripts/tools/gaussian_source_fitting.py` | Import-only compatibility wrapper for the shared pure Gaussian model. | `solar_toolkit.modeling.gaussian` |
+
 ## Specialized Or Legacy-Risk Scripts
 
 These files are still tracked and may be scientifically useful. They are not
@@ -151,6 +159,9 @@ recommended as first entry points for new users.
 
 | Status | Script | Purpose | Main inputs | Main outputs |
 | --- | --- | --- | --- | --- |
+| utility | `examples/public_api/time_matching_example.py` | Match sample observation filenames by timestamp through the public API. | Built-in sample filenames and target time. | Nearest filename printed to stdout. |
+| utility | `examples/public_api/gaussian_model_example.py` | Evaluate the public elliptical Gaussian model without observation data. | Optional grid size. | Deterministic model summary printed to stdout. |
 | utility | `examples/aia_hmi/solar_limb_contour_example.py` | Small AIA/HMI-style solar limb contour example. | Example or local AIA data. | Demonstration figure. |
 | utility | `examples/radio/fits_header_metadata_example.py` | Inspect FITS header metadata. | FITS file. | Printed metadata. |
+| utility | `examples/gaussian_newkirk_quicklook/quicklook_gaussian_newkirk.py` | Generate Gaussian/Newkirk quicklooks through the public package API. | Local Gaussian diagnostics CSV and event config. | Trajectory and height-comparison quicklook products. |
 | utility | `examples/radio_aia_hmi/aia_radio_hmi_overlay_demo.py` | AIA/radio/HMI overlay demonstration. | Local AIA, radio, and optional HMI data. | Overlay figure. |

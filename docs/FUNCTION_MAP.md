@@ -39,6 +39,7 @@ implementation does not live in `__init__.py`.
 | CSO and spectrogram | `solar_toolkit.radio.cso`, `spectrogram`, `cso_workflow` | Package API and old CSO script alias |
 | Drift/Newkirk products | `solar_toolkit.radio.drift_rate`, `drift_products`, `newkirk`, `height_comparison`, `height_plots`, `frequency_priority_diagnostics` | Radio library API and package pipeline |
 | Radio centers/quality/trajectory | `solar_toolkit.radio.centers`, `raw_quality`, `trajectory`, `quicklook` | `solar-radio centers/raw-quality/trajectory/quicklook` |
+| Radio ROI light curves | `solar_toolkit.radio.roi_lightcurve`, `roi_lightcurve_app`, `roi_lightcurve_launcher` | `solar-radio roi-lightcurve`; managed Streamlit workflow |
 | LASCO/CME | `solar_toolkit.cme.files`, `lasco`, `processing` | Thin scripts under `scripts/lasco_cme/` |
 | X-ray/DEM | `solar_toolkit.xray_dem.sxr`, `hxi`, `processing`, `aia_dem_inversion`, `aia_hxi_overlay`, `dem_radio_source_overlay`, `hxi_image`, `hxi_lightcurve`, `hxi_sxr_comparison` | Thin aliases under `scripts/xray_dem/` |
 | Plotting and media | `solar_toolkit.visualization.plotting`, `frames`, `media`, `video_cli`, `radio_source_trajectory`, `radio_source_video`, STEREO/SUVI modules | `solar-image-viewer`, package APIs, and thin script aliases |
@@ -81,7 +82,7 @@ may import the package, but the package never imports `scripts`, `legacy`, or
 | Command | Subcommands or role | Current boundary |
 | --- | --- | --- |
 | `solar-aia` | AIA single/mosaic/difference workflow | Fully package-owned command surface. |
-| `solar-radio` | `centers`, `pipeline`, `source-map`, `overlay`, `quicklook`, `raw-quality`, `trajectory` | All seven subcommands are package-owned and wheel-installable. |
+| `solar-radio` | `centers`, `pipeline`, `source-map`, `overlay`, `quicklook`, `raw-quality`, `roi-lightcurve`, `trajectory` | All eight subcommands are package-owned and wheel-installable. |
 | `solar-image-viewer` | Local multi-folder image viewer | Fully package-owned command surface. |
 | `solar-webapp` | Local English workbench | Package-owned shell; source-only recipes are disabled when absent from an installed wheel. |
 

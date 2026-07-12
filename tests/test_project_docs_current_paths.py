@@ -16,7 +16,6 @@ CURRENT_DOCS = [
     "docs/FUNCTION_MAP.md",
     "docs/MAIN_FILES.md",
     "docs/README.md",
-    "docs/README.zh-CN.md",
     "docs/path_configuration.md",
     "docs/quickstart.md",
     "docs/script_index.md",
@@ -58,6 +57,14 @@ INTERNAL_EXECUTABLE_SCRIPTS = {
     "scripts/radio/run_radio_source_app_managed.py",
 }
 
+RADIO_COMMAND_DOCS = [
+    "README.md",
+    "CODE_ORGANIZATION_MANIFEST.md",
+    "docs/FUNCTION_MAP.md",
+    "docs/quickstart.md",
+    "docs/script_index.md",
+]
+
 
 def _extract_script_paths(text: str) -> set[str]:
     paths = set(re.findall(r"`(scripts[/\\][^`]+?\.py)`", text))
@@ -87,6 +94,22 @@ def _is_main_guard(test: ast.expr) -> bool:
         and isinstance(left, ast.Constant)
         and left.value == "__main__"
     )
+
+
+def _radio_command_names() -> set[str]:
+    tree = ast.parse(
+        (REPO_ROOT / "solar_toolkit" / "radio" / "cli.py").read_text(encoding="utf-8")
+    )
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if any(
+            isinstance(target, ast.Name) and target.id == "_COMMANDS"
+            for target in node.targets
+        ):
+            commands = ast.literal_eval(node.value)
+            return set(commands)
+    raise AssertionError("solar_toolkit.radio.cli._COMMANDS was not found")
 
 
 def _executable_script_paths() -> set[str]:
@@ -140,6 +163,22 @@ def test_executable_scripts_are_documented_or_internal():
     undocumented_scripts = _executable_script_paths() - documented_scripts
 
     assert undocumented_scripts == INTERNAL_EXECUTABLE_SCRIPTS
+
+
+@pytest.mark.parametrize("doc_path", RADIO_COMMAND_DOCS)
+def test_radio_subcommands_are_documented(doc_path):
+    text = (REPO_ROOT / doc_path).read_text(encoding="utf-8")
+    commands = _radio_command_names()
+    if doc_path == "docs/quickstart.md":
+        missing = sorted(
+            command
+            for command in commands
+            if f"solar-radio {command} --help" not in text
+        )
+    else:
+        missing = sorted(command for command in commands if f"`{command}`" not in text)
+
+    assert missing == []
 
 
 @pytest.mark.parametrize("doc_path", CURRENT_DOCS)

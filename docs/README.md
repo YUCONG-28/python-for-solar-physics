@@ -19,7 +19,6 @@ current source of truth.
 | `MAIN_FILES.md` | Compact maintainer file map. / 维护者文件速查。 |
 | `path_configuration.md` | Local path configuration without committed personal paths. / 不提交个人路径的本地配置方法。 |
 | `validation/astropy_sunpy_reorg_parity.md` | Real-data structural parity evidence and exact exclusions. / 真实数据结构等价证据与未覆盖项。 |
-| `README.zh-CN.md` | Additional Chinese overview. / 中文补充说明。 |
 
 ## History / 历史资料
 

@@ -17,9 +17,10 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
   - `timeseries/`: light-curve table time normalization, clipping, smoothing, and derivative helpers.
   - `aia/`: AIA configuration, FITS selection, difference images, mosaics, EUV processing, and lightweight AIA background loading.
   - `hmi/`: HMI-facing facades for FITS renaming, magnetogram plotting, and overlays.
-  - `radio/`: radio coordinates, threshold centers, Gaussian fitting, trajectory tables, Newkirk, spectrogram, drift, raw quality, and quicklook helpers.
+  - `radio/`: radio coordinates, threshold centers, Gaussian fitting, trajectory tables, ROI light curves, Newkirk, spectrogram, drift, raw quality, and quicklook helpers.
     - `config.py` and `configs/`: canonical validated loader and installable event configurations; `scripts.radio.configs` keeps aliases.
     - `pipeline_workflow.py`, `source_map_workflow.py`, `overlay_workflow.py`: package-owned complete orchestration.
+    - `roi_lightcurve.py`, `roi_lightcurve_app.py`, `roi_lightcurve_launcher.py`: ROI statistics, Streamlit UI, and managed launcher.
   - `xray_dem/`: X-ray, HXI, Neupert, DEM, image, comparison, and overlay workflow implementations.
   - `cme/`: LASCO/CME helper boundary.
   - `net/`: archive query and download helper boundary.
@@ -44,6 +45,9 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
 - `scripts/radio/run_radio_source_app.py`
   - Streamlit trajectory playback frontend that reads existing center tables.
   - Uses the selected Start/End, size, FPS, and quality for deterministic browser MP4/WebM recording and backend MP4/GIF/WebM export.
+- `scripts/radio/run_radio_roi_lightcurve_app.py`
+  - Streamlit frontend for radio FITS ROI selection, raw statistics, and light-curve export.
+  - The installed equivalent is `solar-radio roi-lightcurve`.
 - `scripts/radio/export_radio_source_trajectory.py`
   - Static Plotly HTML export for selected trajectory frames.
 - `scripts/radio/run_aia_radio_hmi_overlay.py`

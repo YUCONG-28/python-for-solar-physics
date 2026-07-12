@@ -16,10 +16,18 @@ from pathlib import Path
 import matplotlib
 import numpy as np
 
+from . import source_map_workflow as workflow
 from .config import load_radio_user_config
 from .io import write_json_file
 from .provenance import write_radio_provenance
-from . import source_map_workflow as workflow
+
+__all__ = [
+    "build_parser",
+    "compute_fixed_band_ranges",
+    "main",
+    "resolve_available_run_tag",
+    "run_percentile_preview_comparison",
+]
 
 CONFIG_NAME = "radio_20250124_center_pm2min_9band_raw_rrll_full_config"
 DEFAULT_OUTPUT_DIR = Path(r"<PROJECT_ROOT>\2025\20250124\output")
@@ -48,7 +56,9 @@ def _percentile_token(value: float) -> str:
     return text.replace(".", "")
 
 
-def _analysis_subdir(run_tag: str, percentiles: tuple[float, float], position: str) -> str:
+def _analysis_subdir(
+    run_tag: str, percentiles: tuple[float, float], position: str
+) -> str:
     low, high = percentiles
     return (
         "radio_source_maps_9band_"
@@ -65,12 +75,16 @@ def _candidate_subdirs(run_tag: str) -> list[str]:
     ]
 
 
-def resolve_available_run_tag(output_dir: Path, run_stem: str = DEFAULT_RUN_STEM) -> str:
+def resolve_available_run_tag(
+    output_dir: Path, run_stem: str = DEFAULT_RUN_STEM
+) -> str:
     """Return the first run tag whose 12 output directories do not exist."""
 
     for run_number in range(1, 100):
         run_tag = f"{run_stem}_r{run_number:02d}"
-        if not any((output_dir / subdir).exists() for subdir in _candidate_subdirs(run_tag)):
+        if not any(
+            (output_dir / subdir).exists() for subdir in _candidate_subdirs(run_tag)
+        ):
             return run_tag
     raise RuntimeError(f"No available run tag found for {run_stem!r}")
 
@@ -217,7 +231,9 @@ def _provenance_config(
     config["preview_selection"] = {
         "position": position,
         "slot_index": slot_idx,
-        "slot_time": slot_time.isoformat(timespec="milliseconds") if slot_time else None,
+        "slot_time": (
+            slot_time.isoformat(timespec="milliseconds") if slot_time else None
+        ),
     }
     return config
 
@@ -290,9 +306,9 @@ def _render_one_preview(
             "fixed_band_vmaxs": fixed_ranges["fixed_band_vmaxs"],
             "preview_position": position,
             "slot_index": slot_idx,
-            "slot_time": slot_time.isoformat(timespec="milliseconds")
-            if slot_time
-            else None,
+            "slot_time": (
+                slot_time.isoformat(timespec="milliseconds") if slot_time else None
+            ),
             "output_png": str(output_path),
             "spectrogram_file": SPECTROGRAM_FILE,
             "spectrogram_time_start": SPECTROGRAM_START,
@@ -318,8 +334,12 @@ def run_percentile_preview_comparison(
 
     output_dir = Path(output_dir)
     resolved_tag = run_tag or resolve_available_run_tag(output_dir, run_stem)
-    if any((output_dir / subdir).exists() for subdir in _candidate_subdirs(resolved_tag)):
-        raise FileExistsError(f"At least one target directory already exists for {resolved_tag}")
+    if any(
+        (output_dir / subdir).exists() for subdir in _candidate_subdirs(resolved_tag)
+    ):
+        raise FileExistsError(
+            f"At least one target directory already exists for {resolved_tag}"
+        )
 
     user_config, newkirk_config = _base_user_config()
     user_config["output"]["output_dir"] = str(output_dir)

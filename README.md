@@ -187,9 +187,10 @@ solar-radio overlay --config radio_20250124_config --overlay-section aia_multi_w
 ```
 
 `solar-radio` exposes `centers`, `pipeline`, `source-map`, `overlay`,
-`quicklook`, `raw-quality`, and `trajectory`. All seven subcommands, including
-the default event configurations, are included in the installed wheel. The
-following source-checkout scripts are equivalent compatibility surfaces:
+`quicklook`, `raw-quality`, `roi-lightcurve`, and `trajectory`. All eight
+subcommands, including the default event configurations, are included in the
+installed wheel. The following source-checkout scripts are equivalent
+compatibility surfaces:
 
 ```powershell
 # SDO/AIA single-band, mosaic, preview, and difference products
@@ -206,6 +207,9 @@ python scripts/radio/extract_radio_centers.py --radio-dir D:\path\to\radio_fits 
 
 # Launch the Streamlit radio-source trajectory frontend
 streamlit run scripts/radio/run_radio_source_app.py
+
+# Launch the managed radio ROI light-curve frontend
+solar-radio roi-lightcurve --radio-dir D:\path\to\radio_fits --output-dir outputs\radio-roi
 
 # Export one selected trajectory frame to static Plotly HTML
 python scripts/radio/export_radio_source_trajectory.py --centers outputs\radio_centers.csv --out outputs\radio_source_trajectory.html

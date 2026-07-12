@@ -44,6 +44,7 @@ _SUBMODULES = {
     "roi_lightcurve": "solar_toolkit.radio.roi_lightcurve",
     "roi_lightcurve_app": "solar_toolkit.radio.roi_lightcurve_app",
     "roi_lightcurve_launcher": "solar_toolkit.radio.roi_lightcurve_launcher",
+    "rrll_percentile_preview_comparison": "solar_toolkit.radio.rrll_percentile_preview_comparison",
     "spectrogram": "solar_toolkit.radio.spectrogram",
     "source_map_cli": "solar_toolkit.radio.source_map_cli",
     "source_map_workflow": "solar_toolkit.radio.source_map_workflow",
