@@ -26,6 +26,10 @@ _SUBMODULES = {
     "sxr": "solar_toolkit.xray_dem.sxr",
 }
 
+_COMPATIBILITY_SUBMODULES = {
+    "dem_radio_cli": "solar_toolkit.xray_dem.dem_radio_cli",
+}
+
 __all__ = [
     "calculate_derivative",
     "load_sxr_data",
@@ -35,8 +39,9 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name in _SUBMODULES:
-        module = import_module(_SUBMODULES[name])
+    target = _SUBMODULES.get(name) or _COMPATIBILITY_SUBMODULES.get(name)
+    if target is not None:
+        module = import_module(target)
         globals()[name] = module
         return module
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

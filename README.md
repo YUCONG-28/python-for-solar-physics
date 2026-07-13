@@ -29,6 +29,10 @@ New users should start with `docs/quickstart.md`. It lists data-independent
 checks, first import examples, and safe `--help` commands before any local
 observation archive is required.
 
+For radio work, [`docs/radio_workspace.md`](docs/radio_workspace.md) documents
+the integrated `/radio` workspace, its eight fused modules, selective execution
+rules, persistence format, API, and retained CLI/Streamlit compatibility paths.
+
 ## Scientific Scope
 
 - **SDO/AIA and SDO/HMI context imaging**: EUV visualization, mosaics,
@@ -60,6 +64,9 @@ observation archive is required.
 
 **Radio analysis**
 
+- Open the modular Radio Workspace at `/radio` from the same `solar-webapp`
+  process. Enable only the modules needed for a study; module selection and
+  presets change layout but never start a task.
 - Plot CSO dynamic spectra with memory-aware slicing and downsampling.
 - Build radio source maps and AIA/radio/HMI overlays.
 - Fit two-dimensional Gaussian source models, export fitted centers, and
@@ -176,6 +183,20 @@ solar-radio pipeline --config radio_20250124_config --output-dir outputs\radio-p
 solar-radio overlay --config radio_20250124_config --overlay-section aia_multi_wave_gaussian_spectrogram
 ```
 
+To use the integrated browser workspace, declare the local data/output boundary
+at startup and open the `/radio` route on the same port:
+
+```powershell
+solar-webapp --allowed-roots "D:\radio_data;D:\analysis_outputs" --radio-output-root D:\analysis_outputs --open-browser
+# http://127.0.0.1:7870/radio
+```
+
+The first view expands only Data & Configuration. Preview and Run operate on a
+single action; Run Selected queues only explicitly checked actions after a
+review step. Existing workspace artifacts can be bound by source run ID, and a
+missing input never causes an upstream module to run automatically. See the
+[Radio Workspace guide](docs/radio_workspace.md) for the full capability list.
+
 `solar-radio` exposes `centers`, `pipeline`, `source-map`, `overlay`,
 `quicklook`, `raw-quality`, `roi-lightcurve`, and `trajectory`. All eight
 subcommands, including the default event configurations, are included in the
@@ -238,6 +259,8 @@ and Newkirk assumptions are not inferred from environment variables.
 
 - `docs/quickstart.md`: beginner path for environment setup, safe checks,
   first imports, path configuration, and recommended entrypoints.
+- `docs/radio_workspace.md`: integrated `/radio` module inventory, selective
+  execution contract, persistence/API details, and compatibility map.
 - `docs/README.md`: documentation index that separates current guidance from
   historical audit reports.
 - `CONTRIBUTING.md`: development environment, checks, and contribution notes.

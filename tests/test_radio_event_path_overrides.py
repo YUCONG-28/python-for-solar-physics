@@ -44,20 +44,19 @@ def test_event_config_accepts_only_local_path_overrides(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("SOLAR_PHYSICS_CONFIG", str(config_path))
-
     module = importlib.import_module(module_name)
-    module = importlib.reload(module)
     try:
-        assert module.USER_CONFIG["data"]["multi_band_root"] == "private/radio"
-        assert module.USER_CONFIG["spectrogram"]["file_path"] == (
-            "private/spectrum.fits"
-        )
-        assert module.OUTPUT_CONFIG["output_dir"] == "private/output"
-        assert module.AIA_RADIO_HMI_CONFIG["paths"]["aia_base_dir"] == "private/aia"
-        assert module.USER_CONFIG["gaussian"]["fit_snr_threshold"] == 5.0
+        with monkeypatch.context() as local_config:
+            local_config.setenv("SOLAR_PHYSICS_CONFIG", str(config_path))
+            module = importlib.reload(module)
+            assert module.USER_CONFIG["data"]["multi_band_root"] == "private/radio"
+            assert module.USER_CONFIG["spectrogram"]["file_path"] == (
+                "private/spectrum.fits"
+            )
+            assert module.OUTPUT_CONFIG["output_dir"] == "private/output"
+            assert module.AIA_RADIO_HMI_CONFIG["paths"]["aia_base_dir"] == "private/aia"
+            assert module.USER_CONFIG["gaussian"]["fit_snr_threshold"] == 5.0
     finally:
-        monkeypatch.delenv("SOLAR_PHYSICS_CONFIG")
         importlib.reload(module)
 
 

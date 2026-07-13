@@ -25,6 +25,7 @@ __all__ = [
     "VideoExportOptions",
     "export_radio_source_video",
     "export_radio_source_video_mp4",
+    "render_radio_source_overlay_png",
 ]
 
 
@@ -200,6 +201,55 @@ def export_radio_source_video_mp4(
     )
 
 
+def render_radio_source_overlay_png(
+    centers: pd.DataFrame,
+    out_path: str | Path,
+    *,
+    frame_time,
+    aia_background=None,
+    width: int = 1200,
+    height: int = 900,
+    theme_mode: str = "light",
+    draw_lines: bool = True,
+    marker_size: int = 10,
+    marker_symbol_by_freq: dict[str, str] | None = None,
+    trail_min_opacity: float = 0.25,
+    title_prefix: str = "Radio source overlay",
+) -> Path:
+    """Write one non-interactive PNG using the trajectory frame renderer."""
+
+    if centers is None or centers.empty:
+        raise ValueError("At least one radio-source center is required.")
+    resolved_width = max(320, int(width))
+    resolved_height = max(240, int(height))
+    axis = _axis_limits(centers)
+    if aia_background is not None:
+        axis = _axis_limits_with_background(axis, aia_background)
+    rgb = _render_frame_rgb(
+        centers,
+        pd.Timestamp(frame_time),
+        width=resolved_width,
+        height=resolved_height,
+        theme_mode=theme_mode,
+        draw_lines=bool(draw_lines),
+        marker_size=max(1, int(marker_size)),
+        marker_symbol_by_freq=marker_symbol_by_freq,
+        trail_min_opacity=float(trail_min_opacity),
+        plot_layout="overlay",
+        facet_by="freq_mhz",
+        facet_values=[],
+        axis=axis,
+        aia_background=aia_background,
+        title_prefix=title_prefix,
+    )
+    output = Path(out_path).expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    import matplotlib.image as mpimg
+
+    mpimg.imsave(output, rgb)
+    return output
+
+
 def _render_frame_rgb(
     visible: pd.DataFrame,
     frame_time: pd.Timestamp,
@@ -216,6 +266,7 @@ def _render_frame_rgb(
     facet_values: list[object],
     axis: dict[str, tuple[float, float]],
     aia_background,
+    title_prefix: str = "Radio source trajectory",
 ) -> np.ndarray:
     import matplotlib
 
@@ -231,7 +282,7 @@ def _render_frame_rgb(
     )
     try:
         fig.suptitle(
-            f"Radio source trajectory | {pd.Timestamp(frame_time).isoformat()}",
+            f"{title_prefix} | {pd.Timestamp(frame_time).isoformat()}",
             color=theme["font_color"],
             fontsize=12,
         )
@@ -350,6 +401,23 @@ def _axis_limits(centers: pd.DataFrame) -> dict[str, tuple[float, float]]:
     x_pad = max(1.0, (x1 - x0) * 0.05)
     y_pad = max(1.0, (y1 - y0) * 0.05)
     return {"x": (x0 - x_pad, x1 + x_pad), "y": (y0 - y_pad, y1 + y_pad)}
+
+
+def _axis_limits_with_background(
+    axis: dict[str, tuple[float, float]], background
+) -> dict[str, tuple[float, float]]:
+    """Expand center-derived limits to include an AIA helioprojective grid."""
+
+    return {
+        "x": (
+            min(axis["x"][0], float(np.nanmin(background.x_arcsec))),
+            max(axis["x"][1], float(np.nanmax(background.x_arcsec))),
+        ),
+        "y": (
+            min(axis["y"][0], float(np.nanmin(background.y_arcsec))),
+            max(axis["y"][1], float(np.nanmax(background.y_arcsec))),
+        ),
+    }
 
 
 def _facet_values(centers: pd.DataFrame, facet_by: str) -> list[object]:

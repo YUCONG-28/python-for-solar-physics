@@ -49,6 +49,7 @@ from matplotlib.colors import TwoSlopeNorm  # noqa: E402
 from tqdm import tqdm  # noqa: E402
 
 from solar_toolkit.path_config import apply_config_to_object  # noqa: E402
+from solar_toolkit.radio import drift_rate as _canonical_drift_rate  # noqa: E402
 
 __all__ = [
     "AxisConfigManager",
@@ -201,6 +202,7 @@ class PlotConfig:
     drift_rate_selection_metadata_json: str = (
         "spectrogram_drift_rate_selection_metadata.json"
     )
+    export_drift_selection_preview: bool = False
     drift_rate_interactive: dict = field(
         default_factory=lambda: {
             "host": "127.0.0.1",
@@ -240,23 +242,7 @@ class PlotConfig:
         apply_config_to_object(self, "cso_radio_spectrogram_plot")
 
 
-@dataclass
-class DriftRateResult:
-    """One manually selected frequency-drift line on the dynamic spectrum."""
-
-    label: str
-    mode: str
-    t_start: datetime.datetime
-    t_end: datetime.datetime
-    f_start_mhz: float
-    f_end_mhz: float
-    drift_rate_mhz_s: float
-    abs_drift_rate_mhz_s: float
-    duration_s: float
-    bandwidth_mhz: float
-    color: str = "white"
-    quality_flag: str = "ok"
-    warning: str = ""
+DriftRateResult = _canonical_drift_rate.DriftRateResult
 
 
 @dataclass
@@ -1424,28 +1410,12 @@ def _parse_drift_datetime(value, fallback_num=None) -> datetime.datetime:
 
 
 def calculate_drift_rate_from_line(line: dict) -> DriftRateResult:
-    """Calculate df/dt from one manually selected start/end line."""
-    t_start = _parse_drift_datetime(line.get("t_start"), line.get("t_start_num"))
-    t_end = _parse_drift_datetime(line.get("t_end"), line.get("t_end_num"))
-    f_start = float(line["f_start_mhz"])
-    f_end = float(line["f_end_mhz"])
-    duration = (t_end - t_start).total_seconds()
-    if abs(duration) < 1e-9:
-        raise ValueError(f"Cannot calculate drift rate for zero-duration line: {line}")
-    bandwidth = f_end - f_start
-    drift_rate = bandwidth / duration
-    return DriftRateResult(
-        label=str(line.get("label", "drift")),
-        mode=str(line.get("mode", "manual_endpoint")),
-        t_start=t_start,
-        t_end=t_end,
-        f_start_mhz=f_start,
-        f_end_mhz=f_end,
-        drift_rate_mhz_s=float(drift_rate),
-        abs_drift_rate_mhz_s=float(abs(drift_rate)),
-        duration_s=float(duration),
-        bandwidth_mhz=float(bandwidth),
-        color=str(line.get("color", "white") or "white"),
+    """Calculate df/dt with the historical CSO endpoint semantics."""
+    return _canonical_drift_rate._calculate_drift_rate_from_line(
+        line,
+        profile=_canonical_drift_rate._CSO_DRIFT_RATE_PROFILE,
+        t_start=_parse_drift_datetime(line.get("t_start"), line.get("t_start_num")),
+        t_end=_parse_drift_datetime(line.get("t_end"), line.get("t_end_num")),
     )
 
 
@@ -2020,11 +1990,17 @@ def get_or_load_drift_rate_results(
         return _DRIFT_RATE_RESULTS_CACHE[cache_key]
 
     selection_exists = os.path.exists(selection_path)
+    export_preview = bool(_cfg_get(cfg, "export_drift_selection_preview", False))
 
     if mode == "interactive_manual":
-        if bool(_cfg_get(cfg, "_select_drift_now", False)) or launch_policy == "always":
+        select_now = bool(_cfg_get(cfg, "_select_drift_now", False))
+        if select_now or (launch_policy == "always" and not export_preview):
             lines = launch_func(cache, cfg)
-        elif launch_policy == "auto_if_missing" and not selection_exists:
+        elif (
+            launch_policy == "auto_if_missing"
+            and not selection_exists
+            and not export_preview
+        ):
             print(
                 "[Drift selection] selection JSON not found; starting interactive selector..."
             )
@@ -2550,6 +2526,15 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         cfg, items, display_data_list, extent_list, freq_out
     )
     if drift_cache is not None:
+        if _cfg_get(cfg, "export_drift_selection_preview", False):
+            preview_path, _metadata = render_spectrogram_selection_preview(
+                drift_cache, cfg
+            )
+            print(f"[Drift selection] Preview PNG: {preview_path}")
+            print(
+                "[Drift selection] Metadata JSON: "
+                f"{_drift_output_path(cfg, 'drift_rate_selection_metadata_json')}"
+            )
         drift_results = get_or_load_drift_rate_results(drift_cache, cfg)
         if drift_results:
             save_drift_rate_diagnostics_once(
@@ -2669,36 +2654,6 @@ def process_and_plot(cfg: PlotConfig, data_list: list):
         plt.close(fig)
 
 
-# ============================================================
-#  ENTRY POINT
-# ============================================================
-
-
-def test_polarization_formula():
-    """Test function to verify polarization ratio calculation."""
-    print("\n" + "=" * 60)
-    print("Testing Polarization Ratio Formula (R-L)/(R+L)")
-    print("=" * 60)
-
-    # Test cases
-    test_cases = [
-        ("R > L", 10.0, 5.0, (10 - 5) / (10 + 5)),  # Right-handed dominant
-        ("L > R", 5.0, 10.0, (5 - 10) / (5 + 10)),  # Left-handed dominant
-        ("R = L", 10.0, 10.0, 0.0),  # Unpolarized
-        ("R >> L", 100.0, 1.0, (100 - 1) / (100 + 1)),  # Strong right-handed
-        ("L >> R", 1.0, 100.0, (1 - 100) / (1 + 100)),  # Strong left-handed
-    ]
-
-    for name, r_val, l_val, expected in test_cases:
-        ratio = calc_polarization_ratio(
-            np.array([r_val], dtype=np.float32), np.array([l_val], dtype=np.float32)
-        )[0]
-        print(f"{name}: R={r_val}, L={l_val}")
-        print(f"  Expected (R-L)/(R+L): {expected:.4f}, Calculated: {ratio:.4f}")
-        print(f"  Difference: {abs(ratio - expected):.6f}")
-        print()
-
-
 class ConfigManager:
     """配置管理器，集中处理所有配置逻辑"""
 
@@ -2736,6 +2691,28 @@ class ConfigManager:
 def build_parser() -> argparse.ArgumentParser:
     """Build the legacy-compatible CSO workflow parser."""
     parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument("--file-path", help="CSO FITS file to process.")
+    parser.add_argument("--time-start", help="UTC spectrum start time.")
+    parser.add_argument("--time-end", help="UTC spectrum end time.")
+    parser.add_argument("--frequency-start", type=float, help="Lower frequency in MHz.")
+    parser.add_argument("--frequency-end", type=float, help="Upper frequency in MHz.")
+    parser.add_argument(
+        "--output-dir",
+        help="Folder for the spectrum, selection, diagnostics, and metadata outputs.",
+    )
+    parser.add_argument("--rebin-time", type=int, help="Target time-axis samples.")
+    parser.add_argument(
+        "--rebin-frequency", type=int, help="Target frequency-axis samples."
+    )
+    parser.add_argument("--max-workers", type=int, help="Maximum worker count.")
+    parser.add_argument("--plot-ll", action="store_true", help="Include LL intensity.")
+    parser.add_argument("--plot-rr", action="store_true", help="Include RR intensity.")
+    parser.add_argument(
+        "--no-plot-sum", action="store_true", help="Exclude total intensity."
+    )
+    parser.add_argument(
+        "--no-plot-ratio", action="store_true", help="Exclude polarization ratio."
+    )
     parser.add_argument(
         "--select-drift",
         action="store_true",
@@ -2743,6 +2720,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--use-drift-selection", help="Use an existing drift-rate selection JSON file."
+    )
+    parser.add_argument(
+        "--export-drift-preview",
+        action="store_true",
+        help="Export the drift-selection preview PNG and metadata without opening a server.",
     )
     parser.add_argument(
         "--drift-port", type=int, help="Port for the drift-rate selection web UI."
@@ -2772,6 +2754,40 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _apply_cli_overrides(cfg: PlotConfig, args: argparse.Namespace) -> None:
     """Apply only explicit CLI overrides to a CSO plot configuration."""
+    if args.file_path:
+        cfg.file_path = str(args.file_path)
+    if args.time_start:
+        parsed = _parse_datetime_value(args.time_start)
+        if parsed is None:
+            raise ValueError(f"Invalid --time-start: {args.time_start!r}")
+        cfg.t_start = parsed
+    if args.time_end:
+        parsed = _parse_datetime_value(args.time_end)
+        if parsed is None:
+            raise ValueError(f"Invalid --time-end: {args.time_end!r}")
+        cfg.t_end = parsed
+    if args.frequency_start is not None:
+        cfg.f_start = float(args.frequency_start)
+    if args.frequency_end is not None:
+        cfg.f_end = float(args.frequency_end)
+    if args.output_dir:
+        cfg.save_path = str(args.output_dir)
+    if args.rebin_time is not None:
+        cfg.rebin_t_target = int(args.rebin_time)
+    if args.rebin_frequency is not None:
+        cfg.rebin_f_target = int(args.rebin_frequency)
+    if args.max_workers is not None:
+        cfg.max_workers = int(args.max_workers)
+    if args.plot_ll:
+        cfg.plot_ll = True
+    if args.plot_rr:
+        cfg.plot_rr = True
+    if args.no_plot_sum:
+        cfg.plot_sum = False
+    if args.no_plot_ratio:
+        cfg.plot_ratio = False
+    if args.export_drift_preview:
+        cfg.export_drift_selection_preview = True
     if args.disable_drift:
         cfg.enable_drift_rate_overlay = False
         cfg.drift_rate_mode = "off"
@@ -2878,7 +2894,6 @@ def _print_config_summary(cfg: PlotConfig, file_paths: list[str]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     """Run the CSO dynamic-spectrogram workflow."""
-    test_polarization_formula()
     cfg = PlotConfig()
     args, _unknown = build_parser().parse_known_args(argv)
     _apply_cli_overrides(cfg, args)

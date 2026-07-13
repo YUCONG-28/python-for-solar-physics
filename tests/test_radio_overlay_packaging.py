@@ -103,6 +103,8 @@ def test_overlay_cli_overrides_config_after_section_loading(monkeypatch, tmp_pat
             "2",
             "--aia-file-end-idx",
             "3",
+            "--workspace-config-json",
+            '{"gaussian":{"enable_gaussian_overlay":false}}',
         ],
         runner=lambda config: observed.update(config) or [],
     )
@@ -114,6 +116,7 @@ def test_overlay_cli_overrides_config_after_section_loading(monkeypatch, tmp_pat
         "aia_file_start_idx": 2,
         "aia_file_end_idx": 3,
     }
+    assert observed["gaussian"]["enable_gaussian_overlay"] is False
 
 
 def test_overlay_spectrogram_uses_packaged_drift_helpers(monkeypatch):

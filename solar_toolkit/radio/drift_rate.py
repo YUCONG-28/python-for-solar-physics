@@ -68,6 +68,45 @@ class DriftRateResult:
     warning: str = ""
 
 
+@dataclass(frozen=True)
+class _DriftRateCalculationProfile:
+    """Compatibility policy for constructing one drift-rate result."""
+
+    sort_endpoints_by_time: bool
+    zero_duration_policy: str
+    zero_duration_tolerance_s: float
+    default_label: str
+    default_mode: str
+    default_on_falsy: bool
+    warn_positive_drift: bool
+    strict_frequency_fields: bool
+
+
+_CANONICAL_DRIFT_RATE_PROFILE = _DriftRateCalculationProfile(
+    sort_endpoints_by_time=True,
+    zero_duration_policy="quality_flag",
+    zero_duration_tolerance_s=0.0,
+    default_label="drift_001",
+    default_mode="manual",
+    default_on_falsy=True,
+    warn_positive_drift=True,
+    strict_frequency_fields=False,
+)
+
+_CSO_DRIFT_RATE_PROFILE = _DriftRateCalculationProfile(
+    sort_endpoints_by_time=False,
+    zero_duration_policy="raise",
+    zero_duration_tolerance_s=1e-9,
+    default_label="drift",
+    default_mode="manual_endpoint",
+    default_on_falsy=False,
+    warn_positive_drift=False,
+    strict_frequency_fields=True,
+)
+
+_UNSET_DRIFT_TIME = object()
+
+
 def _datetime_iso_ms(value: datetime.datetime) -> str:
     return value.replace(tzinfo=None).isoformat(timespec="milliseconds")
 
@@ -79,30 +118,53 @@ def _drift_line_time(line: dict, key: str) -> datetime.datetime:
     return parsed
 
 
-def calculate_drift_rate_from_line(line: dict) -> DriftRateResult:
-    t_start = _drift_line_time(line, "t_start")
-    t_end = _drift_line_time(line, "t_end")
-    f_start = float(line.get("f_start_mhz"))
-    f_end = float(line.get("f_end_mhz"))
+def _calculate_drift_rate_from_line(
+    line: dict,
+    *,
+    profile: _DriftRateCalculationProfile = _CANONICAL_DRIFT_RATE_PROFILE,
+    t_start=_UNSET_DRIFT_TIME,
+    t_end=_UNSET_DRIFT_TIME,
+) -> DriftRateResult:
+    """Build a result under an explicit endpoint compatibility policy."""
+    if t_start is _UNSET_DRIFT_TIME:
+        t_start = _drift_line_time(line, "t_start")
+    if t_end is _UNSET_DRIFT_TIME:
+        t_end = _drift_line_time(line, "t_end")
+    if profile.strict_frequency_fields:
+        f_start = float(line["f_start_mhz"])
+        f_end = float(line["f_end_mhz"])
+    else:
+        f_start = float(line.get("f_start_mhz"))
+        f_end = float(line.get("f_end_mhz"))
     warning = ""
-    if t_end < t_start:
+    if profile.sort_endpoints_by_time and t_end < t_start:
         t_start, t_end = t_end, t_start
         f_start, f_end = f_end, f_start
         warning = "endpoints_sorted_by_time"
     duration_s = float((t_end - t_start).total_seconds())
     bandwidth_mhz = float(f_end - f_start)
-    if duration_s == 0:
+    if abs(duration_s) <= profile.zero_duration_tolerance_s:
+        if profile.zero_duration_policy == "raise":
+            raise ValueError(
+                f"Cannot calculate drift rate for zero-duration line: {line}"
+            )
         drift_rate = np.nan
         quality_flag = "invalid_zero_duration"
         warning = ";".join(filter(None, [warning, "zero_duration"]))
     else:
         drift_rate = float(bandwidth_mhz / duration_s)
         quality_flag = "ok"
-        if drift_rate > 0:
+        if profile.warn_positive_drift and drift_rate > 0:
             warning = ";".join(filter(None, [warning, "positive_drift_rate"]))
+    if profile.default_on_falsy:
+        label = str(line.get("label") or profile.default_label)
+        mode = str(line.get("mode") or profile.default_mode)
+    else:
+        label = str(line.get("label", profile.default_label))
+        mode = str(line.get("mode", profile.default_mode))
     return DriftRateResult(
-        label=str(line.get("label") or "drift_001"),
-        mode=str(line.get("mode") or "manual"),
+        label=label,
+        mode=mode,
         t_start=t_start,
         t_end=t_end,
         f_start_mhz=f_start,
@@ -115,6 +177,11 @@ def calculate_drift_rate_from_line(line: dict) -> DriftRateResult:
         quality_flag=quality_flag,
         warning=warning,
     )
+
+
+def calculate_drift_rate_from_line(line: dict) -> DriftRateResult:
+    """Calculate df/dt with the canonical sorted-endpoint semantics."""
+    return _calculate_drift_rate_from_line(line)
 
 
 def _mark_drift_range_warnings(results, cache):

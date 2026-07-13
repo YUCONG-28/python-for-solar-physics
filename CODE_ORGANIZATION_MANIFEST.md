@@ -60,6 +60,13 @@ Domain details:
   `solar_toolkit.radio.pipeline_workflow`, `source_map_workflow`, and
   `overlay_workflow`; the matching scripts and legacy paths are thin commands
   or true module aliases.
+- The integrated `/radio` workspace is package-owned by
+  `solar_toolkit.webapp.radio_workspace`. Its contracts/catalog and native
+  previews form the module-service layer; its store and runner persist and
+  orchestrate only explicitly selected actions. It calls canonical Radio
+  modules and never imports `scripts` or keeps a second scientific
+  implementation. The complete module and API map is documented in
+  [`docs/radio_workspace.md`](docs/radio_workspace.md).
 - `solar_toolkit.radio.provenance` writes `radio_run_provenance.json` beside a
   resolved analysis output. It records the resolved ROI, thresholds,
   Gaussian choices, WCS policy, Newkirk assumptions, configuration source,
@@ -125,11 +132,17 @@ Installed commands are registered in `pyproject.toml`:
 | `solar-aia` | `solar_toolkit.aia.cli:main` | Packaged AIA processing CLI. |
 | `solar-radio` | `solar_toolkit.radio.cli:main` | Dispatcher for `centers`, `pipeline`, `source-map`, `overlay`, `quicklook`, `raw-quality`, `roi-lightcurve`, and `trajectory`. |
 | `solar-image-viewer` | `solar_toolkit.visualization.image_web_viewer.cli:main` | Packaged local image viewer. |
-| `solar-webapp` | `solar_toolkit.webapp.cli:main` | Packaged local workbench; source-only recipes are shown as unavailable when their scripts are absent. |
+| `solar-webapp` | `solar_toolkit.webapp.cli:main` | Packaged single-port workbench with the modular `/radio` workspace; source-only recipes are shown as unavailable when their scripts are absent. |
 
 All eight `solar-radio` subcommands dispatch to installable package runners.
 They do not require a source checkout or `scripts.radio`; source scripts call
 the same command/workflow modules for compatibility.
+
+Within `/radio`, module enablement, collapse, pinning, ordering, and presets are
+persisted layout operations only. Preview and Run are action-scoped; confirmed
+Run Selected requests include only checked actions, and missing inputs never
+auto-run an upstream action. Workspace state and run manifests live below
+`<output-root>/radio_workbench/` with startup-declared allowed-root checks.
 
 `solar-radio` 的八个子命令均直接调用 wheel 内的包实现，不再依赖源码仓库或
 `scripts.radio`；旧脚本入口调用同一模块以保持兼容。

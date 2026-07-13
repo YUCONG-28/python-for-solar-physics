@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +14,24 @@ from .runner import JobContext, JobRunner, default_python_executable
 
 __all__ = ["create_app"]
 
+_RADIO_WORKSPACE_REPLACED_MODULE_IDS = frozenset(
+    {
+        "radio-burst-pipeline",
+        "radio-source-map",
+        "radio-center-extraction",
+        "radio-source-trajectory-app",
+        "radio-roi-lightcurve-app",
+        "rrll-percentile-preview-comparison",
+        "radio-trajectory-html-export",
+        "aia-radio-hmi-overlay",
+        "cso-spectrogram-legacy",
+        "radio-raw-quality",
+        "dem-radio-overlay",
+        "example-gaussian-newkirk-quicklook",
+        "example-aia-radio-hmi-overlay",
+    }
+)
+
 
 def create_app(
     allowed_roots: list[str | Path] | None = None,
@@ -21,6 +41,9 @@ def create_app(
     stop_on_client_close: bool = True,
     shutdown_callback=None,
     runner: JobRunner | None = None,
+    radio_output_root: str | Path | None = None,
+    radio_store=None,
+    radio_run_manager=None,
 ):
     """Create the Flask app. Flask is imported lazily because it is optional."""
 
@@ -31,15 +54,44 @@ def create_app(
         Path(repo_root).resolve() if repo_root is not None else package_dir.parents[1]
     )
     registry = default_registry(resolved_repo)
+    resolved_allowed_roots = [
+        Path(root).expanduser().resolve() for root in allowed_roots or []
+    ]
     context = JobContext(
         repo_root=resolved_repo,
-        allowed_roots=[Path(root) for root in allowed_roots or []],
+        allowed_roots=resolved_allowed_roots,
         python_executable=python_executable or default_python_executable(),
     )
     job_runner = runner or JobRunner(registry, context)
+    radio_root_token = secrets.token_urlsafe(32)
+
+    from .radio_workspace.api import create_radio_blueprint, request_is_local
+
+    radio_blueprint = create_radio_blueprint(
+        output_root=radio_output_root or resolved_repo,
+        allowed_roots=resolved_allowed_roots,
+        repo_root=resolved_repo,
+        python_executable=python_executable or default_python_executable(),
+        store=radio_store,
+        run_manager=radio_run_manager,
+        root_update_token=radio_root_token,
+    )
+    radio_manager = radio_blueprint.radio_run_manager
+    shutdown_lock = threading.Lock()
+    radio_closed = False
+
+    def close_radio_and_shutdown() -> None:
+        nonlocal radio_closed
+        with shutdown_lock:
+            if not radio_closed:
+                radio_closed = True
+                radio_manager.close(cancel_running=True)
+        if shutdown_callback is not None:
+            shutdown_callback()
+
     lifecycle = ClientLifecycle(
         stop_on_client_close=stop_on_client_close,
-        shutdown_callback=shutdown_callback,
+        shutdown_callback=close_radio_and_shutdown,
     )
 
     app = Flask(
@@ -47,10 +99,20 @@ def create_app(
         template_folder=str(package_dir / "templates"),
         static_folder=str(package_dir / "static"),
     )
+    app.register_blueprint(radio_blueprint)
+    app.extensions["radio_workspace"] = {
+        "store": radio_blueprint.radio_workspace_store,
+        "run_manager": radio_manager,
+        "close": close_radio_and_shutdown,
+    }
 
     @app.get("/")
     def index():
         return render_template("index.html")
+
+    @app.get("/radio")
+    def radio_workspace():
+        return render_template("radio.html")
 
     @app.get("/api/health")
     def health():
@@ -59,6 +121,11 @@ def create_app(
     @app.get("/api/modules")
     def modules():
         payload = registry.to_public_dict()
+        payload["modules"] = [
+            item
+            for item in payload["modules"]
+            if item["id"] not in _RADIO_WORKSPACE_REPLACED_MODULE_IDS
+        ]
         return jsonify({"ok": True, **payload})
 
     @app.get("/api/modules/<module_id>")
@@ -99,7 +166,12 @@ def create_app(
 
     @app.get("/api/client-config")
     def client_config():
-        return jsonify(lifecycle.config())
+        payload = lifecycle.config()
+        if request_is_local(request):
+            payload["radio_root_token"] = radio_root_token
+        response = jsonify(payload)
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.post("/api/client-heartbeat")
     def client_heartbeat():

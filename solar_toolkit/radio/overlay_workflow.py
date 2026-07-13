@@ -47,17 +47,38 @@ from numpy.typing import NDArray  # noqa: E402
 from scipy.interpolate import RegularGridInterpolator, griddata  # noqa: E402
 from scipy.ndimage import (  # noqa: E402
     binary_dilation,
-    find_objects,
     gaussian_filter,
-    label,
 )
 from scipy.optimize import curve_fit  # noqa: E402
 
 from solar_toolkit.aia.config import AIA_CONFIG  # noqa: E402
+from solar_toolkit.modeling.gaussian import (  # noqa: E402
+    elliptical_gaussian_2d as _canonical_elliptical_gaussian_2d,
+    true_indices as _canonical_true_indices,
+)
 from solar_toolkit.path_config import apply_config_to_object  # noqa: E402
 from solar_toolkit.visualization.video_cli import write_video_from_paths  # noqa: E402
 
-from .coordinates import normalize_roi_bounds_arcsec  # noqa: E402
+from .coordinates import (  # noqa: E402
+    data_coord_to_pixel as _canonical_data_coord_to_pixel,
+    normalize_roi_bounds_arcsec,
+    pixel_to_data_coord as _canonical_pixel_to_data_coord,
+    unravel_2d_index as _canonical_unravel_2d_index,
+)
+from .gaussian import (  # noqa: E402
+    GaussianFitResult as _CanonicalGaussianFitResult,
+    _gaussian_fit_diag_defaults as _canonical_gaussian_fit_diag_defaults,
+    _gaussian_quality_config as _canonical_gaussian_quality_config,
+    _limit_fit_pixels as _canonical_limit_fit_pixels,
+    _roi_slices_from_mask as _canonical_roi_slices_from_mask,
+)
+from .gaussian_background import (  # noqa: E402
+    _safe_rms_map as _canonical_safe_rms_map,
+    estimate_background_noise as _canonical_estimate_background_noise,
+)
+from .gaussian_masks import (  # noqa: E402
+    _select_peak_connected_mask as _canonical_select_peak_connected_mask,
+)
 from .spectrogram import (  # noqa: E402
     build_spectrogram_cache,
     overlay_spectrogram_panel,
@@ -666,23 +687,7 @@ def apply_aia_radio_hmi_user_config(cfg: Config, user_config: dict | None) -> Co
     return cfg
 
 
-@dataclass
-class GaussianFitResult:
-    model: np.ndarray
-    gaussian_only_model: np.ndarray
-    center_pixel: tuple[float, float]
-    center_arcsec: tuple[float, float]
-    sigma_pixel: tuple[float, float]
-    theta_rad: float
-    amplitude: float
-    background_level: float | None
-    noise_sigma: float | None
-    snr: float | None
-    residual_rms: float | None
-    quality_flag: str
-    covariance: np.ndarray | None
-    mask_pixel_count: int
-    source_file: str | None = None
+GaussianFitResult = _CanonicalGaussianFitResult
 
 
 @dataclass
@@ -1684,25 +1689,17 @@ def elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta):
         theta  : 长轴相对于 x 轴的角度（弧度）
     返回：对应坐标的高斯值
     """
-    x, y = xy
-    cos_t = np.cos(theta)
-    sin_t = np.sin(theta)
-    x_rot = (x - x0) * cos_t + (y - y0) * sin_t
-    y_rot = -(x - x0) * sin_t + (y - y0) * cos_t
-    exponent = (x_rot**2) / (2 * sigma_x**2) + (y_rot**2) / (2 * sigma_y**2)
-    return A * np.exp(-exponent)
+    return _canonical_elliptical_gaussian_2d(xy, A, x0, y0, sigma_x, sigma_y, theta)
 
 
 def _unravel_2d_index(
     flat_index: int | np.integer, shape: tuple[int, ...]
 ) -> tuple[int, int]:
-    coords = np.asarray(np.unravel_index(int(flat_index), shape), dtype=np.intp)
-    return int(coords[0]), int(coords[1])
+    return _canonical_unravel_2d_index(flat_index, shape)
 
 
 def _true_indices(mask: np.ndarray) -> IntArray:
-    mask_bool = np.asarray(mask, dtype=np.bool_)
-    return np.asarray(np.nonzero(mask_bool)[0], dtype=np.intp)
+    return _canonical_true_indices(mask)
 
 
 def fit_elliptical_gaussian(data, x, y, initial_guess=None):
@@ -1795,19 +1792,12 @@ def gaussian_only_from_popt(xy, popt, background_model):
 
 
 def estimate_background_noise(data, source_exclusion_mask=None):
-    work = np.asarray(data, dtype=np.float64)
-    valid_mask = np.isfinite(work)
-    if source_exclusion_mask is not None:
-        valid_mask &= ~np.asarray(source_exclusion_mask, dtype=np.bool_)
-    finite_data = work[valid_mask]
-    if finite_data.size == 0:
-        return np.nan, np.nan
-    background_level = float(np.nanmedian(finite_data))
-    mad = float(np.nanmedian(np.abs(finite_data - background_level)))
-    noise_sigma = 1.4826 * mad
-    if not np.isfinite(noise_sigma) or noise_sigma <= 0:
-        noise_sigma = float(np.nanstd(finite_data))
-    return background_level, noise_sigma
+    exclusion = (
+        None
+        if source_exclusion_mask is None
+        else np.asarray(source_exclusion_mask, dtype=np.bool_)
+    )
+    return _canonical_estimate_background_noise(data, exclusion)
 
 
 def _robust_median_mad(values):
@@ -1842,13 +1832,8 @@ def _sigma_clip_values(values, sigma=3.0, iters=3):
 
 
 def _safe_rms_map(rms_map):
-    safe = np.asarray(rms_map, dtype=np.float64).copy()
-    finite_positive = safe[np.isfinite(safe) & (safe > 0)]
-    fallback = float(np.nanmedian(finite_positive)) if finite_positive.size else 1.0
-    if not np.isfinite(fallback) or fallback <= 0:
-        fallback = 1.0
-    safe[~np.isfinite(safe) | (safe <= 0)] = fallback
-    return np.maximum(safe, 1e-12)
+    # Overlay historically enforced an additional positive numerical floor.
+    return np.maximum(_canonical_safe_rms_map(rms_map), 1e-12)
 
 
 def _mesh_values_to_map(mesh_y, mesh_x, mesh_values, shape, fill_value):
@@ -1970,40 +1955,26 @@ def _select_peak_connected_mask(
     snr_map=None,
     work=None,
 ):
-    labeled, _ = label(source_mask_bool)
-    peak_label = labeled[peak_y, peak_x]
-    if peak_label == 0:
-        object_slices = find_objects(labeled)
-        if not object_slices:
-            main_mask = source_mask_bool
-        else:
-            labels = np.arange(1, int(labeled.max()) + 1)
-            scores = []
-            for lab in labels:
-                component = labeled == lab
-                score_map = snr_map if use_snr and snr_map is not None else work
-                score = float(np.nanmax(np.where(component, score_map, np.nan)))
-                if not np.isfinite(score):
-                    score = float(np.count_nonzero(component))
-                scores.append(score)
-            peak_label = int(labels[int(np.argmax(scores))]) if scores else 0
-            main_mask = np.asarray(labeled == peak_label, dtype=np.bool_)
-    else:
-        main_mask = np.asarray(labeled == peak_label, dtype=np.bool_)
-    if use_snr:
-        grown_labels, _ = label(grow_mask)
-        grow_label = grown_labels[peak_y, peak_x]
-        if grow_label == 0 and peak_label > 0:
-            overlap = grown_labels[main_mask]
-            overlap = overlap[overlap > 0]
-            if overlap.size:
-                grow_label = int(np.bincount(overlap).argmax())
-        if grow_label > 0:
-            main_mask = np.asarray(grown_labels == grow_label, dtype=np.bool_)
-    return np.asarray(main_mask, dtype=np.bool_)
+    return _canonical_select_peak_connected_mask(
+        source_mask_bool,
+        grow_mask,
+        peak_y,
+        peak_x,
+        use_snr=use_snr,
+        snr_map=snr_map,
+        work=work,
+    )
 
 
 def create_source_mask(data, cfg, background_map=None, rms_map=None):
+    """Build the overlay-calibrated source mask.
+
+    This remains overlay-owned intentionally: its default peak/growth fractions,
+    target mask sizes, dilation, and minimum pixel count are tuned differently
+    from :mod:`solar_toolkit.radio.gaussian_masks`. Direct delegation would alter
+    which radio source pixels enter the scientific fit.
+    """
+
     work = np.asarray(data, dtype=np.float64)
     finite_data = work[np.isfinite(work)]
     diagnostics = {
@@ -2234,33 +2205,11 @@ def create_source_mask(data, cfg, background_map=None, rms_map=None):
 
 
 def _gaussian_fit_diag_defaults(cfg):
-    return {
-        "gaussian_fit_method": "skipped",
-        "roi_used": False,
-        "roi_shape": "",
-        "fit_pixel_count_before_limit": 0,
-        "fit_pixel_count_after_limit": 0,
-        "maxfev": int(cfg.get("gaussian_fit_maxfev", 8000)),
-        "initial_center_pixel": "",
-        "initial_sigma_x_pixel": np.nan,
-        "initial_sigma_y_pixel": np.nan,
-        "normalization_scale": np.nan,
-    }
+    return _canonical_gaussian_fit_diag_defaults(cfg)
 
 
 def _roi_slices_from_mask(mask, shape, padding):
-    if mask is None or not np.any(mask):
-        return slice(0, shape[0]), slice(0, shape[1]), False
-    ys, xs = np.nonzero(mask)
-    if ys.size == 0 or xs.size == 0:
-        return slice(0, shape[0]), slice(0, shape[1]), False
-    pad = max(int(padding), 0)
-    y0 = max(int(np.min(ys)) - pad, 0)
-    y1 = min(int(np.max(ys)) + pad + 1, shape[0])
-    x0 = max(int(np.min(xs)) - pad, 0)
-    x1 = min(int(np.max(xs)) + pad + 1, shape[1])
-    roi_used = (y0 > 0) or (x0 > 0) or (y1 < shape[0]) or (x1 < shape[1])
-    return slice(y0, y1), slice(x0, x1), roi_used
+    return _canonical_roi_slices_from_mask(mask, shape, padding)
 
 
 def _weighted_moment_initial_guess(x, y, z, bg, nx, ny, peak_x, peak_y, cfg):
@@ -2289,31 +2238,11 @@ def _weighted_moment_initial_guess(x, y, z, bg, nx, ny, peak_x, peak_y, cfg):
 
 
 def _limit_fit_pixels(x, y, z, peak_x, peak_y, max_pixels):
-    count = int(z.size)
-    max_pixels = int(max_pixels or 0)
-    if max_pixels <= 0 or count <= max_pixels:
-        return x, y, z, count, count
-    intensity_rank = np.asarray(z, dtype=np.float64)
-    finite_intensity = intensity_rank[np.isfinite(intensity_rank)]
-    fill = float(np.nanmin(finite_intensity)) if finite_intensity.size else 0.0
-    intensity_rank = np.where(np.isfinite(intensity_rank), intensity_rank, fill)
-    dist2 = (x - peak_x) ** 2 + (y - peak_y) ** 2
-    order = np.lexsort((dist2, -intensity_rank))
-    keep = np.sort(order[:max_pixels])
-    return x[keep], y[keep], z[keep], count, int(keep.size)
+    return _canonical_limit_fit_pixels(x, y, z, peak_x, peak_y, max_pixels)
 
 
 def _gaussian_quality_config(cfg):
-    quality_cfg = dict(cfg.get("gaussian_quality_requirements", {}) or {})
-    quality_cfg.setdefault("require_quality_ok", True)
-    quality_cfg.setdefault("max_fwhm_arcsec", cfg.get("max_fwhm_arcsec", 1800.0))
-    quality_cfg.setdefault(
-        "max_center_peak_distance_arcsec",
-        cfg.get("max_center_peak_distance_arcsec", 300.0),
-    )
-    quality_cfg.setdefault("min_snr", cfg.get("fit_snr_threshold", 5.0))
-    quality_cfg.setdefault("max_residual_rms_fraction", 0.8)
-    return quality_cfg
+    return _canonical_gaussian_quality_config(cfg)
 
 
 def _set_gaussian_failure_diag(
@@ -2358,35 +2287,13 @@ def _fit_failure_warning(source_file, quality_flag, detail=""):
 def pixel_to_data_coord(
     x_pix, y_pix, extent, shape, origin="upper"
 ) -> tuple[float, float]:
-    left, right, bottom, top = map(float, extent)
-    ny, nx = shape
-    dx = (right - left) / max(float(nx), 1.0)
-    dy = (top - bottom) / max(float(ny), 1.0)
-    x_arcsec = left + (float(x_pix) + 0.5) * dx
-    if origin == "upper":
-        y_arcsec = top - (float(y_pix) + 0.5) * dy
-    elif origin == "lower":
-        y_arcsec = bottom + (float(y_pix) + 0.5) * dy
-    else:
-        raise ValueError(f"Unsupported image origin: {origin}")
-    return float(x_arcsec), float(y_arcsec)
+    return _canonical_pixel_to_data_coord(x_pix, y_pix, extent, shape, origin)
 
 
 def data_coord_to_pixel(
     x_arcsec, y_arcsec, extent, shape, origin="upper"
 ) -> tuple[float, float]:
-    left, right, bottom, top = map(float, extent)
-    ny, nx = shape
-    dx = (right - left) / max(float(nx), 1.0)
-    dy = (top - bottom) / max(float(ny), 1.0)
-    x_pix = (float(x_arcsec) - left) / dx - 0.5
-    if origin == "upper":
-        y_pix = (top - float(y_arcsec)) / dy - 0.5
-    elif origin == "lower":
-        y_pix = (float(y_arcsec) - bottom) / dy - 0.5
-    else:
-        raise ValueError(f"Unsupported image origin: {origin}")
-    return float(x_pix), float(y_pix)
+    return _canonical_data_coord_to_pixel(x_arcsec, y_arcsec, extent, shape, origin)
 
 
 def coordinate_roundtrip_error_pixel(
@@ -2497,6 +2404,14 @@ def fit_elliptical_gaussian_on_radio_image(
     fit_input_type="raw",
     image_origin=None,
 ):
+    """Fit with the overlay-specific mask, ROI, and quality contract.
+
+    The canonical fitter additionally supports source-mask overrides and uses
+    different default mask sizes, ROI padding, fit-pixel limits, failure
+    metadata, and validity rules. Keeping this body local avoids changing
+    established overlay products while pure helpers delegate above.
+    """
+
     work = np.asarray(data, dtype=np.float64)
     image_origin = image_origin or cfg.get("_current_radio_image_origin", "upper")
     cfg.pop("_last_gaussian_failure_diag", None)

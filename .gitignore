@@ -210,6 +210,9 @@ pytest-cache-files-*/
 .coverage
 htmlcov/
 
+# Local persisted Radio Workspace state and run artifacts
+/radio_workbench/
+
 # PDF exports
 *.pdf
 

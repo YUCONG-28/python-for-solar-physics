@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import json
 from copy import deepcopy
 from pathlib import Path
 
@@ -75,6 +76,38 @@ def test_source_map_explicit_config_overrides_path_config(monkeypatch):
     )
 
     assert source_map_workflow.CONFIG["output_dir"] == "explicit-output"
+
+
+def test_source_map_cli_applies_structured_workspace_config(monkeypatch):
+    observed = {}
+    monkeypatch.setattr(
+        source_map_cli,
+        "load_radio_user_config",
+        lambda _source: (
+            {"features": {"gaussian_overlay": True}, "gaussian": {}},
+            {},
+        ),
+    )
+    monkeypatch.setattr(
+        source_map_cli, "resolve_provenance_output_dir", lambda _cfg: None
+    )
+
+    status = source_map_cli.main(
+        [
+            "--workspace-config-json",
+            json.dumps(
+                {
+                    "features": {"gaussian_overlay": False},
+                    "gaussian": {"fit_snr_threshold": 7.5},
+                }
+            ),
+        ],
+        runner=lambda config: observed.update(config) or 0,
+    )
+
+    assert status == 0
+    assert observed["features"]["gaussian_overlay"] is False
+    assert observed["gaussian"]["fit_snr_threshold"] == 7.5
 
 
 def test_package_workflows_have_no_repository_only_imports():

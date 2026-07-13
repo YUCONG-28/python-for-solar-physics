@@ -16,6 +16,7 @@ current source of truth.
 | `FUNCTION_MAP.md` | Canonical implementation, CLI, and alias mapping. / 规范实现、CLI 与别名映射。 |
 | `script_index.md` | Thin source-checkout entrypoints and installed commands. / 源码薄入口与安装命令。 |
 | `quickstart.md` | Beginner-safe environment and smoke-test workflow. / 面向初学者的环境与冒烟流程。 |
+| `radio_workspace.md` | Integrated Radio module inventory, selective execution rules, persistence, API, and compatibility map. |
 | `MAIN_FILES.md` | Compact maintainer file map. / 维护者文件速查。 |
 | `path_configuration.md` | Local path configuration without committed personal paths. / 不提交个人路径的本地配置方法。 |
 | `validation/astropy_sunpy_reorg_parity.md` | Real-data structural parity evidence and exact exclusions. / 真实数据结构等价证据与未覆盖项。 |

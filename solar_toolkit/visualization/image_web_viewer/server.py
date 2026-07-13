@@ -75,6 +75,15 @@ class ClientLifecycle:
             return {"ok": False, "error": "client_id is required"}
         with self._lock:
             self._clients[client_id] = time.monotonic()
+            if (
+                self.stop_on_client_close
+                and self.shutdown_callback is not None
+                and not self.shutdown_requested
+                and not (self._timer and self._timer.is_alive())
+            ):
+                self._start_timer_locked(
+                    self.heartbeat_timeout_seconds + self.close_grace_seconds
+                )
         return {"ok": True}
 
     def close(
@@ -98,22 +107,33 @@ class ClientLifecycle:
                 return
             if self._timer and self._timer.is_alive():
                 self._timer.cancel()
-            self._timer = threading.Timer(
-                self.close_grace_seconds, self._maybe_shutdown
-            )
-            self._timer.daemon = True
-            self._timer.start()
+            self._start_timer_locked(self.close_grace_seconds)
+
+    def _start_timer_locked(self, delay_seconds: float) -> None:
+        self._timer = threading.Timer(
+            max(float(delay_seconds), 0.001), self._maybe_shutdown
+        )
+        self._timer.daemon = True
+        self._timer.start()
 
     def _maybe_shutdown(self) -> None:
         callback: Callable[[], None] | None = None
         now = time.monotonic()
         with self._lock:
+            self._timer = None
             self._clients = {
                 client_id: seen_at
                 for client_id, seen_at in self._clients.items()
                 if now - seen_at <= self.heartbeat_timeout_seconds
             }
-            if self._clients or self.shutdown_requested:
+            if self.shutdown_requested:
+                return
+            if self._clients:
+                remaining = max(
+                    self.heartbeat_timeout_seconds - (now - seen_at)
+                    for seen_at in self._clients.values()
+                )
+                self._start_timer_locked(remaining + self.close_grace_seconds)
                 return
             self.shutdown_requested = True
             callback = self.shutdown_callback

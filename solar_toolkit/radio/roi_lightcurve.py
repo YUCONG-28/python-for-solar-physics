@@ -639,8 +639,7 @@ def _materialize_roi_extraction(
     """Read and measure the image work described by an extraction plan."""
 
     rows = [
-        _row_from_metadata(item, roi, default_pol=default_pol)
-        for item in plan.selected
+        _row_from_metadata(item, roi, default_pol=default_pol) for item in plan.selected
     ]
     rows.extend(
         _row_from_paired_metadata(left, right, roi, default_pol=default_pol)
@@ -857,9 +856,7 @@ def _row_from_fast_pair(
     right_meta = right.meta
     midpoint = left_meta.obs_time
     if left_meta.obs_time is not None and right_meta.obs_time is not None:
-        midpoint = left_meta.obs_time + (
-            right_meta.obs_time - left_meta.obs_time
-        ) / 2
+        midpoint = left_meta.obs_time + (right_meta.obs_time - left_meta.obs_time) / 2
     row = _base_row(
         roi,
         obs_time=midpoint,
@@ -884,9 +881,7 @@ def _row_from_fast_pair(
 
 def _measure_roi_values(values: np.ndarray, roi_pixel_count: int) -> dict[str, Any]:
     if roi_pixel_count <= 0:
-        return _empty_measurement(
-            "empty_roi", "ROI does not intersect this image WCS"
-        )
+        return _empty_measurement("empty_roi", "ROI does not intersect this image WCS")
     finite = np.isfinite(values)
     valid_count = int(np.count_nonzero(finite))
     if valid_count <= 0:
@@ -924,10 +919,9 @@ def write_radio_roi_products(
     run_metadata: dict[str, Any] | None = None,
     metric: str = "raw_sum",
     lightcurve_y_limits: tuple[float, float] | None = None,
-    lightcurve_frequency_y_limits: Mapping[
-        float, tuple[float, float] | None
-    ]
-    | None = None,
+    lightcurve_frequency_y_limits: (
+        Mapping[float, tuple[float, float] | None] | None
+    ) = None,
     lightcurve_marker_size: float = 3.0,
     lightcurve_detail_frequency_mhz: float | None = None,
     selected_products: list[str] | tuple[str, ...] | set[str] | None = None,
@@ -970,10 +964,9 @@ def build_radio_roi_artifacts(
     run_metadata: dict[str, Any] | None = None,
     metric: str = "raw_sum",
     lightcurve_y_limits: tuple[float, float] | None = None,
-    lightcurve_frequency_y_limits: Mapping[
-        float, tuple[float, float] | None
-    ]
-    | None = None,
+    lightcurve_frequency_y_limits: (
+        Mapping[float, tuple[float, float] | None] | None
+    ) = None,
     lightcurve_marker_size: float = 3.0,
     lightcurve_detail_frequency_mhz: float | None = None,
     selected_products: list[str] | tuple[str, ...] | set[str] | None = None,
@@ -985,9 +978,7 @@ def build_radio_roi_artifacts(
     normalized_frequency_limits = _normalize_lightcurve_frequency_y_limits(
         lightcurve_frequency_y_limits
     )
-    normalized_marker_size = _normalize_lightcurve_marker_size(
-        lightcurve_marker_size
-    )
+    normalized_marker_size = _normalize_lightcurve_marker_size(lightcurve_marker_size)
     normalized_detail_frequency = _normalize_detail_frequency(
         lightcurve_detail_frequency_mhz
     )
@@ -1104,6 +1095,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Metric used in the default PNG curve.",
     )
     parser.add_argument(
+        "--selected-products",
+        help=(
+            "Comma-separated export products. Supported values: "
+            + ", ".join(PRODUCT_FILENAMES)
+            + ". The compatibility default remains csv,json,reference_png,"
+            "lightcurve_png."
+        ),
+    )
+    parser.add_argument(
+        "--detail-frequency-mhz",
+        type=float,
+        help="Frequency used by the optional detailed light-curve plot.",
+    )
+    parser.add_argument(
         "--overwrite", action="store_true", help="Write directly into --out-dir."
     )
     return parser
@@ -1119,6 +1124,11 @@ def run_radio_roi_lightcurve(argv: list[str] | None = None) -> dict[str, Path]:
         else _parse_roi_bounds(args.roi_bounds)
     )
     freqs = _parse_float_csv(args.freqs)
+    selected_products = _normalize_selected_products(
+        _parse_text_csv(args.selected_products)
+        if args.selected_products is not None
+        else None
+    )
     df = extract_radio_roi_lightcurve(
         args.radio_dir,
         roi,
@@ -1153,8 +1163,12 @@ def run_radio_roi_lightcurve(argv: list[str] | None = None) -> dict[str, Path]:
             "time_end": args.time_end or "",
             "pair_time_tolerance_sec": float(args.pair_time_tolerance_sec),
             "metric": args.metric,
+            "selected_products": list(selected_products),
+            "detail_frequency_mhz": args.detail_frequency_mhz,
         },
         metric=args.metric,
+        lightcurve_detail_frequency_mhz=args.detail_frequency_mhz,
+        selected_products=selected_products,
         unique_run=not bool(args.overwrite),
     )
 
@@ -1165,10 +1179,17 @@ def main(argv: list[str] | None = None) -> int:
     products = run_radio_roi_lightcurve(argv)
     print("[Radio ROI Light Curve] outputs:")
     print(f"  Output directory: {products['output_dir']}")
-    print(f"  Statistics CSV: {products['csv']}")
-    print(f"  ROI JSON: {products['json']}")
-    print(f"  Reference PNG: {products['reference_png']}")
-    print(f"  Light curve PNG: {products['lightcurve_png']}")
+    labels = {
+        "csv": "Statistics CSV",
+        "json": "ROI JSON",
+        "reference_png": "Reference PNG",
+        "lightcurve_png": "Light curve PNG",
+        "lightcurve_detail_png": "Detailed light curve PNG",
+        "lightcurve_normalized_png": "Normalized light curve PNG",
+    }
+    for key, label in labels.items():
+        if key in products:
+            print(f"  {label}: {products[key]}")
     return 0
 
 
@@ -1503,8 +1524,10 @@ def _build_roi_crop_plan(
         )
     elif roi.kind == "polygon":
         points = np.column_stack((x_arcsec.ravel(), y_arcsec.ravel()))
-        mask = MplPath(vertices).contains_points(points, radius=1e-12).reshape(
-            x_arcsec.shape
+        mask = (
+            MplPath(vertices)
+            .contains_points(points, radius=1e-12)
+            .reshape(x_arcsec.shape)
         )
     else:
         raise ValueError(f"unsupported ROI kind: {roi.kind!r}")
@@ -1915,13 +1938,10 @@ def _plan_paired_sum_metadata(
     indexed_right = list(enumerate(right_items))
     right_groups: dict[float, list[tuple[int, _RadioImageMeta]]] = {}
     for original_index, item in indexed_right:
-        right_groups.setdefault(float(item.freq_mhz), []).append(
-            (original_index, item)
-        )
+        right_groups.setdefault(float(item.freq_mhz), []).append((original_index, item))
     frequency_keys = sorted(right_groups)
     active_groups = {
-        frequency: _ActiveTimeIndex(items)
-        for frequency, items in right_groups.items()
+        frequency: _ActiveTimeIndex(items) for frequency, items in right_groups.items()
     }
 
     paired: list[tuple[_RadioImageMeta, _RadioImageMeta]] = []
@@ -1935,9 +1955,7 @@ def _plan_paired_sum_metadata(
         last_group = bisect_right(
             frequency_keys, float(left.freq_mhz) + frequency_tolerance
         )
-        candidate: tuple[
-            float, int, _RadioImageMeta, float, int
-        ] | None = None
+        candidate: tuple[float, int, _RadioImageMeta, float, int] | None = None
         for frequency in frequency_keys[first_group:last_group]:
             if not _same_frequency(left.freq_mhz, frequency):
                 continue
@@ -2182,9 +2200,7 @@ def _plot_radio_roi_lightcurve_detail(
     import matplotlib.pyplot as plt
 
     global_limits = _normalize_lightcurve_y_limits(y_limits)
-    per_frequency_limits = _normalize_lightcurve_frequency_y_limits(
-        frequency_y_limits
-    )
+    per_frequency_limits = _normalize_lightcurve_frequency_y_limits(frequency_y_limits)
     marker_size = _normalize_lightcurve_marker_size(marker_size)
     requested_frequency = _normalize_detail_frequency(detail_frequency_mhz)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -2251,9 +2267,7 @@ def _plot_radio_roi_lightcurve_normalized(
     import matplotlib.pyplot as plt
 
     global_limits = _normalize_lightcurve_y_limits(y_limits)
-    per_frequency_limits = _normalize_lightcurve_frequency_y_limits(
-        frequency_y_limits
-    )
+    per_frequency_limits = _normalize_lightcurve_frequency_y_limits(frequency_y_limits)
     marker_size = _normalize_lightcurve_marker_size(marker_size)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = _lightcurve_plot_data(df, metric)
@@ -2404,9 +2418,7 @@ def _normalize_lightcurve_y_limits(
     if not (np.isfinite(lower) and np.isfinite(upper)):
         raise ValueError("lightcurve_y_limits must contain finite numbers")
     if lower >= upper:
-        raise ValueError(
-            "lightcurve_y_limits minimum must be less than its maximum"
-        )
+        raise ValueError("lightcurve_y_limits minimum must be less than its maximum")
     return lower, upper
 
 
@@ -2844,6 +2856,12 @@ def _parse_float_csv(raw: str | None) -> list[float]:
     if not raw:
         return []
     return [float(item.strip()) for item in raw.split(",") if item.strip()]
+
+
+def _parse_text_csv(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 def _parse_optional_datetime(

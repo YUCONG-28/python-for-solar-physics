@@ -48,6 +48,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the resolved overlay output directory.",
     )
     parser.add_argument(
+        "--workspace-config-json",
+        help="Structured Radio Workspace overrides encoded as a JSON object.",
+    )
+    parser.add_argument(
         "--aia-file-start-idx",
         type=int,
         help="Override the inclusive AIA selection start index.",
@@ -77,6 +81,11 @@ def _apply_cli_overrides(user_config: dict, args: argparse.Namespace) -> dict:
     """Apply explicit CLI values after the selected config section."""
 
     resolved = deepcopy(user_config)
+    if args.workspace_config_json:
+        overrides = json.loads(args.workspace_config_json)
+        if not isinstance(overrides, dict):
+            raise TypeError("--workspace-config-json must contain a JSON object")
+        resolved = _deep_merge(resolved, overrides)
     if args.output_dir is not None:
         resolved.setdefault("paths", {})["output_dir"] = args.output_dir
         resolved.setdefault("output", {})["output_dir"] = args.output_dir
@@ -85,6 +94,16 @@ def _apply_cli_overrides(user_config: dict, args: argparse.Namespace) -> dict:
     if args.aia_file_end_idx is not None:
         resolved.setdefault("aia", {})["aia_file_end_idx"] = args.aia_file_end_idx
     return resolved
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    result = deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = deepcopy(value)
+    return result
 
 
 def main(

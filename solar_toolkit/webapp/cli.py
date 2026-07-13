@@ -34,6 +34,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Python executable used for launched project workflows.",
     )
     parser.add_argument(
+        "--radio-output-root",
+        default=None,
+        help=(
+            "Default root for persisted Radio Workspaces. This startup-declared "
+            "root is allowed for workspace files; the repository root is used "
+            "when omitted."
+        ),
+    )
+    parser.add_argument(
         "--open-browser",
         action="store_true",
         help="Open the workbench URL in the default browser after startup.",
@@ -85,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
         repo_root=repo_root,
         stop_on_client_close=not args.keep_alive_after_close,
         shutdown_callback=request_shutdown,
+        radio_output_root=args.radio_output_root,
     )
     url = f"http://{args.host}:{args.port}/"
     if args.open_browser:
@@ -94,6 +104,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         server.serve_forever()
     finally:
+        radio_extension = app.extensions.get("radio_workspace", {})
+        manager = radio_extension.get("run_manager")
+        if manager is not None:
+            manager.close(cancel_running=True)
         server.server_close()
     return 0
 

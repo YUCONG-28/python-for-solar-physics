@@ -21,12 +21,17 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
     - `config.py` and `configs/`: canonical validated loader and installable event configurations; `scripts.radio.configs` keeps aliases.
     - `pipeline_workflow.py`, `source_map_workflow.py`, `overlay_workflow.py`: package-owned complete orchestration.
     - `roi_lightcurve.py`, `roi_lightcurve_app.py`, `roi_lightcurve_launcher.py`: ROI statistics, Streamlit UI, and managed launcher.
+    - `roi_selection_cli.py`, `drift_selection_cli.py`, `trajectory_media_cli.py`, `existing_fit_overlay.py`, `existing_fit_overlay_cli.py`: independent structured action services/adapters used by the integrated Radio Workspace; the existing-fit overlay consumes persisted center/Gaussian CSV products and never reruns fitting.
   - `xray_dem/`: X-ray, HXI, Neupert, DEM, image, comparison, and overlay workflow implementations.
   - `cme/`: LASCO/CME helper boundary.
   - `net/`: archive query and download helper boundary.
   - `modeling/`: shared Gaussian and density-model boundary.
   - `visualization/`: shared plotting, media-generation, local image sequence viewer, video export, and interactive HTML visualization helpers.
   - `webapp/`: unified local English web GUI, workflow registry, and job runner.
+    - `radio_workspace/contracts.py` and `catalog.py`: versioned module/action/workspace/run/artifact contracts and the eight fused Radio modules.
+    - `radio_workspace/store.py`, `runner.py`, and `api.py`: allowed-root persistence, selected-action orchestration, artifacts, cancellation, recovery, and `/api/radio/*`.
+    - `radio_workspace/native_previews.py`: same-page ROI, drift, and trajectory Plotly payloads without an external Streamlit service.
+    - `templates/radio.html`, `static/radio.css`, and `static/radio.js`: the `/radio` interface and local Plotly/Mediabunny integration.
   - `path_config.py`: local YAML path/config loading.
   - `solar_analysis_utils.py`: compatibility facade for shared time, FITS ordering, map, memory, and plotting utilities.
 
@@ -62,7 +67,8 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
 - `solar_toolkit/visualization/_media_assets/`
   - Internal canonical package for the bundled Mediabunny recorder, shared browser recorder API, and license files; the old non-private path remains a compatibility alias.
 - `scripts/tools/run_solar_webapp.py`
-  - Unified local English web GUI for registered public workflows.
+  - Unified local English web GUI for registered public workflows and the modular `/radio` workspace on the same port.
+  - Radio module selection and presets only change layout; only a per-action Run or confirmed Run Selected request starts work.
 
 ## Compatibility Layers
 
@@ -85,6 +91,7 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
 ## Documentation
 
 - `docs/quickstart.md`: beginner setup, no-data validation, first imports, and safe entrypoint checks.
+- `docs/radio_workspace.md`: complete Radio module inventory, selective execution rules, workspace persistence, API, and compatibility map.
 - `docs/FUNCTION_MAP.md`: package and compatibility map.
 - `CODE_ORGANIZATION_MANIFEST.md`: authoritative repository layout and data policy.
 - `docs/script_index.md`: runnable script index.

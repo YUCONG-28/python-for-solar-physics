@@ -142,7 +142,26 @@ D:\miniforge3\envs\solarphysics_env\python.exe scripts\tools\run_solar_webapp.py
 
 For the current public script inventory, use `docs/script_index.md`.
 
-## 5. First Real Workflows
+## 5. Open the Modular Radio Workspace
+
+After declaring the local folders that the application may access, start the
+existing workbench and open `/radio` on the same host and port:
+
+```powershell
+solar-webapp `
+  --allowed-roots "D:\radio_data;D:\analysis_outputs" `
+  --radio-output-root D:\analysis_outputs `
+  --open-browser
+```
+
+The Radio Workspace does not assume a full pipeline run. Select only the needed
+modules, then use an action's Preview or Run button. Presets only change the
+module layout, and Run Selected requires explicit action checkboxes plus a
+confirmation review. Disabled or collapsed modules are not run as hidden
+dependencies. See [`radio_workspace.md`](radio_workspace.md) for the complete
+module inventory, persistence layout, API, and compatibility details.
+
+## 6. First Real Workflows
 
 Use these only after local data paths are configured:
 
@@ -158,6 +177,8 @@ Use these only after local data paths are configured:
   `scripts/tools/run_image_web_viewer.py`
 - Unified local English web GUI:
   `scripts/tools/run_solar_webapp.py`
+- Selective integrated radio analysis on the same workbench port:
+  `http://127.0.0.1:7870/radio`
 
 The installed commands and source scripts call the same package-owned Radio
 workflows. Real-data equivalence evidence and its precise scope are recorded in

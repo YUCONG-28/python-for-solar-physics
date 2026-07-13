@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 from scripts.radio.legacy import radio_source_map_plot_gaussian_overlay as legacy
 from solar_toolkit.modeling import gaussian as gaussian_model
 from solar_toolkit.radio import (
@@ -15,6 +18,31 @@ from solar_toolkit.radio import (
     spectrogram,
 )
 from solar_toolkit.radio import io as radio_io
+
+
+def test_source_map_facade_does_not_redeclare_canonical_science_helpers():
+    path = Path(legacy.__file__)
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    canonical_bindings = {
+        target.id
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(child, ast.Name) and child.id.startswith("_canonical_")
+            for child in ast.walk(node.value)
+        )
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    redeclared = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef))
+        and node.name in canonical_bindings
+    }
+
+    assert canonical_bindings
+    assert not redeclared
 
 
 def test_legacy_gaussian_and_coordinate_helpers_are_canonical_objects():

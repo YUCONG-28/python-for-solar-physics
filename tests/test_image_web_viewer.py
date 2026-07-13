@@ -529,6 +529,23 @@ def test_flask_client_lifecycle_routes_schedule_shutdown(tmp_path):
     assert shutdown_calls == ["shutdown"]
 
 
+def test_client_lifecycle_expires_a_client_when_close_beacon_is_missing():
+    from solar_toolkit.visualization.image_web_viewer.server import ClientLifecycle
+
+    shutdown = threading.Event()
+    lifecycle = ClientLifecycle(
+        stop_on_client_close=True,
+        shutdown_callback=shutdown.set,
+        close_grace_seconds=0.01,
+        heartbeat_timeout_seconds=0.02,
+        heartbeat_interval_seconds=0.005,
+    )
+
+    assert lifecycle.heartbeat("client-without-close-beacon") == {"ok": True}
+    assert shutdown.wait(timeout=0.5)
+    assert lifecycle.shutdown_requested is True
+
+
 @pytest.mark.skipif(
     importlib.util.find_spec("flask") is None,
     reason="Flask is optional; install the app extra to test HTTP routes.",

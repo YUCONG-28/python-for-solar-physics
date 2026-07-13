@@ -86,9 +86,15 @@ def resolve_available_run_tag(
     raise RuntimeError(f"No available run tag found for {run_stem!r}")
 
 
-def _base_user_config() -> tuple[dict, dict]:
+def _base_user_config(
+    *,
+    radio_root: str | Path | None = None,
+    spectrogram_file: str | Path | None = None,
+) -> tuple[dict, dict]:
     user_config, newkirk_config = load_radio_user_config(CONFIG_NAME)
     user_config = copy.deepcopy(user_config)
+    if radio_root is not None:
+        user_config.setdefault("data", {})["multi_band_root"] = str(radio_root)
     user_config.setdefault("features", {}).update(
         {
             "gaussian_overlay": False,
@@ -107,7 +113,7 @@ def _base_user_config() -> tuple[dict, dict]:
     )
     user_config.setdefault("spectrogram", {}).update(
         {
-            "file_path": SPECTROGRAM_FILE,
+            "file_path": str(spectrogram_file or SPECTROGRAM_FILE),
             "time_display_mode": "user",
             "time_start": SPECTROGRAM_START,
             "time_end": SPECTROGRAM_END,
@@ -307,7 +313,9 @@ def _render_one_preview(
                 slot_time.isoformat(timespec="milliseconds") if slot_time else None
             ),
             "output_png": str(output_path),
-            "spectrogram_file": SPECTROGRAM_FILE,
+            "spectrogram_file": str(
+                base_cfg.get("spectrogram_file_path", SPECTROGRAM_FILE)
+            ),
             "spectrogram_time_start": SPECTROGRAM_START,
             "spectrogram_time_end": SPECTROGRAM_END,
             "first_slot_spectrogram_note": (
@@ -326,6 +334,8 @@ def run_percentile_preview_comparison(
     output_dir: Path = DEFAULT_OUTPUT_DIR,
     run_stem: str = DEFAULT_RUN_STEM,
     run_tag: str | None = None,
+    radio_root: str | Path | None = None,
+    spectrogram_file: str | Path | None = None,
 ) -> dict:
     """Render the 12 comparison preview PNGs and return a run summary."""
 
@@ -338,7 +348,10 @@ def run_percentile_preview_comparison(
             f"At least one target directory already exists for {resolved_tag}"
         )
 
-    user_config, newkirk_config = _base_user_config()
+    user_config, newkirk_config = _base_user_config(
+        radio_root=radio_root,
+        spectrogram_file=spectrogram_file,
+    )
     user_config["output"]["output_dir"] = str(output_dir)
     base_cfg = _flat_config(user_config)
     slots = workflow._build_multi_band_slots(base_cfg)
@@ -389,6 +402,8 @@ def run_percentile_preview_comparison(
             for position, slot_idx in PREVIEW_SLOTS
         ],
         "frequencies_mhz": list(base_cfg["multi_band_freqs"]),
+        "radio_root": str(base_cfg["multi_band_root"]),
+        "spectrogram_file": str(base_cfg["spectrogram_file_path"]),
         "fixed_ranges": {
             f"{low:g}-{high:g}": range_map[(low, high)]
             for low, high in PERCENTILE_GROUPS
@@ -408,6 +423,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--run-stem", default=DEFAULT_RUN_STEM)
     parser.add_argument("--run-tag")
+    parser.add_argument(
+        "--radio-root",
+        help=(
+            "Explicit multi-band radio root. Radio Workspace requires this "
+            "allowed-root-validated override; the legacy CLI keeps its event default."
+        ),
+    )
+    parser.add_argument(
+        "--spectrogram-file",
+        help=(
+            "Explicit spectrogram FITS file. Radio Workspace requires this "
+            "allowed-root-validated override; the legacy CLI keeps its event default."
+        ),
+    )
     return parser
 
 
@@ -417,6 +446,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir=Path(args.output_dir),
         run_stem=args.run_stem,
         run_tag=args.run_tag,
+        radio_root=args.radio_root,
+        spectrogram_file=args.spectrogram_file,
     )
     print(f"Done. Run tag: {summary['run_tag']}")
     print(f"Generated {len(summary['outputs'])} preview PNGs.")

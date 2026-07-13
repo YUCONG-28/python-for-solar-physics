@@ -37,6 +37,7 @@ _SUBMODULES = {
     "overlay_workflow": "solar_toolkit.radio.overlay_workflow",
     "pipeline_cli": "solar_toolkit.radio.pipeline_cli",
     "pipeline_workflow": "solar_toolkit.radio.pipeline_workflow",
+    "physical_diagnostics_cli": "solar_toolkit.radio.physical_diagnostics_cli",
     "provenance": "solar_toolkit.radio.provenance",
     "quicklook": "solar_toolkit.radio.quicklook",
     "raw_quality": "solar_toolkit.radio.raw_quality",
@@ -44,6 +45,7 @@ _SUBMODULES = {
     "roi_lightcurve": "solar_toolkit.radio.roi_lightcurve",
     "roi_lightcurve_app": "solar_toolkit.radio.roi_lightcurve_app",
     "roi_lightcurve_launcher": "solar_toolkit.radio.roi_lightcurve_launcher",
+    "roi_selection_cli": "solar_toolkit.radio.roi_selection_cli",
     "rrll_percentile_preview_comparison": "solar_toolkit.radio.rrll_percentile_preview_comparison",
     "spectrogram": "solar_toolkit.radio.spectrogram",
     "source_map_cli": "solar_toolkit.radio.source_map_cli",
@@ -52,9 +54,13 @@ _SUBMODULES = {
     "source_app_launcher": "solar_toolkit.radio.source_app_launcher",
     "trajectory": "solar_toolkit.radio.trajectory",
     "trajectory_cli": "solar_toolkit.radio.trajectory_cli",
+    "trajectory_media_cli": "solar_toolkit.radio.trajectory_media_cli",
     "drift_rate": "solar_toolkit.radio.drift_rate",
+    "drift_selection_cli": "solar_toolkit.radio.drift_selection_cli",
     "drift_products": "solar_toolkit.radio.drift_products",
     "entrypoint_utils": "solar_toolkit.radio.entrypoint_utils",
+    "existing_fit_overlay": "solar_toolkit.radio.existing_fit_overlay",
+    "existing_fit_overlay_cli": "solar_toolkit.radio.existing_fit_overlay_cli",
 }
 
 __all__ = sorted(_SUBMODULES)

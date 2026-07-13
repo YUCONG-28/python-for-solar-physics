@@ -6,6 +6,7 @@ from importlib import import_module
 
 _SUBMODULES = {
     "cli": "solar_toolkit.webapp.cli",
+    "radio_workspace": "solar_toolkit.webapp.radio_workspace",
     "registry": "solar_toolkit.webapp.registry",
     "runner": "solar_toolkit.webapp.runner",
     "server": "solar_toolkit.webapp.server",

@@ -14,6 +14,86 @@ from solar_toolkit.radio.cso import (
 )
 
 
+@pytest.mark.parametrize(
+    ("right", "left", "expected"),
+    [
+        (10.0, 5.0, 1.0 / 3.0),
+        (5.0, 10.0, -1.0 / 3.0),
+        (10.0, 10.0, 0.0),
+        (100.0, 1.0, 99.0 / 101.0),
+        (1.0, 100.0, -99.0 / 101.0),
+    ],
+)
+def test_cso_polarization_formula(right, left, expected):
+    from solar_toolkit.radio.cso_workflow import calc_polarization_ratio
+
+    ratio = calc_polarization_ratio(
+        np.asarray([right], dtype=np.float32),
+        np.asarray([left], dtype=np.float32),
+    )[0]
+
+    assert float(ratio) == pytest.approx(expected, abs=1e-6)
+
+
+def test_cso_help_has_no_science_self_test_side_effect(capsys):
+    from solar_toolkit.radio import cso_workflow
+
+    with pytest.raises(SystemExit) as exc_info:
+        cso_workflow.main(["--help"])
+
+    assert exc_info.value.code == 0
+    assert "Testing Polarization Ratio Formula" not in capsys.readouterr().out
+
+
+def test_cso_cli_applies_independent_workspace_overrides(tmp_path):
+    from solar_toolkit.radio import cso_workflow
+
+    output_dir = tmp_path / "spectrogram"
+    args = cso_workflow.build_parser().parse_args(
+        [
+            "--file-path",
+            str(tmp_path / "input.fits"),
+            "--time-start",
+            "2025-05-03T07:15:10",
+            "--time-end",
+            "2025-05-03T07:16:10",
+            "--frequency-start",
+            "90",
+            "--frequency-end",
+            "180",
+            "--output-dir",
+            str(output_dir),
+            "--rebin-time",
+            "800",
+            "--rebin-frequency",
+            "120",
+            "--max-workers",
+            "3",
+            "--plot-ll",
+            "--plot-rr",
+            "--no-plot-sum",
+            "--no-plot-ratio",
+        ]
+    )
+    cfg = cso_workflow.PlotConfig()
+
+    cso_workflow._apply_cli_overrides(cfg, args)
+
+    assert cfg.file_path == str(tmp_path / "input.fits")
+    assert cfg.t_start == dt.datetime(2025, 5, 3, 7, 15, 10)
+    assert cfg.t_end == dt.datetime(2025, 5, 3, 7, 16, 10)
+    assert cfg.f_start == 90.0
+    assert cfg.f_end == 180.0
+    assert cfg.save_path == str(output_dir)
+    assert cfg.rebin_t_target == 800
+    assert cfg.rebin_f_target == 120
+    assert cfg.max_workers == 3
+    assert cfg.plot_ll is True
+    assert cfg.plot_rr is True
+    assert cfg.plot_sum is False
+    assert cfg.plot_ratio is False
+
+
 class FakeHDU:
     def __init__(self, header=None, data=None):
         self.header = header or {}

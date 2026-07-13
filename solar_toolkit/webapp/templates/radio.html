@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Radio Workspace</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='radio.css') }}" />
+  </head>
+  <body>
+    <header class="radio-topbar">
+      <div class="brand-block">
+        <a class="back-link" href="/">Solar Physics Workbench</a>
+        <div>
+          <h1>Radio Workspace</h1>
+          <p>Select only the modules you need. Nothing runs until you explicitly start an action.</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span id="radioHealth" class="status-pill" data-state="checking">Checking</span>
+        <button id="openResultsButton" class="secondary" type="button">Runs &amp; Results</button>
+      </div>
+    </header>
+
+    <main class="radio-shell">
+      <aside class="radio-sidebar" aria-label="Radio workspace modules">
+        <section class="workspace-card">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Workspace</span>
+              <strong id="workspaceName">Not configured</strong>
+            </div>
+            <button id="workspaceButton" class="icon-button" type="button" aria-label="Configure workspace">Edit</button>
+          </div>
+          <dl class="workspace-summary">
+            <div><dt>Event</dt><dd id="workspaceEvent">—</dd></div>
+            <div><dt>Output</dt><dd id="workspaceOutput">—</dd></div>
+            <div><dt>Concurrency</dt><dd id="workspaceConcurrency">1</dd></div>
+          </dl>
+          <label class="workspace-switcher">Open workspace
+            <select id="workspaceSelect"><option value="">No saved workspace</option></select>
+          </label>
+          <button id="newWorkspaceButton" class="secondary" type="button">New Workspace</button>
+          <div class="file-access-summary">
+            <div class="section-heading">
+              <div>
+                <span class="eyebrow">Local files</span>
+                <strong>File access roots</strong>
+              </div>
+              <button id="manageAllowedRootsButton" class="icon-button" type="button">Manage</button>
+            </div>
+            <div id="allowedRootsSummary" class="allowed-roots-summary" aria-live="polite">Loading server roots…</div>
+          </div>
+        </section>
+
+        <section class="preset-card">
+          <label for="presetSelect">Module preset</label>
+          <div class="inline-controls">
+            <select id="presetSelect" aria-label="Module preset">
+              <option value="">Choose a preset</option>
+            </select>
+            <button id="applyPresetButton" type="button">Apply</button>
+          </div>
+          <p>Presets only change the layout. They never start a run.</p>
+        </section>
+
+        <section class="module-library">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Modules</span>
+              <strong>Choose your workspace</strong>
+            </div>
+            <button id="resetLayoutButton" class="icon-button" type="button">Reset</button>
+          </div>
+          <div id="moduleGroups" class="module-groups" aria-live="polite"></div>
+        </section>
+      </aside>
+
+      <section class="workspace-main">
+        <div class="workspace-toolbar">
+          <div>
+            <span class="eyebrow">Enabled modules</span>
+            <h2 id="workspaceTitle">Data &amp; Configuration</h2>
+            <p id="workspaceHint">Configure a workspace, then enable the analysis modules you need.</p>
+          </div>
+          <div class="toolbar-actions">
+            <span id="selectedActionCount">0 actions selected</span>
+            <button id="runSelectedButton" type="button" disabled>Review Run Selected</button>
+          </div>
+        </div>
+
+        <div id="workspaceNotice" class="notice" hidden></div>
+        <div id="enabledModules" class="enabled-modules" aria-live="polite"></div>
+        <section id="emptyWorkspace" class="empty-workspace" hidden>
+          <h2>No analysis module is enabled</h2>
+          <p>Enable a module from the sidebar. Enabling a module does not read data or start a task.</p>
+        </section>
+      </section>
+    </main>
+
+    <aside id="resultsDrawer" class="results-drawer" aria-hidden="true">
+      <header>
+        <div>
+          <span class="eyebrow">Workspace history</span>
+          <h2>Runs &amp; Results</h2>
+        </div>
+        <button id="closeResultsButton" class="icon-button" type="button" aria-label="Close results">Close</button>
+      </header>
+      <div class="results-toolbar">
+        <select id="resultStatusFilter" aria-label="Filter runs by status">
+          <option value="">All statuses</option>
+          <option value="queued">Queued</option>
+          <option value="running">Running</option>
+          <option value="succeeded">Succeeded</option>
+          <option value="failed">Failed</option>
+          <option value="canceled">Canceled</option>
+          <option value="interrupted">Interrupted</option>
+        </select>
+        <button id="refreshRunsButton" class="secondary" type="button">Refresh</button>
+      </div>
+      <div id="runList" class="run-list"></div>
+      <section id="runDetail" class="run-detail empty-state">
+        <h3>Select a run</h3>
+        <p>Logs, provenance, and artifacts will appear here.</p>
+      </section>
+    </aside>
+    <div id="drawerScrim" class="drawer-scrim" hidden></div>
+
+    <dialog id="workspaceDialog" class="radio-dialog">
+      <form id="workspaceForm" method="dialog">
+        <header>
+          <div>
+            <span class="eyebrow">Persistent local workspace</span>
+            <h2>Configure Workspace</h2>
+          </div>
+          <button class="icon-button" value="cancel" formmethod="dialog" type="submit">Close</button>
+        </header>
+        <label>Workspace name<input id="workspaceNameInput" name="name" required value="Radio Analysis" /></label>
+        <label>Output root
+          <div class="path-control">
+            <input id="workspaceOutputInput" name="output_root" required placeholder="D:/analysis/output" />
+            <button type="button" class="secondary browse-button" data-target="workspaceOutputInput" data-kind="directory">Browse</button>
+          </div>
+        </label>
+        <label>Event preset<select id="workspaceEventInput" name="event_config"></select></label>
+        <label>Maximum concurrent heavy runs
+          <input id="workspaceConcurrencyInput" name="max_concurrency" type="number" min="1" max="4" value="1" />
+        </label>
+        <label>Shared input paths (JSON)
+          <textarea id="workspacePathsInput" name="shared_paths" rows="6" spellcheck="false">{}</textarea>
+        </label>
+        <label>Advanced workspace configuration (JSON)
+          <textarea id="workspaceAdvancedInput" name="advanced_config" rows="8" spellcheck="false">{}</textarea>
+        </label>
+        <footer>
+          <button value="cancel" formmethod="dialog" class="secondary" type="submit">Cancel</button>
+          <button id="saveWorkspaceButton" value="default" type="submit">Save Workspace</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="fileBrowserDialog" class="radio-dialog file-dialog">
+      <form method="dialog">
+        <header>
+          <div>
+            <span class="eyebrow">Allowed roots only</span>
+            <h2>Select Local Path</h2>
+          </div>
+          <button class="icon-button" value="cancel" type="submit">Close</button>
+        </header>
+        <div class="browser-location">
+          <button id="browserParentButton" class="secondary" type="button">Parent</button>
+          <input id="browserPathInput" aria-label="Current browser path" />
+          <button id="browserGoButton" type="button">Go</button>
+        </div>
+        <div id="browserRoots" class="browser-roots"></div>
+        <div id="browserEntries" class="browser-entries" role="listbox"></div>
+        <div id="browserAccessHelp" class="browser-access-help" hidden>
+          <span id="browserAccessMessage"></span>
+          <button id="browserManageRootsButton" class="secondary" type="button">Manage file access</button>
+        </div>
+        <footer>
+          <span id="browserSelection">No path selected</span>
+          <button value="cancel" class="secondary" type="submit">Cancel</button>
+          <button id="chooseBrowserPathButton" value="default" type="submit" disabled>Choose</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="allowedRootsDialog" class="radio-dialog roots-dialog">
+      <form id="allowedRootsForm" method="dialog">
+        <header>
+          <div>
+            <span class="eyebrow">Current server session</span>
+            <h2>Manage File Access Roots</h2>
+          </div>
+          <button class="icon-button" value="cancel" formmethod="dialog" type="submit">Close</button>
+        </header>
+        <p class="dialog-help">Enter one editable data directory per line. Protected output and saved-workspace roots remain available and cannot be removed here. Changes apply only to future requests in this server session; queued or running actions continue unchanged. The startup <code>--allowed-roots</code> setting becomes the editable default again after restart.</p>
+        <label>Editable absolute directories
+          <textarea id="allowedRootsInput" rows="9" spellcheck="false" placeholder="D:\radio_data&#10;D:\analysis_outputs"></textarea>
+        </label>
+        <div id="allowedRootsError" class="inline-error" role="alert" hidden></div>
+        <footer>
+          <button value="cancel" formmethod="dialog" class="secondary" type="submit">Cancel</button>
+          <button id="applyAllowedRootsButton" value="default" type="submit">Apply Roots</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="runSelectedDialog" class="radio-dialog run-dialog">
+      <form method="dialog">
+        <header>
+          <div>
+            <span class="eyebrow">Explicit execution review</span>
+            <h2>Run Selected Actions</h2>
+          </div>
+          <button class="icon-button" value="cancel" type="submit">Close</button>
+        </header>
+        <p>Only the actions listed below will run. Missing inputs never start an upstream module automatically.</p>
+        <div id="runSelectedSummary" class="run-selected-summary"></div>
+        <footer>
+          <button value="cancel" class="secondary" type="submit">Cancel</button>
+          <button id="confirmRunSelectedButton" value="default" type="submit">Confirm Runs</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <template id="actionTemplate">
+      <article class="action-card">
+        <header class="action-header">
+          <label class="action-select"><input type="checkbox" data-role="select-action" /> <span>Select</span></label>
+          <div><h4 data-role="action-title"></h4><p data-role="action-description"></p></div>
+          <span data-role="action-status" class="action-status">Idle</span>
+        </header>
+        <form data-role="action-form" class="action-form"></form>
+        <details class="advanced-config">
+          <summary>Module action advanced configuration</summary>
+          <textarea data-role="advanced-json" rows="7" spellcheck="false">{}</textarea>
+        </details>
+        <div class="action-buttons">
+          <button data-role="preview" class="secondary" type="button">Preview</button>
+          <button data-role="run" type="button">Run</button>
+          <button data-role="cancel" class="danger" type="button" disabled>Cancel</button>
+        </div>
+        <section data-role="preview-panel" class="preview-panel" hidden></section>
+        <section data-role="action-result" class="action-result" hidden></section>
+        <pre data-role="action-log" class="action-log" hidden></pre>
+      </article>
+    </template>
+
+    <script src="{{ url_for('static', filename='radio.js') }}"></script>
+  </body>
+</html>

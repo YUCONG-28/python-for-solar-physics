@@ -29,6 +29,7 @@ from solar_toolkit.radio.entrypoint_utils import (
     apply_output_overrides,
     apply_pipeline_output_overrides,
     build_legacy_config,
+    load_workspace_config_overrides,
     parse_known_common_args,
     resolve_analysis_dir,
 )
@@ -94,6 +95,17 @@ def _run_pipeline(argv=None, *, config_name: str | None = None):
     newkirk_height_cfg = load_newkirk_height_comparison_config(selected_config)
     drift_product_cfg = load_drift_selection_product_config(selected_config)
     presentation_cfg = load_radio_diagnostic_presentation_config(selected_config)
+    workspace_overrides = load_workspace_config_overrides(args)
+    for target, section in (
+        (newkirk_cfg, "newkirk"),
+        (newkirk_height_cfg, "newkirk_height_comparison"),
+        (drift_product_cfg, "drift_selection_products"),
+        (presentation_cfg, "diagnostic_presentation"),
+        (output_cfg, "output"),
+    ):
+        values = workspace_overrides.get(section)
+        if isinstance(values, dict):
+            target.update(values)
 
     user_config = apply_output_overrides(user_config, args)
     output_cfg = apply_pipeline_output_overrides(
@@ -645,24 +657,11 @@ def _save_drift_selection_products(
 def _build_drift_newkirk_table(
     drift_df: pd.DataFrame, newkirk_cfg: dict
 ) -> pd.DataFrame:
-    from solar_toolkit.radio.newkirk import (
-        extrapolate_drift_line_with_newkirk,
+    from solar_toolkit.radio.physical_diagnostics_cli import (
+        build_drift_newkirk_table,
     )
 
-    pd = _pd()
-    rows = []
-    ok_df = drift_df
-    if "quality_flag" in ok_df.columns:
-        ok_df = ok_df[ok_df["quality_flag"].astype(str).str.lower().eq("ok")]
-    for _, row in ok_df.iterrows():
-        for multiplier in newkirk_cfg.get("multipliers", [1]):
-            for harmonic in newkirk_cfg.get("harmonics", [1]):
-                rows.append(
-                    extrapolate_drift_line_with_newkirk(
-                        row.to_dict(), multiplier=multiplier, harmonic=harmonic
-                    )
-                )
-    return pd.DataFrame(rows)
+    return build_drift_newkirk_table(drift_df, newkirk_cfg)
 
 
 def parse_radio_time_value(value):

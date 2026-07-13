@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import json
 import os
 from collections.abc import Sequence
 from pathlib import Path
@@ -15,6 +16,7 @@ __all__ = [
     "apply_pipeline_output_overrides",
     "build_common_parser",
     "build_legacy_config",
+    "load_workspace_config_overrides",
     "parse_known_common_args",
     "resolve_analysis_dir",
 ]
@@ -33,6 +35,10 @@ def build_common_parser(
     parser.add_argument("--output-dir")
     parser.add_argument("--analysis-subdir")
     parser.add_argument("--gaussian-csv")
+    parser.add_argument(
+        "--workspace-config-json",
+        help="Structured Radio Workspace overrides encoded as a JSON object.",
+    )
     if include_pipeline_outputs:
         parser.add_argument("--valid-centers-csv")
         parser.add_argument("--newkirk-csv")
@@ -61,7 +67,10 @@ def parse_known_common_args(
 def apply_output_overrides(user_config: dict, args: argparse.Namespace) -> dict:
     """Return a copied event configuration with CLI overrides applied."""
 
-    config = copy.deepcopy(user_config or {})
+    config = _deep_merge(
+        copy.deepcopy(user_config or {}),
+        load_workspace_config_overrides(args),
+    )
     output = config.setdefault("output", {})
     gaussian = config.setdefault("gaussian", {})
 
@@ -72,6 +81,28 @@ def apply_output_overrides(user_config: dict, args: argparse.Namespace) -> dict:
     if getattr(args, "gaussian_csv", None):
         gaussian["gaussian_diagnostics_csv"] = args.gaussian_csv
     return config
+
+
+def load_workspace_config_overrides(args: argparse.Namespace) -> dict:
+    """Decode structured overrides supplied by the integrated workspace."""
+
+    raw = getattr(args, "workspace_config_json", None)
+    if raw in (None, ""):
+        return {}
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise TypeError("--workspace-config-json must contain a JSON object")
+    return payload
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    result = copy.deepcopy(base)
+    for key, value in (override or {}).items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = copy.deepcopy(value)
+    return result
 
 
 def apply_pipeline_output_overrides(

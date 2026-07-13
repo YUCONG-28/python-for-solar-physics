@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from astropy.io import fits
 
+import solar_toolkit.radio.roi_lightcurve as roi_module
 from solar_toolkit.radio.centers import iter_radio_images
 from solar_toolkit.radio.roi_lightcurve import (
     RadioRoi,
@@ -309,6 +310,64 @@ def test_export_artifacts_and_product_writer_support_selected_outputs(tmp_path):
             selected_products=("fits",),
             unique_run=False,
         )
+
+
+def test_noninteractive_cli_exposes_selected_products_and_detail_frequency(
+    tmp_path, monkeypatch
+):
+    extraction: dict[str, object] = {}
+    writing: dict[str, object] = {}
+
+    def fake_extract(radio_dir, roi, **kwargs):
+        extraction.update({"radio_dir": radio_dir, "roi": roi, **kwargs})
+        return pd.DataFrame({"freq_mhz": [149.0], "raw_sum": [1.0]})
+
+    def fake_write(df, roi, output_dir, **kwargs):
+        writing.update({"df": df, "roi": roi, "output_dir": output_dir, **kwargs})
+        return {"output_dir": Path(output_dir)}
+
+    monkeypatch.setattr(roi_module, "extract_radio_roi_lightcurve", fake_extract)
+    monkeypatch.setattr(roi_module, "_first_ok_image", lambda *args, **kwargs: None)
+    monkeypatch.setattr(roi_module, "write_radio_roi_products", fake_write)
+
+    roi_module.run_radio_roi_lightcurve(
+        [
+            "--radio-dir",
+            str(tmp_path),
+            "--roi-bounds=-1,-2,3,4",
+            "--pattern",
+            "*.fit",
+            "--no-recursive",
+            "--time-start",
+            "2025-01-24T03:00:00",
+            "--time-end",
+            "2025-01-24T03:01:00",
+            "--pair-time-tolerance-sec",
+            "0.25",
+            "--selected-products",
+            "csv,lightcurve_detail_png,lightcurve_normalized_png",
+            "--detail-frequency-mhz",
+            "149",
+        ]
+    )
+
+    assert extraction["pattern"] == "*.fit"
+    assert extraction["recursive"] is False
+    assert extraction["time_start"] == "2025-01-24T03:00:00"
+    assert extraction["time_end"] == "2025-01-24T03:01:00"
+    assert extraction["pair_time_tolerance_sec"] == pytest.approx(0.25)
+    assert writing["selected_products"] == (
+        "csv",
+        "lightcurve_detail_png",
+        "lightcurve_normalized_png",
+    )
+    assert writing["lightcurve_detail_frequency_mhz"] == pytest.approx(149.0)
+    assert (
+        roi_module.build_parser()
+        .parse_args(["--radio-dir", "radio", "--roi-bounds", "0,0,1,1"])
+        .selected_products
+        is None
+    )
 
 
 def test_reference_artifact_supports_multi_reference_display_config(tmp_path):
