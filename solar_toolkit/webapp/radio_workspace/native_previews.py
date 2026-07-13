@@ -47,11 +47,271 @@ def build_native_preview(
         return _build_trajectory_preview(payload, validate_path=validate_path)
     if adapter_name == "drift-selection":
         return _build_drift_selection_preview(payload, validate_path=validate_path)
+    if adapter_name == "spectrogram-coverage":
+        return _build_spectrogram_coverage_preview(payload, validate_path=validate_path)
     if adapter_name == "file-browser":
         return _build_file_browser(payload, validate_path=validate_path)
     if adapter_name in {"run-index", "artifact-index"}:
         return _unavailable_index(adapter_name)
     raise ValueError(f"Unknown native preview adapter: {adapter!r}")
+
+
+def _build_spectrogram_coverage_preview(
+    form: Mapping[str, Any], *, validate_path: PathValidator
+) -> dict[str, Any]:
+    """Build an explicit multi-file CSO preview without crossing real gaps.
+
+    The canonical radio spectrogram builder performs the FITS reads, frequency
+    selection, polarization calculation, downsampling, and stitching.  This
+    adapter adds only workspace path validation and a browser-safe Plotly view.
+    Files separated by more than one second are rendered as separate heatmap
+    traces, so Plotly cannot paint or interpolate across an unobserved interval.
+    """
+
+    primary = _required_validated_path(
+        form, "primary_file", validate_path=validate_path
+    )
+    adjacent_values: list[str] = []
+    if form.get("adjacent_file") not in (None, ""):
+        adjacent_values.append(str(form["adjacent_file"]).strip())
+    adjacent_values.extend(_json_path_list(form.get("adjacent_files_json")))
+    validated_inputs = [primary]
+    validated_inputs.extend(
+        _validated_path(value, validate_path=validate_path) for value in adjacent_values
+    )
+
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    for path in validated_inputs:
+        if not path.is_file():
+            raise FileNotFoundError(f"Spectrogram FITS file does not exist: {path}")
+        if path.suffix.casefold() not in {".fit", ".fits", ".fts"}:
+            raise ValueError(f"Spectrogram input must be a FITS file: {path.name}")
+        canonical = path.resolve(strict=True)
+        if canonical not in seen:
+            seen.add(canonical)
+            paths.append(canonical)
+
+    if not paths:
+        raise ValueError("Select a primary spectrogram FITS file")
+
+    frequency_start = _bounded_float(
+        form.get("frequency_start", 80.0), minimum=-1.0e9, maximum=1.0e9
+    )
+    frequency_end = _bounded_float(
+        form.get("frequency_end", 340.0), minimum=-1.0e9, maximum=1.0e9
+    )
+    if frequency_start >= frequency_end:
+        raise ValueError("frequency_start must be less than frequency_end")
+    rebin_time = _bounded_int(form.get("rebin_time", 1000), minimum=1, maximum=10000)
+    rebin_frequency = _bounded_int(
+        form.get("rebin_frequency", 700), minimum=1, maximum=4096
+    )
+    polarization = str(form.get("polarization", "sum") or "sum").strip().lower()
+    if polarization not in {"ll", "rr", "sum", "ratio"}:
+        raise ValueError("polarization must be LL, RR, sum, or ratio")
+    cmap = str(form.get("cmap", "jet") or "jet").strip().lower()
+    if cmap not in {"jet", "viridis", "plasma", "inferno", "magma", "cividis"}:
+        raise ValueError("Unsupported spectrogram color map")
+
+    # Deliberately lazy: no FITS, NumPy, Matplotlib, or Plotly dependency is
+    # loaded merely by enabling or expanding the owning workspace module.
+    import numpy as np
+
+    from solar_toolkit.radio import spectrogram
+
+    from .figure_time import merge_coverage_segments
+
+    file_metadata = [
+        spectrogram._read_spectrogram_file_metadata(str(path)) for path in paths
+    ]
+    coverage_segments = merge_coverage_segments(
+        [
+            {
+                "start_time_iso": _utc_iso(item["file_start"]),
+                "end_time_iso": _utc_iso(item["file_end"]),
+            }
+            for item in file_metadata
+        ],
+        maximum_gap_s=1.0,
+    )
+    x_start_iso = coverage_segments[0]["start_time_iso"]
+    x_end_iso = coverage_segments[-1]["end_time_iso"]
+    cfg: dict[str, Any] = {
+        "enable_spectrogram_panel": True,
+        "spectrogram_file_paths": [str(path) for path in paths],
+        "spectrogram_file_path": str(paths[0]),
+        "spectrogram_time_display_mode": "full",
+        # The preview must preserve (and display) gaps rather than disabling the
+        # entire panel.  Separate Plotly traces below keep those gaps empty.
+        "spectrogram_disable_on_time_mismatch": False,
+        "spectrogram_f_start": frequency_start,
+        "spectrogram_f_end": frequency_end,
+        "spectrogram_rebin_t_target": rebin_time,
+        "spectrogram_rebin_f_target": rebin_frequency,
+        "spectrogram_polarization": polarization,
+        "spectrogram_use_log10": _as_bool(
+            form.get("use_log10"), default=polarization != "ratio"
+        ),
+        "spectrogram_cmap": cmap,
+    }
+    for source_name, target_name in (
+        ("vmin", "spectrogram_vmin"),
+        ("vmax", "spectrogram_vmax"),
+    ):
+        if form.get(source_name) not in (None, ""):
+            cfg[target_name] = _bounded_float(
+                form[source_name], minimum=-1.0e30, maximum=1.0e30
+            )
+    if (
+        cfg.get("spectrogram_vmin") is not None
+        and cfg.get("spectrogram_vmax") is not None
+        and cfg["spectrogram_vmin"] >= cfg["spectrogram_vmax"]
+    ):
+        raise ValueError("vmin must be less than vmax")
+
+    cache = spectrogram.build_spectrogram_cache(cfg)
+    if cache is None or not cache.time_datetimes:
+        raise RuntimeError("No compatible spectrogram data was available for Preview")
+
+    traces: list[dict[str, Any]] = []
+    time_values = np.asarray(
+        [_utc_datetime(item).timestamp() for item in cache.time_datetimes],
+        dtype=np.float64,
+    )
+    colorscale = cmap.capitalize() if cmap != "cividis" else "Cividis"
+    for segment_index, segment in enumerate(coverage_segments):
+        start_ts = _utc_datetime(segment["start_time_iso"]).timestamp()
+        end_ts = _utc_datetime(segment["end_time_iso"]).timestamp()
+        indices = np.flatnonzero((time_values >= start_ts) & (time_values <= end_ts))
+        if not indices.size:
+            continue
+        z_values = np.asarray(cache.data[:, indices], dtype=np.float64)
+        traces.append(
+            {
+                "type": "heatmap",
+                "name": f"Observed segment {segment_index + 1}",
+                "x": [_utc_iso(cache.time_datetimes[int(index)]) for index in indices],
+                "y": [float(value) for value in np.asarray(cache.freq).ravel()],
+                "z": [
+                    [
+                        float(value) if math.isfinite(float(value)) else None
+                        for value in row
+                    ]
+                    for row in z_values.tolist()
+                ],
+                "colorscale": colorscale,
+                "zmin": _finite_float_or_none(cache.vmin),
+                "zmax": _finite_float_or_none(cache.vmax),
+                "showscale": segment_index == 0,
+                "connectgaps": False,
+                "colorbar": {"title": cache.cbar_label},
+                "hovertemplate": "%{x|%Y-%m-%d %H:%M:%S.%L UTC}<br>%{y:.3f} MHz<extra></extra>",
+            }
+        )
+    if not traces:
+        raise RuntimeError(
+            "The stitched spectrogram contains no samples in real coverage"
+        )
+
+    gaps = [
+        {
+            "start_time_iso": coverage_segments[index]["end_time_iso"],
+            "end_time_iso": coverage_segments[index + 1]["start_time_iso"],
+        }
+        for index in range(len(coverage_segments) - 1)
+    ]
+    figure = {
+        "data": traces,
+        "layout": {
+            "title": {"text": cache.title},
+            "xaxis": {
+                "title": {"text": "Time (UTC)"},
+                "type": "date",
+                "range": [x_start_iso, x_end_iso],
+            },
+            "yaxis": {"title": {"text": "Frequency (MHz)"}},
+            "margin": {"l": 74, "r": 36, "t": 58, "b": 62},
+            "paper_bgcolor": "#ffffff",
+            "plot_bgcolor": "#ffffff",
+            "showlegend": False,
+        },
+    }
+    metadata = {
+        "adapter": "spectrogram-coverage",
+        "kind": "spectrogram",
+        "title": cache.title,
+        "x_start_iso": x_start_iso,
+        "x_end_iso": x_end_iso,
+        "coverage_segments": coverage_segments,
+        "coverage_gaps": gaps,
+        "source_count": len(paths),
+        "source_names": [path.name for path in paths],
+        "trace_count": len(traces),
+        "frequency_min_mhz": float(np.nanmin(cache.freq)),
+        "frequency_max_mhz": float(np.nanmax(cache.freq)),
+        "x_axis_mapping": {
+            "type": "utc-linear",
+            "start_time_iso": x_start_iso,
+            "end_time_iso": x_end_iso,
+        },
+        "interpolation": "none",
+        "maximum_merged_gap_s": 1.0,
+    }
+    return {
+        "adapter": "spectrogram-coverage",
+        "status": "ready",
+        "kind": "plotly",
+        "title": cache.title,
+        "figure": figure,
+        "metadata": metadata,
+        "x_start_iso": x_start_iso,
+        "x_end_iso": x_end_iso,
+        "coverage_segments": coverage_segments,
+        "message": (
+            "The explicit CSO Preview was rebuilt from validated inputs. "
+            "Observed gaps longer than one second remain empty."
+        ),
+    }
+
+
+def _json_path_list(value: Any) -> list[str]:
+    if value in (None, "", [], ()):
+        return []
+    decoded = value
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "adjacent_files_json must be a JSON array of FITS paths"
+            ) from exc
+    if not isinstance(decoded, (list, tuple)):
+        raise TypeError("adjacent_files_json must be a JSON array of FITS paths")
+    if len(decoded) > 31:
+        raise ValueError("Select at most 31 adjacent spectrogram FITS files")
+    paths: list[str] = []
+    for item in decoded:
+        if not isinstance(item, str) or not item.strip():
+            raise TypeError(
+                "Every adjacent spectrogram path must be a non-empty string"
+            )
+        paths.append(item.strip())
+    return paths
+
+
+def _utc_datetime(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _utc_iso(value: Any) -> str:
+    return _utc_datetime(value).isoformat().replace("+00:00", "Z")
 
 
 def _build_roi_selection_preview(

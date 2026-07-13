@@ -63,8 +63,8 @@ MODULES: tuple[RadioModuleSpec, ...] = (
             "Choose local data, event settings, frequency, polarization, and time "
             "filters, or inspect raw-data quality without running later modules."
         ),
-        default_enabled=True,
-        default_collapsed=False,
+        default_enabled=False,
+        default_collapsed=True,
         accepts_artifacts=("radio-fits",),
         produces_artifacts=("file-selection", "quality-table"),
         actions=(
@@ -498,6 +498,101 @@ MODULES: tuple[RadioModuleSpec, ...] = (
             "drift-table",
         ),
         actions=(
+            RadioActionSpec(
+                id="rebuild-spectrogram-coverage",
+                title="Rebuild Spectrogram Coverage",
+                description=(
+                    "Explicitly combine a primary CSO FITS file with selected "
+                    "adjacent FITS files for a same-page Preview. Real gaps longer "
+                    "than one second remain empty; this never runs an upstream action."
+                ),
+                preview_adapter="spectrogram-coverage",
+                accepts_artifacts=("cso-data",),
+                produces_artifacts=(),
+                input_schema=(
+                    _field(
+                        "primary_file",
+                        "Primary CSO FITS file",
+                        "path",
+                        required=True,
+                        path=True,
+                        artifact_types=("cso-data",),
+                    ),
+                    _field(
+                        "adjacent_file",
+                        "Adjacent CSO FITS artifact or file",
+                        "path",
+                        path=True,
+                        artifact_types=("cso-data",),
+                        help_text=(
+                            "Optional adjacent FITS input. This field supports a "
+                            "workspace cso-data artifact without copying it."
+                        ),
+                    ),
+                    _field(
+                        "adjacent_files_json",
+                        "Adjacent CSO FITS files",
+                        "json",
+                        help_text=(
+                            "Optional JSON array of allowed local FITS paths. Each "
+                            "path is validated before any FITS data is read."
+                        ),
+                    ),
+                    _field(
+                        "frequency_start",
+                        "Minimum frequency (MHz)",
+                        "number",
+                        default=80.0,
+                    ),
+                    _field(
+                        "frequency_end",
+                        "Maximum frequency (MHz)",
+                        "number",
+                        default=340.0,
+                    ),
+                    _field(
+                        "polarization",
+                        "Spectrum",
+                        "select",
+                        default="sum",
+                        choices=("LL", "RR", "sum", "ratio"),
+                    ),
+                    _field(
+                        "rebin_time",
+                        "Target time samples",
+                        "number",
+                        default=1000,
+                    ),
+                    _field(
+                        "rebin_frequency",
+                        "Target frequency samples",
+                        "number",
+                        default=700,
+                    ),
+                    _field(
+                        "use_log10",
+                        "Use log10 intensity",
+                        "checkbox",
+                        default=True,
+                    ),
+                    _field(
+                        "cmap",
+                        "Color map",
+                        "select",
+                        default="jet",
+                        choices=(
+                            "jet",
+                            "viridis",
+                            "plasma",
+                            "inferno",
+                            "magma",
+                            "cividis",
+                        ),
+                    ),
+                    _field("vmin", "Display minimum", "number"),
+                    _field("vmax", "Display maximum", "number"),
+                ),
+            ),
             RadioActionSpec(
                 id="select-drift-lines",
                 title="Select Drift Lines",

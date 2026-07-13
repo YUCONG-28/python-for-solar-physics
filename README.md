@@ -65,8 +65,11 @@ rules, persistence format, API, and retained CLI/Streamlit compatibility paths.
 **Radio analysis**
 
 - Open the modular Radio Workspace at `/radio` from the same `solar-webapp`
-  process. Enable only the modules needed for a study; module selection and
-  presets change layout but never start a task.
+  process. The analysis area starts empty; enable only the modules needed for a
+  study. Module selection and presets change layout but never start a task.
+- Add explicit previews or completed image artifacts to Figure Studio, arrange
+  Single or Mosaic figures with a shared UTC timeline, and export validated PNG
+  or MP4/WebM products without silently running upstream analysis.
 - Plot CSO dynamic spectra with memory-aware slicing and downsampling.
 - Build radio source maps and AIA/radio/HMI overlays.
 - Fit two-dimensional Gaussian source models, export fitted centers, and

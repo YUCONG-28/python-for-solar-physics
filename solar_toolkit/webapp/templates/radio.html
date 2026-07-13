@@ -17,6 +17,7 @@
       </div>
       <div class="topbar-actions">
         <span id="radioHealth" class="status-pill" data-state="checking">Checking</span>
+        <button id="openFigureStudioButton" class="secondary" type="button">Figure Studio</button>
         <button id="openResultsButton" class="secondary" type="button">Runs &amp; Results</button>
       </div>
     </header>
@@ -121,6 +122,16 @@
       <section id="runDetail" class="run-detail empty-state">
         <h3>Select a run</h3>
         <p>Logs, provenance, and artifacts will appear here.</p>
+      </section>
+      <section class="figure-exports-section" aria-labelledby="figureExportsTitle">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">Composed output</span>
+            <h3 id="figureExportsTitle">Figure Exports</h3>
+          </div>
+          <button id="refreshFigureExportsButton" class="secondary" type="button">Refresh</button>
+        </div>
+        <div id="figureExportList" class="figure-export-list">Open a workspace to view figure exports.</div>
       </section>
     </aside>
     <div id="drawerScrim" class="drawer-scrim" hidden></div>
@@ -229,25 +240,167 @@
       <article class="action-card">
         <header class="action-header">
           <label class="action-select"><input type="checkbox" data-role="select-action" /> <span>Select</span></label>
-          <div><h4 data-role="action-title"></h4><p data-role="action-description"></p></div>
+          <button data-role="toggle-action" class="action-disclosure" type="button" aria-expanded="false">
+            <span><strong data-role="action-title"></strong><small data-role="action-description"></small></span>
+            <span data-role="action-chevron" aria-hidden="true">Show</span>
+          </button>
           <span data-role="action-status" class="action-status">Idle</span>
         </header>
-        <form data-role="action-form" class="action-form"></form>
-        <details class="advanced-config">
-          <summary>Module action advanced configuration</summary>
-          <textarea data-role="advanced-json" rows="7" spellcheck="false">{}</textarea>
-        </details>
-        <div class="action-buttons">
-          <button data-role="preview" class="secondary" type="button">Preview</button>
-          <button data-role="run" type="button">Run</button>
-          <button data-role="cancel" class="danger" type="button" disabled>Cancel</button>
+        <div data-role="action-body" class="action-body" hidden>
+          <details class="parameter-config">
+            <summary>Parameters</summary>
+            <form data-role="action-form" class="action-form"></form>
+          </details>
+          <details class="advanced-config">
+            <summary>Advanced configuration</summary>
+            <textarea data-role="advanced-json" rows="7" spellcheck="false">{}</textarea>
+          </details>
+          <div class="action-buttons">
+            <button data-role="preview" class="secondary" type="button">Preview</button>
+            <button data-role="run" type="button">Run</button>
+            <button data-role="cancel" class="danger" type="button" disabled>Cancel</button>
+          </div>
+          <section data-role="preview-panel" class="preview-panel" hidden></section>
+          <section data-role="action-result" class="action-result" hidden></section>
+          <pre data-role="action-log" class="action-log" hidden></pre>
         </div>
-        <section data-role="preview-panel" class="preview-panel" hidden></section>
-        <section data-role="action-result" class="action-result" hidden></section>
-        <pre data-role="action-log" class="action-log" hidden></pre>
       </article>
     </template>
 
+    <section id="figureStudio" class="figure-studio" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="figureStudioTitle">
+      <header class="figure-studio-header">
+        <div>
+          <span class="eyebrow">Workspace figure composer</span>
+          <h2 id="figureStudioTitle">Figure Studio</h2>
+          <p>Arrange explicit previews and image artifacts. Export never starts an analysis action.</p>
+        </div>
+        <div class="figure-header-actions">
+          <span id="figureSaveStatus" class="figure-save-status">Draft not loaded</span>
+          <button id="closeFigureStudioButton" class="secondary" type="button">Close</button>
+        </div>
+      </header>
+
+      <div class="figure-studio-toolbar">
+        <label>Output mode
+          <select id="figureMode"><option value="mosaic">Mosaic</option><option value="single">Single</option></select>
+        </label>
+        <label>Layout template
+          <select id="figureTemplateSelect">
+            <option value="free">Free</option>
+            <option value="vertical">Vertical</option>
+            <option value="horizontal">Horizontal</option>
+            <option value="grid">Grid</option>
+          </select>
+        </label>
+        <button id="applyFigureTemplateButton" class="secondary" type="button">Apply Layout</button>
+        <button id="saveFigureSnapshotButton" class="secondary" type="button">Save Snapshot</button>
+        <button id="runFigurePreflightButton" type="button">Run Preflight</button>
+        <button id="exportFigureButton" type="button" disabled>Export</button>
+        <button id="cancelFigureExportButton" class="danger" type="button" hidden>Cancel Export</button>
+      </div>
+
+      <div class="figure-studio-body">
+        <aside class="figure-layer-pane">
+          <div class="section-heading">
+            <div><span class="eyebrow">Sources</span><strong>Layers</strong></div>
+            <span id="figureLayerCount">0</span>
+          </div>
+          <p class="figure-pane-help">Use <strong>Add to Figure</strong> on a preview or image artifact. Only explicit sources are added.</p>
+          <div id="figureLayerList" class="figure-layer-list"></div>
+        </aside>
+
+        <main class="figure-stage-pane">
+          <div id="figureCanvasShell" class="figure-canvas-shell">
+            <canvas id="figureCanvas" width="1600" height="1200" aria-label="Figure composition canvas"></canvas>
+            <div id="figureCanvasEmpty" class="figure-canvas-empty">Add a preview or image artifact to begin.</div>
+          </div>
+          <div class="figure-stage-controls" aria-label="Canvas tools">
+            <button type="button" class="secondary" data-figure-tool="move">Move Layer</button>
+            <button type="button" class="secondary" data-figure-tool="pan">Pan Image</button>
+            <button type="button" class="secondary" data-figure-tool="crop">Crop</button>
+            <button id="figureFitButton" type="button" class="secondary">Fit</button>
+            <button id="figureFillButton" type="button" class="secondary">Fill</button>
+            <button id="figureCenterButton" type="button" class="secondary">Center</button>
+            <button id="figureResetButton" type="button" class="secondary">Reset</button>
+          </div>
+        </main>
+
+        <aside class="figure-inspector-pane">
+          <details open>
+            <summary>Canvas</summary>
+            <div class="figure-control-grid">
+              <label>Width<input id="figureCanvasWidth" type="number" min="1" max="8192" value="1600" /></label>
+              <label>Height<input id="figureCanvasHeight" type="number" min="1" max="8192" value="1200" /></label>
+              <label>Background<input id="figureCanvasBackground" type="color" value="#ffffff" /></label>
+              <label>Export scale<input id="figureExportScale" type="number" min="0.25" max="4" step="0.25" value="1" /></label>
+            </div>
+          </details>
+          <details open>
+            <summary>Selected Layer</summary>
+            <div id="figureNoLayer" class="figure-pane-help">Select a layer to edit it.</div>
+            <div id="figureLayerInspector" hidden>
+              <label>Title<input id="figureLayerTitle" /></label>
+              <div class="figure-control-grid">
+                <label>X<input id="figureLayerX" type="number" step="1" /></label>
+                <label>Y<input id="figureLayerY" type="number" step="1" /></label>
+                <label>Width<input id="figureLayerWidth" type="number" min="1" step="1" /></label>
+                <label>Height<input id="figureLayerHeight" type="number" min="1" step="1" /></label>
+              </div>
+              <label>Time behavior
+                <select id="figureLayerTemporalKind">
+                  <option value="unknown">Needs classification</option>
+                  <option value="timeless">Timeless</option>
+                  <option value="fixed">Fixed observation</option>
+                  <option value="series">Discrete series</option>
+                  <option value="spectrogram">Spectrogram coverage</option>
+                </select>
+              </label>
+              <label id="figureLayerTimeLabel">Observation time (UTC)<input id="figureLayerTime" type="datetime-local" step="0.001" /></label>
+              <label>Match tolerance (seconds)<input id="figureLayerTolerance" type="number" min="0" step="0.001" placeholder="Auto for series" /></label>
+              <details class="figure-time-fallback">
+                <summary>Advanced time fallback</summary>
+                <label>Missing-time fallback
+                  <select id="figureLayerFallback">
+                    <option value="none">Block export</option>
+                    <option value="hold_nearest">Hold nearest frame</option>
+                    <option value="hold_last">Hold last frame</option>
+                    <option value="out_of_range_note">Spectrum out-of-range note</option>
+                  </select>
+                </label>
+              </details>
+              <div class="figure-layer-actions">
+                <button id="figureLayerBackward" class="secondary" type="button">Send Back</button>
+                <button id="figureLayerForward" class="secondary" type="button">Bring Forward</button>
+                <button id="figureLayerRemove" class="danger" type="button">Remove</button>
+              </div>
+            </div>
+          </details>
+          <details open>
+            <summary>Unified Timeline</summary>
+            <label>Export timeline
+              <select id="figureTimelineMode"><option value="still">PNG at one UTC time</option><option value="sequence">Time-range animation</option></select>
+            </label>
+            <div id="figureStillControls"><label>UTC time<input id="figureSelectedTime" type="datetime-local" step="0.001" /></label></div>
+            <div id="figureSequenceControls" hidden>
+              <label>UTC start<input id="figureStartTime" type="datetime-local" step="0.001" /></label>
+              <label>UTC end<input id="figureEndTime" type="datetime-local" step="0.001" /></label>
+              <div class="figure-control-grid">
+                <label>Sample interval (s)<input id="figureSampleInterval" type="number" min="0.001" step="0.001" value="1" /></label>
+                <label>Playback FPS<input id="figurePlaybackFps" type="number" min="0.2" max="60" step="0.2" value="10" /></label>
+              </div>
+              <label>Format<select id="figureAnimationFormat"><option value="mp4">MP4</option><option value="webm">WebM</option></select></label>
+            </div>
+          </details>
+          <section class="figure-preflight-panel">
+            <div class="section-heading"><strong>Preflight</strong><span id="figurePreflightState">Not run</span></div>
+            <div id="figurePreflightResult" class="figure-pane-help">Run preflight before export.</div>
+            <button id="applyFigureRecommendationButton" class="secondary" type="button" hidden>Apply Recommended Time</button>
+          </section>
+        </aside>
+      </div>
+    </section>
+
+    <script src="{{ url_for('static', filename='radio_figure_composer.js') }}"></script>
     <script src="{{ url_for('static', filename='radio.js') }}"></script>
   </body>
 </html>

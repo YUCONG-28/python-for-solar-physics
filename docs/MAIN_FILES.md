@@ -28,10 +28,10 @@ full boundary map, see `FUNCTION_MAP.md`. For a first-run guide, see
   - `modeling/`: shared Gaussian and density-model boundary.
   - `visualization/`: shared plotting, media-generation, local image sequence viewer, video export, and interactive HTML visualization helpers.
   - `webapp/`: unified local English web GUI, workflow registry, and job runner.
-    - `radio_workspace/contracts.py` and `catalog.py`: versioned module/action/workspace/run/artifact contracts and the eight fused Radio modules.
-    - `radio_workspace/store.py`, `runner.py`, and `api.py`: allowed-root persistence, selected-action orchestration, artifacts, cancellation, recovery, and `/api/radio/*`.
+    - `radio_workspace/contracts.py` and `catalog.py`: versioned module/action/workspace/run/artifact/Figure Studio contracts and the eight fused Radio modules.
+    - `radio_workspace/store.py`, `figure_time.py`, `runner.py`, and `api.py`: allowed-root persistence, UTC figure preflight, selected-action orchestration, artifacts, cancellation, recovery, and `/api/radio/*`.
     - `radio_workspace/native_previews.py`: same-page ROI, drift, and trajectory Plotly payloads without an external Streamlit service.
-    - `templates/radio.html`, `static/radio.css`, and `static/radio.js`: the `/radio` interface and local Plotly/Mediabunny integration.
+    - `templates/radio.html`, `static/radio.css`, `static/radio.js`, and `static/radio_figure_composer.js`: the selective `/radio` interface, native Canvas Figure Studio, and local Plotly/Mediabunny integration.
   - `path_config.py`: local YAML path/config loading.
   - `solar_analysis_utils.py`: compatibility facade for shared time, FITS ordering, map, memory, and plotting utilities.
 

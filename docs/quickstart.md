@@ -154,12 +154,15 @@ solar-webapp `
   --open-browser
 ```
 
-The Radio Workspace does not assume a full pipeline run. Select only the needed
-modules, then use an action's Preview or Run button. Presets only change the
-module layout, and Run Selected requires explicit action checkboxes plus a
-confirmation review. Disabled or collapsed modules are not run as hidden
-dependencies. See [`radio_workspace.md`](radio_workspace.md) for the complete
-module inventory, persistence layout, API, and compatibility details.
+The Radio Workspace does not assume a full pipeline run and initially shows no
+analysis module. Select only the needed modules, open an action, and then use
+Preview or Run. Presets only change the module layout, and Run Selected requires
+explicit action checkboxes plus a confirmation review. Disabled or collapsed
+modules are not mounted or run as hidden dependencies. Explicit image previews
+and completed artifacts can be arranged in Figure Studio as Single or
+time-synchronized Mosaic PNG/MP4/WebM exports. See
+[`radio_workspace.md`](radio_workspace.md) for the complete module inventory,
+persistence layout, API, and compatibility details.
 
 ## 6. First Real Workflows
 

@@ -42,11 +42,12 @@ use **Manage file access** in that dialog; the requested directory is appended
 to the editable list and, after a successful update, the browser continues at
 that location.
 
-The first workspace opens only **Data & Configuration** in the main area.
-Other modules remain disabled or collapsed until selected. **Runs & Results**
-is always available through the result drawer. Saved workspaces restore module
-enablement, order, pinning, collapse state, event settings, shared paths,
-advanced configuration, and concurrency.
+The main area opens empty. Every analysis module, action, Parameters section,
+and Advanced section stays disabled or collapsed until explicitly opened.
+**Runs & Results** is always available through the result drawer. Workspaces
+created before UI layout version 2 receive this empty-layout migration once;
+their paths, event settings, runs, artifacts, advanced configuration, and
+concurrency are retained. Later visits restore the user's version-2 layout.
 
 The left sidebar is organized as **Core**, **Analysis**, **Context**, and
 **Advanced**. Advanced and adjacent compatibility actions remain inside their
@@ -110,6 +111,37 @@ The layout presets are also selection-only:
 Every preset also keeps Runs & Results accessible. Applying a preset never
 starts Preview, Run, or Run Selected.
 
+## Figure Studio
+
+An explicit Plotly/image preview or completed image artifact can be added to
+the full-screen **Figure Studio**. Adding a source never runs an action. Plotly
+previews are rasterized locally and registered as immutable, validated preview
+sources; persisted drafts contain only controlled preview or run/artifact IDs,
+not arbitrary paths, URLs, or data URLs.
+
+**Single** mode exports one panel. **Mosaic** mode supports free placement plus
+vertical, horizontal, and grid templates. Layers can be moved, resized,
+reordered, centered, fitted, filled, panned, zoomed, or non-destructively
+cropped. One active draft is saved per workspace and immutable snapshots can be
+kept before an export.
+
+All time-aware Mosaic layers share one UTC timeline. A PNG uses one selected
+UTC time. MP4/WebM animation uses an inclusive UTC start/end range, a scientific
+sample interval, and an independent playback FPS. Discrete images use the
+nearest real frame only inside their declared tolerance; no image interpolation
+is performed. A spectrogram keeps its real coverage and receives a moving time
+cursor rather than a repeated synthetic frame.
+
+Every export requires a fresh preflight. The report lists source coverage,
+matched source times and deltas, missing ranges, and a common valid interval.
+Missing data blocks export. The recommended repair moves a PNG to the nearest
+common time or trims an animation to the longest common continuous interval,
+and is applied only after confirmation. Spectrogram shortages first offer an
+explicit adjacent-input rebuild using the canonical spectrogram coverage rules;
+segments separated by more than one second are not joined. Holding an image or
+keeping an out-of-range spectrogram note is an explicit advanced fallback and
+is recorded in the export manifest.
+
 ## Configuration and Provenance
 
 Radio Workspace configuration is resolved from lowest to highest priority:
@@ -145,6 +177,18 @@ Each workspace is persisted below its selected output root:
     run.json
     run.log
     artifacts/
+  figure_studio/
+    draft.json
+    sources/<preview-id>/
+      source.json
+      preview.png
+    snapshots/<snapshot-id>.json
+    exports/<export-id>/
+      figure.json
+      preflight.json
+      manifest.json
+      figure.png | figure.mp4 | figure.webm
+      thumbnail.png
 ```
 
 The versioned contracts are:
@@ -161,6 +205,11 @@ The versioned contracts are:
   provenance, input sources, and artifacts.
 - `RadioArtifact`: semantic type, relative path, MIME type, source run,
   previewability, and downloadability.
+- `RadioFigureDraft`, `RadioFigureLayer`, `RadioFigureTimeline`, and
+  `RadioFigureTemporalBinding`: versioned canvas, controlled source, transform,
+  crop, and UTC time definitions.
+- `RadioFigurePreflight` and `RadioFigureExport`: source-bound preflight
+  revision, coverage decisions, and immutable exported media metadata.
 
 Only paths inside the current effective roots may be browsed or passed to an
 action. Effective roots combine the editable user roots with protected default
@@ -185,14 +234,16 @@ The versioned local API is mounted under `/api/radio`:
 | Preview | `POST /workspaces/<id>/modules/<module>/actions/<action>/preview` |
 | Runs | `GET/POST /workspaces/<id>/runs`, `POST /workspaces/<id>/runs/batch`, `GET /workspaces/<id>/runs/<run>[/status]`, `GET .../log`, `POST .../cancel` |
 | Artifacts | `GET /workspaces/<id>/artifacts`, `GET /workspaces/<id>/runs/<run>/artifacts`, `GET .../artifacts/<artifact>` |
+| Figure Studio | `GET/PUT /workspaces/<id>/figures/draft`, `POST .../figures/snapshots`, `POST .../figures/preflight`, `GET/POST .../figures/exports`, controlled preview-source and export preview/download/delete subresources |
 
 Batch execution rejects requests without `confirmed: true` and validates all
 selected actions before queueing any of them.
 
-`PUT /allowed-roots` is restricted to loopback requests and requires the
-per-start token returned to the local frontend in the `X-Radio-Root-Token`
-header. It replaces only the editable user-root list for the current server
-session; protected output and workspace roots are retained.
+`PUT /allowed-roots` and Figure Studio persistence/upload/delete routes are
+restricted to loopback requests and require the per-start token returned to the
+local frontend in the `X-Radio-Root-Token` header. Root updates replace only the
+editable user-root list for the current server session; protected output and
+workspace roots are retained.
 
 ## Code Boundaries
 

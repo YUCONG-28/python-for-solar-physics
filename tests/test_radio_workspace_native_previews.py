@@ -246,3 +246,133 @@ def test_drift_preview_uses_existing_image_and_metadata_without_running_upstream
 def test_unknown_native_preview_adapter_is_rejected():
     with pytest.raises(ValueError, match="Unknown native preview adapter"):
         build_native_preview("not-real", {}, validate_path=lambda value: value)
+
+
+def _write_cso_spectrogram(path: Path, *, times: list[float]) -> None:
+    np = pytest.importorskip("numpy")
+    fits = pytest.importorskip("astropy.io.fits")
+
+    frequencies = np.asarray([100.0, 120.0], dtype=np.float32)
+    samples = np.arange(frequencies.size * len(times), dtype=np.float32).reshape(
+        frequencies.size, len(times)
+    )
+    primary = fits.PrimaryHDU(samples)
+    primary.header["DATE-OBS"] = "2025-01-24T00:00:00"
+    primary.header["POLARIZA"] = "LL"
+    axes = fits.BinTableHDU.from_columns(
+        [
+            fits.Column(
+                name="time",
+                format=f"{len(times)}D",
+                array=np.asarray([times], dtype=np.float64),
+            ),
+            fits.Column(
+                name="frequency",
+                format=f"{frequencies.size}E",
+                array=np.asarray([frequencies], dtype=np.float32),
+            ),
+        ]
+    )
+    fits.HDUList([primary, axes]).writeto(path)
+
+
+@pytest.mark.parametrize(
+    ("second_start", "expected_segment_count", "expected_trace_count"),
+    [
+        (1.5, 1, 1),
+        (2.0, 1, 1),
+        (4.0, 2, 2),
+    ],
+)
+def test_spectrogram_coverage_preview_merges_only_through_one_second_gap(
+    tmp_path, second_start, expected_segment_count, expected_trace_count
+):
+    first = tmp_path / "first.fits"
+    second = tmp_path / "second.fits"
+    _write_cso_spectrogram(first, times=[0.0, 1.0])
+    _write_cso_spectrogram(second, times=[second_start, second_start + 1.0])
+    calls: list[Path] = []
+
+    result = build_native_preview(
+        "spectrogram-coverage",
+        {
+            "primary_file": str(first),
+            "adjacent_file": str(second),
+            "adjacent_files_json": json.dumps([str(second)]),
+            "frequency_start": 100.0,
+            "frequency_end": 120.0,
+            "polarization": "LL",
+            "rebin_time": 100,
+            "rebin_frequency": 100,
+            "use_log10": False,
+        },
+        validate_path=_recording_validator(calls),
+    )
+
+    assert result["status"] == "ready"
+    assert result["adapter"] == "spectrogram-coverage"
+    assert result["kind"] == "plotly"
+    assert len(result["coverage_segments"]) == expected_segment_count
+    assert len(result["figure"]["data"]) == expected_trace_count
+    assert result["metadata"]["trace_count"] == expected_trace_count
+    assert result["metadata"]["interpolation"] == "none"
+    assert result["metadata"]["maximum_merged_gap_s"] == 1.0
+    assert all(trace["connectgaps"] is False for trace in result["figure"]["data"])
+    assert result["metadata"]["source_count"] == 2
+    assert calls == [first.resolve(), second.resolve(), second.resolve()]
+    json.dumps(result, allow_nan=False)
+
+    if second_start > 2.0:
+        assert len(result["metadata"]["coverage_gaps"]) == 1
+        first_times = set(result["figure"]["data"][0]["x"])
+        second_times = set(result["figure"]["data"][1]["x"])
+        assert first_times.isdisjoint(second_times)
+    else:
+        assert result["metadata"]["coverage_gaps"] == []
+
+
+def test_spectrogram_coverage_validates_every_adjacent_path_before_fits_read(
+    tmp_path,
+):
+    primary = tmp_path / "primary.fits"
+    primary.write_bytes(b"not read before all paths pass validation")
+    rejected = tmp_path.parent / "outside.fits"
+    calls: list[Path] = []
+
+    def validator(value):
+        path = Path(value).resolve()
+        calls.append(path)
+        if path == rejected.resolve():
+            raise PermissionError("outside allowed roots or symlink boundary")
+        return path
+
+    with pytest.raises(PermissionError, match="outside allowed roots"):
+        build_native_preview(
+            "spectrogram-coverage",
+            {
+                "primary_file": str(primary),
+                "adjacent_files_json": json.dumps([str(rejected)]),
+            },
+            validate_path=validator,
+        )
+
+    assert calls == [primary.resolve(), rejected.resolve()]
+
+
+def test_spectrogram_coverage_action_is_preview_only_and_explicit():
+    from solar_toolkit.webapp.radio_workspace.catalog import get_action
+
+    action = get_action("spectrogram-drift", "rebuild-spectrogram-coverage")
+
+    assert action.preview_adapter == "spectrogram-coverage"
+    assert action.runnable is False
+    assert action.command_module is None
+    assert [field["name"] for field in action.input_schema[:2]] == [
+        "primary_file",
+        "adjacent_file",
+    ]
+    assert action.input_schema[0]["path"] is True
+    assert action.input_schema[1]["path"] is True
+    assert action.input_schema[1]["artifact_types"] == ["cso-data"]
+    assert action.input_schema[2]["name"] == "adjacent_files_json"
+    assert action.input_schema[2]["path"] is False

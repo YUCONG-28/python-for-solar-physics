@@ -70,9 +70,8 @@ def test_radio_catalog_fuses_eight_optional_modules_and_layout_presets():
         "trajectory-media",
         "runs-results",
     ]
-    assert MODULES[0].default_enabled is True
-    assert MODULES[0].default_collapsed is False
-    assert all(module.default_collapsed for module in MODULES[1:])
+    assert all(module.default_enabled is module.always_available for module in MODULES)
+    assert all(module.default_collapsed for module in MODULES)
     assert MODULES[-1].always_available is True
     assert set(PRESETS) == {
         "source-localization",
@@ -168,7 +167,7 @@ def test_workspace_store_persists_layout_concurrency_and_custom_output_root(
     )
 
     assert workspace.output_root == str(custom_root.resolve())
-    assert workspace.enabled_modules == ["data-configuration", "runs-results"]
+    assert workspace.enabled_modules == ["runs-results"]
     assert workspace.concurrency == 3
     assert (custom_root / "radio_workbench" / workspace.id / "workspace.json").is_file()
 
@@ -1942,6 +1941,21 @@ def test_structured_and_manifest_paths_cannot_escape_allowed_roots(tmp_path: Pat
         popen_factory=_artifact_popen,
     )
     try:
+        radio_file = allowed / "single-source.fits"
+        radio_file.write_bytes(b"fixture")
+        resolved = manager.resolve_request(
+            workspace.id,
+            "imaging-localization",
+            "inspect-source-map",
+            {
+                "form": {
+                    "mode": "single_band",
+                    "single_file_path": str(radio_file),
+                }
+            },
+        )
+        assert resolved["config"]["single_file_path"] == str(radio_file)
+
         with pytest.raises(PermissionError, match="outside allowed roots"):
             manager.resolve_request(
                 workspace.id,

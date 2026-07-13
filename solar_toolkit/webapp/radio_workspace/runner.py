@@ -1047,6 +1047,12 @@ class RadioRunManager:
                     data.pop("data_dir", None)
                 else:
                     data.pop("multi_band_root", None)
+                    if data.get("single_file_path"):
+                        # A valid explicit single-file request never falls back to
+                        # the event's batch directory, so that unrelated default
+                        # path must not enlarge or block the selected file scope.
+                        data.pop("input_dir", None)
+                        data.pop("data_dir", None)
             features = effective.get("features")
             if isinstance(features, dict) and not features.get(
                 "spectrogram_panel", False

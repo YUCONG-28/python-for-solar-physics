@@ -348,9 +348,8 @@ def test_radio_catalog_fuses_overlapping_capabilities_into_eight_modules():
         "multi-instrument-context",
         "full-analysis",
     }
-    assert MODULES[0].default_enabled is True
-    assert MODULES[0].default_collapsed is False
-    assert all(module.default_collapsed for module in MODULES[1:])
+    assert all(module.default_enabled is module.always_available for module in MODULES)
+    assert all(module.default_collapsed for module in MODULES)
 
     advanced = {
         (module.id, action.id)

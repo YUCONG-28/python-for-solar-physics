@@ -2,6 +2,7 @@
   "use strict";
 
   const API = "/api/radio";
+  const UI_LAYOUT_VERSION = 2;
   const TERMINAL = new Set(["succeeded", "failed", "canceled", "interrupted"]);
   const state = {
     modules: [],
@@ -26,6 +27,8 @@
     heartbeatTimer: null,
     saveTimer: null,
     pollTimer: null,
+    figureComposer: null,
+    figureReplacementLayerId: "",
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -35,7 +38,7 @@
 
   async function requestJson(path, options = {}) {
     const init = {...options, headers: {...(options.headers || {})}};
-    if (init.body && typeof init.body !== "string") {
+    if (init.body && typeof init.body !== "string" && !(init.body instanceof FormData)) {
       init.headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(init.body);
     }
@@ -64,10 +67,12 @@
   }
 
   function defaultLayout() {
+    const required = state.modules.filter((item) => item.always_available).map((item) => item.id);
     return {
-      enabled_modules: state.modules.filter((item) => item.default_enabled).map((item) => item.id),
+      ui_layout_version: UI_LAYOUT_VERSION,
+      enabled_modules: required,
       module_order: state.modules.map((item) => item.id),
-      collapsed_modules: state.modules.filter((item) => item.default_collapsed).map((item) => item.id),
+      collapsed_modules: state.modules.map((item) => item.id),
       pinned_modules: [],
     };
   }
@@ -76,16 +81,19 @@
     const defaults = defaultLayout();
     const ids = new Set(state.modules.map((item) => item.id));
     const unique = (values) => Array.from(new Set((values || []).filter((id) => ids.has(id))));
-    const order = unique(source?.module_order);
+    const migrated = Number(source?.ui_layout_version || 0) < UI_LAYOUT_VERSION;
+    const normalizedSource = migrated ? defaults : source;
+    const order = unique(normalizedSource?.module_order);
     for (const id of defaults.module_order) if (!order.includes(id)) order.push(id);
     const required = state.modules.filter((item) => item.always_available).map((item) => item.id);
-    const enabled = unique(source?.enabled_modules ?? defaults.enabled_modules);
+    const enabled = unique(normalizedSource?.enabled_modules ?? defaults.enabled_modules);
     for (const id of required) if (!enabled.includes(id)) enabled.push(id);
     return {
+      ui_layout_version: UI_LAYOUT_VERSION,
       enabled_modules: enabled,
       module_order: order,
-      collapsed_modules: unique(source?.collapsed_modules ?? defaults.collapsed_modules),
-      pinned_modules: unique(source?.pinned_modules),
+      collapsed_modules: unique(normalizedSource?.collapsed_modules ?? defaults.collapsed_modules),
+      pinned_modules: unique(normalizedSource?.pinned_modules),
     };
   }
 
@@ -286,19 +294,21 @@
     header.append(copy, controls);
     panel.append(header);
 
-    const body = document.createElement("div");
-    body.className = "module-body";
-    const mainActions = module.actions.filter((item) => item.section === "main");
-    const advancedActions = module.actions.filter((item) => item.section !== "main");
-    if (mainActions.length) body.append(renderActionGrid(module, mainActions));
-    if (advancedActions.length) {
-      const advanced = document.createElement("details");
-      advanced.className = "advanced-actions";
-      advanced.innerHTML = "<summary>Advanced and adjacent capabilities</summary>";
-      advanced.append(renderActionGrid(module, advancedActions));
-      body.append(advanced);
+    if (!collapsed) {
+      const body = document.createElement("div");
+      body.className = "module-body";
+      const mainActions = module.actions.filter((item) => item.section === "main");
+      const advancedActions = module.actions.filter((item) => item.section !== "main");
+      if (mainActions.length) body.append(renderActionGrid(module, mainActions));
+      if (advancedActions.length) {
+        const advanced = document.createElement("details");
+        advanced.className = "advanced-actions";
+        advanced.innerHTML = "<summary>Advanced and adjacent capabilities</summary>";
+        advanced.append(renderActionGrid(module, advancedActions));
+        body.append(advanced);
+      }
+      panel.append(body);
     }
-    panel.append(body);
     return panel;
   }
 
@@ -314,37 +324,56 @@
     const card = $(".action-card", fragment);
     const key = keyFor(module.id, action.id);
     card.dataset.actionKey = key;
+    card.dataset.moduleId = module.id;
+    card.dataset.actionId = action.id;
     $("[data-role='action-title']", card).textContent = action.title;
     $("[data-role='action-description']", card).textContent = action.description;
     const select = $("[data-role='select-action']", card);
     select.checked = state.selectedActions.has(key);
     select.disabled = !action.runnable;
     select.addEventListener("change", () => {
-      if (select.checked) state.selectedActions.add(key); else state.selectedActions.delete(key);
+      if (select.checked) {
+        state.selectedActions.add(key);
+        mountActionBody(module, action, card);
+      } else state.selectedActions.delete(key);
       updateSelectedCount();
     });
+    const disclosure = $("[data-role='toggle-action']", card);
+    disclosure.addEventListener("click", () => {
+      const body = $("[data-role='action-body']", card);
+      const opening = body.hidden;
+      if (opening) mountActionBody(module, action, card);
+      body.hidden = !opening;
+      disclosure.ariaExpanded = String(opening);
+      $("[data-role='action-chevron']", card).textContent = opening ? "Hide" : "Show";
+    });
+    state.actionElements.set(key, card);
+    const active = state.activeRuns.get(key);
+    if (active || select.checked) {
+      mountActionBody(module, action, card);
+      if (active) updateActionRunState(key, active);
+    }
+    return card;
+  }
 
+  function mountActionBody(module, action, card) {
+    if (card.dataset.mounted === "true") return;
+    card.dataset.mounted = "true";
     const form = $("[data-role='action-form']", card);
     form.addEventListener("submit", (event) => event.preventDefault());
     if (artifactBindableFields(action).length) form.append(renderArtifactSource(action));
     for (const field of action.input_schema || []) form.append(renderField(field));
     const advanced = $("[data-role='advanced-json']", card);
     advanced.value = JSON.stringify(action.default_config || {}, null, 2);
-
     const previewButton = $("[data-role='preview']", card);
     previewButton.disabled = !(action.preview_supported || action.runnable);
     previewButton.title = action.preview_supported ? "Build an explicit same-page preview" : "Validate inputs and inspect the resolved command without running it";
     previewButton.addEventListener("click", () => previewAction(module, action, card));
-
     const runButton = $("[data-role='run']", card);
     runButton.disabled = !action.runnable;
     runButton.title = action.runnable ? "Run only this action" : "Use Preview for this interactive capability";
     runButton.addEventListener("click", () => runAction(module, action, card));
-    $("[data-role='cancel']", card).addEventListener("click", () => cancelActionRun(key));
-    state.actionElements.set(key, card);
-    const active = state.activeRuns.get(key);
-    if (active) updateActionRunState(key, active);
-    return card;
+    $("[data-role='cancel']", card).addEventListener("click", () => cancelActionRun(keyFor(module.id, action.id)));
   }
 
   function renderArtifactSource(action) {
@@ -635,6 +664,16 @@
       if (preview.playback?.frames?.length) {
         attachTrajectoryPlayer(panel, plot, preview.playback);
       }
+      attachFigurePreviewButton(panel, preview, async () => {
+        const width = Math.max(320, Math.min(1920, Math.round(plot.clientWidth || 960)));
+        const height = Math.max(240, Math.min(1920, Math.round(plot.clientHeight || 540)));
+        const dataUrl = await window.Plotly.toImage(plot, {format: "png", width, height, scale: 1});
+        const response = await fetch(dataUrl);
+        const size = plot._fullLayout?._size;
+        const metadata = figurePreviewMetadata(preview);
+        if (size) metadata.axis_mapping = {...(metadata.x_axis_mapping || {}), x: size.l / width, y: size.t / height, width: size.w / width, height: size.h / height};
+        return {blob: await response.blob(), metadata};
+      });
       if (preview.selection_target || preview.selection) {
         const selectionContract = preview.selection_target || preview.selection;
         if (selectionContract.mode === "two-point-lines") {
@@ -666,6 +705,7 @@
       image.src = preview.image_url;
       image.alt = preview.title || "Action preview";
       panel.append(image);
+      attachFigurePreviewButton(panel, preview, async () => ({blob: await imageToPngBlob(image), metadata: figurePreviewMetadata(preview)}));
     }
     if (preview.message) {
       const message = document.createElement("p");
@@ -686,6 +726,117 @@
       panel.append(details);
     }
     if (!panel.childElementCount) panel.textContent = preview.available === false ? "No native preview is available. You can still run this action explicitly." : "Preview completed.";
+  }
+
+  function figurePreviewMetadata(preview) {
+    const metadata = {};
+    const safeKeys = ["adapter", "title", "kind", "x_start_iso", "x_end_iso", "coverage_segments", "coverage_gaps", "x_axis_mapping", "observation_time", "frame_time", "frequency_mhz", "polarization"];
+    for (const key of safeKeys) {
+      const value = preview.metadata?.[key] ?? preview[key];
+      if (value !== undefined) metadata[key] = key === "coverage_segments"
+        ? (Array.isArray(value) ? value.map((item) => Array.isArray(item)
+          ? {start_time_iso: item[0], end_time_iso: item[1]}
+          : {start_time_iso: item.start_time_iso || item.start_iso || item.start, end_time_iso: item.end_time_iso || item.end_iso || item.end}) : [])
+        : value;
+    }
+    if (!metadata.observation_time && preview.metadata?.observed_at) metadata.observation_time = preview.metadata.observed_at;
+    return metadata;
+  }
+
+  function figureUtcIsoValue(value) {
+    if (!value) return "";
+    const raw = String(value).trim();
+    const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw : `${raw}Z`;
+    const date = new Date(normalized);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : "";
+  }
+
+  function figurePreviewTemporalBinding(preview, panel) {
+    const metadata = figurePreviewMetadata(preview);
+    const coverage = metadata.coverage_segments || (metadata.x_start_iso && metadata.x_end_iso
+      ? [{start_time_iso: metadata.x_start_iso, end_time_iso: metadata.x_end_iso}]
+      : []);
+    if (coverage.length) return {kind: "spectrogram", coverage_segments: coverage, merge_gap_s: 1, fallback_policy: "none"};
+    const observed = figureUtcIsoValue(panel.dataset.figureTime || metadata.frame_time || metadata.observed_at || metadata.observation_time || preview.time_iso);
+    return observed
+      ? {kind: "fixed", time_iso: observed, tolerance_s: 0, fallback_policy: "none"}
+      : {kind: "unknown", fallback_policy: "none"};
+  }
+
+  function attachFigurePreviewButton(panel, preview, buildSnapshot) {
+    const toolbar = $(".preview-figure-toolbar", panel) || document.createElement("div");
+    if (!toolbar.parentNode) {
+      toolbar.className = "preview-figure-toolbar";
+      panel.prepend(toolbar);
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary";
+    button.textContent = "Add to Figure";
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      button.textContent = "Registering...";
+      try {
+        requireWorkspace();
+        const snapshot = await buildSnapshot();
+        const card = panel.closest(".action-card");
+        const title = preview.title || $("[data-role='action-title']", card)?.textContent || "Action preview";
+        await getFigureComposer().addPreview({
+          blob: snapshot.blob,
+          title,
+          metadata: snapshot.metadata,
+          temporalBinding: figurePreviewTemporalBinding(preview, panel),
+        });
+        if (preview.adapter === "spectrogram-coverage") state.figureReplacementLayerId = "";
+      } catch (error) {
+        showNotice(`Preview could not be added to Figure Studio: ${error.message}`);
+      } finally {
+        button.disabled = false;
+        button.textContent = "Add to Figure";
+      }
+    });
+    toolbar.append(button);
+    if (preview.adapter === "spectrogram-coverage" && state.figureReplacementLayerId) {
+      const replace = document.createElement("button");
+      replace.type = "button";
+      replace.className = "secondary";
+      replace.textContent = "Replace Figure Layer";
+      replace.addEventListener("click", async () => {
+        replace.disabled = true;
+        replace.textContent = "Replacing...";
+        try {
+          requireWorkspace();
+          const snapshot = await buildSnapshot();
+          const card = panel.closest(".action-card");
+          const title = preview.title || $("[data-role='action-title']", card)?.textContent || "Spectrogram Preview";
+          await getFigureComposer().replacePreview({
+            layerId: state.figureReplacementLayerId,
+            blob: snapshot.blob,
+            title,
+            metadata: snapshot.metadata,
+            temporalBinding: figurePreviewTemporalBinding(preview, panel),
+          });
+          state.figureReplacementLayerId = "";
+        } catch (error) {
+          showNotice(`Figure layer could not be replaced: ${error.message}`);
+        } finally {
+          replace.disabled = false;
+          replace.textContent = "Replace Figure Layer";
+        }
+      });
+      toolbar.append(replace);
+    }
+  }
+
+  async function imageToPngBlob(image) {
+    if (!image.complete) await image.decode();
+    const maximum = 4096;
+    const scale = Math.min(1, maximum / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext("2d", {alpha: false}).drawImage(image, 0, 0, canvas.width, canvas.height);
+    return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("The preview could not be rasterized.")), "image/png"));
   }
 
   function attachRoiFileSelector(panel, preview) {
@@ -830,6 +981,7 @@
       const frame = payload.frames[frameIndex];
       range.value = String(frameIndex);
       status.textContent = `${frameIndex + 1} / ${payload.frames.length} · ${frame.time}`;
+      panel.dataset.figureTime = frame.time || "";
       await window.Plotly.react(
         plot,
         trajectoryFrameData(payload, frame),
@@ -1003,6 +1155,21 @@
     await ensureMediaAssets.promise;
   }
 
+  function getFigureComposer() {
+    if (state.figureComposer) return state.figureComposer;
+    if (!window.RadioFigureComposer) throw new Error("The local Figure Studio asset is unavailable.");
+    state.figureComposer = window.RadioFigureComposer.create({
+      root: byId("figureStudio"),
+      apiBase: API,
+      request: requestJson,
+      notify: showNotice,
+      getWorkspace: () => state.workspace,
+      getRootToken: () => state.radioRootToken,
+      ensureMedia: ensureMediaAssets,
+    });
+    return state.figureComposer;
+  }
+
   function loadScript(src) {
     return new Promise((resolve, reject) => {
       const script = document.createElement("script");
@@ -1105,7 +1272,8 @@
     const result = $("[data-role='action-result']", card);
     const payload = await requestJson(`${API}/workspaces/${state.workspace.id}/runs/${run.id}/artifacts`);
     result.replaceChildren();
-    for (const artifact of payload.artifacts || []) result.append(renderArtifact(run, artifact));
+    const artifacts = payload.artifacts || [];
+    for (const artifact of artifacts) result.append(renderArtifact(run, artifact, artifacts));
     if (!result.childElementCount) result.textContent = "This action produced no indexed artifacts.";
     result.hidden = false;
   }
@@ -1331,7 +1499,7 @@
     const required = state.modules.filter((item) => item.always_available).map((item) => item.id);
     state.layout.enabled_modules = Array.from(new Set([...preset.module_ids, ...required]));
     state.layout.module_order = [...preset.module_ids, ...state.layout.module_order.filter((item) => !preset.module_ids.includes(item))];
-    state.layout.collapsed_modules = state.modules.filter((item) => !state.layout.enabled_modules.includes(item.id)).map((item) => item.id);
+    state.layout.collapsed_modules = state.modules.map((item) => item.id);
     scheduleLayoutSave();
     renderAll();
     showNotice(`${preset.title} changed the module layout only. No action was started.`, "success");
@@ -1412,6 +1580,7 @@
       else state.workspaces.push(state.workspace);
       populateWorkspaceChoices();
       localStorage.setItem("solar-radio-workspace-id", state.workspace.id);
+      getFigureComposer().setWorkspace(state.workspace);
       byId("workspaceDialog").close();
       renderAll();
       showNotice("Workspace saved. No action was started.", "success");
@@ -1582,7 +1751,7 @@
       byId("runList").textContent = "Configure a workspace to view persisted runs.";
       return;
     }
-    await loadRuns();
+    await Promise.all([loadRuns(), getFigureComposer().loadExports()]);
   }
 
   function closeResultsDrawer() {
@@ -1647,7 +1816,8 @@
       log.textContent = (logPayload.lines || []).join("\n") || "No log output.";
       const artifacts = document.createElement("div");
       artifacts.className = "artifact-list";
-      for (const artifact of artifactsPayload.artifacts || []) artifacts.append(renderArtifact(run, artifact));
+      const siblingArtifacts = artifactsPayload.artifacts || [];
+      for (const artifact of siblingArtifacts) artifacts.append(renderArtifact(run, artifact, siblingArtifacts));
       if (!artifacts.childElementCount) artifacts.textContent = "No artifacts indexed yet.";
       root.append(heading, meta, provenance, log, artifacts);
     } catch (error) {
@@ -1655,7 +1825,7 @@
     }
   }
 
-  function renderArtifact(run, artifact) {
+  function renderArtifact(run, artifact, siblingArtifacts = []) {
     const row = document.createElement("div");
     row.className = "artifact-item";
     const text = document.createElement("span");
@@ -1670,6 +1840,57 @@
       preview.textContent = "Preview";
       preview.addEventListener("click", () => toggleArtifactPreview(row, artifact, url));
       actions.append(preview);
+    }
+    if (artifact.kind === "image") {
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "artifact-link secondary";
+      add.textContent = "Add to Figure";
+      add.addEventListener("click", async () => {
+        try {
+          requireWorkspace();
+          await getFigureComposer().addArtifact({
+            runId: run.id,
+            artifactId: artifact.id,
+            title: artifact.relative_path.split("/").pop() || "Image artifact",
+            observedAt: artifact.observed_at,
+            metadata: {series_key: artifact.series_key || "", artifact_type: artifact.artifact_type || artifact.semantic_type || ""},
+          });
+        } catch (error) {
+          showNotice(`Artifact could not be added to Figure Studio: ${error.message}`);
+        }
+      });
+      actions.append(add);
+      const series = siblingArtifacts
+        .filter((item) => item.kind === "image" && artifact.series_key && item.series_key === artifact.series_key && item.observed_at)
+        .sort((left, right) => new Date(left.observed_at) - new Date(right.observed_at));
+      const duplicateTimes = new Set();
+      const seenTimes = new Set();
+      for (const item of series) {
+        const time = new Date(item.observed_at).toISOString();
+        if (seenTimes.has(time)) duplicateTimes.add(time);
+        seenTimes.add(time);
+      }
+      if (series.length >= 2 && artifact.id === series[0].id) {
+        const addSeries = document.createElement("button");
+        addSeries.type = "button";
+        addSeries.className = "artifact-link secondary";
+        addSeries.textContent = duplicateTimes.size ? "Series Has Duplicate UTC" : "Add Series";
+        addSeries.title = duplicateTimes.size ? "This series contains duplicate observation times and must be narrowed before use." : `Add ${series.length} time-stamped images`;
+        addSeries.disabled = duplicateTimes.size > 0;
+        addSeries.addEventListener("click", async () => {
+          try {
+            await getFigureComposer().addArtifactSeries({
+              title: artifact.series_key,
+              frames: series.map((item) => ({run_id: run.id, artifact_id: item.id, time_iso: item.observed_at})),
+              metadata: {series_key: artifact.series_key},
+            });
+          } catch (error) {
+            showNotice(`Image series could not be added: ${error.message}`);
+          }
+        });
+        actions.append(addSeries);
+      }
     }
     const download = document.createElement("a");
     download.href = `${url}?download=1`;
@@ -1735,6 +1956,33 @@
     updateSelectedCount();
   }
 
+  function navigateToSpectrogramCoverageResolver(detail = {}) {
+    const moduleId = "spectrogram-drift";
+    const actionId = "rebuild-spectrogram-coverage";
+    const module = moduleById(moduleId);
+    const action = module?.actions?.find((item) => item.id === actionId);
+    if (!module || !action) {
+      showNotice("The spectrogram coverage resolver is unavailable.");
+      return;
+    }
+    state.figureReplacementLayerId = String(detail.layer_id || "");
+    if (!state.layout.enabled_modules.includes(moduleId)) state.layout.enabled_modules.push(moduleId);
+    state.layout.collapsed_modules = state.layout.collapsed_modules.filter((id) => id !== moduleId);
+    renderAll();
+    const card = state.actionElements.get(keyFor(moduleId, actionId));
+    if (!card) return;
+    mountActionBody(module, action, card);
+    const body = $("[data-role='action-body']", card);
+    const disclosure = $("[data-role='toggle-action']", card);
+    body.hidden = false;
+    disclosure.ariaExpanded = "true";
+    $("[data-role='action-chevron']", card).textContent = "Hide";
+    card.scrollIntoView({behavior: "smooth", block: "center"});
+    scheduleLayoutSave();
+    const layerLabel = detail.layer_title ? ` for ${detail.layer_title}` : "";
+    showNotice(`Choose the primary and adjacent CSO FITS files${layerLabel}, then click Preview. Nothing has been run.`, "success");
+  }
+
   function populatePresets() {
     const select = byId("presetSelect");
     for (const preset of state.presets) select.add(new Option(preset.title, preset.id));
@@ -1760,6 +2008,7 @@
     if (!workspaceId || workspaceId === state.workspace?.id) return;
     const detail = await requestJson(`${API}/workspaces/${workspaceId}`);
     state.workspace = detail.workspace;
+    const migrateLayout = Number(state.workspace.ui_layout_version || 0) < UI_LAYOUT_VERSION;
     state.layout = normalizeLayout(state.workspace);
     state.selectedActions.clear();
     state.activeRuns.clear();
@@ -1767,7 +2016,9 @@
     state.pollTimer = null;
     localStorage.setItem("solar-radio-workspace-id", workspaceId);
     populateWorkspaceChoices();
+    getFigureComposer().setWorkspace(state.workspace);
     renderAll();
+    if (migrateLayout) scheduleLayoutSave();
     showNotice(`Opened workspace: ${state.workspace.name}. No action was started.`, "success");
   }
 
@@ -1798,6 +2049,8 @@
     byId("runSelectedButton").addEventListener("click", reviewSelected);
     byId("confirmRunSelectedButton").addEventListener("click", confirmSelected);
     byId("openResultsButton").addEventListener("click", openResultsDrawer);
+    byId("openFigureStudioButton").addEventListener("click", () => getFigureComposer().open());
+    byId("refreshFigureExportsButton").addEventListener("click", () => getFigureComposer().loadExports());
     byId("closeResultsButton").addEventListener("click", closeResultsDrawer);
     byId("drawerScrim").addEventListener("click", closeResultsDrawer);
     byId("refreshRunsButton").addEventListener("click", loadRuns);
@@ -1819,6 +2072,10 @@
       browsePath(parent || path);
     });
     byId("chooseBrowserPathButton").addEventListener("click", chooseBrowserPath);
+    window.addEventListener("radio:resolve-spectrogram-coverage", (event) => {
+      getFigureComposer().close();
+      navigateToSpectrogramCoverageResolver(event.detail || {});
+    });
     window.addEventListener("pagehide", notifyClientClose);
     window.addEventListener("beforeunload", notifyClientClose);
   }
@@ -1889,8 +2146,12 @@
       }
       let localLayout = null;
       try { localLayout = JSON.parse(localStorage.getItem("solar-radio-layout") || "null"); } catch { localLayout = null; }
-      state.layout = normalizeLayout(state.workspace || localLayout || defaultLayout());
+      const layoutSource = state.workspace || localLayout || defaultLayout();
+      const migrateLayout = Number(layoutSource.ui_layout_version || 0) < UI_LAYOUT_VERSION;
+      state.layout = normalizeLayout(layoutSource);
+      getFigureComposer().setWorkspace(state.workspace);
       renderAll();
+      if (migrateLayout) scheduleLayoutSave();
     } catch (error) {
       setHealth(false, "Unavailable");
       byId("enabledModules").innerHTML = `<section class="empty-workspace"><h2>Radio Workspace unavailable</h2><p>${escapeHtml(error.message)}</p></section>`;
