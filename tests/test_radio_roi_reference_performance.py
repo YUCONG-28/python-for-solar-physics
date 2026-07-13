@@ -325,6 +325,26 @@ def test_read_only_reference_figure_omits_selection_scattergl(tmp_path):
 
     assert [trace.type for trace in read_only.data] == ["heatmap"]
     assert sum(trace.type == "scattergl" for trace in interactive.data) == 1
+    for figure in (read_only, interactive):
+        heatmap = figure.data[0]
+        assert heatmap.showscale is False
+        assert heatmap.colorbar.title.text is None
+        assert "value=%{z:.4g} K" in heatmap.hovertemplate
+
+
+def test_reference_hover_reports_transformed_unit_without_colorbar(tmp_path):
+    path = _write_radio_fits(tmp_path / "149MHz" / "LL" / "frame.fits")
+    reference = next(iter_radio_images(path))
+
+    figure = app.build_reference_figure(
+        reference,
+        max_side=4,
+        display_config={"transform": "Log10 positive"},
+    )
+
+    heatmap = figure.data[0]
+    assert heatmap.showscale is False
+    assert "value=%{z:.4g} log10(K)" in heatmap.hovertemplate
 
 
 def test_sampled_preview_coordinates_match_full_grid_with_cd_matrix(tmp_path):

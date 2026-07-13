@@ -38,7 +38,6 @@ from solar_toolkit.radio.roi_lightcurve import (
     build_radio_roi_artifacts,
     extract_radio_roi_lightcurve,
     radio_roi_from_json,
-    write_radio_roi_products,
 )
 
 __all__ = [
@@ -101,13 +100,17 @@ PRODUCT_LABELS = {
     "csv": "Statistics CSV",
     "json": "ROI JSON",
     "reference_png": "Reference PNG",
-    "lightcurve_png": "Light-curve PNG",
+    "lightcurve_png": "Frequency Overview PNG",
+    "lightcurve_detail_png": "Frequency Detail PNG",
+    "lightcurve_normalized_png": "Normalized Comparison PNG",
 }
 PRODUCT_MIME_TYPES = {
     "csv": "text/csv",
     "json": "application/json",
     "reference_png": "image/png",
     "lightcurve_png": "image/png",
+    "lightcurve_detail_png": "image/png",
+    "lightcurve_normalized_png": "image/png",
 }
 DISPLAY_COLORMAPS = [
     "Hot",
@@ -125,7 +128,14 @@ DISPLAY_RANGE_MODES = ["Auto percentile", "Manual min/max"]
 DISPLAY_RANGE_SCOPES = ["Per frequency", "Shared/global"]
 SELECTION_ACTIONS = ["Replace", "Add", "Remove"]
 ROI_KEYS = ("candidate_roi", "confirmed_roi")
-ANALYSIS_KEYS = ("analysis_df", "analysis_signature")
+ANALYSIS_KEYS = (
+    "analysis_df",
+    "analysis_context_signature",
+    "analysis_signature",
+    "analysis_result_signature",
+    "analysis_input_summary",
+    "lightcurve_png_cache",
+)
 EXPORT_KEYS = ("export_artifacts", "export_signature")
 REFERENCE_KEYS = (
     "reference_path",
@@ -139,6 +149,16 @@ REFERENCE_KEYS = (
 )
 _REFERENCE_DECODER_VERSION = "first-2d-v1"
 _REFERENCE_PLANE_CACHE_SIZE = 64
+_ANALYSIS_REQUEST_VERSION = "roi-extraction-request-v2"
+_LIGHTCURVE_CACHE_SIZE = 8
+_LIGHTCURVE_Y_AXIS_MODES = ("Robust auto", "Full data", "Manual")
+_LIGHTCURVE_ROBUST_MIN_SAMPLES = 100
+_LIGHTCURVE_PRODUCT_KEYS = (
+    "lightcurve_png",
+    "lightcurve_detail_png",
+    "lightcurve_normalized_png",
+)
+_LIGHTCURVE_DEFAULT_MARKER_SIZE = 3.0
 _NAT_INT64 = np.datetime64("NaT", "ns").astype("int64")
 
 
@@ -457,8 +477,11 @@ def _build_reference_figure_from_preview(
             colorscale=str((display_config or {}).get("colormap", "Viridis")),
             zmin=float(zmin),
             zmax=float(zmax),
-            colorbar={"title": _display_colorbar_title(item, display_config)},
-            hovertemplate="x=%{x:.2f}<br>y=%{y:.2f}<br>value=%{z:.4g}<extra></extra>",
+            showscale=False,
+            hovertemplate=(
+                "x=%{x:.2f}<br>y=%{y:.2f}<br>value=%{z:.4g} "
+                f"{_display_colorbar_title(item, display_config)}<extra></extra>"
+            ),
         )
     )
     if selection_enabled:
@@ -550,14 +573,12 @@ def _run_streamlit_app(argv: list[str] | None = None) -> None:
         st.warning("Draw and confirm an ROI on the reference image.")
         return
 
-    df = _render_analysis_step(
-        st, selected_paths, reference_images, roi, current_settings, display_config
-    )
-    if df is None:
-        return
-
-    _render_export_step(
-        st, df, selected_paths, reference_images, roi, current_settings, display_config
+    _render_analysis_and_export_steps(
+        selected_paths,
+        reference_images,
+        roi,
+        current_settings,
+        display_config,
     )
 
 
@@ -1289,9 +1310,11 @@ def _render_roi_step(
     candidate = _session_roi(st, "candidate_roi")
     confirmed = _session_roi(st, "confirmed_roi")
     active_roi = candidate or confirmed
+    roi_geometry_key = active_roi.roi_id if active_roi is not None else "empty"
     chart_key = (
         f"radio_roi_selection_chart_"
-        f"{st.session_state.get('roi_chart_generation', 0)}_{roi_mode}"
+        f"{st.session_state.get('roi_chart_generation', 0)}_"
+        f"{roi_mode}_{roi_geometry_key}"
     )
     st.caption(
         "Draw once on the first panel. The confirmed HPLN/HPLT ROI is overlaid on every loaded frequency."
@@ -1302,15 +1325,16 @@ def _render_roi_step(
         zip(references, previews, strict=True)
     ):
         with columns[index % len(columns)]:
+            selection_enabled = index == 0 and confirmed is None
             figure = _build_reference_figure_from_preview(
                 reference,
                 preview,
                 roi=active_roi,
                 roi_mode=roi_mode,
                 display_config=display_config,
-                selection_enabled=index == 0,
+                selection_enabled=selection_enabled,
             )
-            if index == 0:
+            if selection_enabled:
                 event = st.plotly_chart(
                     figure,
                     width="stretch",
@@ -1377,49 +1401,737 @@ def _render_analysis_step(
     display_config: dict[str, Any],
 ) -> pd.DataFrame | None:
     st.subheader("Step 6. Analyze and Preview")
-    signature = _analysis_signature(selected_paths, roi, settings)
-    if st.button(
+    context_signature = _analysis_context_signature(
+        selected_paths,
+        roi,
+        settings,
+        selection_token={
+            "dataset_signature": st.session_state.get("dataset_signature", ""),
+            "selection_revision": int(
+                st.session_state.get("selection_revision", 0)
+            ),
+        },
+    )
+    input_bytes, unknown_size_count = _selected_input_size_from_manifest(
+        st,
+        selected_paths,
+    )
+    st.caption(
+        f"Selected input: {len(selected_paths):,} files, "
+        f"approximately {input_bytes / (1024**3):.3f} GiB."
+    )
+    if unknown_size_count:
+        st.caption(
+            f"The loaded manifest has no size for {unknown_size_count:,} selected "
+            "files; they are excluded from the estimate."
+        )
+    analyze_clicked = st.button(
         "Analyze Selected Files",
         type="primary",
+        key="radio_roi_analyze_selected_files_v2",
         help="Extract full-resolution ROI statistics from every selected file using the confirmed HPLN/HPLT ROI.",
-    ):
-        with st.spinner(
-            "Extracting full-resolution ROI statistics from selected files..."
+    )
+    if analyze_clicked:
+        file_identities = _selected_file_identities(selected_paths)
+        signature = _analysis_signature(
+            selected_paths,
+            roi,
+            settings,
+            file_identities=file_identities,
+        )
+        cached_df = st.session_state.get("analysis_df")
+        if (
+            isinstance(cached_df, pd.DataFrame)
+            and st.session_state.get("analysis_context_signature")
+            == context_signature
+            and st.session_state.get("analysis_signature") == signature
         ):
-            try:
-                df = extract_radio_roi_lightcurve(
-                    settings["radio_dir"],
-                    roi,
-                    pattern=settings["pattern"],
-                    recursive=bool(settings["recursive"]),
-                    files=selected_paths,
-                    polarization=settings["polarization"],
-                    pair_time_tolerance_sec=float(settings["pair_time_tolerance_sec"]),
-                )
-            except Exception as exc:  # noqa: BLE001 - visible app error.
-                st.error(str(exc))
-                return None
-        st.session_state["analysis_df"] = df
-        st.session_state["analysis_signature"] = signature
-        _clear_keys(st, EXPORT_KEYS)
+            st.success("Reused the cached analysis; no FITS files were read again.")
+        else:
+            with st.spinner(
+                "Extracting full-resolution ROI statistics from selected files..."
+            ):
+                try:
+                    df = extract_radio_roi_lightcurve(
+                        settings["radio_dir"],
+                        roi,
+                        pattern=settings["pattern"],
+                        recursive=bool(settings["recursive"]),
+                        files=selected_paths,
+                        polarization=settings["polarization"],
+                        pair_time_tolerance_sec=float(
+                            settings["pair_time_tolerance_sec"]
+                        ),
+                    )
+                except Exception as exc:  # noqa: BLE001 - visible app error.
+                    st.error(str(exc))
+                    return None
+            st.session_state["analysis_df"] = df
+            st.session_state["analysis_context_signature"] = context_signature
+            st.session_state["analysis_signature"] = signature
+            st.session_state["analysis_result_signature"] = _stable_sha256(
+                {
+                    "analysis_signature": signature,
+                    "dataframe": _dataframe_content_signature(df),
+                }
+            )
+            st.session_state["lightcurve_png_cache"] = {}
+            _clear_keys(st, EXPORT_KEYS)
     df = st.session_state.get("analysis_df")
-    if df is None or st.session_state.get("analysis_signature") != signature:
+    if (
+        df is None
+        or st.session_state.get("analysis_context_signature") != context_signature
+    ):
         st.info("Click Analyze Selected Files to compute the light curve.")
         return None
-    st.dataframe(df, width="stretch")
-    preview = build_radio_roi_artifacts(
+    if not st.session_state.get("analysis_result_signature"):
+        st.session_state["analysis_result_signature"] = _stable_sha256(
+            {
+                "analysis_signature": st.session_state.get("analysis_signature", ""),
+                "dataframe": _dataframe_content_signature(df),
+            }
+        )
+    preview_rows = 500
+    st.dataframe(df.head(preview_rows), width="stretch")
+    if len(df) > preview_rows:
+        st.caption(
+            f"Showing the first {preview_rows:,} of {len(df):,} rows. "
+            "The complete table remains available in the Statistics CSV export."
+        )
+    y_axis_config = _render_lightcurve_y_axis_controls(
+        st,
         df,
-        roi,
-        reference_images=references,
-        display_config=display_config,
-        run_metadata=_run_metadata(
-            selected_paths, _settings_with_reference(st, settings, display_config)
-        ),
         metric=str(settings["metric"]),
-        selected_products=("lightcurve_png",),
     )
-    st.image(preview["lightcurve_png"])
+    preview_kwargs = {
+        "analysis_result_signature": str(
+            st.session_state["analysis_result_signature"]
+        ),
+        "metric": str(settings["metric"]),
+        "y_axis_mode": str(y_axis_config["mode"]),
+        "lightcurve_y_limits": y_axis_config.get("limits"),
+        "lightcurve_frequency_y_limits": _frequency_limit_mapping(y_axis_config),
+        "lightcurve_frequency_config": _canonical_frequency_configs(y_axis_config),
+        "lightcurve_marker_size": float(y_axis_config["marker_size"]),
+        "lightcurve_detail_frequency_mhz": y_axis_config.get(
+            "detail_frequency_mhz"
+        ),
+    }
+    overview_tab, detail_tab, normalized_tab = st.tabs(
+        [
+            "Frequency Overview",
+            "Frequency Detail",
+            "Normalized Comparison",
+        ]
+    )
+    with overview_tab:
+        st.image(
+            _cached_lightcurve_png(
+                st,
+                df,
+                roi,
+                product_key="lightcurve_png",
+                **preview_kwargs,
+            )
+        )
+    with detail_tab:
+        st.image(
+            _cached_lightcurve_png(
+                st,
+                df,
+                roi,
+                product_key="lightcurve_detail_png",
+                **preview_kwargs,
+            )
+        )
+    with normalized_tab:
+        st.caption(
+            "Each frequency is mapped from its current displayed Y range to "
+            "0-1. Samples beyond that range are clipped only in this view."
+        )
+        st.image(
+            _cached_lightcurve_png(
+                st,
+                df,
+                roi,
+                product_key="lightcurve_normalized_png",
+                **preview_kwargs,
+            )
+        )
     return df
+
+
+def _lightcurve_metric_frame(df: pd.DataFrame, metric: str) -> pd.DataFrame:
+    """Return the finite, time-resolved rows used by the light-curve plot."""
+
+    if metric not in df.columns:
+        raise ValueError(f"Light-curve metric is not present in the analysis: {metric}")
+    data = df.copy()
+    data["obs_time_dt"] = pd.to_datetime(data.get("obs_time"), errors="coerce")
+    data[metric] = pd.to_numeric(data[metric], errors="coerce")
+    if "quality_flag" in data.columns:
+        quality_ok = data["quality_flag"].astype(str).str.lower().eq("ok")
+    else:
+        quality_ok = pd.Series(True, index=data.index)
+    finite = np.isfinite(data[metric].to_numpy(dtype=float, na_value=np.nan))
+    return data.loc[quality_ok & data["obs_time_dt"].notna() & finite].copy()
+
+
+def _expanded_lightcurve_limits(lower: float, upper: float) -> tuple[float, float]:
+    lower = float(lower)
+    upper = float(upper)
+    if lower < upper:
+        return lower, upper
+    padding = max(abs(lower) * 0.05, 1.0)
+    return lower - padding, upper + padding
+
+
+def _full_lightcurve_y_limits(values: np.ndarray) -> tuple[float, float] | None:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if not finite.size:
+        return None
+    return _expanded_lightcurve_limits(float(np.min(finite)), float(np.max(finite)))
+
+
+def _robust_lightcurve_y_limits(values: np.ndarray) -> tuple[float, float] | None:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    full_limits = _full_lightcurve_y_limits(finite)
+    if full_limits is None or finite.size < _LIGHTCURVE_ROBUST_MIN_SAMPLES:
+        return full_limits
+    lower, upper = np.quantile(finite, [0.001, 0.999])
+    if not (np.isfinite(lower) and np.isfinite(upper)) or lower >= upper:
+        return full_limits
+    q25, q75 = np.quantile(finite, [0.25, 0.75])
+    central_span = float(q75 - q25)
+    if central_span > 0 and float(upper - lower) > 100.0 * central_span:
+        # A few finite calibration failures can occupy more than 0.1% of a
+        # short single-frequency sequence. Keep the documented percentile
+        # rule as the first pass, then use a wider 1% tail guard only when the
+        # first-pass span is still two orders of magnitude above the IQR.
+        guarded_lower, guarded_upper = np.quantile(finite, [0.01, 0.99])
+        if np.isfinite(guarded_lower) and np.isfinite(guarded_upper):
+            if guarded_lower < guarded_upper:
+                lower, upper = guarded_lower, guarded_upper
+    padding = 0.05 * float(upper - lower)
+    return float(lower - padding), float(upper + padding)
+
+
+def _coerce_lightcurve_y_limits(value: Any) -> tuple[float, float] | None:
+    if value is None:
+        return None
+    try:
+        lower, upper = value
+        lower = float(lower)
+        upper = float(upper)
+    except (TypeError, ValueError):
+        return None
+    if not (np.isfinite(lower) and np.isfinite(upper)) or lower >= upper:
+        return None
+    return lower, upper
+
+
+def _resolve_lightcurve_y_limits(
+    values: np.ndarray,
+    mode: str,
+    *,
+    manual_limits: tuple[float, float] | None = None,
+    previous_limits: tuple[float, float] | None = None,
+) -> dict[str, Any]:
+    """Resolve display-only Y limits without changing scientific samples."""
+
+    normalized_mode = str(mode)
+    if normalized_mode not in _LIGHTCURVE_Y_AXIS_MODES:
+        raise ValueError(f"Unsupported Y-axis range mode: {mode!r}")
+    full_limits = _full_lightcurve_y_limits(values)
+    robust_limits = _robust_lightcurve_y_limits(values)
+    if normalized_mode == "Full data":
+        return {
+            "mode": normalized_mode,
+            "limits": None,
+            "display_limits": full_limits,
+            "full_limits": full_limits,
+            "robust_limits": robust_limits,
+            "valid": True,
+            "used_fallback": False,
+        }
+    if normalized_mode == "Robust auto":
+        return {
+            "mode": normalized_mode,
+            "limits": robust_limits,
+            "display_limits": robust_limits,
+            "full_limits": full_limits,
+            "robust_limits": robust_limits,
+            "valid": True,
+            "used_fallback": robust_limits == full_limits,
+        }
+
+    resolved_manual = _coerce_lightcurve_y_limits(manual_limits)
+    if resolved_manual is not None:
+        return {
+            "mode": normalized_mode,
+            "limits": resolved_manual,
+            "display_limits": resolved_manual,
+            "full_limits": full_limits,
+            "robust_limits": robust_limits,
+            "valid": True,
+            "used_fallback": False,
+        }
+    fallback = _coerce_lightcurve_y_limits(previous_limits) or robust_limits
+    return {
+        "mode": normalized_mode,
+        "limits": fallback,
+        "display_limits": fallback,
+        "full_limits": full_limits,
+        "robust_limits": robust_limits,
+        "valid": False,
+        "used_fallback": True,
+    }
+
+
+def _lightcurve_diagnostics(
+    df: pd.DataFrame,
+    metric: str,
+    limits: tuple[float, float] | None,
+) -> dict[str, Any]:
+    data = _lightcurve_metric_frame(df, metric)
+    values = data[metric].to_numpy(dtype=float)
+    full_limits = _full_lightcurve_y_limits(values)
+    robust_limits = _robust_lightcurve_y_limits(values)
+    display_limits = _coerce_lightcurve_y_limits(limits) or full_limits
+    outside_mask = np.zeros(values.shape, dtype=bool)
+    if display_limits is not None:
+        outside_mask = (values < display_limits[0]) | (values > display_limits[1])
+    outside = data.loc[outside_mask].copy()
+    if not outside.empty and display_limits is not None:
+        lower, upper = display_limits
+        outside["_distance"] = np.maximum(
+            lower - outside[metric].to_numpy(dtype=float),
+            outside[metric].to_numpy(dtype=float) - upper,
+        )
+        outside = outside.sort_values("_distance", ascending=False).drop(
+            columns="_distance"
+        )
+    columns = [
+        column
+        for column in (
+            "obs_time",
+            "freq_mhz",
+            "polarization",
+            metric,
+            "filepath",
+            "paired_filepath",
+        )
+        if column in outside.columns
+    ]
+    full_span = (
+        float(full_limits[1] - full_limits[0]) if full_limits is not None else 0.0
+    )
+    robust_span = (
+        float(robust_limits[1] - robust_limits[0])
+        if robust_limits is not None
+        else 0.0
+    )
+    span_ratio = full_span / robust_span if robust_span > 0 else 1.0
+    return {
+        "valid_count": int(values.size),
+        "negative_count": int(np.count_nonzero(values < 0)),
+        "outside_count": int(np.count_nonzero(outside_mask)),
+        "full_limits": full_limits,
+        "robust_limits": robust_limits,
+        "display_limits": display_limits,
+        "span_ratio": float(span_ratio),
+        "outside_rows": outside.loc[:, columns].head(20),
+    }
+
+
+def _lightcurve_frequencies(data: pd.DataFrame) -> list[float]:
+    if "freq_mhz" not in data.columns:
+        return []
+    values = pd.to_numeric(data["freq_mhz"], errors="coerce").to_numpy(dtype=float)
+    return sorted(float(value) for value in np.unique(values[np.isfinite(values)]))
+
+
+def _frequency_rows(data: pd.DataFrame, freq_mhz: float) -> pd.DataFrame:
+    values = pd.to_numeric(data.get("freq_mhz"), errors="coerce").to_numpy(
+        dtype=float
+    )
+    return data.loc[np.isclose(values, float(freq_mhz), rtol=0.0, atol=1e-9)].copy()
+
+
+def _frequency_state_key(freq_mhz: float) -> str:
+    return format(float(freq_mhz), ".12g")
+
+
+def _canonical_frequency_configs(config: dict[str, Any]) -> list[dict[str, Any]]:
+    entries = config.get("frequencies", [])
+    canonical: list[dict[str, Any]] = []
+    for entry in entries if isinstance(entries, list) else []:
+        try:
+            freq_mhz = float(entry["freq_mhz"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not np.isfinite(freq_mhz):
+            continue
+        limits = _coerce_lightcurve_y_limits(entry.get("limits"))
+        display_limits = _coerce_lightcurve_y_limits(entry.get("display_limits"))
+        canonical.append(
+            {
+                "freq_mhz": freq_mhz,
+                "mode": str(entry.get("mode", "Robust auto")),
+                "limits": list(limits) if limits is not None else None,
+                "display_limits": (
+                    list(display_limits) if display_limits is not None else None
+                ),
+                "valid": bool(entry.get("valid", True)),
+                "outside_count": int(entry.get("outside_count", 0)),
+            }
+        )
+    return sorted(canonical, key=lambda item: item["freq_mhz"])
+
+
+def _frequency_limit_mapping(
+    config: dict[str, Any],
+) -> dict[float, tuple[float, float] | None]:
+    return {
+        float(entry["freq_mhz"]): _coerce_lightcurve_y_limits(entry.get("limits"))
+        for entry in _canonical_frequency_configs(config)
+    }
+
+
+def _default_detail_frequency(st: Any, frequencies: list[float]) -> float:
+    if not frequencies:
+        raise ValueError("No valid frequencies are available for the light curve.")
+    try:
+        primary = float(st.session_state.get("primary_reference_freq_mhz"))
+    except (TypeError, ValueError):
+        primary = math.nan
+    if np.isfinite(primary):
+        for frequency in frequencies:
+            if np.isclose(frequency, primary, rtol=0.0, atol=1e-6):
+                return frequency
+    return frequencies[0]
+
+
+def _render_lightcurve_y_axis_controls(
+    st: Any,
+    df: pd.DataFrame,
+    *,
+    metric: str,
+) -> dict[str, Any]:
+    data = _lightcurve_metric_frame(df, metric)
+    frequencies = _lightcurve_frequencies(data)
+    if not frequencies:
+        raise ValueError("No finite frequency values are available for plotting.")
+    result_signature = str(
+        st.session_state.get("analysis_result_signature")
+        or _dataframe_content_signature(df)
+    )
+    identity = _stable_sha256(
+        {"analysis_result_signature": result_signature, "metric": metric}
+    )[:16]
+    state_key = "lightcurve_frequency_y_axis_state"
+    state = st.session_state.get(state_key)
+    if not isinstance(state, dict) or state.get("identity") != identity:
+        state = {"identity": identity, "configs": {}}
+    configs = state.setdefault("configs", {})
+
+    marker_size = st.slider(
+        "Marker size",
+        min_value=1.0,
+        max_value=12.0,
+        value=_LIGHTCURVE_DEFAULT_MARKER_SIZE,
+        step=0.5,
+        key=f"lightcurve_marker_size_{identity}",
+        help="Point diameter in typographic points for every light-curve view.",
+    )
+    default_detail = _default_detail_frequency(st, frequencies)
+    detail_key = f"lightcurve_detail_frequency_{identity}"
+    if st.session_state.get(detail_key) not in frequencies:
+        st.session_state[detail_key] = default_detail
+    detail_frequency = st.selectbox(
+        "Detail frequency",
+        frequencies,
+        key=detail_key,
+        format_func=lambda value: f"{value:g} MHz",
+        help="Frequency shown in the enlarged Frequency Detail view.",
+    )
+
+    selected_key = f"lightcurve_frequency_to_configure_{identity}"
+    if st.session_state.get(selected_key) not in frequencies:
+        st.session_state[selected_key] = default_detail
+    selected_frequency = st.selectbox(
+        "Frequency to configure",
+        frequencies,
+        key=selected_key,
+        format_func=lambda value: f"{value:g} MHz",
+        help="Choose one frequency, then set only that panel's Y-axis range.",
+    )
+    selected_state_key = _frequency_state_key(selected_frequency)
+    editor_prefix = f"lightcurve_frequency_editor_{identity}_"
+    mode_key = f"{editor_prefix}{selected_state_key}_mode"
+    min_key = f"{editor_prefix}{selected_state_key}_min"
+    max_key = f"{editor_prefix}{selected_state_key}_max"
+    reset_selected, reset_all = st.columns(2)
+    with reset_selected:
+        reset_selected_clicked = st.button(
+            "Reset selected frequency",
+            key=f"lightcurve_reset_selected_{identity}",
+            help="Restore Robust auto for only the configured frequency.",
+        )
+    with reset_all:
+        reset_all_clicked = st.button(
+            "Reset all to Robust auto",
+            key=f"lightcurve_reset_all_{identity}",
+            help="Discard every manual/full range in this analysis session.",
+        )
+    if reset_all_clicked:
+        configs.clear()
+        for key in list(st.session_state):
+            if str(key).startswith(editor_prefix):
+                del st.session_state[key]
+    elif reset_selected_clicked:
+        configs.pop(selected_state_key, None)
+        for key in (mode_key, min_key, max_key):
+            st.session_state.pop(key, None)
+
+    selected_data = _frequency_rows(data, selected_frequency)
+    selected_values = selected_data[metric].to_numpy(dtype=float)
+    selected_stored = configs.get(selected_state_key, {})
+    selected_mode = str(selected_stored.get("mode", "Robust auto"))
+    if selected_mode not in _LIGHTCURVE_Y_AXIS_MODES:
+        selected_mode = "Robust auto"
+    st.session_state.setdefault(mode_key, selected_mode)
+    mode = st.selectbox(
+        "Y-axis range",
+        list(_LIGHTCURVE_Y_AXIS_MODES),
+        key=mode_key,
+        help=(
+            "Robust auto uses the selected frequency's finite distribution. "
+            "Full data includes all of its finite samples. Manual accepts "
+            "scientific notation."
+        ),
+    )
+    manual_limits = None
+    previous_limits = _coerce_lightcurve_y_limits(
+        selected_stored.get("last_valid_limits")
+    )
+    seed_limits = (
+        _robust_lightcurve_y_limits(selected_values)
+        or _full_lightcurve_y_limits(selected_values)
+        or (-1.0, 1.0)
+    )
+    if mode == "Manual":
+        stored_manual_min = selected_stored.get("manual_min")
+        stored_manual_max = selected_stored.get("manual_max")
+        st.session_state.setdefault(
+            min_key,
+            float(seed_limits[0] if stored_manual_min is None else stored_manual_min),
+        )
+        st.session_state.setdefault(
+            max_key,
+            float(seed_limits[1] if stored_manual_max is None else stored_manual_max),
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            manual_min = st.number_input(
+                "Y minimum",
+                key=min_key,
+                format="%.6e",
+                help="Lower displayed Y limit. Scientific notation is accepted.",
+            )
+        with c2:
+            manual_max = st.number_input(
+                "Y maximum",
+                key=max_key,
+                format="%.6e",
+                help="Upper displayed Y limit. It must be greater than Y minimum.",
+            )
+        manual_limits = (float(manual_min), float(manual_max))
+    selected_config = _resolve_lightcurve_y_limits(
+        selected_values,
+        mode,
+        manual_limits=manual_limits,
+        previous_limits=previous_limits,
+    )
+    configs[selected_state_key] = {
+        "mode": str(mode),
+        "limits": selected_config["limits"],
+        "display_limits": selected_config["display_limits"],
+        "valid": bool(selected_config["valid"]),
+        "last_valid_limits": (
+            selected_config["limits"]
+            if mode == "Manual" and selected_config["valid"]
+            else previous_limits
+        ),
+        "manual_min": (
+            manual_limits[0]
+            if manual_limits is not None
+            else selected_stored.get("manual_min")
+        ),
+        "manual_max": (
+            manual_limits[1]
+            if manual_limits is not None
+            else selected_stored.get("manual_max")
+        ),
+    }
+    if mode == "Manual" and not selected_config["valid"]:
+        st.error(
+            "Y minimum and Y maximum must be finite, and Y minimum must be "
+            "less than Y maximum. This frequency still uses its last valid range."
+        )
+
+    frequency_entries: list[dict[str, Any]] = []
+    diagnostic_rows: list[dict[str, Any]] = []
+    selected_diagnostics: dict[str, Any] | None = None
+    any_extreme_span = False
+    for frequency in frequencies:
+        frequency_key = _frequency_state_key(frequency)
+        frequency_data = _frequency_rows(data, frequency)
+        values = frequency_data[metric].to_numpy(dtype=float)
+        saved = configs.get(frequency_key, {})
+        saved_mode = str(saved.get("mode", "Robust auto"))
+        if saved_mode not in _LIGHTCURVE_Y_AXIS_MODES:
+            saved_mode = "Robust auto"
+        resolved = _resolve_lightcurve_y_limits(
+            values,
+            saved_mode,
+            manual_limits=(
+                (saved.get("manual_min"), saved.get("manual_max"))
+                if saved_mode == "Manual"
+                else None
+            ),
+            previous_limits=_coerce_lightcurve_y_limits(
+                saved.get("last_valid_limits")
+            ),
+        )
+        diagnostics = _lightcurve_diagnostics(
+            frequency_data,
+            metric,
+            resolved["display_limits"],
+        )
+        any_extreme_span = any_extreme_span or diagnostics["span_ratio"] >= 100.0
+        entry = {
+            "freq_mhz": float(frequency),
+            "mode": saved_mode,
+            "limits": resolved["limits"],
+            "display_limits": resolved["display_limits"],
+            "valid": bool(resolved["valid"]),
+            "outside_count": int(diagnostics["outside_count"]),
+        }
+        frequency_entries.append(entry)
+        full_limits = diagnostics["full_limits"]
+        display_limits = diagnostics["display_limits"]
+        diagnostic_rows.append(
+            {
+                "Frequency (MHz)": float(frequency),
+                "Mode": saved_mode,
+                "Valid": int(diagnostics["valid_count"]),
+                "Negative": int(diagnostics["negative_count"]),
+                "Outside": int(diagnostics["outside_count"]),
+                "Full min": full_limits[0] if full_limits is not None else np.nan,
+                "Full max": full_limits[1] if full_limits is not None else np.nan,
+                "Display min": (
+                    display_limits[0] if display_limits is not None else np.nan
+                ),
+                "Display max": (
+                    display_limits[1] if display_limits is not None else np.nan
+                ),
+            }
+        )
+        if frequency == selected_frequency:
+            selected_diagnostics = diagnostics
+
+    valid = all(entry["valid"] for entry in frequency_entries)
+    outside_count = sum(entry["outside_count"] for entry in frequency_entries)
+    if any_extreme_span:
+        st.warning(
+            "At least one frequency has finite extreme samples that expand its "
+            "full span by more than 100x. The samples remain unchanged in the "
+            "analysis and Statistics CSV."
+        )
+    st.caption(
+        f"Across {len(frequencies):,} frequencies, {outside_count:,} valid samples "
+        "are outside their displayed ranges. Display settings never change the "
+        "DataFrame, quality flags, or Statistics CSV."
+    )
+    st.dataframe(pd.DataFrame(diagnostic_rows), width="stretch", hide_index=True)
+    with st.expander("Selected frequency diagnostics", expanded=False):
+        st.write(
+            "Negative and out-of-range values are retained. At most 20 samples "
+            "farthest beyond the selected frequency's displayed range are listed."
+        )
+        if (
+            selected_diagnostics is None
+            or selected_diagnostics["outside_rows"].empty
+        ):
+            st.caption("No valid samples are outside the displayed Y range.")
+        else:
+            st.dataframe(
+                selected_diagnostics["outside_rows"],
+                width="stretch",
+            )
+
+    stored = {
+        "mode": "Per frequency",
+        "limits": None,
+        "display_limits": None,
+        "valid": valid,
+        "outside_count": int(outside_count),
+        "plot_style": "scatter",
+        "marker_size": float(marker_size),
+        "detail_frequency_mhz": float(detail_frequency),
+        "normalization": "per-frequency displayed Y limits mapped to 0-1",
+        "frequencies": frequency_entries,
+    }
+    state["configs"] = configs
+    st.session_state[state_key] = state
+    st.session_state["lightcurve_y_axis_config"] = stored
+    return stored
+
+
+def _streamlit_fragment(function: Any) -> Any:
+    """Decorate at module load while keeping Streamlit an optional dependency."""
+
+    try:
+        import streamlit as st
+    except ModuleNotFoundError:
+        return function
+    return st.fragment(function)
+
+
+@_streamlit_fragment
+def _render_analysis_and_export_steps(
+    selected_paths: list[str],
+    references: list[RadioImage],
+    roi: RadioRoi,
+    settings: dict[str, Any],
+    display_config: dict[str, Any],
+) -> None:
+    """Render Steps 6-7 as one fragment isolated from the reference grid."""
+
+    import streamlit as st
+
+    df = _render_analysis_step(
+        st,
+        selected_paths,
+        references,
+        roi,
+        settings,
+        display_config,
+    )
+    if df is None:
+        return
+    _render_export_step(
+        st,
+        df,
+        selected_paths,
+        references,
+        roi,
+        settings,
+        display_config,
+    )
 
 
 def _render_export_step(
@@ -1432,13 +2144,18 @@ def _render_export_step(
     display_config: dict[str, Any],
 ) -> None:
     st.subheader("Step 7. Export and Download")
-    c1, c2, c3, c4 = st.columns(4)
+    available_products = tuple(PRODUCT_FILENAMES)
+    columns = st.columns(min(3, len(available_products)))
     product_keys = []
-    for column, key in zip((c1, c2, c3, c4), PRODUCT_FILENAMES, strict=False):
+    for index, key in enumerate(available_products):
+        column = columns[index % len(columns)]
         with column:
             if st.checkbox(
                 PRODUCT_LABELS[key],
-                value=True,
+                value=key not in {
+                    "lightcurve_detail_png",
+                    "lightcurve_normalized_png",
+                },
                 key=f"export_{key}",
                 help=f"Include {PRODUCT_FILENAMES[key]} in browser downloads and local save.",
             ):
@@ -1446,17 +2163,80 @@ def _render_export_step(
     if not product_keys:
         st.warning("Select at least one export product.")
         return
-    artifacts = build_radio_roi_artifacts(
-        df,
-        roi,
-        reference_images=references,
-        display_config=display_config,
-        run_metadata=_run_metadata(
-            selected_paths, _settings_with_reference(st, settings, display_config)
-        ),
-        metric=str(settings["metric"]),
-        selected_products=tuple(product_keys),
+    analysis_result_signature = st.session_state.get(
+        "analysis_result_signature"
+    ) or _dataframe_content_signature(df)
+    reference_identities = _reference_file_identities(st, references)
+    y_axis_config = dict(st.session_state.get("lightcurve_y_axis_config") or {})
+    y_axis_valid = bool(y_axis_config.get("valid", False))
+    y_axis_mode = str(y_axis_config.get("mode", "Robust auto"))
+    lightcurve_y_limits = _coerce_lightcurve_y_limits(y_axis_config.get("limits"))
+    frequency_y_limits = _frequency_limit_mapping(y_axis_config)
+    marker_size = float(
+        y_axis_config.get("marker_size", _LIGHTCURVE_DEFAULT_MARKER_SIZE)
     )
+    detail_frequency = y_axis_config.get("detail_frequency_mhz")
+    signature = _export_signature(
+        analysis_result_signature=str(analysis_result_signature),
+        product_keys=tuple(product_keys),
+        metric=str(settings["metric"]),
+        reference_identities=reference_identities,
+        display_config=display_config,
+        y_axis_mode=y_axis_mode,
+        lightcurve_y_limits=lightcurve_y_limits,
+        lightcurve_frequency_y_limits=frequency_y_limits,
+        lightcurve_frequency_config=_canonical_frequency_configs(y_axis_config),
+        lightcurve_marker_size=marker_size,
+        lightcurve_detail_frequency_mhz=detail_frequency,
+    )
+    if not y_axis_valid:
+        st.error(
+            "At least one manual frequency range is invalid. Enter a finite Y "
+            "minimum below its Y maximum before preparing downloads. The preview "
+            "continues to use that frequency's last valid range."
+        )
+    if st.button(
+        "Prepare Downloads",
+        type="primary",
+        key="radio_roi_prepare_downloads_v2",
+        disabled=not y_axis_valid,
+        help="Generate the selected export products once and cache their exact bytes for download or local save.",
+    ):
+        cached_artifacts = st.session_state.get("export_artifacts")
+        if (
+            isinstance(cached_artifacts, dict)
+            and st.session_state.get("export_signature") == signature
+        ):
+            st.success("Reused the prepared export products.")
+        else:
+            with st.spinner("Preparing the selected export products..."):
+                try:
+                    artifacts = _build_cached_export_artifacts(
+                        st,
+                        df,
+                        roi,
+                        selected_paths=selected_paths,
+                        references=references,
+                        settings=settings,
+                        display_config=display_config,
+                        product_keys=tuple(product_keys),
+                        lightcurve_y_axis=y_axis_config,
+                    )
+                except Exception as exc:  # noqa: BLE001 - visible app error.
+                    st.error(str(exc))
+                    return
+            st.session_state["export_artifacts"] = artifacts
+            st.session_state["export_signature"] = signature
+    if not y_axis_valid:
+        return
+    artifacts = st.session_state.get("export_artifacts")
+    if not isinstance(artifacts, dict) or st.session_state.get(
+        "export_signature"
+    ) != signature:
+        st.info(
+            "Click Prepare Downloads to generate the currently selected products."
+        )
+        return
     if len(artifacts) > 1:
         st.download_button(
             "Download ZIP",
@@ -1477,21 +2257,17 @@ def _render_export_step(
         )
     if st.button(
         "Save Selected Products",
-        help="Write selected products to the output folder on disk.",
+        help="Write the exact prepared artifact bytes to a new run folder under the output folder.",
     ):
-        products = write_radio_roi_products(
-            df,
-            roi,
-            settings["output_dir"],
-            reference_images=references,
-            display_config=display_config,
-            run_metadata=_run_metadata(
-                selected_paths, _settings_with_reference(st, settings, display_config)
-            ),
-            metric=str(settings["metric"]),
-            selected_products=tuple(product_keys),
-        )
-        st.success(f"Saved products to {products['output_dir']}")
+        try:
+            products = _write_prepared_artifacts(
+                artifacts,
+                settings["output_dir"],
+            )
+        except Exception as exc:  # noqa: BLE001 - visible app error.
+            st.error(str(exc))
+        else:
+            st.success(f"Saved products to {products['output_dir']}")
 
 
 def _init_session_state(st: Any) -> None:
@@ -2430,15 +3206,506 @@ def _dataset_signature(settings: dict[str, Any], manifest: pd.DataFrame) -> str:
 
 
 def _analysis_signature(
-    selected_paths: list[str], roi: RadioRoi, settings: dict[str, Any]
+    selected_paths: list[str],
+    roi: RadioRoi,
+    settings: dict[str, Any],
+    *,
+    file_identities: list[dict[str, Any]] | None = None,
 ) -> str:
     payload = {
-        "selected_paths": selected_paths,
+        "version": _ANALYSIS_REQUEST_VERSION,
+        "selected_files": file_identities
+        if file_identities is not None
+        else _selected_file_identities(selected_paths),
         "roi": roi.to_json_dict(),
         "polarization": settings["polarization"],
         "pair_time_tolerance_sec": float(settings["pair_time_tolerance_sec"]),
     }
-    return json.dumps(payload, sort_keys=True, default=str)
+    return _stable_sha256(payload)
+
+
+def _analysis_context_signature(
+    selected_paths: list[str],
+    roi: RadioRoi,
+    settings: dict[str, Any],
+    *,
+    selection_token: Any | None = None,
+) -> str:
+    """Hash request controls without touching the filesystem."""
+
+    return _stable_sha256(
+        {
+            "version": _ANALYSIS_REQUEST_VERSION,
+            "selection": selection_token
+            if selection_token is not None
+            else [str(path) for path in selected_paths],
+            "roi": roi.to_json_dict(),
+            "polarization": settings["polarization"],
+            "pair_time_tolerance_sec": float(settings["pair_time_tolerance_sec"]),
+        }
+    )
+
+
+def _selected_input_size_from_manifest(
+    st: Any,
+    selected_paths: list[str],
+) -> tuple[int, int]:
+    """Summarize selected bytes from the loaded manifest without live stat calls."""
+
+    cache_key = _stable_sha256(
+        {
+            "dataset_signature": st.session_state.get("dataset_signature", ""),
+            "selection_revision": int(
+                st.session_state.get("selection_revision", 0)
+            ),
+            "selected_count": len(selected_paths),
+        }
+    )
+    cached = st.session_state.get("analysis_input_summary")
+    if isinstance(cached, dict) and cached.get("key") == cache_key:
+        return int(cached["size_bytes"]), int(cached["unknown_count"])
+    manifest = st.session_state.get("loaded_manifest")
+    if (
+        not isinstance(manifest, pd.DataFrame)
+        or manifest.empty
+        or "path" not in manifest.columns
+        or "size_bytes" not in manifest.columns
+    ):
+        result = (0, len(selected_paths))
+    else:
+        sizes_by_path = dict(
+            zip(
+                manifest["path"].astype(str),
+                pd.to_numeric(manifest["size_bytes"], errors="coerce"),
+                strict=False,
+            )
+        )
+        sizes = [sizes_by_path.get(str(path), math.nan) for path in selected_paths]
+        result = (
+            sum(int(size) for size in sizes if pd.notna(size)),
+            sum(pd.isna(size) for size in sizes),
+        )
+    st.session_state["analysis_input_summary"] = {
+        "key": cache_key,
+        "size_bytes": int(result[0]),
+        "unknown_count": int(result[1]),
+    }
+    return result
+
+
+def _selected_file_identities(paths: list[str] | tuple[str, ...]) -> list[dict[str, Any]]:
+    """Return ordered live file identities for analysis cache invalidation."""
+
+    return [_file_identity(path) for path in paths]
+
+
+def _file_identity(path: str | Path) -> dict[str, Any]:
+    candidate = Path(path).expanduser()
+    try:
+        resolved = candidate.resolve(strict=False)
+    except (OSError, RuntimeError):
+        resolved = candidate.absolute()
+    try:
+        stat = resolved.stat()
+    except OSError:
+        size_bytes = None
+        mtime_ns = None
+    else:
+        size_bytes = int(stat.st_size)
+        mtime_ns = int(stat.st_mtime_ns)
+    return {
+        "path": str(resolved),
+        "size_bytes": size_bytes,
+        "mtime_ns": mtime_ns,
+    }
+
+
+def _dataframe_content_signature(df: pd.DataFrame) -> str:
+    """Build a stable content signature for a materialized analysis table."""
+
+    digest = hashlib.sha256()
+    digest.update(
+        json.dumps(
+            {
+                "columns": [str(column) for column in df.columns],
+                "dtypes": [str(dtype) for dtype in df.dtypes],
+                "shape": list(df.shape),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+    try:
+        row_hashes = pd.util.hash_pandas_object(
+            df,
+            index=True,
+            categorize=True,
+        ).to_numpy(dtype=np.uint64, copy=False)
+        digest.update(row_hashes.tobytes())
+    except (TypeError, ValueError):
+        digest.update(df.to_csv(index=True).encode("utf-8"))
+    return digest.hexdigest()
+
+
+def _reference_file_identities(
+    st: Any,
+    references: list[RadioImage],
+) -> list[dict[str, Any]]:
+    identities: list[dict[str, Any]] = [
+        {
+            "reference_grid_signature": str(
+                st.session_state.get("reference_grid_signature", "")
+            )
+        }
+    ]
+    identities.extend(
+        {
+            "path": str(reference.path),
+            "hdu_index": int(reference.hdu_index),
+            "shape": [int(value) for value in reference.image.shape],
+        }
+        for reference in references
+    )
+    identities.extend(
+        {
+            "path": str(item.get("path", "")),
+            "paired_path": str(item.get("paired_path", "")),
+        }
+        for item in (st.session_state.get("reference_metadata", []) or [])
+    )
+    return identities
+
+
+def _export_signature(
+    *,
+    analysis_result_signature: str,
+    product_keys: tuple[str, ...],
+    metric: str,
+    reference_identities: list[dict[str, Any]],
+    display_config: dict[str, Any],
+    y_axis_mode: str = "Full data",
+    lightcurve_y_limits: tuple[float, float] | None = None,
+    lightcurve_frequency_y_limits: (
+        dict[float, tuple[float, float] | None] | None
+    ) = None,
+    lightcurve_frequency_config: list[dict[str, Any]] | None = None,
+    lightcurve_marker_size: float = _LIGHTCURVE_DEFAULT_MARKER_SIZE,
+    lightcurve_detail_frequency_mhz: float | None = None,
+) -> str:
+    canonical_frequency_limits = _canonical_frequency_limit_items(
+        lightcurve_frequency_y_limits
+    )
+    selected_product_set = set(product_keys)
+    effective_detail_frequency = (
+        lightcurve_detail_frequency_mhz
+        if "lightcurve_detail_png" in selected_product_set
+        else None
+    )
+    payload = {
+        "version": "radio-roi-export-v4",
+        "analysis_result_signature": str(analysis_result_signature),
+        "products": sorted(set(product_keys)),
+        "metric": str(metric),
+        "reference_files": reference_identities,
+        "display_config": display_config,
+        "lightcurve_y_axis": {
+            "mode": str(y_axis_mode),
+            "limits": lightcurve_y_limits,
+            "frequency_limits": canonical_frequency_limits,
+            "frequency_config": lightcurve_frequency_config or [],
+            "marker_size": float(lightcurve_marker_size),
+            "detail_frequency_mhz": effective_detail_frequency,
+        },
+    }
+    return _stable_sha256(payload)
+
+
+def _stable_sha256(payload: Any) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _canonical_frequency_limit_items(
+    frequency_y_limits: dict[float, tuple[float, float] | None] | None,
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for raw_frequency, raw_limits in (frequency_y_limits or {}).items():
+        try:
+            frequency = float(raw_frequency)
+        except (TypeError, ValueError):
+            continue
+        if not np.isfinite(frequency):
+            continue
+        limits = _coerce_lightcurve_y_limits(raw_limits)
+        items.append(
+            {
+                "freq_mhz": frequency,
+                "limits": list(limits) if limits is not None else None,
+            }
+        )
+    return sorted(items, key=lambda item: item["freq_mhz"])
+
+
+def _cached_lightcurve_png(
+    st: Any,
+    df: pd.DataFrame,
+    roi: RadioRoi,
+    *,
+    analysis_result_signature: str,
+    metric: str,
+    y_axis_mode: str = "Full data",
+    lightcurve_y_limits: tuple[float, float] | None = None,
+    lightcurve_frequency_y_limits: (
+        dict[float, tuple[float, float] | None] | None
+    ) = None,
+    lightcurve_frequency_config: list[dict[str, Any]] | None = None,
+    lightcurve_marker_size: float = _LIGHTCURVE_DEFAULT_MARKER_SIZE,
+    lightcurve_detail_frequency_mhz: float | None = None,
+    product_key: str = "lightcurve_png",
+) -> bytes:
+    if product_key not in _LIGHTCURVE_PRODUCT_KEYS:
+        raise ValueError(f"Unsupported light-curve preview product: {product_key}")
+    normalized_limits = _coerce_lightcurve_y_limits(lightcurve_y_limits)
+    canonical_frequency_limits = _canonical_frequency_limit_items(
+        lightcurve_frequency_y_limits
+    )
+    effective_detail_frequency = (
+        lightcurve_detail_frequency_mhz
+        if product_key == "lightcurve_detail_png"
+        else None
+    )
+    cache_frequency_limits = canonical_frequency_limits
+    cache_frequency_config = lightcurve_frequency_config or []
+    if effective_detail_frequency is not None:
+        cache_frequency_limits = [
+            item
+            for item in canonical_frequency_limits
+            if np.isclose(
+                float(item["freq_mhz"]),
+                float(effective_detail_frequency),
+                rtol=0.0,
+                atol=1e-6,
+            )
+        ]
+        cache_frequency_config = [
+            item
+            for item in (lightcurve_frequency_config or [])
+            if np.isclose(
+                float(item.get("freq_mhz", np.nan)),
+                float(effective_detail_frequency),
+                rtol=0.0,
+                atol=1e-6,
+            )
+        ]
+    cache_key = _stable_sha256(
+        {
+            "analysis_result_signature": analysis_result_signature,
+            "metric": metric,
+            "y_axis_mode": str(y_axis_mode),
+            "lightcurve_y_limits": normalized_limits,
+            "frequency_limits": cache_frequency_limits,
+            "frequency_config": cache_frequency_config,
+            "marker_size": float(lightcurve_marker_size),
+            "detail_frequency_mhz": effective_detail_frequency,
+            "product_key": product_key,
+            "version": "lightcurve-preview-v3",
+        }
+    )
+    cache = st.session_state.setdefault("lightcurve_png_cache", {})
+    cached = cache.get(cache_key)
+    if isinstance(cached, bytes):
+        return cached
+    artifact_kwargs: dict[str, Any] = {
+        "metric": metric,
+        "lightcurve_y_limits": normalized_limits,
+        "selected_products": (product_key,),
+    }
+    if canonical_frequency_limits:
+        artifact_kwargs.update(
+            {
+                "lightcurve_frequency_y_limits": {
+                    float(item["freq_mhz"]): _coerce_lightcurve_y_limits(
+                        item["limits"]
+                    )
+                    for item in canonical_frequency_limits
+                },
+                "lightcurve_marker_size": float(lightcurve_marker_size),
+                "lightcurve_detail_frequency_mhz": (
+                    float(effective_detail_frequency)
+                    if effective_detail_frequency is not None
+                    else None
+                ),
+            }
+        )
+    payload = build_radio_roi_artifacts(df, roi, **artifact_kwargs)[product_key]
+    cache[cache_key] = payload
+    while len(cache) > _LIGHTCURVE_CACHE_SIZE:
+        cache.pop(next(iter(cache)))
+    return payload
+
+
+def _build_cached_export_artifacts(
+    st: Any,
+    df: pd.DataFrame,
+    roi: RadioRoi,
+    *,
+    selected_paths: list[str],
+    references: list[RadioImage],
+    settings: dict[str, Any],
+    display_config: dict[str, Any],
+    product_keys: tuple[str, ...],
+    lightcurve_y_axis: dict[str, Any] | None = None,
+) -> dict[str, bytes]:
+    y_axis_config = dict(lightcurve_y_axis or {})
+    y_axis_mode = str(y_axis_config.get("mode", "Full data"))
+    lightcurve_y_limits = _coerce_lightcurve_y_limits(y_axis_config.get("limits"))
+    frequency_config = _canonical_frequency_configs(y_axis_config)
+    frequency_y_limits = _frequency_limit_mapping(y_axis_config)
+    marker_size = float(
+        y_axis_config.get("marker_size", _LIGHTCURVE_DEFAULT_MARKER_SIZE)
+    )
+    detail_frequency = y_axis_config.get("detail_frequency_mhz")
+    base_keys = tuple(key for key in product_keys if key not in _LIGHTCURVE_PRODUCT_KEYS)
+    artifacts: dict[str, bytes] = {}
+    if base_keys:
+        artifacts.update(
+            build_radio_roi_artifacts(
+                df,
+                roi,
+                reference_images=references,
+                display_config=display_config,
+                run_metadata=_run_metadata(
+                    selected_paths,
+                    {
+                        **_settings_with_reference(st, settings, display_config),
+                        "lightcurve_y_axis": (
+                            {
+                                "mode": y_axis_mode,
+                                "limits": list(lightcurve_y_limits)
+                                if lightcurve_y_limits is not None
+                                else None,
+                                "plot_style": "scatter",
+                                "marker_size": marker_size,
+                                "detail_frequency_mhz": detail_frequency,
+                                "normalization": y_axis_config.get(
+                                    "normalization",
+                                    "per-frequency displayed Y limits mapped to 0-1",
+                                ),
+                                "frequencies": frequency_config,
+                            }
+                            if frequency_config
+                            else {
+                                "mode": y_axis_mode,
+                                "limits": list(lightcurve_y_limits)
+                                if lightcurve_y_limits is not None
+                                else None,
+                            }
+                        ),
+                    },
+                ),
+                metric=str(settings["metric"]),
+                lightcurve_y_limits=lightcurve_y_limits,
+                lightcurve_frequency_y_limits=frequency_y_limits,
+                lightcurve_marker_size=marker_size,
+                lightcurve_detail_frequency_mhz=detail_frequency,
+                selected_products=base_keys,
+            )
+        )
+    for product_key in _LIGHTCURVE_PRODUCT_KEYS:
+        if product_key not in product_keys:
+            continue
+        preview_kwargs: dict[str, Any] = {
+            "analysis_result_signature": str(
+                st.session_state.get("analysis_result_signature")
+                or _dataframe_content_signature(df)
+            ),
+            "metric": str(settings["metric"]),
+            "y_axis_mode": y_axis_mode,
+            "lightcurve_y_limits": lightcurve_y_limits,
+        }
+        if frequency_config:
+            preview_kwargs.update(
+                {
+                    "lightcurve_frequency_y_limits": frequency_y_limits,
+                    "lightcurve_frequency_config": frequency_config,
+                    "lightcurve_marker_size": marker_size,
+                    "lightcurve_detail_frequency_mhz": detail_frequency,
+                    "product_key": product_key,
+                }
+            )
+        elif product_key != "lightcurve_png":
+            preview_kwargs["product_key"] = product_key
+        artifacts[product_key] = _cached_lightcurve_png(
+            st,
+            df,
+            roi,
+            **preview_kwargs,
+        )
+    if "json" in artifacts:
+        selection = json.loads(artifacts["json"].decode("utf-8"))
+        selection["outputs"] = {
+            key: PRODUCT_FILENAMES[key]
+            for key in PRODUCT_FILENAMES
+            if key in product_keys
+        }
+        artifacts["json"] = json.dumps(
+            selection,
+            indent=2,
+            ensure_ascii=False,
+        ).encode("utf-8")
+    return {
+        key: artifacts[key]
+        for key in PRODUCT_FILENAMES
+        if key in product_keys
+    }
+
+
+def _write_prepared_artifacts(
+    artifacts: dict[str, bytes],
+    output_dir: str | Path,
+) -> dict[str, Path]:
+    """Write prepared bytes to one independently allocated run directory."""
+
+    unknown = sorted(set(artifacts) - set(PRODUCT_FILENAMES))
+    if unknown:
+        raise ValueError(f"Unknown prepared export products: {unknown}")
+    if not artifacts:
+        raise ValueError("No prepared export products are available to save.")
+    for key, payload in artifacts.items():
+        if not isinstance(payload, bytes):
+            raise TypeError(f"Prepared artifact {key!r} is not bytes.")
+    target_dir = _allocate_unique_run_directory(Path(output_dir).expanduser())
+    products: dict[str, Path] = {"output_dir": target_dir}
+    for key in PRODUCT_FILENAMES:
+        if key not in artifacts:
+            continue
+        payload = artifacts[key]
+        path = target_dir / PRODUCT_FILENAMES[key]
+        path.write_bytes(payload)
+        products[key] = path
+    return products
+
+
+def _allocate_unique_run_directory(base: Path) -> Path:
+    base.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    names = [f"radio_roi_lightcurve_{stamp}"] + [
+        f"radio_roi_lightcurve_{stamp}_{index:03d}" for index in range(2, 1000)
+    ]
+    for name in names:
+        candidate = base / name
+        try:
+            candidate.mkdir(exist_ok=False)
+        except FileExistsError:
+            continue
+        return candidate
+    raise RuntimeError(f"Could not allocate a unique output directory under {base}")
 
 
 def _run_metadata(
@@ -2462,6 +3729,7 @@ def _run_metadata(
         "polarization": settings["polarization"],
         "pair_time_tolerance_sec": float(settings["pair_time_tolerance_sec"]),
         "metric": settings["metric"],
+        "lightcurve_y_axis": settings.get("lightcurve_y_axis", {}),
     }
 
 
@@ -2659,4 +3927,4 @@ def _relative_path_text(path: Path, folder: Path) -> str:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
