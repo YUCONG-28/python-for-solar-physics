@@ -21,7 +21,7 @@ scripts:
   sdo_aia_lightcurve_extraction:
     data_dir: data/aia/1600
     output_dir: outputs/aia/flux
-    data_filename: aia_1600_the third region.csv
+    data_filename: aia_1600_the selected region.csv
 
   sdo_aia_lightcurve_plot:
     input_dir: data/aia/flux

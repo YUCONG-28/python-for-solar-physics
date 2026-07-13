@@ -72,7 +72,7 @@ build/
 develop-eggs/
 dist/
 downloads/
-data dowload/
+data_download_source/
 eggs/
 .eggs/
 lib/
