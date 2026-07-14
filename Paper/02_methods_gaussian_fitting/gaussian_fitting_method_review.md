@@ -5,12 +5,14 @@
 - Frequency-time-resolved Imaging Spectroscopy of Fine Structures in a Solar Radio Noise Storm
 - Imaging spectroscopy reveals spike-like repeating radio burst pairs in the solar corona
 - Magnetic Field Geometry and Anisotropic Scattering Effects on Solar Radio Burst Observations
-- Sizes and Shapes of Solar Type III Radio Burst Sources in LOFAR Tied-Array Imaging and the Role of Scattering
+- Sizes and Shapes of Sources in Solar Metric Radio Bursts
+- LOFAR observations of radio burst source sizes and scattering in the solar corona
 - Sub-second Time Evolution of Type III Solar Radio Burst Sources at Fundamental and Harmonic Frequencies
 - Frequency-Distance Structure of Solar Radio Sources Observed by LOFAR
 - On the Source Position and Duration of a Solar Type III Radio Burst Observed by LOFAR
 - The apparent positions of solar radio sources observed by the Low Frequency Array
 - A decade of solar Type III radio bursts observed by the Nancay Radioheliograph 1998-2008
+- Comprehensive study of solar type II radio bursts and the properties of the associated shock waves
 - Electron Beam Propagation and Radio-Wave Scattering in the Inner Heliosphere using Five Spacecraft
 - A Review of Recent Solar Type III Imaging Spectroscopy
 - Type III Solar Radio Burst Source Region Splitting Due to a Quasi-Separatrix Layer
