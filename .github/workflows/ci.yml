@@ -78,6 +78,9 @@ jobs:
           python -m pip install -e ".[dev]"
           python -m pip install ruff
 
+      - name: Verify installed dependencies
+        run: python -m pip check
+
       - name: Compile public Python sources
         run: python -m compileall -q solar_toolkit tests examples/public_api
 

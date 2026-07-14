@@ -1,68 +1,105 @@
-# solarphysics
+# Solar Physics Toolkit
 
-`solarphysics` is a single repository with two public, reusable partitions and
-one local-only application layer:
+[![CI](https://github.com/YUCONG-28/solarphysics/actions/workflows/ci.yml/badge.svg)](https://github.com/YUCONG-28/solarphysics/actions/workflows/ci.yml)
 
-```text
-solarphysics/
-|- Python/   reusable solar-physics algorithms and the solar_toolkit package
-|- Paper/    curated literature sources, generators, indexes, and method notes
-|- Local/    local applications and orchestration (ignored by this repository)
-|- 2023/ ... 2026/ and overview/   local observations and working material
+`solar-physics-toolkit` is a reusable Python library for multi-wavelength solar
+data analysis. It builds on [Astropy](https://www.astropy.org/) and
+[SunPy](https://sunpy.org/) while keeping data paths, event configuration, and
+workflow orchestration explicit. The distribution is currently version 0.3.0
+and is imported as `solar_toolkit`.
+
+## Capabilities
+
+- Parse observation times, discover files, and build reproducible data
+  inventories.
+- Work with solar maps, coordinates, time series, image sequences, and media.
+- Process AIA, HMI, CME, radio, and X-ray/DEM observations through focused
+  domain modules.
+- Fit reusable numerical models, including two-dimensional Gaussian radio
+  sources and associated physical diagnostics.
+- Query and download supported public archives through explicit network APIs.
+
+## Install
+
+Install the library from a source checkout:
+
+```bash
+python -m pip install -e "./Python"
 ```
 
-## Repository boundaries
-
-- `Python/` is the public software library. Its distribution name remains
-  `solar-physics-toolkit`, and its import namespace remains `solar_toolkit`.
-- `Paper/` is the public evidence layer. Seed data and search configuration are
-  inputs; reports and indexes are regenerated and validated by the PowerShell
-  workflow.
-- `Local/` contains Web/GUI/CLI adapters, event-specific configuration,
-  personal paths, and cross-domain orchestration. The outer repository ignores
-  the whole directory. `Local/` is maintained as a separate local Git
-  repository with no remote and may depend on `solar_toolkit`; public code must
-  never depend on `Local/`.
-- The year directories (`2023/` through `2026/`), `overview/`, private paper
-  documents, and other local workspace material are never tracked by the outer
-  repository.
-
-Public CI deliberately validates only `Python/`, `Paper/`, and repository
-governance. It does not run, package, or claim to validate `Local/`.
-
-## Install the public Python package
-
-From the repository root, install the reusable package in editable mode:
-
-```powershell
-D:\miniforge3\envs\solarphysics_env\python.exe -m pip install -e ".\Python[dev]"
-```
-
-The corresponding cross-platform command is:
+For development and testing:
 
 ```bash
 python -m pip install -e "./Python[dev]"
 ```
 
-## Validate the public partitions
+## Quick Example
 
-```powershell
-$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = "1"
-D:\miniforge3\envs\solarphysics_env\python.exe -m compileall -q .\Python\solar_toolkit .\Python\tests .\Python\examples\public_api
-D:\miniforge3\envs\solarphysics_env\python.exe -m ruff check .\Python\solar_toolkit .\Python\tests .\Python\examples\public_api
-D:\miniforge3\envs\solarphysics_env\python.exe -m pytest .\Python\tests
-D:\miniforge3\envs\solarphysics_env\python.exe -m build .\Python
+The public API can match observations without instrument-specific setup or
+local data discovery:
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Paper\scripts\paper_daily_recommendation.ps1 -SkipLiveSearch
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Script .\Paper\tests\PaperRecommendation.Tests.ps1"
+```python
+from solar_toolkit.time import extract_time_from_filename, nearest_by_time
+
+files = [
+    "aia.lev1_euv_12s.2024-01-10T062925Z.171.image_lev1.fits",
+    "aia.lev1_euv_12s.2024-01-10T062937Z.171.image_lev1.fits",
+]
+observations = [(name, extract_time_from_filename(name)) for name in files]
+
+nearest = nearest_by_time(
+    "2024-01-10T06:29:33Z",
+    observations,
+    key=lambda item: item[1],
+    max_diff_seconds=12,
+)
+print(nearest[0] if nearest else "no match")
 ```
 
-The Paper generator is generate-and-validate only by default. Publishing is a
-separate, explicit operation and must remain scoped to approved `Paper/` paths.
+More deterministic examples are available in
+[`Python/examples/public_api`](Python/examples/public_api).
 
-## License boundary
+## Package Map
 
-There is intentionally no repository-wide `LICENSE`. The MIT license in
-[`Python/LICENSE`](Python/LICENSE) applies to the Python software partition
-only. It must not be interpreted as automatically licensing Paper content,
-local research material, or the ignored `Local/` application layer.
+| Namespace | Purpose |
+| --- | --- |
+| `solar_toolkit.data`, `io`, `time` | Observation inventories, file/FITS helpers, and time selection |
+| `solar_toolkit.map`, `coordinates` | Solar-map geometry, metadata, alignment, and coordinate helpers |
+| `solar_toolkit.timeseries`, `modeling` | Time-series processing and reusable numerical models |
+| `solar_toolkit.aia`, `hmi`, `cme` | Instrument and phenomenon-specific image processing |
+| `solar_toolkit.radio`, `xray_dem` | Radio-source analysis and X-ray/DEM calculations |
+| `solar_toolkit.net` | Explicit archive queries and downloads |
+| `solar_toolkit.visualization` | Plotting, frame processing, and media export helpers |
+
+The package uses lazy domain imports so `import solar_toolkit` remains
+lightweight. The public wheel contains no event-specific paths, CLI adapters,
+GUI/Web servers, or local workflow configuration.
+
+## Documentation
+
+- [Quickstart](Python/docs/quickstart.md)
+- [Package organization](Python/CODE_ORGANIZATION_MANIFEST.md)
+- [Python package details](Python/README.md)
+
+The repository also contains the separate [`Paper`](Paper) evidence layer;
+it is not part of the Python distribution.
+
+## Development
+
+Run the public-package checks from the repository root:
+
+```bash
+python -m pip check
+python -m compileall -q Python/solar_toolkit Python/tests Python/examples/public_api
+python -m ruff check Python/solar_toolkit Python/tests Python/examples/public_api
+python -m pytest Python/tests
+python -m build --wheel --outdir Python/dist Python
+```
+
+GitHub Actions runs the same compile, lint, test, dependency, wheel-boundary,
+secret-history, and Paper evidence checks in [Public CI](.github/workflows/ci.yml).
+
+## License and Citation
+
+The Python library is released under the [MIT License](Python/LICENSE).
+Citation metadata is provided in [`Python/CITATION.cff`](Python/CITATION.cff).
