@@ -5,16 +5,24 @@ namespace is `solar_toolkit`.
 
 ```text
 solar_toolkit/
-├─ aia/              reusable AIA processing
-├─ hmi/              reusable HMI processing
-├─ radio/            reusable radio calculations
-├─ xray_dem/         HXI/SXR readers and numerical helpers
-├─ time/ io/ data/   foundation parsing and explicit I/O
-├─ map/ timeseries/  array, map and time-series helpers
-├─ modeling/         reusable models
-├─ cme/ net/         explicit CME and network helpers
-└─ visualization/    shared frames, plotting and media calculations
+|-- data/             observation inventories and data manifests
+|-- io/               explicit file discovery, FITS, and manifest helpers
+|-- time/             filename/time parsing, formatting, and selection
+|-- map/              map geometry, metadata, image, and operation helpers
+|-- timeseries/       time-series tables and numerical processing
+|-- modeling/         reusable mathematical models and fitting primitives
+|-- net/              explicit network download and archive clients
+|-- visualization/    shared plotting, frame, and media calculations
+|-- aia/              reusable AIA processing
+|-- hmi/              reusable HMI processing
+|-- radio/            reusable radio calculations
+|-- xray_dem/         HXI/SXR readers and numerical helpers
+`-- cme/              CME file and image-processing helpers
 ```
+
+This layout follows the same separation used by established astronomy
+packages: foundation data structures and I/O stay separate from domain
+instrument packages, and application workflows live outside the public library.
 
 The public package has no event discovery, local path overrides, CLI adapters,
 browser/server code, GUI assets or workflow orchestration. Those components are

@@ -55,10 +55,12 @@ See [`examples/public_api`](examples/public_api) for source-tree examples.
 ```powershell
 $env:PATH="D:\miniforge3\envs\solarphysics_env;D:\miniforge3\envs\solarphysics_env\Library\mingw-w64\bin;D:\miniforge3\envs\solarphysics_env\Library\usr\bin;D:\miniforge3\envs\solarphysics_env\Library\bin;D:\miniforge3\envs\solarphysics_env\Scripts;$env:PATH"
 $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"
+D:\miniforge3\envs\solarphysics_env\python.exe -m pip check
+D:\miniforge3\envs\solarphysics_env\python.exe -c "import ssl; ssl.create_default_context(); import sunpy.map; from sunpy.net import Fido"
 D:\miniforge3\envs\solarphysics_env\python.exe -m compileall -q solar_toolkit tests examples\public_api
 D:\miniforge3\envs\solarphysics_env\python.exe -m ruff check solar_toolkit tests examples\public_api
 D:\miniforge3\envs\solarphysics_env\python.exe -m pytest tests
-D:\miniforge3\envs\solarphysics_env\python.exe -m build
+D:\miniforge3\envs\solarphysics_env\python.exe -m build --wheel --no-isolation --outdir dist .
 ```
 
 ## License and citation
