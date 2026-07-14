@@ -1,51 +1,52 @@
-# Paper Repository Instructions
+# Paper Evidence Library Instructions
 
-These instructions apply to `D:\solarphysics\Paper` and its
-subdirectories.
+These instructions apply to `D:\solarphysics\Paper` and its subdirectories.
 
-## Scope
+## Static evidence boundary
 
-- Use this repository for literature-search, publication-status tracking,
-  daily recommendation, paper-index, and method-library work.
-- Keep preprint, accepted, and formally published states separate.
-- Do not count a paper as formally published from arXiv status alone.
+- Keep this partition limited to the literature catalog, its deterministic
+  Markdown view, paper-backed method notes, and ignored local documents.
+- Do not add scripts, runtime configuration, tests, run state, dated reports,
+  automation plans, execution logs, or history notes under `Paper/`.
+- Search, merge, validation, and publication behavior belongs in the workspace
+  root under `tools/literature/`.
 
-## Evidence and metadata
+## Catalog and metadata
 
-- Prefer DOI/Crossref/publisher evidence for publication-status updates.
-- Preserve exact DOI strings and source dates when updating publication facts.
-- Keep paper recommendations evidence-backed and avoid overstating relevance.
-- When metadata cannot be verified, state the uncertainty directly.
+- Treat `catalog/papers.json` as the canonical record set and preserve its full
+  schema when updating records.
+- Generate `catalog/papers.md` deterministically from the JSON catalog; never
+  maintain the two files independently.
+- Deduplicate by normalized title, DOI, and arXiv identifier.
+- Keep preprint, accepted, conference or chapter, and formally published states
+  separate. An arXiv result must not replace verified publication metadata.
+- Prefer DOI, Crossref, publisher, or exact arXiv evidence. Record uncertainty
+  rather than inferring missing publication facts.
 
-## Editing rules
+## Method notes
 
-- Keep index and recommendation changes incremental unless the user requests a
-  broader rebuild.
-- Preserve UTF-8/BOM expectations for CSV or index files that already require
-  them.
-- Keep Gaussian/source-centroid method notes tied to actual papers and code
-  usage rather than generic summaries.
+- Keep Gaussian/source-centroid guidance tied to papers in the catalog.
+- Distinguish observed apparent source size from beam-deconvolved intrinsic
+  size, and keep propagation or scattering limitations explicit.
+- Treat type II or herringbone papers as method-transfer evidence only; do not
+  transfer their physical conclusions to type III spike-topping events.
+- Mark details that still require full-text verification instead of smoothing
+  over the gap.
 
-## Skills and desktop surfaces
+## Local documents and external surfaces
 
-- Use `academic-paper-director` for literature notes, manuscript prose,
-  citations, DOI checks, publication-status claims, and de-AI academic style.
-- Work may help search, compare sources, or draft a synthesis, but persistent
-  updates must still flow through `data\seed_papers.json`, project scripts, and
-  the repository's validation chain rather than direct edits to generated
-  indexes.
-- For a research deck, use `ppt-style-director` for scientific style and
-  `presentation-skill` or `Presentations` for the editable `.pptx` and visual
-  QA.
-- Calendar is a reminder surface only. A reminder or Work result does not mean
-  the literature refresh, metadata verification, generated outputs, or tests
-  completed.
-- Do not publish this repository, manuscripts, PDFs, or local literature files
-  through Sites without an explicit request and a separately reviewed export.
+- Keep PDF, DOC, and DOCX files under `00_local_documents/` local and ignored.
+  They are not Git LFS objects and must not be staged, uploaded, or published.
+- Do not send manuscripts or local literature files to Work, Calendar, Sites,
+  or other external surfaces without an explicit request and reviewed subset.
 
-## Verification
+## Workflow and verification
 
-- Run the repository's focused validation scripts or tests for changed indexes,
-  recommendations, or method notes when available.
-- Report which metadata sources were checked, what changed, and any papers left
-  unresolved.
+- Use `academic-paper-director` for literature notes, citations, DOI checks,
+  publication-status claims, and restrained academic style.
+- From the workspace root, run the read-only check with
+  `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\literature\update_catalog.ps1 -Check`,
+  then run the focused literature tests after catalog or method changes.
+- Report sources checked, catalog changes, validation results, and unresolved
+  metadata. Do not claim a commit, push, or remote publication without direct
+  evidence.

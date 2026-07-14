@@ -1,15 +1,9 @@
-﻿{
+{
   "project_name": "spikes topping type III",
   "search_settings": {
     "max_results_per_query": 5,
     "crossref_rows": 5,
     "lookback_days": 45
-  },
-  "output_paths": {
-    "daily": "daily_recommendations",
-    "gaussian": "02_methods_gaussian_fitting",
-    "gaussian_daily": "02_methods_gaussian_fitting/gaussian_fitting_literature_daily",
-    "method_notes": "08_project_method_notes"
   },
   "relevance_thresholds": {
     "A": 15,
@@ -163,53 +157,13 @@
     }
   ],
   "flags": {
-    "uses_gaussian_fitting": [
-      "gaussian fit",
-      "gaussian fitting",
-      "2d gaussian",
-      "elliptical gaussian"
-    ],
-    "uses_radio_centroid": [
-      "radio source centroid",
-      "source centroid",
-      "source position",
-      "source center",
-      "centroid"
-    ],
-    "uses_source_size": [
-      "source size",
-      "fwhm",
-      "major axis",
-      "minor axis",
-      "apparent size",
-      "source area",
-      "sizes and shapes"
-    ],
-    "uses_beam_deconvolution": [
-      "beam deconvolution",
-      "clean beam",
-      "synthesized beam",
-      "deconvolved source size",
-      "observed apparent size"
-    ],
-    "uses_aia": [
-      "aia",
-      "euv"
-    ],
-    "uses_hmi": [
-      "hmi"
-    ],
-    "uses_newkirk_model": [
-      "newkirk",
-      "density model",
-      "plasma frequency"
-    ],
-    "uses_frequency_drift_rate": [
-      "frequency drift",
-      "drift rate",
-      "source motion",
-      "source trajectory",
-      "electron beam"
-    ]
+    "uses_gaussian_fitting": ["gaussian fit", "gaussian fitting", "2d gaussian", "elliptical gaussian"],
+    "uses_radio_centroid": ["radio source centroid", "source centroid", "source position", "source center", "centroid"],
+    "uses_source_size": ["source size", "fwhm", "major axis", "minor axis", "apparent size", "source area", "sizes and shapes"],
+    "uses_beam_deconvolution": ["beam deconvolution", "clean beam", "synthesized beam", "deconvolved source size", "observed apparent size"],
+    "uses_aia": ["aia", "euv"],
+    "uses_hmi": ["hmi"],
+    "uses_newkirk_model": ["newkirk", "density model", "plasma frequency"],
+    "uses_frequency_drift_rate": ["frequency drift", "drift rate", "source motion", "source trajectory", "electron beam"]
   }
 }

@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -25,9 +26,16 @@ from .frames import (
     write_video_opencv_stream,
 )
 
+
+def _conda_bin_for_python(python_executable: str | Path) -> Path:
+    """Return the Conda Library bin directory beside a Python executable."""
+
+    return Path(python_executable).resolve().parent / "Library" / "bin"
+
+
 SUPPORTED_OUTPUT_FORMATS = {"mp4", "gif", "webm"}
 SUPPORTED_RECORDING_SOURCE_FORMATS = {"mp4", "webm"}
-CONDA_BIN = Path(r"D:\miniforge3\envs\solarphysics_env\Library\bin")
+CONDA_BIN = _conda_bin_for_python(sys.executable)
 CONDA_FFMPEG = CONDA_BIN / "ffmpeg.exe"
 CONDA_FFPROBE = CONDA_BIN / "ffprobe.exe"
 FFMPEG_FINALIZE_TIMEOUT_SECONDS = 120

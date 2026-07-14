@@ -28,8 +28,16 @@ There are no public console scripts in version 0.3.0.
 From the unified repository root:
 
 ```powershell
-D:\miniforge3\envs\solarphysics_env\python.exe -m pip install -e .\Python
+D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pip install -e .\Python
 ```
+
+`solarphysics_env_latest` is the default environment for current development
+and validation. The retained `solarphysics_env` environment is the formal
+backup and can be selected at any time with its explicit interpreter path or
+`conda run -n solarphysics_env`; it is not updated or activated by default.
+The backup retains known Conda ownership warnings and lacks newer optional
+packages including FITSIO and PyQtGraph, so workflows that need those packages
+must use `solarphysics_env_latest`.
 
 Library use always supplies paths and event configuration explicitly:
 
@@ -53,14 +61,14 @@ See [`examples/public_api`](examples/public_api) for source-tree examples.
 ## Verify
 
 ```powershell
-$env:PATH="D:\miniforge3\envs\solarphysics_env;D:\miniforge3\envs\solarphysics_env\Library\mingw-w64\bin;D:\miniforge3\envs\solarphysics_env\Library\usr\bin;D:\miniforge3\envs\solarphysics_env\Library\bin;D:\miniforge3\envs\solarphysics_env\Scripts;$env:PATH"
+$env:PATH="D:\miniforge3\envs\solarphysics_env_latest;D:\miniforge3\envs\solarphysics_env_latest\Library\mingw-w64\bin;D:\miniforge3\envs\solarphysics_env_latest\Library\usr\bin;D:\miniforge3\envs\solarphysics_env_latest\Library\bin;D:\miniforge3\envs\solarphysics_env_latest\Scripts;$env:PATH"
 $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"
-D:\miniforge3\envs\solarphysics_env\python.exe -m pip check
-D:\miniforge3\envs\solarphysics_env\python.exe -c "import ssl; ssl.create_default_context(); import sunpy.map; from sunpy.net import Fido"
-D:\miniforge3\envs\solarphysics_env\python.exe -m compileall -q solar_toolkit tests examples\public_api
-D:\miniforge3\envs\solarphysics_env\python.exe -m ruff check solar_toolkit tests examples\public_api
-D:\miniforge3\envs\solarphysics_env\python.exe -m pytest tests
-D:\miniforge3\envs\solarphysics_env\python.exe -m build --wheel --no-isolation --outdir dist .
+D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pip check
+D:\miniforge3\envs\solarphysics_env_latest\python.exe -c "import ssl; ssl.create_default_context(); import sunpy.map; from sunpy.net import Fido"
+D:\miniforge3\envs\solarphysics_env_latest\python.exe -m compileall -q solar_toolkit tests examples\public_api
+D:\miniforge3\envs\solarphysics_env_latest\python.exe -m ruff check solar_toolkit tests examples\public_api
+D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pytest tests
+D:\miniforge3\envs\solarphysics_env_latest\python.exe -m build --wheel --no-isolation --outdir dist .
 ```
 
 ## License and citation

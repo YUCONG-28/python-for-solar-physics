@@ -157,8 +157,8 @@ jobs:
               "from pathlib import Path; import sys; import solar_toolkit; import solar_toolkit.radio; assert Path(solar_toolkit.__file__).is_relative_to(Path(sys.prefix)); print(solar_toolkit.__version__)"
           )
 
-  paper-evidence-layer:
-    name: Paper generator and indexes
+  literature-catalog:
+    name: Literature catalog
     runs-on: windows-latest
     defaults:
       run:
@@ -167,22 +167,35 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - name: Generate Paper outputs without live search
-        run: .\Paper\scripts\paper_daily_recommendation.ps1 -SkipLiveSearch
+      - name: Validate catalog is current
+        run: .\tools\literature\update_catalog.ps1 -Check
 
-      - name: Parse Paper JSON and CSV sources
+      - name: Validate catalog records and repository boundary
         run: |
-          $config = Get-Content -Raw .\Paper\config\paper_search_config.json | ConvertFrom-Json
-          $seeds = Get-Content -Raw .\Paper\data\seed_papers.json | ConvertFrom-Json
-          $master = @(Import-Csv .\Paper\paper_master_index.csv)
-          $gaussian = @(Import-Csv .\Paper\02_methods_gaussian_fitting\gaussian_fitting_paper_index.csv)
+          $parsedCatalog = Get-Content -Raw .\Paper\catalog\papers.json | ConvertFrom-Json
+          $catalog = @($parsedCatalog)
+          if ($catalog.Count -eq 0) { throw "Literature catalog is empty" }
 
-          if ($null -eq $config.output_paths) { throw "Paper config has no output_paths" }
-          if ($seeds.Count -eq 0) { throw "Paper seed data is empty" }
-          if ($master.Count -eq 0) { throw "Paper master index is empty" }
-          if ($gaussian.Count -eq 0) { throw "Paper Gaussian index is empty" }
+          foreach ($field in @("title", "doi", "arxiv_id")) {
+              $values = @($catalog | ForEach-Object {
+                  ([string]$_.$field).Trim().ToLowerInvariant()
+              } | Where-Object { $_ })
+              if ($field -eq "title" -and $values.Count -ne $catalog.Count) {
+                  throw "A catalog record has no title"
+              }
+              if (@($values | Sort-Object -Unique).Count -ne $values.Count) {
+                  throw "Literature catalog contains duplicate $field values"
+              }
+          }
 
-          Write-Host "Paper JSON/CSV validation passed: seeds=$($seeds.Count), master=$($master.Count), gaussian=$($gaussian.Count)"
+          $trackedDocuments = @(git ls-files -- Paper | Where-Object {
+              $_ -match '(?i)\.(pdf|doc|docx)$'
+          })
+          if ($trackedDocuments.Count -ne 0) {
+              throw "Paper contains tracked PDF/DOC/DOCX files: $($trackedDocuments -join ', ')"
+          }
+
+          Write-Host "Literature catalog validation passed: records=$($catalog.Count)"
 
       - name: Install pinned Pester
         run: |
@@ -209,5 +222,5 @@ jobs:
           }
           "PESTER_MODULE_PATH=$manifestPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Run Paper Pester tests
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Import-Module '$env:PESTER_MODULE_PATH' -Force; Invoke-Pester -Script .\Paper\tests\PaperRecommendation.Tests.ps1 -EnableExit"
+      - name: Run Literature catalog Pester tests
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Import-Module '$env:PESTER_MODULE_PATH' -Force; Invoke-Pester -Script .\tools\literature\tests\LiteratureCatalog.Tests.ps1 -EnableExit"

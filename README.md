@@ -1,14 +1,19 @@
 # Solar Physics Toolkit
 
+> **Note:** This repository is not an out-of-the-box solar toolkit. It provides
+> research components that an AI can select and combine according to the data,
+> scientific goals, and constraints of a specific task.
+
 [![CI](https://github.com/YUCONG-28/solarphysics/actions/workflows/ci.yml/badge.svg)](https://github.com/YUCONG-28/solarphysics/actions/workflows/ci.yml)
 
-`solar-physics-toolkit` is a reusable Python library for multi-wavelength solar
-data analysis. It builds on [Astropy](https://www.astropy.org/) and
-[SunPy](https://sunpy.org/) while keeping data paths, event configuration, and
-workflow orchestration explicit. The distribution is currently version 0.3.0
-and is imported as `solar_toolkit`.
+The [`Python`](Python) partition contains the reusable `solar-physics-toolkit`
+library for multi-wavelength solar data analysis. It builds on
+[Astropy](https://www.astropy.org/) and [SunPy](https://sunpy.org/) while
+keeping data paths, event configuration, and workflow orchestration explicit.
+The distribution is currently version 0.3.0 and is imported as
+`solar_toolkit`.
 
-## Capabilities
+## Python Library Capabilities
 
 - Parse observation times, discover files, and build reproducible data
   inventories.
@@ -81,8 +86,10 @@ GUI/Web servers, or local workflow configuration.
 - [Package organization](Python/CODE_ORGANIZATION_MANIFEST.md)
 - [Python package details](Python/README.md)
 
-The repository also contains the separate [`Paper`](Paper) evidence layer;
-it is not part of the Python distribution.
+The separate [`Paper`](Paper) partition is a static literature-evidence layer.
+Its catalog and method notes support research decisions but are not part of
+the Python distribution. Catalog retrieval, validation, and publication tools
+live under [`tools/literature`](tools/literature).
 
 ## Development
 
@@ -97,7 +104,8 @@ python -m build --wheel --outdir Python/dist Python
 ```
 
 GitHub Actions runs the same compile, lint, test, dependency, wheel-boundary,
-secret-history, and Paper evidence checks in [Public CI](.github/workflows/ci.yml).
+secret-history, and literature-catalog checks in
+[Public CI](.github/workflows/ci.yml).
 
 ## License and Citation
 

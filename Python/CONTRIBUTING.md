@@ -4,13 +4,17 @@ Thank you for helping improve this solar-physics toolkit. The repository is orga
 
 ## Environment
 
-The project is developed with Miniforge and the `solarphysics_env` environment:
+The project is developed with Miniforge and the `solarphysics_env_latest` environment:
 
 ```powershell
-conda activate solarphysics_env
+conda activate solarphysics_env_latest
 python -m pip install -r requirements.txt
-D:\miniforge3\envs\solarphysics_env\python.exe -m pip install -e ".[dev]"
+D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pip install -e ".[dev]"
 ```
+
+The retained `solarphysics_env` environment is the formal backup. Select it
+explicitly only for compatibility comparison or fallback; current development
+commands continue to target `solarphysics_env_latest`.
 
 The `.[dev]` extra is the minimum contributor install for tests and style
 checks. Use `.[dev,full]` when validating broader science workflows that need
@@ -20,7 +24,7 @@ When running checks from a non-activated PowerShell session, prepend the
 Miniforge DLL and script paths before calling the project interpreter:
 
 ```powershell
-$env:PATH="D:\miniforge3\envs\solarphysics_env;D:\miniforge3\envs\solarphysics_env\Library\mingw-w64\bin;D:\miniforge3\envs\solarphysics_env\Library\usr\bin;D:\miniforge3\envs\solarphysics_env\Library\bin;D:\miniforge3\envs\solarphysics_env\Scripts;$env:PATH"
+$env:PATH="D:\miniforge3\envs\solarphysics_env_latest;D:\miniforge3\envs\solarphysics_env_latest\Library\mingw-w64\bin;D:\miniforge3\envs\solarphysics_env_latest\Library\usr\bin;D:\miniforge3\envs\solarphysics_env_latest\Library\bin;D:\miniforge3\envs\solarphysics_env_latest\Scripts;$env:PATH"
 ```
 
 ## Before Committing
@@ -28,9 +32,9 @@ $env:PATH="D:\miniforge3\envs\solarphysics_env;D:\miniforge3\envs\solarphysics_e
 Run the lightweight checks that do not require local FITS/NetCDF data:
 
 ```powershell
-D:\miniforge3\envs\solarphysics_env\python.exe -m compileall -q solar_toolkit scripts tests examples
-$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"; D:\miniforge3\envs\solarphysics_env\python.exe -m pytest -q tests
-D:\miniforge3\envs\solarphysics_env\python.exe -m pip install pre-commit
+D:\miniforge3\envs\solarphysics_env_latest\python.exe -m compileall -q solar_toolkit scripts tests examples
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"; D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pytest -q tests
+D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pip install pre-commit
 pre-commit run --all-files
 ```
 

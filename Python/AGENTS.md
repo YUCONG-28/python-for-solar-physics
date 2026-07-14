@@ -4,35 +4,41 @@ These instructions apply to this Python project and its subdirectories.
 
 ## Python environment
 
-- Always run Python through the Miniforge `solarphysics_env` environment.
+- Always run Python through the Miniforge `solarphysics_env_latest` environment.
 - In a normal activated shell, use this interpreter explicitly for Python commands:
 
 ```powershell
-D:\miniforge3\envs\solarphysics_env\python.exe
+D:\miniforge3\envs\solarphysics_env_latest\python.exe
 ```
 
-- In a non-activated PowerShell session, first prepend the conda environment DLL paths before importing NumPy/SciPy, otherwise MKL-backed NumPy can fail during import:
+- Keep `solarphysics_env` as the formal backup environment. Switch to it only
+  through an explicit interpreter path or `conda run -n solarphysics_env` when
+  a comparison or compatibility fallback is required; it is not the default.
+
+- In a non-activated PowerShell session, first prepend the Conda environment
+  DLL paths before importing NumPy/SciPy, otherwise the OpenBLAS-backed binary
+  stack can fail during import:
 
 ```powershell
-$env:PATH="D:\miniforge3\envs\solarphysics_env;D:\miniforge3\envs\solarphysics_env\Library\mingw-w64\bin;D:\miniforge3\envs\solarphysics_env\Library\usr\bin;D:\miniforge3\envs\solarphysics_env\Library\bin;D:\miniforge3\envs\solarphysics_env\Scripts;$env:PATH"
+$env:PATH="D:\miniforge3\envs\solarphysics_env_latest;D:\miniforge3\envs\solarphysics_env_latest\Library\mingw-w64\bin;D:\miniforge3\envs\solarphysics_env_latest\Library\usr\bin;D:\miniforge3\envs\solarphysics_env_latest\Library\bin;D:\miniforge3\envs\solarphysics_env_latest\Scripts;$env:PATH"
 ```
 
 - After that, prefer commands such as:
 
 ```powershell
 $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"
-D:\miniforge3\envs\solarphysics_env\python.exe -m pytest
-D:\miniforge3\envs\solarphysics_env\python.exe -m pip
-D:\miniforge3\envs\solarphysics_env\python.exe script.py
+D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pytest
+D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pip
+D:\miniforge3\envs\solarphysics_env_latest\python.exe script.py
 ```
 
 - Alternatively, use `conda run` so conda supplies the environment paths:
 
 ```powershell
-D:\miniforge3\Scripts\conda.exe run -n solarphysics_env python -m pytest
+D:\miniforge3\Scripts\conda.exe run -n solarphysics_env_latest python -m pytest
 ```
 
-- Do not rely on bare `python`, `pip`, or `pytest` unless they have first been verified to resolve to `D:\miniforge3\envs\solarphysics_env`.
+- Do not rely on bare `python`, `pip`, or `pytest` unless they have first been verified to resolve to `D:\miniforge3\envs\solarphysics_env_latest`.
 
 ## Codex agent behavior
 

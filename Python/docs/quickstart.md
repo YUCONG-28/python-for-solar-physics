@@ -3,8 +3,12 @@
 Install from the unified repository root:
 
 ```powershell
-D:\miniforge3\envs\solarphysics_env\python.exe -m pip install -e .\Python
+D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pip install -e .\Python
 ```
+
+Current commands default to `solarphysics_env_latest`. The retained
+`solarphysics_env` environment is the formal backup; select its interpreter
+explicitly only when a compatibility fallback is required.
 
 The public package is import-only: it installs no console scripts and discovers
 no event or workstation paths. Supply paths and configuration objects directly.
