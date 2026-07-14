@@ -1,0 +1,232 @@
+# Environment and local configuration
+.env
+*.env
+.env.*
+!.env.example
+config.json
+secrets.json
+configs/paths.local.yaml
+
+# Credentials, tokens, and authentication exports
+credentials*.json
+*credentials*.json
+service-account*.json
+service_account*.json
+client_secret*.json
+oauth*.json
+token*.json
+auth*.json
+cookies.txt
+cookies.json
+cookiejar*
+*.cookies
+.netrc
+.pypirc
+.npmrc
+.yarnrc
+.yarnrc.yml
+.gem/credentials
+pip/pip.conf
+NuGet.Config
+
+# Private keys, certificates, and encrypted credential stores
+id_rsa*
+id_ed25519*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.kdbx
+*.crt
+*.cer
+
+# Cloud and cluster CLI state
+.aws/
+.azure/
+.config/gcloud/
+.oci/
+.kube/
+
+# Experiment tracking and local run state
+wandb/
+.wandb/
+mlruns/
+.mlflow/
+lightning_logs/
+ray_results/
+runs/
+.dvc/cache/
+.dvc/config.local
+
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+data_download_source/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Backup files and archives
+backup_*/
+archive/
+archives/
+*.zip
+*.bak
+*.bak_*
+*~
+\#*#
+.#*
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Analysis cache and intermediate data
+*.npy
+*.npz
+*.pickle
+*.pkl
+*.nc
+*.cdf
+*.jp2
+*.h5
+*.hdf5
+*.feather
+*.parquet
+
+# Streamlit cache
+.static/
+.streamlit/
+
+# Temporary files
+temp/
+tmp/
+
+# Solar physics data products
+*.fits
+*.fts
+*.fit
+*.fits.gz
+*.fits.fz
+data/raw/
+data/processed/
+data/products/
+observations/
+
+# Generated outputs
+output/
+outputs/
+/verification_output/
+output/plots/
+outputs/generated/
+output_images/
+figures/
+plots/
+video/
+videos/
+
+# Root-level generated products kept local only.
+/HXR.png
+/SXR.png
+/SXR to HXR.png
+/SXR to HXR enhance.png
+/spectrogram_drift_rate_manual_selection.json
+/spectrogram_drift_rate_selection_metadata.json
+/spectrogram_drift_rate_selection_preview.png
+/fit_min_mask_pixels
+
+# Generated media
+*.mp4
+*.avi
+*.mov
+*.gif
+*.mkv
+
+# Temporary/debug images
+*_debug.png
+*_debug.jpg
+*_debug.jpeg
+*_tmp.png
+*_tmp.jpg
+*_tmp.jpeg
+
+# Data/table files that are usually local products
+*.xlsx
+*.xls
+*.csv
+*.db
+*.sqlite
+*.sqlite3
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# Test and lint caches
+.cache/
+.pytest_cache/
+.pytest_tmp/
+.pytest_tmp_*/
+.pytest_tmp_run/
+.pytest_tmp_run*/
+.pytest_tmp_fresh*/
+pytest-cache-files-*/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Local persisted Radio Workspace state and run artifacts
+/radio_workbench/
+
+# PDF exports
+*.pdf
+
+# Keep README display asset placeholders trackable.
+!docs/assets/
+!docs/assets/images/
+!docs/assets/videos/
+!docs/assets/images/.gitkeep
+!docs/assets/videos/.gitkeep
+!examples/output/
+!examples/output/.gitkeep
+!examples/images/
+!examples/images/.gitkeep
+!examples/videos/
+!examples/videos/.gitkeep
+!examples/configs/
+!examples/configs/.gitkeep
