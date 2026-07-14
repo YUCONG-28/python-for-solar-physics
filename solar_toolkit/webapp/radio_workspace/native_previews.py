@@ -9,9 +9,11 @@ injected validator.
 from __future__ import annotations
 
 import base64
+import copy
 import json
 import math
 import mimetypes
+import tempfile
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,11 +51,400 @@ def build_native_preview(
         return _build_drift_selection_preview(payload, validate_path=validate_path)
     if adapter_name == "spectrogram-coverage":
         return _build_spectrogram_coverage_preview(payload, validate_path=validate_path)
+    if adapter_name == "source-map-selection":
+        return _build_source_map_selection_preview(payload, validate_path=validate_path)
     if adapter_name == "file-browser":
         return _build_file_browser(payload, validate_path=validate_path)
     if adapter_name in {"run-index", "artifact-index"}:
         return _unavailable_index(adapter_name)
     raise ValueError(f"Unknown native preview adapter: {adapter!r}")
+
+
+def _build_source_map_selection_preview(
+    form: Mapping[str, Any], *, validate_path: PathValidator
+) -> dict[str, Any]:
+    """Scan source-map inputs, persist an explicit selection, and render one PNG."""
+
+    from solar_toolkit.radio import source_map_workflow as workflow
+    from solar_toolkit.radio.config import DEFAULT_CONFIG_NAME, load_radio_user_config
+
+    config_name = str(form.get("config") or DEFAULT_CONFIG_NAME)
+    event_user_config, _newkirk = load_radio_user_config(config_name)
+    workspace_config = _source_map_adapter_config(form)
+    user_config = _deep_merge_dict(event_user_config, workspace_config)
+    cfg = workflow.build_config(user_config, workflow.DEFAULT_CONFIG)
+    cfg["show_plot"] = False
+    cfg["save_plot"] = True
+    cfg["enable_spectrogram_panel"] = False
+    cfg["max_workers"] = 1
+    cfg["dpi"] = min(int(cfg.get("dpi", 120) or 120), 120)
+    if str(cfg.get("polarization", "RR+LL")).upper() == "RR+LL":
+        cfg["polarization"] = "RR+LL"
+        cfg["combine_polarizations"] = True
+    else:
+        cfg["polarization"] = str(cfg.get("polarization", "RR")).upper()
+        cfg["combine_polarizations"] = False
+
+    mode = str(cfg.get("mode") or "multi_band")
+    if mode == "multi_band":
+        candidates = _source_map_multi_band_candidates(
+            cfg, workflow=workflow, validate_path=validate_path
+        )
+    elif mode == "single_band":
+        candidates = _source_map_single_band_candidates(
+            cfg, workflow=workflow, validate_path=validate_path
+        )
+    else:
+        raise ValueError("Source-map mode must be multi_band or single_band")
+    if not candidates:
+        raise RuntimeError("No source-map candidates were found.")
+
+    selected_ids = _selected_source_map_candidate_ids(
+        form.get("selected_source_map_json"), candidates
+    )
+    selected = next(item for item in candidates if item["id"] == selected_ids[0])
+    image_url = _render_source_map_candidate(
+        selected, cfg, workflow=workflow, validate_path=validate_path
+    )
+    return {
+        "adapter": "source-map-selection",
+        "status": "ready",
+        "kind": "image",
+        "title": selected["title"],
+        "image_url": image_url,
+        "candidates": candidates,
+        "selected_candidate_ids": selected_ids,
+        "metadata": {
+            "mode": mode,
+            "candidate_count": len(candidates),
+            "candidate_limit": len(candidates),
+            "frequency_mhz": selected.get("frequency_mhz"),
+            "observation_time": selected.get("observation_time"),
+            "polarization": selected.get("polarization"),
+            "selection": selected.get("selection"),
+            "title": selected["title"],
+        },
+    }
+
+
+def _source_map_adapter_config(form: Mapping[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key in ("features", "display", "gaussian", "background", "spectrogram"):
+        value = form.get(key)
+        if isinstance(value, Mapping):
+            result[key] = copy.deepcopy(dict(value))
+    if form.get("mode") not in (None, ""):
+        result["mode"] = str(form["mode"])
+    data = copy.deepcopy(dict(form.get("data") or {}))
+    mappings = {
+        "single_file_path": "single_file_path",
+        "radio_dir": "multi_band_root",
+        "polarization": "polarization",
+        "combine_polarizations": "combine_polarizations",
+        "selected_source_map_json": "selected_source_map_json",
+    }
+    for source, target in mappings.items():
+        if form.get(source) not in (None, ""):
+            data[target] = form[source]
+    if data:
+        result["data"] = data
+    return result
+
+
+def _deep_merge_dict(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict:
+    result = copy.deepcopy(dict(base or {}))
+    for key, value in dict(override or {}).items():
+        if isinstance(value, Mapping) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge_dict(result[key], value)
+        else:
+            result[key] = copy.deepcopy(value)
+    return result
+
+
+def _source_map_single_band_candidates(
+    cfg: dict[str, Any], *, workflow: Any, validate_path: PathValidator
+) -> list[dict[str, Any]]:
+    raw_path = str(cfg.get("single_file_path") or "").strip()
+    if not raw_path:
+        raise ValueError("Select one Single radio FITS file before Preview.")
+    path = _validated_path(raw_path, validate_path=validate_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Source-map FITS file does not exist: {path}")
+    return [
+        _source_map_file_candidate(
+            path,
+            number=1,
+            cfg=cfg,
+            workflow=workflow,
+            root=path.parent,
+            validate_path=validate_path,
+        )
+    ]
+
+
+def _source_map_multi_band_candidates(
+    cfg: dict[str, Any], *, workflow: Any, validate_path: PathValidator
+) -> list[dict[str, Any]]:
+    root = _validated_path(cfg["multi_band_root"], validate_path=validate_path)
+    if not root.is_dir():
+        raise NotADirectoryError(f"Multi-band radio folder does not exist: {root}")
+    cfg["multi_band_root"] = str(root)
+    _validate_source_map_band_dirs(cfg, validate_path=validate_path)
+    slots = workflow._build_multi_band_slots(cfg)
+    candidates: list[dict[str, Any]] = []
+    for index, slot in enumerate(slots):
+        paths = _source_map_slot_paths(slot)
+        validated = [
+            _validated_path(path, validate_path=validate_path) for path in paths
+        ]
+        header = _source_map_header(validated[0])
+        observed = workflow.radio_datetime_from_header_or_path(
+            header, str(validated[0]), cfg
+        )
+        freq = workflow.get_freq_from_header(header)
+        entries = [
+            {
+                "path": str(path),
+                "relative_path": _relative_text(path, root),
+            }
+            for path in validated
+        ]
+        candidate_id = f"slot-{index:04d}"
+        selection = _source_map_selection_payload(
+            mode="multi_band",
+            candidate_id=candidate_id,
+            polarization=cfg.get("polarization"),
+            slot_index=index,
+            run_path=None,
+            paths=[str(path) for path in validated],
+        )
+        candidates.append(
+            {
+                "id": candidate_id,
+                "number": index + 1,
+                "mode": "multi_band",
+                "title": f"Source Map Slot #{index + 1}",
+                "slot_index": index,
+                "paths": [str(path) for path in validated],
+                "entries": entries,
+                "relative_path": "; ".join(item["relative_path"] for item in entries),
+                "frequency_mhz": _finite_float_or_none(freq),
+                "observation_time": _iso_or_none(observed),
+                "polarization": str(cfg.get("polarization") or ""),
+                "pairing_status": (
+                    "RR+LL matched"
+                    if cfg.get("combine_polarizations")
+                    else "single polarization"
+                ),
+                "selection": selection,
+            }
+        )
+    return candidates
+
+
+def _validate_source_map_band_dirs(
+    cfg: dict[str, Any], *, validate_path: PathValidator
+) -> None:
+    root = Path(str(cfg["multi_band_root"]))
+    pattern = str(cfg.get("band_dir_pattern", "{freq}MHz/{polar}"))
+    polarizations = (
+        [cfg.get("rr_dir_suffix", "RR"), cfg.get("ll_dir_suffix", "LL")]
+        if cfg.get("combine_polarizations") and cfg.get("polarization") == "RR+LL"
+        else [cfg.get("polarization", "RR")]
+    )
+    for freq in cfg.get("multi_band_freqs", []):
+        for polar in polarizations:
+            folder = _validated_path(
+                root / pattern.format(freq=freq, polar=polar),
+                validate_path=validate_path,
+            )
+            if not folder.is_dir():
+                raise NotADirectoryError(f"Radio band folder does not exist: {folder}")
+
+
+def _source_map_file_candidate(
+    path: Path,
+    *,
+    number: int,
+    cfg: dict[str, Any],
+    workflow: Any,
+    root: Path,
+    validate_path: PathValidator,
+) -> dict[str, Any]:
+    header = _source_map_header(path)
+    observed = workflow.radio_datetime_from_header_or_path(header, str(path), cfg)
+    freq = workflow.get_freq_from_header(header)
+    paths = [str(path)]
+    pairing_status = "single polarization"
+    if cfg.get("combine_polarizations") and cfg.get("polarization") == "RR+LL":
+        counterpart = _source_map_counterpart(path, cfg, validate_path=validate_path)
+        paths.append(str(counterpart))
+        pairing_status = f"RR+LL matched with {counterpart.parent.name}"
+    candidate_id = f"file-{number:04d}"
+    selection = _source_map_selection_payload(
+        mode="single_band",
+        candidate_id=candidate_id,
+        polarization=cfg.get("polarization"),
+        slot_index=None,
+        run_path=str(path),
+        paths=paths,
+    )
+    return {
+        "id": candidate_id,
+        "number": number,
+        "mode": "single_band",
+        "title": f"Source Map File #{number}",
+        "run_path": str(path),
+        "paths": paths,
+        "relative_path": _relative_text(path, root),
+        "frequency_mhz": _finite_float_or_none(freq),
+        "observation_time": _iso_or_none(observed),
+        "polarization": str(cfg.get("polarization") or ""),
+        "pairing_status": pairing_status,
+        "selection": selection,
+    }
+
+
+def _source_map_counterpart(
+    path: Path, cfg: dict[str, Any], *, validate_path: PathValidator
+) -> Path:
+    rr_name = str(cfg.get("rr_dir_suffix", "RR"))
+    ll_name = str(cfg.get("ll_dir_suffix", "LL"))
+    parent_name = path.parent.name
+    if parent_name == rr_name:
+        counterpart = path.parent.parent / ll_name / path.name
+    elif parent_name == ll_name:
+        counterpart = path.parent.parent / rr_name / path.name
+    else:
+        raise ValueError(
+            "RR+LL Preview requires the selected FITS file to live in an RR or LL folder."
+        )
+    validated = _validated_path(counterpart, validate_path=validate_path)
+    if not validated.is_file():
+        raise FileNotFoundError(
+            f"RR+LL Preview could not find the matching polarization file: {validated}"
+        )
+    return validated
+
+
+def _source_map_header(path: Path) -> Any:
+    from astropy.io import fits
+
+    with fits.open(path, memmap=True) as hdul:
+        return (
+            hdul[1].header.copy()
+            if len(hdul) > 1 and isinstance(hdul[1], fits.ImageHDU)
+            else hdul[0].header.copy()
+        )
+
+
+def _source_map_slot_paths(slot: list[Any]) -> list[str]:
+    paths: list[str] = []
+    for item in slot:
+        if isinstance(item, (tuple, list)):
+            paths.extend(str(value) for value in item)
+        else:
+            paths.append(str(item))
+    return paths
+
+
+def _source_map_selection_payload(
+    *,
+    mode: str,
+    candidate_id: str,
+    polarization: Any,
+    slot_index: int | None,
+    run_path: str | None,
+    paths: list[str],
+) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "candidate_id": candidate_id,
+        "paths": paths,
+    }
+    if slot_index is not None:
+        item["slot_index"] = int(slot_index)
+    if run_path:
+        item["run_path"] = run_path
+    return {
+        "schema_version": 1,
+        "mode": mode,
+        "polarization": str(polarization or ""),
+        "candidate_ids": [candidate_id],
+        "items": [item],
+    }
+
+
+def _selected_source_map_candidate_ids(
+    raw_value: Any, candidates: list[dict[str, Any]]
+) -> list[str]:
+    if raw_value in (None, ""):
+        return [str(candidates[0]["id"])]
+    if isinstance(raw_value, str):
+        try:
+            decoded = json.loads(raw_value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("selected_source_map_json must be a JSON object.") from exc
+    else:
+        decoded = raw_value
+    if not isinstance(decoded, Mapping):
+        raise ValueError("selected_source_map_json must be a JSON object.")
+    candidate_ids = decoded.get("candidate_ids")
+    if not isinstance(candidate_ids, list) or len(candidate_ids) != 1:
+        raise ValueError("Select exactly one source-map candidate.")
+    candidate_id = str(candidate_ids[0])
+    valid_ids = {str(item["id"]) for item in candidates}
+    if candidate_id not in valid_ids:
+        raise ValueError("The selected source-map candidate is stale. Preview again.")
+    return [candidate_id]
+
+
+def _render_source_map_candidate(
+    candidate: dict[str, Any],
+    cfg: dict[str, Any],
+    *,
+    workflow: Any,
+    validate_path: PathValidator,
+) -> str:
+    cfg = dict(cfg)
+    cfg["output_dir"] = ""
+    cfg["show_plot"] = False
+    cfg["save_plot"] = True
+    cfg["_interactive"] = False
+    cfg["enable_spectrogram_panel"] = False
+    with tempfile.TemporaryDirectory(prefix="radio-source-map-preview-") as tmp:
+        cfg["output_dir"] = tmp
+        if candidate["mode"] == "multi_band":
+            slot = _source_map_slot_from_candidate(
+                candidate, validate_path=validate_path
+            )
+            output = workflow.plot_multi_band_slot(
+                int(candidate["slot_index"]), slot, tmp, cfg, vmin=None, vmax=None
+            )
+        else:
+            path = _validated_path(candidate["run_path"], validate_path=validate_path)
+            output = workflow.plot_single_band(
+                str(path), tmp, cfg, vmin=None, vmax=None
+            )
+        output_path = Path(output)
+        mime_type = mimetypes.guess_type(output_path.name)[0] or "image/png"
+        return f"data:{mime_type};base64," + base64.b64encode(
+            output_path.read_bytes()
+        ).decode("ascii")
+
+
+def _source_map_slot_from_candidate(
+    candidate: dict[str, Any], *, validate_path: PathValidator
+) -> list[Any]:
+    entries = candidate.get("entries") or []
+    paths = [
+        _validated_path(item["path"], validate_path=validate_path) for item in entries
+    ]
+    if candidate.get("pairing_status") == "RR+LL matched":
+        paired = []
+        for index in range(0, len(paths), 2):
+            paired.append((str(paths[index]), str(paths[index + 1])))
+        return paired
+    return [str(path) for path in paths]
 
 
 def _build_spectrogram_coverage_preview(

@@ -1037,6 +1037,26 @@ class RadioRunManager:
         event = load_radio_event_config(config_name)
         adapter = self._adapter_config(action, config)
         if module == "solar_toolkit.radio.source_map_cli":
+            data_adapter = adapter.get("data")
+            raw_selection = (
+                data_adapter.get("selected_source_map_json")
+                if isinstance(data_adapter, dict)
+                else None
+            )
+            if raw_selection not in (None, ""):
+                if isinstance(raw_selection, str):
+                    try:
+                        selection = json.loads(raw_selection)
+                    except json.JSONDecodeError as exc:
+                        raise ValueError(
+                            "selected_source_map_json must be valid JSON"
+                        ) from exc
+                else:
+                    selection = raw_selection
+                self._validate_path_values(
+                    selection,
+                    source="source-map preview selection",
+                )
             effective = _deep_merge(event.section("user"), adapter)
             effective.pop("output", None)
             data = effective.get("data")

@@ -126,6 +126,8 @@ MODULES: tuple[RadioModuleSpec, ...] = (
                 command_module="solar_toolkit.radio.source_map_cli",
                 output_flag="--output-dir",
                 config_json_flag="--workspace-config-json",
+                preview_adapter="source-map-selection",
+                run_required_fields=("selected_source_map_json",),
                 default_config={
                     "features": {
                         "gaussian_overlay": False,
@@ -146,6 +148,22 @@ MODULES: tuple[RadioModuleSpec, ...] = (
                         config_path="mode",
                     ),
                     _field(
+                        "polarization",
+                        "Polarization mode",
+                        "select",
+                        default="RR+LL",
+                        choices=("RR+LL", "RR", "LL"),
+                        config_path="data.polarization",
+                    ),
+                    _field(
+                        "combine_polarizations",
+                        "Combine RR and LL",
+                        "checkbox",
+                        default=True,
+                        config_path="data.combine_polarizations",
+                        hidden=True,
+                    ),
+                    _field(
                         "single_file_path",
                         "Single radio FITS",
                         "path",
@@ -159,6 +177,17 @@ MODULES: tuple[RadioModuleSpec, ...] = (
                         "path",
                         path=True,
                         config_path="data.multi_band_root",
+                    ),
+                    _field(
+                        "selected_source_map_json",
+                        "Selected source-map preview",
+                        "json",
+                        config_path="data.selected_source_map_json",
+                        hidden=True,
+                        help_text=(
+                            "Managed by Source Map Preview. Run uses only this "
+                            "explicitly selected file or time slot."
+                        ),
                     ),
                     _ADVANCED_ARGUMENTS,
                 ),

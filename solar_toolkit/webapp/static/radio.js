@@ -216,17 +216,19 @@
     });
 
     const text = document.createElement("div");
+    text.className = "module-nav-copy";
     text.innerHTML = `<strong>${escapeHtml(module.title)}</strong><small>${escapeHtml(module.description)}</small>`;
 
     const controls = document.createElement("div");
     controls.className = "module-nav-controls";
-    const collapseButton = iconButton(collapsed ? "▸" : "▾", `${collapsed ? "Expand" : "Collapse"} ${module.title}`, () => toggleCollapsed(module.id));
+    const pinned = state.layout.pinned_modules.includes(module.id);
+    const collapseButton = iconButton(collapsed ? "+" : "-", `${collapsed ? "Expand" : "Collapse"} ${module.title}`, () => toggleCollapsed(module.id));
     collapseButton.disabled = !enabled;
     controls.append(
-      iconButton(state.layout.pinned_modules.includes(module.id) ? "★" : "☆", `Pin ${module.title}`, () => togglePinned(module.id)),
+      iconButton(pinned ? "U" : "P", `${pinned ? "Unpin" : "Pin"} ${module.title}`, () => togglePinned(module.id)),
       collapseButton,
-      iconButton("↑", `Move ${module.title} up`, () => moveModule(module.id, -1)),
-      iconButton("↓", `Move ${module.title} down`, () => moveModule(module.id, 1)),
+      iconButton("^", `Move ${module.title} up`, () => moveModule(module.id, -1)),
+      iconButton("v", `Move ${module.title} down`, () => moveModule(module.id, 1)),
     );
     row.append(toggle, text, controls);
     return row;
@@ -363,6 +365,7 @@
     form.addEventListener("submit", (event) => event.preventDefault());
     if (artifactBindableFields(action).length) form.append(renderArtifactSource(action));
     for (const field of action.input_schema || []) form.append(renderField(field));
+    if (action.preview_adapter === "source-map-selection") setupSourceMapFields(card);
     const advanced = $("[data-role='advanced-json']", card);
     advanced.value = JSON.stringify(action.default_config || {}, null, 2);
     const previewButton = $("[data-role='preview']", card);
@@ -650,6 +653,9 @@
     const card = panel.closest(".action-card");
     cleanupActionPreview(card);
     panel.replaceChildren();
+    if (preview.adapter === "source-map-selection" && Array.isArray(preview.candidates)) {
+      attachSourceMapFileSelector(panel, preview);
+    }
     if (preview.adapter === "roi-selection" && Array.isArray(preview.candidates)) {
       attachRoiFileSelector(panel, preview);
     }
@@ -726,6 +732,81 @@
       panel.append(details);
     }
     if (!panel.childElementCount) panel.textContent = preview.available === false ? "No native preview is available. You can still run this action explicitly." : "Preview completed.";
+  }
+
+  function setupSourceMapFields(card) {
+    const polarization = $("[name='polarization']", card);
+    const combine = $("[name='combine_polarizations']", card);
+    const selection = $("[name='selected_source_map_json']", card);
+    const clearSelection = () => {
+      if (selection) selection.value = "";
+      cleanupActionPreview(card);
+    };
+    const sync = () => {
+      if (combine && polarization) combine.checked = polarization.value === "RR+LL";
+    };
+    sync();
+    if (polarization) polarization.addEventListener("change", () => {
+      sync();
+      clearSelection();
+    });
+    for (const input of ["mode", "single_file_path", "radio_dir"].map((name) => $(`[name='${name}']`, card)).filter(Boolean)) {
+      input.addEventListener("change", clearSelection);
+    }
+  }
+
+  function attachSourceMapFileSelector(panel, preview) {
+    const card = panel.closest(".action-card");
+    const managedInput = $("[name='selected_source_map_json']", card);
+    const selected = new Set(preview.selected_candidate_ids || []);
+    const fieldset = document.createElement("fieldset");
+    fieldset.className = "source-map-selector";
+    const legend = document.createElement("legend");
+    legend.textContent = "Source-map candidates";
+    const hint = document.createElement("small");
+    hint.textContent = "Choose one numbered candidate, then click Preview again to rebuild the quick image. Run uses only the selected candidate.";
+    const status = document.createElement("span");
+    status.className = "source-map-file-status";
+    const list = document.createElement("div");
+    list.className = "source-map-file-list";
+    const candidates = preview.candidates || [];
+    const selectionPayloadById = new Map(candidates.map((candidate) => [candidate.id, candidate.selection]));
+
+    const writeSelection = () => {
+      const chosen = $("input[type='radio']:checked", list);
+      const payload = selectionPayloadById.get(chosen?.value) || null;
+      if (managedInput) managedInput.value = payload ? JSON.stringify(payload) : "";
+      status.textContent = payload ? `Selected ${payload.candidate_ids?.[0] || chosen.value}` : "No candidate selected";
+    };
+
+    for (const candidate of candidates) {
+      const label = document.createElement("label");
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = `source-map-candidate-${card.dataset.actionKey}`;
+      radio.value = candidate.id;
+      radio.checked = selected.has(candidate.id);
+      const time = candidate.observation_time || "unknown time";
+      const frequency = candidate.frequency_mhz == null ? "unknown frequency" : `${Number(candidate.frequency_mhz).toLocaleString()} MHz`;
+      const pairing = candidate.pairing_status || "single";
+      const title = candidate.mode === "multi_band" ? `Slot #${candidate.number}` : `File #${candidate.number}`;
+      label.append(radio, document.createTextNode(`${title} | ${frequency} | ${candidate.polarization || "UNKNOWN"} | ${time} | ${pairing}`));
+      if (candidate.relative_path) {
+        const path = document.createElement("small");
+        path.textContent = candidate.relative_path;
+        label.append(path);
+      }
+      radio.addEventListener("change", writeSelection);
+      list.append(label);
+    }
+
+    fieldset.append(legend, hint, status, list);
+    panel.append(fieldset);
+    if (![...selected].length && candidates[0]) {
+      const first = $$("input[type='radio']", list).find((input) => input.value === candidates[0].id);
+      if (first) first.checked = true;
+    }
+    writeSelection();
   }
 
   function figurePreviewMetadata(preview) {

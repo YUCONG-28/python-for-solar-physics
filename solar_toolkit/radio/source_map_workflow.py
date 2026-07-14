@@ -20,6 +20,7 @@ __all__ = ["DEFAULT_CONFIG", "build_config", "main", "run_source_map"]
 import argparse
 import csv
 import datetime
+import json
 import math
 import os
 import sys
@@ -3035,6 +3036,143 @@ def _build_multi_band_slots(cfg: dict) -> list:
     return slots
 
 
+def _workspace_source_map_selection(cfg: dict) -> dict | None:
+    """Decode an explicit web-workspace source-map selection, if supplied."""
+
+    raw_value = cfg.get("selected_source_map_json") or cfg.get("source_map_selection")
+    if raw_value in (None, ""):
+        return None
+    if isinstance(raw_value, str):
+        try:
+            selection = json.loads(raw_value)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "selected_source_map_json must be valid JSON. Preview again."
+            ) from exc
+    else:
+        selection = raw_value
+    if not isinstance(selection, dict):
+        raise ValueError("selected_source_map_json must be a JSON object.")
+    schema_version = selection.get("schema_version", 1)
+    if schema_version not in (1, "1"):
+        raise ValueError("Unsupported source-map selection schema version.")
+    mode = str(selection.get("mode") or "").strip()
+    if mode not in {"single_band", "multi_band"}:
+        raise ValueError("Source-map selection must declare single_band or multi_band.")
+    items = selection.get("items")
+    if not isinstance(items, list) or not items:
+        raise ValueError("Source-map selection must include at least one item.")
+    for item in items:
+        if not isinstance(item, dict):
+            raise ValueError("Source-map selection items must be JSON objects.")
+    return {
+        "schema_version": 1,
+        "mode": mode,
+        "candidate_ids": list(selection.get("candidate_ids") or []),
+        "items": items,
+    }
+
+
+def _normalized_selection_path(value) -> str:
+    return os.path.normcase(os.path.abspath(os.fspath(value)))
+
+
+def _source_map_slot_file_paths(slot: list) -> list[str]:
+    paths: list[str] = []
+    for item in slot:
+        if isinstance(item, (tuple, list)):
+            paths.extend(os.fspath(path) for path in item)
+        else:
+            paths.append(os.fspath(item))
+    return paths
+
+
+def _candidate_slot_index(item: dict) -> int:
+    raw_index = item.get("slot_index")
+    if raw_index is None:
+        candidate_id = str(item.get("candidate_id") or "")
+        if candidate_id.startswith("slot-"):
+            raw_index = candidate_id.partition("-")[2]
+    try:
+        return int(raw_index)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "Multi-band source-map selection is missing a valid slot_index."
+        ) from exc
+
+
+def _selected_workspace_slot_items(
+    slots: list, selection: dict
+) -> list[tuple[int, list]]:
+    if selection["mode"] != "multi_band":
+        raise ValueError("Multi-band source-map run requires a multi-band selection.")
+    selected: list[tuple[int, list]] = []
+    seen_indices: set[int] = set()
+    for item in selection["items"]:
+        slot_index = _candidate_slot_index(item)
+        if slot_index < 0 or slot_index >= len(slots):
+            raise ValueError(
+                "Selected source-map slot is no longer available. Preview again."
+            )
+        if slot_index in seen_indices:
+            continue
+        expected_paths = item.get("paths")
+        if not isinstance(expected_paths, list) or not expected_paths:
+            raise ValueError(
+                "Selected source-map slot is missing its source paths. Preview again."
+            )
+        actual_paths = _source_map_slot_file_paths(slots[slot_index])
+        if tuple(map(_normalized_selection_path, expected_paths)) != tuple(
+            map(_normalized_selection_path, actual_paths)
+        ):
+            raise ValueError(
+                "Selected source-map slot no longer matches the current input "
+                "folder. Preview again."
+            )
+        selected.append((slot_index, slots[slot_index]))
+        seen_indices.add(slot_index)
+    if not selected:
+        raise ValueError("No source-map slots were selected.")
+    return selected
+
+
+def _selected_workspace_files(selection: dict, cfg: dict) -> list[str]:
+    if selection["mode"] != "single_band":
+        raise ValueError("Single-band source-map run requires a single-band selection.")
+    selected: list[str] = []
+    combine = (
+        bool(cfg.get("combine_polarizations")) and cfg.get("polarization") == "RR+LL"
+    )
+    for item in selection["items"]:
+        paths = item.get("paths")
+        run_path = item.get("run_path")
+        if not run_path and isinstance(paths, list) and paths:
+            run_path = paths[0]
+        if not isinstance(run_path, str) or not run_path.strip():
+            raise ValueError(
+                "Selected source-map file is missing its run path. Preview again."
+            )
+        if not os.path.isfile(run_path):
+            raise FileNotFoundError(
+                f"Selected source-map FITS file does not exist: {run_path}"
+            )
+        if combine:
+            if not isinstance(paths, list) or len(paths) < 2:
+                raise ValueError(
+                    "RR+LL source-map run requires a matched RR/LL preview selection."
+                )
+            missing = [path for path in paths if not os.path.isfile(os.fspath(path))]
+            if missing:
+                raise FileNotFoundError(
+                    "RR+LL source-map run is missing matched polarization file(s): "
+                    + ", ".join(map(str, missing))
+                )
+        selected.append(run_path)
+    if not selected:
+        raise ValueError("No source-map files were selected.")
+    return selected
+
+
 def _layout_grid(n: int):
     """Automatically calculate subplot layout"""
     if n <= 0:
@@ -5554,6 +5692,7 @@ def _run_source_map_workflow(user_config=None, *, argv=None):
         _run_select_drift_workflow(cfg)
         return
     mode = cfg.get("mode", "single_band")
+    workspace_selection = _workspace_source_map_selection(cfg)
     workflow = resolve_background_workflow(cfg)
     print(
         f"[Colormap] radio_cmap={cfg.get('radio_cmap', cfg.get('cmap'))}, "
@@ -5608,6 +5747,14 @@ def _run_source_map_workflow(user_config=None, *, argv=None):
     if mode == "multi_band":
         print("Operation mode: multi-band synthesis")
         slots = _build_multi_band_slots(cfg)
+        slot_items = list(enumerate(slots))
+        if workspace_selection is not None:
+            slot_items = _selected_workspace_slot_items(slots, workspace_selection)
+            slots = [slot for _slot_idx, slot in slot_items]
+            print(
+                "Workspace selection active: plotting only "
+                f"{len(slots)} selected source-map slot(s)."
+            )
         output_dir = cfg.get("output_dir") or os.path.join(
             cfg["multi_band_root"], "plot"
         )
@@ -5615,7 +5762,7 @@ def _run_source_map_workflow(user_config=None, *, argv=None):
         print(f"Output directory: {output_dir}")
 
         # 计算每个波段的固定颜色范围
-        if _should_precompute_fixed_band_ranges(cfg):
+        if workspace_selection is None and _should_precompute_fixed_band_ranges(cfg):
             fixed_band_vmins, fixed_band_vmaxs = _compute_fixed_band_ranges(cfg)
             cfg["fixed_band_vmins"] = fixed_band_vmins
             cfg["fixed_band_vmaxs"] = fixed_band_vmaxs
@@ -5629,7 +5776,20 @@ def _run_source_map_workflow(user_config=None, *, argv=None):
         print("Operation mode: single-band")
         single_file = cfg.get("single_file_path")
 
-        if single_file and os.path.isfile(single_file):
+        if workspace_selection is not None:
+            files = _selected_workspace_files(workspace_selection, cfg)
+            first_file = files[0]
+            output_dir = cfg.get("output_dir") or os.path.join(
+                os.path.dirname(first_file), "plot"
+            )
+            os.makedirs(output_dir, exist_ok=True)
+            print(
+                "Workspace selection active: processing only "
+                f"{len(files)} selected source-map file(s)."
+            )
+
+            # 鍗曟枃浠舵ā寮忎笉闇€瑕侀鍏堣绠楅鑹茶寖鍥?
+        elif single_file and os.path.isfile(single_file):
             files = [single_file]
             output_dir = cfg.get("output_dir") or os.path.join(
                 os.path.dirname(single_file), "plot"
@@ -5841,7 +6001,7 @@ def _run_source_map_workflow(user_config=None, *, argv=None):
     errors = []
 
     if mode == "multi_band":
-        if use_parallel and len(slots) > 1:
+        if use_parallel and len(slot_items) > 1:
             worker = partial(
                 plot_multi_band_slot,
                 output_dir=output_dir,
@@ -5851,10 +6011,13 @@ def _run_source_map_workflow(user_config=None, *, argv=None):
             )
             with ProcessPoolExecutor(max_workers=safe_workers) as executor:
                 futures = {
-                    executor.submit(worker, i, slot): i for i, slot in enumerate(slots)
+                    executor.submit(worker, slot_idx, slot): slot_idx
+                    for slot_idx, slot in slot_items
                 }
                 with tqdm(
-                    total=len(slots), desc="Multi‑band plotting progress", unit="slots"
+                    total=len(slot_items),
+                    desc="Multi‑band plotting progress",
+                    unit="slots",
                 ) as pbar:
                     for future in as_completed(futures):
                         slot_idx = futures[future]
@@ -5866,14 +6029,14 @@ def _run_source_map_workflow(user_config=None, *, argv=None):
                         finally:
                             pbar.update(1)
         else:
-            for i, slot in enumerate(
-                tqdm(slots, desc="Multi‑band plotting progress", unit="slots")
+            for slot_idx, slot in tqdm(
+                slot_items, desc="Multi‑band plotting progress", unit="slots"
             ):
                 try:
-                    plot_multi_band_slot(i, slot, output_dir, cfg, vmin, vmax)
+                    plot_multi_band_slot(slot_idx, slot, output_dir, cfg, vmin, vmax)
                 except Exception as e:
-                    errors.append((i, str(e)))
-                    tqdm.write(f"[Error] slot {i}: {e}")
+                    errors.append((slot_idx, str(e)))
+                    tqdm.write(f"[Error] slot {slot_idx}: {e}")
 
     else:
         if use_parallel and len(files) > 1:

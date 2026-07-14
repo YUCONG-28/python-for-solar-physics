@@ -9,6 +9,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RADIO_JS = REPO_ROOT / "solar_toolkit/webapp/static/radio.js"
+RADIO_CSS = REPO_ROOT / "solar_toolkit/webapp/static/radio.css"
 RADIO_HTML = REPO_ROOT / "solar_toolkit/webapp/templates/radio.html"
 
 
@@ -90,6 +91,17 @@ def test_radio_frontend_workspace_layout_and_preset_contracts():
     )
     assert "toggleCollapsed(module.id)" in sidebar_module
     assert "collapseButton.disabled = !enabled" in sidebar_module
+    assert 'text.className = "module-nav-copy"' in sidebar_module
+    assert 'iconButton(pinned ? "U" : "P"' in sidebar_module
+    assert 'iconButton("^"' in sidebar_module
+    assert 'iconButton("v"' in sidebar_module
+    for corrupted in ("★", "☆", "▸", "▾", "↑", "↓"):
+        assert corrupted not in sidebar_module
+    stylesheet = RADIO_CSS.read_text(encoding="utf-8")
+    assert "grid-template-areas:" in stylesheet
+    assert '"toggle copy"' in stylesheet
+    assert '"controls controls"' in stylesheet
+    assert ".module-nav-copy" in stylesheet
     collapse = _javascript_section(
         javascript, "  function toggleCollapsed(moduleId)", "  function moveModule"
     )
@@ -236,6 +248,42 @@ def test_radio_frontend_roi_candidate_selector_is_native_and_preview_only():
         javascript,
         "  function attachRoiFileSelector(panel, preview)",
         "  function attachDriftLineSelector(panel, plot, contract)",
+    )
+
+
+def test_radio_frontend_source_map_selector_is_native_and_keeps_siblings_collapsed():
+    javascript = RADIO_JS.read_text(encoding="utf-8")
+
+    render_action = _javascript_section(
+        javascript,
+        "  function renderAction(module, action)",
+        "  function mountActionBody(module, action, card)",
+    )
+    assert "const body = $(\"[data-role='action-body']\", card)" in render_action
+    assert "if (opening) mountActionBody(module, action, card)" in render_action
+    assert "if (active || select.checked)" in render_action
+    assert "renderActionGrid(module, mainActions)" not in render_action
+
+    preview = _javascript_section(
+        javascript,
+        "  async function renderPreview(panel, preview)",
+        "  function attachDriftLineSelector(panel, plot, contract)",
+    )
+    assert 'preview.adapter === "source-map-selection"' in preview
+    assert "attachSourceMapFileSelector(panel, preview)" in preview
+    assert "function setupSourceMapFields(card)" in preview
+    assert "$(\"[name='selected_source_map_json']\", card)" in preview
+    assert 'combine.checked = polarization.value === "RR+LL"' in preview
+    assert "cleanupActionPreview(card)" in preview
+    assert "function attachSourceMapFileSelector(panel, preview)" in preview
+    assert "Source-map candidates" in preview
+    assert "Run uses only the selected candidate" in preview
+    assert "JSON.stringify(payload)" in preview
+    assert "input[type='radio']" in preview
+    assert "requestJson" not in _javascript_section(
+        javascript,
+        "  function setupSourceMapFields(card)",
+        "  function figurePreviewMetadata(preview)",
     )
 
 

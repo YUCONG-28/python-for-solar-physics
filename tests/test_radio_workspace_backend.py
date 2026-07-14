@@ -102,7 +102,17 @@ def test_radio_catalog_fuses_eight_optional_modules_and_layout_presets():
     inspect = imaging.get_action("inspect-source-map")
     fit = imaging.get_action("fit-gaussian")
     assert inspect.config_json_flag == "--workspace-config-json"
+    assert inspect.preview_adapter == "source-map-selection"
+    assert inspect.run_required_fields == ("selected_source_map_json",)
     assert inspect.default_config["features"]["gaussian_overlay"] is False
+    inspect_fields = {field["name"]: field for field in inspect.input_schema}
+    assert inspect_fields["polarization"]["type"] == "select"
+    assert inspect_fields["polarization"]["default"] == "RR+LL"
+    assert inspect_fields["polarization"]["choices"] == ["RR+LL", "RR", "LL"]
+    assert inspect_fields["combine_polarizations"]["hidden"] is True
+    assert inspect_fields["combine_polarizations"]["default"] is True
+    assert inspect_fields["selected_source_map_json"]["type"] == "json"
+    assert inspect_fields["selected_source_map_json"]["hidden"] is True
     assert fit.default_config["features"]["gaussian_overlay"] is True
     assert fit.accepts_artifacts == ("radio-fits",)
     rrll = imaging.get_action("rrll-percentile-comparison")
@@ -856,8 +866,109 @@ def test_structured_workspace_config_reaches_source_map_worker(tmp_path: Path):
         assert forwarded["features"]["gaussian_overlay"] is False
         assert forwarded["gaussian"]["fit_snr_threshold"] == 8.0
         assert forwarded["data"]["multi_band_root"] == str(radio_dir)
+        assert forwarded["data"]["polarization"] == "RR+LL"
+        assert forwarded["data"]["combine_polarizations"] is True
     finally:
         manager.close(cancel_running=True)
+
+
+def test_source_map_run_requires_preview_selection_and_validates_selection_paths(
+    tmp_path: Path,
+):
+    import json
+
+    from solar_toolkit.webapp.radio_workspace import (
+        RadioRunManager,
+        RadioWorkspaceStore,
+    )
+
+    radio_dir = tmp_path / "radio"
+    radio_dir.mkdir()
+    radio_file = radio_dir / "selected.fits"
+    radio_file.write_bytes(b"fixture")
+    outside = tmp_path.parent / "outside-source-map.fits"
+    outside.write_bytes(b"blocked")
+    store = RadioWorkspaceStore(tmp_path / "output", allowed_roots=[tmp_path])
+    workspace = store.create_workspace(workspace_id="source-map-selection")
+    manager = RadioRunManager(
+        store,
+        repo_root=tmp_path,
+        python_executable=sys.executable,
+        popen_factory=_artifact_popen,
+    )
+    try:
+        with pytest.raises(ValueError, match="Run requires explicit action output"):
+            manager.start(
+                workspace.id,
+                "imaging-localization",
+                "inspect-source-map",
+                {"form": {"mode": "multi_band", "radio_dir": str(radio_dir)}},
+            )
+
+        outside_selection = json.dumps(
+            {
+                "schema_version": 1,
+                "mode": "single_band",
+                "candidate_ids": ["file-0001"],
+                "items": [
+                    {
+                        "candidate_id": "file-0001",
+                        "run_path": str(outside),
+                        "paths": [str(outside)],
+                    }
+                ],
+            }
+        )
+        with pytest.raises(PermissionError, match="outside allowed roots"):
+            manager.resolve_request(
+                workspace.id,
+                "imaging-localization",
+                "inspect-source-map",
+                {
+                    "form": {
+                        "mode": "single_band",
+                        "single_file_path": str(radio_file),
+                        "selected_source_map_json": outside_selection,
+                    }
+                },
+            )
+
+        selection = json.dumps(
+            {
+                "schema_version": 1,
+                "mode": "single_band",
+                "candidate_ids": ["file-0001"],
+                "items": [
+                    {
+                        "candidate_id": "file-0001",
+                        "run_path": str(radio_file),
+                        "paths": [str(radio_file)],
+                    }
+                ],
+            }
+        )
+        resolved = manager.resolve_request(
+            workspace.id,
+            "imaging-localization",
+            "inspect-source-map",
+            {
+                "form": {
+                    "mode": "single_band",
+                    "polarization": "RR",
+                    "combine_polarizations": False,
+                    "single_file_path": str(radio_file),
+                    "selected_source_map_json": selection,
+                }
+            },
+        )
+        command = resolved["command"]
+        forwarded = json.loads(command[command.index("--workspace-config-json") + 1])
+        assert forwarded["data"]["selected_source_map_json"] == selection
+        assert forwarded["data"]["polarization"] == "RR"
+        assert forwarded["data"]["combine_polarizations"] is False
+    finally:
+        manager.close(cancel_running=True)
+        outside.unlink(missing_ok=True)
 
 
 def test_web_actions_reject_non_package_event_config_modules(tmp_path: Path):

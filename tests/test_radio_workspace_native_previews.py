@@ -19,6 +19,32 @@ def _recording_validator(calls: list[Path]):
     return validate
 
 
+def _write_radio_fits(path: Path, *, frequency_mhz: float = 149.0) -> None:
+    np = pytest.importorskip("numpy")
+    fits = pytest.importorskip("astropy.io.fits")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    header = fits.Header(
+        {
+            "CTYPE1": "HPLN-TAN",
+            "CTYPE2": "HPLT-TAN",
+            "CUNIT1": "arcsec",
+            "CUNIT2": "arcsec",
+            "CRPIX1": 2.5,
+            "CRPIX2": 2.5,
+            "CRVAL1": 0.0,
+            "CRVAL2": 0.0,
+            "CDELT1": 5.0,
+            "CDELT2": 5.0,
+            "FREQ": frequency_mhz,
+            "FREQUNIT": "MHz",
+            "DATE-OBS": "2025-01-24T04:48:30.312",
+            "RSUN_OBS": 960.0,
+        }
+    )
+    fits.writeto(path, np.arange(36, dtype=float).reshape(6, 6), header)
+
+
 def test_lightweight_adapters_return_json_compatible_results(tmp_path):
     (tmp_path / "nested").mkdir()
     (tmp_path / "centers.csv").write_text("header\n", encoding="utf-8")
@@ -75,6 +101,103 @@ def test_trajectory_preview_uses_canonical_table_and_plot_builder(tmp_path):
     assert result["figure"]["data"]
     assert calls == [centers.resolve()]
     json.dumps(result)
+
+
+def test_source_map_preview_numbers_candidates_and_pairs_rrll(tmp_path, monkeypatch):
+    from solar_toolkit.webapp.radio_workspace import native_previews
+
+    rr_path = tmp_path / "149MHz" / "RR" / "sample.fits"
+    ll_path = tmp_path / "149MHz" / "LL" / "sample.fits"
+    _write_radio_fits(rr_path)
+    _write_radio_fits(ll_path)
+    monkeypatch.setattr(
+        native_previews,
+        "_render_source_map_candidate",
+        lambda *_args, **_kwargs: "data:image/png;base64,preview",
+    )
+    calls: list[Path] = []
+
+    result = build_native_preview(
+        "source-map-selection",
+        {
+            "mode": "single_band",
+            "single_file_path": str(rr_path),
+            "polarization": "RR+LL",
+            "combine_polarizations": True,
+        },
+        validate_path=_recording_validator(calls),
+    )
+
+    assert result["adapter"] == "source-map-selection"
+    assert result["status"] == "ready"
+    assert result["image_url"] == "data:image/png;base64,preview"
+    assert result["selected_candidate_ids"] == ["file-0001"]
+    candidate = result["candidates"][0]
+    assert candidate["number"] == 1
+    assert candidate["frequency_mhz"] == 149.0
+    assert candidate["polarization"] == "RR+LL"
+    assert "RR+LL matched" in candidate["pairing_status"]
+    assert candidate["paths"] == [str(rr_path.resolve()), str(ll_path.resolve())]
+    assert candidate["selection"]["items"][0]["run_path"] == str(rr_path.resolve())
+    assert candidate["selection"]["items"][0]["paths"] == candidate["paths"]
+    assert rr_path.resolve() in calls
+    assert ll_path.resolve() in calls
+    json.dumps(result)
+
+
+def test_source_map_preview_missing_rrll_counterpart_fails_explicitly(
+    tmp_path, monkeypatch
+):
+    from solar_toolkit.webapp.radio_workspace import native_previews
+
+    rr_path = tmp_path / "149MHz" / "RR" / "sample.fits"
+    _write_radio_fits(rr_path)
+    monkeypatch.setattr(
+        native_previews,
+        "_render_source_map_candidate",
+        lambda *_args, **_kwargs: "data:image/png;base64,preview",
+    )
+
+    with pytest.raises(FileNotFoundError, match="matching polarization file"):
+        build_native_preview(
+            "source-map-selection",
+            {
+                "mode": "single_band",
+                "single_file_path": str(rr_path),
+                "polarization": "RR+LL",
+                "combine_polarizations": True,
+            },
+            validate_path=lambda value: Path(value).resolve(),
+        )
+
+
+def test_source_map_preview_rr_only_does_not_auto_combine(tmp_path, monkeypatch):
+    from solar_toolkit.webapp.radio_workspace import native_previews
+
+    rr_path = tmp_path / "149MHz" / "RR" / "sample.fits"
+    _write_radio_fits(rr_path)
+    monkeypatch.setattr(
+        native_previews,
+        "_render_source_map_candidate",
+        lambda *_args, **_kwargs: "data:image/png;base64,preview",
+    )
+
+    result = build_native_preview(
+        "source-map-selection",
+        {
+            "mode": "single_band",
+            "single_file_path": str(rr_path),
+            "polarization": "RR",
+            "combine_polarizations": False,
+        },
+        validate_path=lambda value: Path(value).resolve(),
+    )
+
+    candidate = result["candidates"][0]
+    assert candidate["polarization"] == "RR"
+    assert candidate["pairing_status"] == "single polarization"
+    assert candidate["paths"] == [str(rr_path.resolve())]
+    assert candidate["selection"]["items"][0]["paths"] == [str(rr_path.resolve())]
 
 
 def test_roi_preview_skips_incompatible_fits_and_returns_selection_metadata(
@@ -202,6 +325,16 @@ def test_path_rejection_happens_before_preview_reads(tmp_path):
         build_native_preview(
             "trajectory-media",
             {"centers": str(tmp_path / "centers.csv")},
+            validate_path=reject,
+        )
+
+    with pytest.raises(PermissionError, match="outside allowed roots"):
+        build_native_preview(
+            "source-map-selection",
+            {
+                "mode": "single_band",
+                "single_file_path": str(tmp_path / "blocked.fits"),
+            },
             validate_path=reject,
         )
 
