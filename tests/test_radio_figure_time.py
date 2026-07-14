@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
 
 import pytest
 
@@ -14,6 +18,44 @@ from solar_toolkit.webapp.radio_workspace.figure_time import (
     preflight_revision_matches,
     timeline_sample_times,
 )
+
+
+def test_pure_figure_imports_keep_optional_web_dependencies_lazy():
+    probe = textwrap.dedent("""
+        import importlib
+        import importlib.abc
+        import sys
+
+        class BlockOptionalWebDependencies(importlib.abc.MetaPathFinder):
+            def find_spec(self, fullname, path=None, target=None):
+                del path, target
+                if fullname.partition(".")[0] in {"flask", "werkzeug"}:
+                    raise ModuleNotFoundError(
+                        f"blocked optional web dependency: {fullname}"
+                    )
+                return None
+
+        sys.meta_path.insert(0, BlockOptionalWebDependencies())
+        for module_name in (
+            "solar_toolkit.webapp.radio_workspace.figure_media",
+            "solar_toolkit.webapp.radio_workspace.figure_time",
+            "solar_toolkit.webapp.radio_workspace.native_previews",
+        ):
+            importlib.import_module(module_name)
+
+        workspace = importlib.import_module("solar_toolkit.webapp.radio_workspace")
+        assert callable(workspace.create_radio_blueprint)
+        assert "flask" not in sys.modules
+        assert "werkzeug" not in sys.modules
+        """)
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=Path(__file__).resolve().parents[1],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def _draft(timeline: dict, *bindings: dict) -> dict:

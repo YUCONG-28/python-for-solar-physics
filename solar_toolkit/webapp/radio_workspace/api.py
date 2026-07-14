@@ -11,8 +11,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from werkzeug.exceptions import RequestEntityTooLarge
-
 from .catalog import catalog_payload, get_action, presets_payload
 from .contracts import FIGURE_SCHEMA_VERSION, RadioFigureDraft, RadioFigurePreflight
 from .figure_media import (
@@ -58,6 +56,7 @@ def create_radio_blueprint(
     """Create a self-contained Blueprint without modifying the parent Flask app."""
 
     from flask import Blueprint, Response, jsonify, request, send_file
+    from werkzeug.exceptions import RequestEntityTooLarge
 
     if store is None:
         if output_root is None:
@@ -581,6 +580,14 @@ def _json_object(request) -> dict[str, Any]:
     return dict(payload)
 
 
+def _request_entity_too_large(description: str) -> Exception:
+    """Build Werkzeug's 413 exception only when the optional web stack is used."""
+
+    from werkzeug.exceptions import RequestEntityTooLarge
+
+    return RequestEntityTooLarge(description=description)
+
+
 def _bounded_json_object(request, *, max_bytes: int, label: str) -> dict[str, Any]:
     """Reject an unbounded or oversized JSON body before parsing it."""
 
@@ -589,8 +596,8 @@ def _bounded_json_object(request, *, max_bytes: int, label: str) -> dict[str, An
     if content_length is None:
         raise ValueError(f"{label} requires a Content-Length header")
     if int(content_length) < 0 or int(content_length) > int(max_bytes):
-        raise RequestEntityTooLarge(
-            description=f"{label} exceeds the {int(max_bytes)}-byte request limit"
+        raise _request_entity_too_large(
+            f"{label} exceeds the {int(max_bytes)}-byte request limit"
         )
     return _json_object(request)
 
@@ -609,8 +616,8 @@ def _require_bounded_multipart(
     if content_length is None:
         raise ValueError(f"{label} requires a Content-Length header")
     if int(content_length) > int(max_bytes):
-        raise RequestEntityTooLarge(
-            description=f"{label} exceeds the {int(max_bytes)}-byte request limit"
+        raise _request_entity_too_large(
+            f"{label} exceeds the {int(max_bytes)}-byte request limit"
         )
 
 
@@ -620,8 +627,8 @@ def _multipart_text_field(request, name: str, *, max_bytes: int) -> str:
         raise ValueError(f"{name} is required")
     encoded_size = len(str(raw).encode("utf-8"))
     if encoded_size > int(max_bytes):
-        raise RequestEntityTooLarge(
-            description=f"{name} exceeds the {int(max_bytes)}-byte field limit"
+        raise _request_entity_too_large(
+            f"{name} exceeds the {int(max_bytes)}-byte field limit"
         )
     return str(raw).strip()
 

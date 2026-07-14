@@ -14,7 +14,6 @@ from solar_toolkit.webapp.radio_workspace import (
     RadioFigureDraft,
     RadioRunManifest,
     RadioWorkspaceStore,
-    create_radio_blueprint,
 )
 from solar_toolkit.webapp.radio_workspace.catalog import MODULES
 
@@ -69,11 +68,16 @@ def _animated_webp_bytes() -> bytes:
 
 
 def _client(tmp_path: Path):
-    from flask import Flask
+    flask = pytest.importorskip(
+        "flask",
+        reason="Flask is optional; install the app extra to test HTTP routes.",
+    )
+
+    from solar_toolkit.webapp.radio_workspace import create_radio_blueprint
 
     store = RadioWorkspaceStore(tmp_path, allowed_roots=(tmp_path,))
     workspace = store.create_workspace(workspace_id="figure-workspace")
-    app = Flask(__name__)
+    app = flask.Flask(__name__)
     app.register_blueprint(
         create_radio_blueprint(
             store=store,
