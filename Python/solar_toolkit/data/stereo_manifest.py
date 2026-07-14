@@ -1,30 +1,18 @@
-#!/usr/bin/env python3
-"""Create a wavelength manifest and symlink view for STEREO-A EUVI FITS."""
+"""Reusable STEREO/EUVI manifest helpers with explicit filesystem inputs."""
 
 from __future__ import annotations
 
-import argparse
 import csv
-import os
 from pathlib import Path
 
 from astropy.io import fits
 
-DATA_DIR = Path(os.getenv("STEREO_EUVI_DATA_DIR", "data/raw/stereo/euvi/20250124"))
-LINK_ROOT = DATA_DIR / "by_wavelength"
-MANIFEST = DATA_DIR / "manifest_by_wavelength.csv"
-
-__all__ = ["build_parser", "main", "make_relative_symlink", "read_metadata"]
-
-
-def build_parser() -> argparse.ArgumentParser:
-    """Build the event-recipe parser without touching local data."""
-    return argparse.ArgumentParser(
-        description="Create the STEREO/EUVI wavelength manifest and symlink view."
-    )
+__all__ = ["build_manifest", "make_relative_symlink", "read_metadata"]
 
 
 def read_metadata(path: Path) -> dict[str, str]:
+    """Read the manifest fields for one EUVI FITS product."""
+
     header = fits.getheader(path)
     wavelength = header.get("WAVELNTH")
     if wavelength is None:
@@ -41,62 +29,52 @@ def read_metadata(path: Path) -> dict[str, str]:
 
 
 def make_relative_symlink(target: Path, link: Path) -> None:
+    """Create a relative symlink without replacing ordinary files."""
+
     if link.is_symlink():
         if link.resolve() == target.resolve():
             return
         link.unlink()
     elif link.exists():
         raise FileExistsError(f"Refusing to replace non-symlink: {link}")
-    relative_target = Path("..") / ".." / target.name
-    link.symlink_to(relative_target)
+    link.symlink_to(Path("..") / ".." / target.name)
 
 
-def main(argv: list[str] | None = None) -> int:
-    build_parser().parse_args(argv)
-    fits_files = sorted(DATA_DIR.glob("*.fts"))
-    if not fits_files:
-        raise FileNotFoundError(f"No .fts files found in {DATA_DIR}")
+def build_manifest(
+    fits_files: list[Path],
+    *,
+    manifest_path: str | Path,
+    link_root: str | Path | None = None,
+) -> list[dict[str, str]]:
+    """Write a wavelength manifest and optional symlink view.
 
-    rows = [read_metadata(path) for path in fits_files]
+    Discovery and event paths remain the caller's responsibility. The returned
+    rows are sorted deterministically by wavelength, observation time, and name.
+    """
+
+    rows = [read_metadata(Path(path)) for path in fits_files]
     rows.sort(
         key=lambda row: (int(row["wavelength"]), row["date_obs"], row["filename"])
     )
-
-    with MANIFEST.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(
-            fh,
-            fieldnames=[
-                "filename",
-                "date_obs",
-                "wavelength",
-                "detector",
-                "observatory",
-                "exptime",
-                "path",
-            ],
-        )
+    output = Path(manifest_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fields = [
+        "filename",
+        "date_obs",
+        "wavelength",
+        "detector",
+        "observatory",
+        "exptime",
+        "path",
+    ]
+    with output.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
-
-    for row in rows:
-        wave_dir = LINK_ROOT / row["wavelength"]
-        wave_dir.mkdir(parents=True, exist_ok=True)
-        target = DATA_DIR / row["filename"]
-        link = wave_dir / row["filename"]
-        make_relative_symlink(target, link)
-
-    counts: dict[str, int] = {}
-    for row in rows:
-        counts[row["wavelength"]] = counts.get(row["wavelength"], 0) + 1
-
-    print(f"manifest={MANIFEST}")
-    print(f"link_root={LINK_ROOT}")
-    print(f"total={len(rows)}")
-    for wavelength in sorted(counts, key=int):
-        print(f"{wavelength}: {counts[wavelength]}")
-
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    if link_root is not None:
+        root = Path(link_root)
+        for row in rows:
+            wave_dir = root / row["wavelength"]
+            wave_dir.mkdir(parents=True, exist_ok=True)
+            make_relative_symlink(Path(row["path"]), wave_dir / row["filename"])
+    return rows

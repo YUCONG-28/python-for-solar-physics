@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+PYTHON_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = PYTHON_ROOT.parent
 MEDIA_AND_DATA_SUFFIXES = (
     ".avi",
     ".cdf",
@@ -137,6 +138,7 @@ def _tracked_paths() -> list[str]:
     return [
         path
         for path in tracked
+        if path.startswith("Python/")
         if (REPO_ROOT / path).is_file() or (REPO_ROOT / path).is_symlink()
     ]
 
@@ -208,9 +210,9 @@ def test_tracked_text_does_not_expose_private_paths_or_email():
 
 
 def test_citation_keeps_public_academic_attribution():
-    citation = (REPO_ROOT / "CITATION.cff").read_text(encoding="utf-8")
+    citation = (PYTHON_ROOT / "CITATION.cff").read_text(encoding="utf-8")
 
     assert 'family-names: "Li"' in citation
     assert 'given-names: "Y."' in citation
     assert 'institution: "Shandong University"' in citation
-    assert "https://github.com/YUCONG-28/python-for-solar-physics" in citation
+    assert "https://github.com/YUCONG-28/solarphysics" in citation

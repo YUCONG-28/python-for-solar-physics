@@ -86,16 +86,7 @@ import pytest
                 "calculate_derivative": "solar_toolkit.xray_dem.processing",
                 "load_sxr_data": "solar_toolkit.xray_dem.sxr",
                 "smooth_flux_data": "solar_toolkit.xray_dem.processing",
-                "aia_dem_inversion": "solar_toolkit.xray_dem.aia_dem_inversion",
-                "aia_hxi_overlay": "solar_toolkit.xray_dem.aia_hxi_overlay",
-                "cli": "solar_toolkit.xray_dem.cli",
-                "dem_radio_source_overlay": (
-                    "solar_toolkit.xray_dem.dem_radio_source_overlay"
-                ),
                 "hxi": "solar_toolkit.xray_dem.hxi",
-                "hxi_image": "solar_toolkit.xray_dem.hxi_image",
-                "hxi_lightcurve": "solar_toolkit.xray_dem.hxi_lightcurve",
-                "hxi_sxr_comparison": "solar_toolkit.xray_dem.hxi_sxr_comparison",
                 "processing": "solar_toolkit.xray_dem.processing",
                 "sxr": "solar_toolkit.xray_dem.sxr",
             },

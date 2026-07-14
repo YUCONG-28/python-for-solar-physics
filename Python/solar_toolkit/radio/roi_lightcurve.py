@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import math
@@ -44,15 +43,12 @@ __all__ = [
     "PRODUCT_FILENAMES",
     "ROI_SCHEMA_VERSION",
     "RadioRoi",
-    "build_parser",
     "build_radio_roi_artifacts",
     "build_radio_roi_mask",
     "extract_radio_roi_lightcurve",
     "index_radio_roi_images",
-    "main",
     "measure_radio_roi",
     "radio_roi_from_json",
-    "run_radio_roi_lightcurve",
     "write_radio_roi_products",
 ]
 
@@ -1053,144 +1049,6 @@ def build_radio_roi_artifacts(
             )
             artifacts["lightcurve_normalized_png"] = path.read_bytes()
     return artifacts
-
-
-def build_parser() -> argparse.ArgumentParser:
-    """Build the non-interactive ROI extraction parser."""
-
-    parser = argparse.ArgumentParser(
-        description="Extract raw radio FITS ROI light curves from HPLN/HPLT selections."
-    )
-    parser.add_argument(
-        "--radio-dir", required=True, help="Folder containing radio FITS files."
-    )
-    parser.add_argument("--out-dir", default="radio_roi_lightcurve_outputs")
-    parser.add_argument(
-        "--pattern", default="*.fits", help="FITS filename glob pattern."
-    )
-    parser.add_argument("--recursive", action="store_true", default=True)
-    parser.add_argument("--no-recursive", dest="recursive", action="store_false")
-    parser.add_argument("--freqs", help="Comma-separated frequencies in MHz.")
-    parser.add_argument(
-        "--polarization",
-        default=POL_SUM,
-        choices=[POL_SUM, POL_LCP, POL_RCP, "all"],
-        help="Polarization to measure; L+R pairs LCP/RCP where needed.",
-    )
-    parser.add_argument("--time-start", help="Inclusive observation-time start.")
-    parser.add_argument("--time-end", help="Inclusive observation-time end.")
-    parser.add_argument(
-        "--pair-time-tolerance-sec", type=float, default=DEFAULT_PAIR_TOLERANCE_SEC
-    )
-    roi_group = parser.add_mutually_exclusive_group(required=True)
-    roi_group.add_argument(
-        "--roi-bounds",
-        help="Box bounds as left,bottom,right,top in HPLN/HPLT arcsec.",
-    )
-    roi_group.add_argument("--roi-json", help="Saved ROI JSON file.")
-    parser.add_argument(
-        "--metric",
-        default="raw_sum",
-        choices=["raw_sum", "raw_mean", "raw_peak"],
-        help="Metric used in the default PNG curve.",
-    )
-    parser.add_argument(
-        "--selected-products",
-        help=(
-            "Comma-separated export products. Supported values: "
-            + ", ".join(PRODUCT_FILENAMES)
-            + ". The compatibility default remains csv,json,reference_png,"
-            "lightcurve_png."
-        ),
-    )
-    parser.add_argument(
-        "--detail-frequency-mhz",
-        type=float,
-        help="Frequency used by the optional detailed light-curve plot.",
-    )
-    parser.add_argument(
-        "--overwrite", action="store_true", help="Write directly into --out-dir."
-    )
-    return parser
-
-
-def run_radio_roi_lightcurve(argv: list[str] | None = None) -> dict[str, Path]:
-    """Run ROI light-curve extraction and write products."""
-
-    args = build_parser().parse_args(argv)
-    roi = (
-        radio_roi_from_json(args.roi_json)
-        if args.roi_json
-        else _parse_roi_bounds(args.roi_bounds)
-    )
-    freqs = _parse_float_csv(args.freqs)
-    selected_products = _normalize_selected_products(
-        _parse_text_csv(args.selected_products)
-        if args.selected_products is not None
-        else None
-    )
-    df = extract_radio_roi_lightcurve(
-        args.radio_dir,
-        roi,
-        pattern=args.pattern,
-        recursive=bool(args.recursive),
-        freqs=freqs,
-        polarization=args.polarization,
-        time_start=args.time_start,
-        time_end=args.time_end,
-        pair_time_tolerance_sec=float(args.pair_time_tolerance_sec),
-    )
-    reference = _first_ok_image(
-        args.radio_dir,
-        pattern=args.pattern,
-        recursive=bool(args.recursive),
-        freqs=freqs,
-        time_start=args.time_start,
-        time_end=args.time_end,
-    )
-    return write_radio_roi_products(
-        df,
-        roi,
-        args.out_dir,
-        reference_image=reference,
-        run_metadata={
-            "radio_dir": str(Path(args.radio_dir).expanduser()),
-            "pattern": args.pattern,
-            "recursive": bool(args.recursive),
-            "freqs": freqs,
-            "polarization": args.polarization,
-            "time_start": args.time_start or "",
-            "time_end": args.time_end or "",
-            "pair_time_tolerance_sec": float(args.pair_time_tolerance_sec),
-            "metric": args.metric,
-            "selected_products": list(selected_products),
-            "detail_frequency_mhz": args.detail_frequency_mhz,
-        },
-        metric=args.metric,
-        lightcurve_detail_frequency_mhz=args.detail_frequency_mhz,
-        selected_products=selected_products,
-        unique_run=not bool(args.overwrite),
-    )
-
-
-def main(argv: list[str] | None = None) -> int:
-    """Run the command-line ROI light-curve workflow."""
-
-    products = run_radio_roi_lightcurve(argv)
-    print("[Radio ROI Light Curve] outputs:")
-    print(f"  Output directory: {products['output_dir']}")
-    labels = {
-        "csv": "Statistics CSV",
-        "json": "ROI JSON",
-        "reference_png": "Reference PNG",
-        "lightcurve_png": "Light curve PNG",
-        "lightcurve_detail_png": "Detailed light curve PNG",
-        "lightcurve_normalized_png": "Normalized light curve PNG",
-    }
-    for key, label in labels.items():
-        if key in products:
-            print(f"  {label}: {products[key]}")
-    return 0
 
 
 def _resolve_radio_files(
@@ -2910,5 +2768,4 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+# Application entry points for this module live in the Local solar_apps layer.

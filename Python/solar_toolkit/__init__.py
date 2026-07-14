@@ -31,13 +31,11 @@ _SUBMODULES = {
     "map": "solar_toolkit.map",
     "modeling": "solar_toolkit.modeling",
     "net": "solar_toolkit.net",
-    "path_config": "solar_toolkit.path_config",
     "radio": "solar_toolkit.radio",
     "solar_analysis_utils": "solar_toolkit.solar_analysis_utils",
     "time": "solar_toolkit.time",
     "timeseries": "solar_toolkit.timeseries",
     "visualization": "solar_toolkit.visualization",
-    "webapp": "solar_toolkit.webapp",
     "xray_dem": "solar_toolkit.xray_dem",
 }
 

@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from scripts.radio.core.radio_newkirk_extrapolation import (
+from solar_toolkit.radio.newkirk import (
     attach_newkirk_height_to_gaussian,
     extrapolate_drift_line_with_newkirk,
     newkirk_density_cm3,

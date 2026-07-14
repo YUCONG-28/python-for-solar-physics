@@ -1,12 +1,12 @@
 [project]
 name = "solar-physics-toolkit"
-version = "0.2.0"
-description = "A comprehensive collection of Python scripts for multi-wavelength solar data analysis"
+version = "0.3.0"
+description = "Reusable scientific libraries for multi-wavelength solar data analysis"
 authors = [
     {name = "Severus / Lee / Ninghao"}
 ]
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24.0",
@@ -31,8 +31,6 @@ dev = [
     "mypy>=1.0.0",
     "jupyter>=1.0.0",
     "ipython>=8.14.0",
-    "opencv-python>=4.8.0",
-    "plotly>=5.18",
 ]
 full = [
     "xarray>=2023.6.0",
@@ -41,36 +39,16 @@ full = [
     "pillow>=10.0.0",
     "psutil>=5.9.0",
     "seaborn>=0.12.0",
-    "plotly>=5.15.0",
-    "opencv-python>=4.8.0",
     "dask>=2023.6.0",
     "fitsio>=1.2.0",
     "skyfield>=1.45",
     "drms>=0.6.3",
     "requests>=2.31.0",
 ]
-app = [
-    "streamlit>=1.58",
-    "plotly>=5.18",
-    "openpyxl>=3.1",
-    "Flask>=3.0",
-    "pillow>=10.0.0",
-]
-gui = [
-    "PyQt5>=5.15.0",
-    "pyqtgraph>=0.13.0",
-]
-
 [project.urls]
-Homepage = "https://github.com/YUCONG-28/python-for-solar-physics"
-Repository = "https://github.com/YUCONG-28/python-for-solar-physics.git"
-Issues = "https://github.com/YUCONG-28/python-for-solar-physics/issues"
-
-[project.scripts]
-solar-aia = "solar_toolkit.aia.cli:main"
-solar-image-viewer = "solar_toolkit.visualization.image_web_viewer.cli:main"
-solar-radio = "solar_toolkit.radio.cli:main"
-solar-webapp = "solar_toolkit.webapp.cli:main"
+Homepage = "https://github.com/YUCONG-28/solarphysics"
+Repository = "https://github.com/YUCONG-28/solarphysics.git"
+Issues = "https://github.com/YUCONG-28/solarphysics/issues"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
@@ -80,19 +58,6 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["solar_toolkit*"]
 exclude = ["tests*", "examples*", "docs*"]
-
-[tool.setuptools.package-data]
-"solar_toolkit.visualization.image_web_viewer" = [
-    "templates/*.html",
-    "static/*.css",
-    "static/*.js",
-]
-"solar_toolkit.visualization._media_assets" = ["*.cjs", "*.js", "*.txt"]
-"solar_toolkit.webapp" = [
-    "templates/*.html",
-    "static/*.css",
-    "static/*.js",
-]
 
 [tool.black]
 line-length = 88

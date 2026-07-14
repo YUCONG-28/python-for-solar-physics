@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from scripts.radio.core.radio_height_comparison import model_label
-from scripts.radio.core.radio_height_plots import plot_gaussian_vs_newkirk_height_time
+from solar_toolkit.radio.height_comparison import model_label
+from solar_toolkit.radio.height_plots import plot_gaussian_vs_newkirk_height_time
 
 
 def test_height_time_plot_does_not_connect_raw_multifrequency_rows():

@@ -17,12 +17,9 @@ from .processor import process_aia_fits
 
 _SUBMODULES = {
     "background": "solar_toolkit.aia.background",
-    "cli": "solar_toolkit.aia.cli",
     "config": "solar_toolkit.aia.config",
     "difference": "solar_toolkit.aia.difference",
     "io": "solar_toolkit.aia.io",
-    "lightcurve_extraction": "solar_toolkit.aia.lightcurve_extraction",
-    "lightcurve_plot": "solar_toolkit.aia.lightcurve_plot",
     "mosaic": "solar_toolkit.aia.mosaic",
     "processor": "solar_toolkit.aia.processor",
 }

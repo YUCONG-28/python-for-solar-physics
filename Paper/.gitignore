@@ -6,3 +6,7 @@ Thumbs.db
 .cache/
 .pytest_cache/
 __pycache__/
+
+# Local research documents and run state are never published.
+/00_local_documents/
+/.paper_recommendation_state.json

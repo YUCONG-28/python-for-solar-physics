@@ -13,8 +13,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from solar_toolkit.path_config import apply_config_to_object
-
 __all__ = ["AIA_CONFIG", "AIAConfig", "DIFF_CONFIG"]
 
 AIA_CONFIG: dict = {
@@ -224,7 +222,6 @@ class AIAConfig:
     single_map_title_fontsize: float = 13
 
     def __post_init__(self):
-        apply_config_to_object(self, "sdo_aia_euv_processor")
         self.difference_vmin_by_wave = _normalize_wave_float_dict(
             self.difference_vmin_by_wave, "difference_vmin_by_wave"
         )

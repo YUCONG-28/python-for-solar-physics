@@ -4,11 +4,20 @@ from pathlib import Path
 
 import pandas as pd
 
-from scripts.radio.core.radio_quicklook import (
+from solar_toolkit.radio.quicklook import (
     filter_valid_gaussian_centers,
     resolve_gaussian_csv,
     run_gaussian_newkirk_quicklook,
 )
+
+EVENT_CONFIG = {
+    "user": {"data": {"multi_band_freqs": [149.0, 164.0]}},
+    "output": {
+        "output_dir": "outputs/radio/2025-01-24",
+        "analysis_subdir": "gaussian_spectrogram_overlay",
+        "gaussian_diagnostics_csv": "radio_gaussian_fit_diagnostics.csv",
+    },
+}
 
 
 def _gaussian_row(
@@ -103,7 +112,7 @@ def test_quicklook_generates_isolated_outputs_from_gaussian_csv(tmp_path):
 
     result = run_gaussian_newkirk_quicklook(
         gaussian_csv=gaussian_csv,
-        config_name="radio_20250124_config",
+        config_name=EVENT_CONFIG,
         output_dir=output_dir,
     )
 
@@ -135,7 +144,7 @@ def test_quicklook_generates_isolated_outputs_from_gaussian_csv(tmp_path):
 def test_resolves_default_gaussian_csv_from_config_without_requiring_local_data():
     resolved = resolve_gaussian_csv(
         gaussian_csv=None,
-        config_name="radio_20250124_config",
+        config_name=EVENT_CONFIG,
     )
 
     assert (

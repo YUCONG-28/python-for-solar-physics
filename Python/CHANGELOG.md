@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- Moved all CLI, Web/GUI, browser, event configuration and orchestration code
+  to the ignored local `solar_apps` application repository.
+- Removed public console scripts and implicit workstation path/event discovery.
+- Added pure radio computation modules for reprojection, CSO processing and
+  physical diagnostics.
+- Re-rooted the package under the unified `solarphysics` monorepository.
+
 ## Unreleased
 
 - Updated contributor and architecture documentation for `solarphysics_env`

@@ -45,3 +45,10 @@ def test_event_sections_are_defensive_copies():
 def test_unknown_event_section_is_rejected():
     with pytest.raises(KeyError, match="Unknown radio event config sections"):
         RadioEventConfig.from_mapping({"mystery": {}})
+
+
+def test_event_configuration_has_no_implicit_workstation_default():
+    with pytest.raises(TypeError):
+        load_radio_event_config()
+    with pytest.raises(ValueError, match="fully qualified"):
+        load_radio_event_config("radio_20250124_config")

@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pandas as pd
 
-from scripts.radio.core.radio_height_comparison import (
+from solar_toolkit.radio.height_comparison import (
     build_gaussian_newkirk_height_summary_table,
     build_gaussian_newkirk_height_table,
     compute_gaussian_projected_height,

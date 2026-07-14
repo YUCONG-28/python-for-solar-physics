@@ -1,7 +1,6 @@
 """Public visualization helper namespace.
 
-English: Shared plotting, font configuration, media-generation, and
-interactive visualization helpers.
+English: Shared plotting, font configuration, frame, and media helpers.
 
 中文：共享绘图、字体配置、媒体生成和交互式可视化工具的公共命名空间。
 """
@@ -20,19 +19,8 @@ _DEFAULT_CHINESE_FONT_CANDIDATES = [
 
 _SUBMODULES = {
     "frames": "solar_toolkit.visualization.frames",
-    "image_web_viewer": "solar_toolkit.visualization.image_web_viewer",
     "media": "solar_toolkit.visualization.media",
     "plotting": "solar_toolkit.visualization.plotting",
-    "radio_source_trajectory": "solar_toolkit.visualization.radio_source_trajectory",
-    "radio_source_video": "solar_toolkit.visualization.radio_source_video",
-    "stereo_euvi_overview": "solar_toolkit.visualization.stereo_euvi_overview",
-    "stereo_euvi_roi_movie": "solar_toolkit.visualization.stereo_euvi_roi_movie",
-    "suvi_quadrant": "solar_toolkit.visualization.suvi_quadrant",
-    "video_cli": "solar_toolkit.visualization.video_cli",
-}
-
-_COMPATIBILITY_SUBMODULES = {
-    "media_assets": "solar_toolkit.visualization._media_assets",
 }
 
 __all__ = ["configure_chinese_fonts", *_SUBMODULES]
@@ -57,9 +45,9 @@ def configure_chinese_fonts(candidates: list[str] | None = None) -> str | None:
 
 
 def __getattr__(name: str):
-    """Lazily import public modules and compatibility aliases."""
+    """Lazily import public visualization modules."""
 
-    target = _SUBMODULES.get(name) or _COMPATIBILITY_SUBMODULES.get(name)
+    target = _SUBMODULES.get(name)
     if target is not None:
         module = _import_module(target)
         globals()[name] = module

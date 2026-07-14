@@ -12,7 +12,6 @@ def test_package_imports():
     from importlib.metadata import version
 
     import solar_toolkit
-    from solar_toolkit import path_config
 
     sys.modules.pop("solar_toolkit.solar_analysis_utils", None)
     vars(solar_toolkit).pop("solar_analysis_utils", None)
@@ -25,5 +24,7 @@ def test_package_imports():
         )
 
     assert solar_toolkit.__version__ == version("solar-physics-toolkit")
-    assert callable(path_config.load_script_config)
+    assert "path_config" not in solar_toolkit.__all__
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("solar_toolkit.path_config")
     assert callable(solar_analysis_utils.extract_time_from_filename)

@@ -1,8 +1,8 @@
 """Validated configuration loading helpers for radio workflows.
 
-The canonical loader lives in the installable package.  Event-specific Python
-modules can still live under :mod:`scripts.radio.configs`; callers may also
-pass any fully-qualified configuration module name.
+The canonical loader lives in the installable package. Event configuration is
+always supplied explicitly as a mapping, module, object, or qualified module
+name; the public library never discovers a workstation event automatically.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ __all__ = [
     "DEFAULT_NEWKIRK_HEIGHT_COMPARISON_CONFIG",
     "DEFAULT_OUTPUT_CONFIG",
     "DEFAULT_RADIO_DIAGNOSTIC_PRESENTATION_CONFIG",
+    "ConfigSource",
     "RadioEventConfig",
     "load_aia_radio_hmi_user_config",
     "load_aia_radio_overlay_user_config",
@@ -84,7 +85,7 @@ class RadioEventConfig:
 
 ConfigSource: TypeAlias = str | ModuleType | Mapping[str, Any] | RadioEventConfig
 
-DEFAULT_CONFIG_NAME = "radio_20250124_config"
+DEFAULT_CONFIG_NAME: None = None
 DEFAULT_NEWKIRK_CONFIG = {
     "enabled": True,
     "multipliers": [1, 2, 4],
@@ -187,26 +188,26 @@ DEFAULT_RADIO_DIAGNOSTIC_PRESENTATION_CONFIG = {
 
 
 def _normalize_config_module_name(config_name: str | None) -> str:
-    name = (config_name or DEFAULT_CONFIG_NAME).strip()
-    if not name:
-        name = DEFAULT_CONFIG_NAME
+    if config_name is None or not config_name.strip():
+        raise ValueError("an explicit radio event configuration is required")
+    name = config_name.strip()
     if name.endswith(".py"):
         name = name[:-3]
-    if name.startswith(("scripts.radio.configs.", "solar_toolkit.radio.configs.")):
-        return name
-    if "." in name:
-        return name
-    return f"solar_toolkit.radio.configs.{name}"
+    if "." not in name:
+        raise ValueError(
+            "radio event modules must use an explicit fully qualified name"
+        )
+    return name
 
 
-def load_radio_config_module(config_name: str | None = None) -> ModuleType:
-    """Load a packaged or explicitly qualified Python event-config module."""
+def load_radio_config_module(config_name: str) -> ModuleType:
+    """Load an explicitly qualified Python event-config module."""
 
     return importlib.import_module(_normalize_config_module_name(config_name))
 
 
 def load_radio_event_config(
-    source: ConfigSource = DEFAULT_CONFIG_NAME,
+    source: ConfigSource,
 ) -> RadioEventConfig:
     """Load and validate one explicit radio event configuration.
 
@@ -233,13 +234,12 @@ def load_radio_event_config(
     return RadioEventConfig.from_mapping(sections)
 
 
-def load_radio_user_config(config_name: ConfigSource = DEFAULT_CONFIG_NAME):
+def load_radio_user_config(config_name: ConfigSource):
     """
     Load a radio event config.
 
     Returns ``(USER_CONFIG, NEWKIRK_CONFIG)``. The config name may be either a
-    short module name such as ``radio_20250124_config`` or a fully qualified
-    module path such as ``scripts.radio.configs.radio_20250124_config``.
+    fully qualified module path supplied by a local application.
     """
     event = load_radio_event_config(config_name)
     user_config = event.section("user")
@@ -262,20 +262,20 @@ def _legacy_overlay_config_name(section: str) -> str:
 
 
 def load_aia_radio_overlay_user_config(
-    config_name: ConfigSource = DEFAULT_CONFIG_NAME, *, section: str = "aia_radio_hmi"
+    config_name: ConfigSource, *, section: str = "aia_radio_hmi"
 ):
     """Load a named AIA/HMI/radio overlay config section."""
     section_name = (section or "aia_radio_hmi").strip()
     return load_radio_event_config(config_name).section(section_name)
 
 
-def load_aia_radio_hmi_user_config(config_name: ConfigSource = DEFAULT_CONFIG_NAME):
+def load_aia_radio_hmi_user_config(config_name: ConfigSource):
     """Load the default AIA/HMI/radio overlay config from a config module."""
     return load_aia_radio_overlay_user_config(config_name, section="aia_radio_hmi")
 
 
 def load_newkirk_height_comparison_config(
-    config_name: ConfigSource = DEFAULT_CONFIG_NAME,
+    config_name: ConfigSource,
 ):
     """Load Gaussian-Newkirk height comparison config."""
     event = load_radio_event_config(config_name)
@@ -285,7 +285,7 @@ def load_newkirk_height_comparison_config(
 
 
 def load_drift_selection_product_config(
-    config_name: ConfigSource = DEFAULT_CONFIG_NAME,
+    config_name: ConfigSource,
 ):
     """Load persistent drift-selection product config."""
     event = load_radio_event_config(config_name)
@@ -297,13 +297,13 @@ def load_drift_selection_product_config(
     return config
 
 
-def load_radio_output_config(config_name: ConfigSource = DEFAULT_CONFIG_NAME):
+def load_radio_output_config(config_name: ConfigSource):
     """Load common user-facing output controls from an event config."""
     return _load_output_config(load_radio_event_config(config_name))
 
 
 def load_radio_diagnostic_presentation_config(
-    config_name: ConfigSource = DEFAULT_CONFIG_NAME,
+    config_name: ConfigSource,
 ):
     """Load frequency-priority diagnostic presentation config."""
     event = load_radio_event_config(config_name)

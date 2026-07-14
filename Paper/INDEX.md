@@ -2,12 +2,12 @@
 
 ## 主入口
 
-- `README.md`：本地运行、Git LFS 和维护说明。
+- `README.md`：本地生成、安全发布和维护说明。
 - `paper_master_index.csv` / `paper_master_index.md`：全局文献索引。
 - `daily_recommendations/`：每日文献检索日报。
 - `02_methods_gaussian_fitting/`：Gaussian fitting、radio source centroid、source size、beam / uncertainty 方法库。
 - `08_project_method_notes/`：面向当前 DART / DRAT 分析的代码与方法建议。
-- `00_local_documents/`：本地 PDF、Word 手稿和博士论文归档；PDF/DOCX 由 Git LFS 管理。
+- `00_local_documents/`：本地 PDF、Word 手稿和博士论文归档；该目录不进入公开 Git 仓库。
 
 ## 主题目录
 
@@ -41,7 +41,8 @@
 
 ## 最新更新摘要
 
-- `2026-06-08`：日报脚本新增运行后自动提交并推送 `origin/main`；本地-only 运行可使用 `-SkipGitPush`。
+- `2026-07-14`：日报脚本改为默认仅本地生成；只有显式 `-CommitAndPush` 才按 Paper 白名单暂存、提交和推送，并在无白名单变化时跳过 push。
+- `2026-06-08`：日报脚本曾增加自动推送；该行为已由 2026-07-14 的显式安全发布流程取代。
 - `2026-06-08`：新增 5 篇高价值漏收文献，其中 4 篇进入 Gaussian / centroid / source-size / propagation 方法链条；校正 1 篇 2026 Solar Physics 文献元数据。
 - `2026-06-01`：建立可本地运行的 PowerShell 日报生成流程、总索引和 Gaussian fitting 方法库。
 - `2026-05-31`：补录 `Imaging spectroscopy reveals spike-like repeating radio burst pairs in the solar corona`。

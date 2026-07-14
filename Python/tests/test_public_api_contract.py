@@ -112,14 +112,19 @@ def test_deprecated_helper_uses_toolkit_warning_category():
     assert old_api.__name__ == "old_api"
 
 
-def test_media_assets_old_path_is_a_private_package_alias():
-    """The historical resource import resolves to the internal package."""
-    from solar_toolkit import visualization
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "solar_toolkit.path_config",
+        "solar_toolkit.webapp",
+        "solar_toolkit.radio.cli",
+        "solar_toolkit.radio.configs",
+        "solar_toolkit.visualization.image_web_viewer",
+        "solar_toolkit.visualization._media_assets",
+    ],
+)
+def test_application_modules_are_not_in_the_public_distribution(module_name):
+    """Application/configuration surfaces belong to Local, not the wheel."""
 
-    canonical = importlib.import_module("solar_toolkit.visualization._media_assets")
-    legacy = importlib.import_module("solar_toolkit.visualization.media_assets")
-
-    assert legacy is canonical
-    assert visualization.media_assets is canonical
-    assert "media_assets" not in visualization.__all__
-    assert canonical.read_asset_bytes("NOTICE.txt")
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(module_name)

@@ -77,25 +77,39 @@ Describe "New-GaussianMethodReviewContent" {
     }
 }
 
-Describe "Get-GitAutoPushPlan" {
-    It "commits and pushes when generated files changed" {
-        $plan = Get-GitAutoPushPlan -AsOfDate "2026-06-08" -RemoteName "origin" -BranchName "main" -StatusPorcelain " M paper_master_index.csv"
+Describe "Get-GitPaperPublishPlan" {
+    It "uses Paper-scoped allowlist staging before commit and push" {
+        $plan = Get-GitPaperPublishPlan -AsOfDate "2026-06-08" -RemoteName "origin" -BranchName "main" -PaperPathPrefix "Paper" -ChangedPaths @("Paper/paper_master_index.csv")
+        $commands = $plan.Commands -join "`n"
 
         $plan.HasChanges | Should Be $true
         $plan.CommitMessage | Should Be "Update paper recommendations for 2026-06-08"
-        ($plan.Commands -join "`n") | Should Match "git add -A"
-        ($plan.Commands -join "`n") | Should Match "git commit -m"
-        ($plan.Commands -join "`n") | Should Match "git push origin HEAD:main"
-        ($plan.Commands -join "`n") | Should Match "git lfs push origin main"
+        $commands | Should Match 'git add --'
+        $commands | Should Match '"Paper/paper_master_index.csv"'
+        $commands | Should Match "git commit -m"
+        $commands | Should Match "git push origin HEAD:main"
+        $commands | Should Not Match "git add -A"
+        $commands | Should Not Match "git lfs"
     }
 
-    It "still pushes when there are no generated file changes" {
-        $plan = Get-GitAutoPushPlan -AsOfDate "2026-06-08" -RemoteName "origin" -BranchName "main" -StatusPorcelain ""
+    It "does not commit or push when no allowlisted files changed" {
+        $plan = Get-GitPaperPublishPlan -AsOfDate "2026-06-08" -RemoteName "origin" -BranchName "main" -PaperPathPrefix "Paper" -ChangedPaths @("Paper/README.md")
 
         $plan.HasChanges | Should Be $false
-        ($plan.Commands -join "`n") | Should Not Match "git commit"
-        ($plan.Commands -join "`n") | Should Match "git push origin HEAD:main"
-        ($plan.Commands -join "`n") | Should Match "git lfs push origin main"
+        @($plan.Commands).Count | Should Be 0
+        @($plan.SkippedPaperPaths).Count | Should Be 1
+    }
+
+    It "refuses changes outside the Paper partition" {
+        {
+            Get-GitPaperPublishPlan -AsOfDate "2026-06-08" -PaperPathPrefix "Paper" -ChangedPaths @("Python/README.md")
+        } | Should Throw
+    }
+
+    It "refuses every pre-existing staged path" {
+        {
+            Get-GitPaperPublishPlan -AsOfDate "2026-06-08" -PaperPathPrefix "Paper" -ChangedPaths @("Paper/paper_master_index.csv") -StagedPaths @("Paper/paper_master_index.csv")
+        } | Should Throw
     }
 }
 
@@ -113,11 +127,12 @@ Describe "paper_daily_recommendation.ps1 entrypoint" {
         $testDate = "2099-01-01"
 
         try {
-            $output = & powershell -NoProfile -ExecutionPolicy Bypass -File $scriptPath -AsOfDate $testDate -SkipLiveSearch -SkipGitPush 2>&1
+            $output = & powershell -NoProfile -ExecutionPolicy Bypass -File $scriptPath -AsOfDate $testDate -SkipLiveSearch 2>&1
             $exitCode = $LASTEXITCODE
 
             $exitCode | Should Be 0
             ($output -join "`n") | Should Match "Generated daily report"
+            ($output -join "`n") | Should Match "Generation completed locally. Git commit and push were not requested."
         }
         finally {
             $generatedPaths = @(

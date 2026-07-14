@@ -2,6 +2,7 @@
 param(
     [string]$AsOfDate = (Get-Date -Format "yyyy-MM-dd"),
     [switch]$SkipLiveSearch,
+    [switch]$CommitAndPush,
     [switch]$SkipGitPush,
     [string]$GitRemote = "origin",
     [string]$GitBranch = "main",
@@ -32,15 +33,17 @@ if (-not $SeedPath) {
 Import-Module (Join-Path $scriptRoot "PaperRecommendation\PaperRecommendation.psm1") -Force
 
 $projectRoot = Get-ProjectRoot
-$initialGitStatus = ""
-if (-not $SkipGitPush) {
-    $insideRepo = (& git -C $projectRoot rev-parse --is-inside-work-tree 2>$null)
-    if ($LASTEXITCODE -eq 0 -and $insideRepo -eq "true") {
-        $initialGitStatus = ((& git -C $projectRoot status --porcelain) -join "`n")
-        if ($LASTEXITCODE -ne 0) {
-            throw "Unable to read initial Git working tree status."
-        }
-    }
+
+if ($CommitAndPush -and $SkipGitPush) {
+    throw "-CommitAndPush cannot be combined with the deprecated -SkipGitPush switch."
+}
+
+if ($SkipGitPush) {
+    Write-Warning "-SkipGitPush is deprecated because generation is now local-only by default. Remove this switch."
+}
+
+if ($CommitAndPush) {
+    Assert-GitPaperPublishReady -ProjectRoot $projectRoot -RemoteName $GitRemote | Out-Null
 }
 
 function Write-Utf8BomFile {
@@ -363,13 +366,16 @@ Write-Host "Generated daily report: $dailyReportPath"
 Write-Host "Total indexed papers: $(@($orderedRecords).Count)"
 Write-Host "Gaussian-method papers: $(@($gaussianRecords).Count)"
 
-if ($SkipGitPush) {
-    Write-Host "Git auto-push skipped because -SkipGitPush was specified."
-}
-else {
-    $gitPushResult = Invoke-GitAutoCommitPush -ProjectRoot $projectRoot -AsOfDate $AsOfDate -RemoteName $GitRemote -BranchName $GitBranch -InitialStatusPorcelain $initialGitStatus
+if ($CommitAndPush) {
+    $gitPushResult = Invoke-GitPaperCommitPush -ProjectRoot $projectRoot -AsOfDate $AsOfDate -RemoteName $GitRemote -BranchName $GitBranch
     if ($gitPushResult.HasCommittedChanges) {
         Write-Host "Committed generated changes: $($gitPushResult.CommitMessage)"
+        Write-Host "Pushed Paper workflow updates to $($gitPushResult.RemoteName)/$($gitPushResult.BranchName)"
     }
-    Write-Host "Pushed daily workflow updates to $($gitPushResult.RemoteName)/$($gitPushResult.BranchName)"
+    else {
+        Write-Host "No allowlisted Paper changes were committed or pushed."
+    }
+}
+else {
+    Write-Host "Generation completed locally. Git commit and push were not requested."
 }

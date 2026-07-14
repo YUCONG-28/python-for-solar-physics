@@ -927,7 +927,164 @@ function ConvertTo-GaussianCsvFriendlyRecords {
     return @($records)
 }
 
-function Get-GitAutoPushPlan {
+function ConvertTo-NormalizedGitPath {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()]
+        [string]$Path = ""
+    )
+
+    return $Path.Replace("\", "/").Trim("/")
+}
+
+function Test-GitPathWithinPaper {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [AllowEmptyString()]
+        [string]$PaperPathPrefix = ""
+    )
+
+    $normalizedPath = ConvertTo-NormalizedGitPath -Path $Path
+    $normalizedPrefix = ConvertTo-NormalizedGitPath -Path $PaperPathPrefix
+    if ([string]::IsNullOrWhiteSpace($normalizedPrefix)) {
+        return $true
+    }
+
+    return $normalizedPath.Equals($normalizedPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $normalizedPath.StartsWith("$normalizedPrefix/", [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-GitPathAllowedForPaperPublish {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [AllowEmptyString()]
+        [string]$PaperPathPrefix = ""
+    )
+
+    if (-not (Test-GitPathWithinPaper -Path $Path -PaperPathPrefix $PaperPathPrefix)) {
+        return $false
+    }
+
+    $normalizedPath = ConvertTo-NormalizedGitPath -Path $Path
+    $normalizedPrefix = ConvertTo-NormalizedGitPath -Path $PaperPathPrefix
+    $relativePath = if ([string]::IsNullOrWhiteSpace($normalizedPrefix)) {
+        $normalizedPath
+    }
+    elseif ($normalizedPath.Length -gt $normalizedPrefix.Length) {
+        $normalizedPath.Substring($normalizedPrefix.Length + 1)
+    }
+    else {
+        ""
+    }
+
+    $exactPaths = @(
+        "config/paper_search_config.json",
+        "data/seed_papers.json",
+        "paper_master_index.csv",
+        "paper_master_index.md"
+    )
+    if ($exactPaths -contains $relativePath) {
+        return $true
+    }
+
+    foreach ($directoryPrefix in @("daily_recommendations", "02_methods_gaussian_fitting", "08_project_method_notes")) {
+        if ($relativePath.StartsWith("$directoryPrefix/", [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+
+    return $relativePath -match '^organization_log_\d{4}-\d{2}-\d{2}\.md$'
+}
+
+function Get-GitPaperPublishPathspecs {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()]
+        [string]$PaperPathPrefix = ""
+    )
+
+    $normalizedPrefix = ConvertTo-NormalizedGitPath -Path $PaperPathPrefix
+    $relativePathspecs = @(
+        "config/paper_search_config.json",
+        "data/seed_papers.json",
+        "daily_recommendations",
+        "paper_master_index.csv",
+        "paper_master_index.md",
+        "02_methods_gaussian_fitting",
+        "08_project_method_notes",
+        ":(glob)organization_log_*.md"
+    )
+
+    if ([string]::IsNullOrWhiteSpace($normalizedPrefix)) {
+        return @($relativePathspecs)
+    }
+
+    return @($relativePathspecs | ForEach-Object {
+        if ($_.StartsWith(":(glob)")) {
+            ":(glob)$normalizedPrefix/$($_.Substring(7))"
+        }
+        else {
+            "$normalizedPrefix/$_"
+        }
+    })
+}
+
+function Get-GitPaperRepositoryState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot
+    )
+
+    $gitRootOutput = @(& git -C $ProjectRoot rev-parse --show-toplevel 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $gitRootOutput.Count -eq 0) {
+        throw "Paper publishing requires '$ProjectRoot' to be inside a Git repository."
+    }
+    $gitRoot = [string]$gitRootOutput[-1]
+
+    $prefixOutput = @(& git -C $ProjectRoot rev-parse --show-prefix 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to resolve the Paper path relative to the Git root."
+    }
+    $paperPathPrefix = if ($prefixOutput.Count -gt 0) {
+        ConvertTo-NormalizedGitPath -Path ([string]$prefixOutput[-1])
+    }
+    else {
+        ""
+    }
+
+    $stagedPaths = @(& git -C $gitRoot diff --cached --name-only --)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect staged Git changes."
+    }
+    $unstagedPaths = @(& git -C $gitRoot diff --name-only --)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect unstaged Git changes."
+    }
+    $untrackedPaths = @(& git -C $gitRoot ls-files --others --exclude-standard)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect untracked Git files."
+    }
+
+    $stagedPaths = @($stagedPaths | ForEach-Object { ConvertTo-NormalizedGitPath -Path ([string]$_) } | Where-Object { $_ } | Sort-Object -Unique)
+    $changedPaths = @($stagedPaths + $unstagedPaths + $untrackedPaths |
+        ForEach-Object { ConvertTo-NormalizedGitPath -Path ([string]$_) } |
+        Where-Object { $_ } |
+        Sort-Object -Unique)
+
+    return [pscustomobject]@{
+        GitRoot = $gitRoot
+        PaperPathPrefix = $paperPathPrefix
+        ChangedPaths = $changedPaths
+        StagedPaths = $stagedPaths
+    }
+}
+
+function Get-GitPaperPublishPlan {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
@@ -935,29 +1092,72 @@ function Get-GitAutoPushPlan {
         [string]$RemoteName = "origin",
         [string]$BranchName = "main",
         [AllowEmptyString()]
-        [string]$StatusPorcelain = ""
+        [string]$PaperPathPrefix = "",
+        [string[]]$ChangedPaths = @(),
+        [string[]]$StagedPaths = @()
     )
 
-    $hasChanges = -not [string]::IsNullOrWhiteSpace($StatusPorcelain)
+    $normalizedChangedPaths = @($ChangedPaths | ForEach-Object { ConvertTo-NormalizedGitPath -Path ([string]$_) } | Where-Object { $_ } | Sort-Object -Unique)
+    $normalizedStagedPaths = @($StagedPaths | ForEach-Object { ConvertTo-NormalizedGitPath -Path ([string]$_) } | Where-Object { $_ } | Sort-Object -Unique)
+
+    if ($normalizedStagedPaths.Count -gt 0) {
+        throw "Paper publishing requires an empty Git index. Staged paths: $($normalizedStagedPaths -join ', ')"
+    }
+
+    $outsidePaperPaths = @($normalizedChangedPaths | Where-Object {
+        -not (Test-GitPathWithinPaper -Path $_ -PaperPathPrefix $PaperPathPrefix)
+    })
+    if ($outsidePaperPaths.Count -gt 0) {
+        throw "Paper publishing refused because changes exist outside Paper: $($outsidePaperPaths -join ', ')"
+    }
+
+    $allowlistedPaths = @($normalizedChangedPaths | Where-Object {
+        Test-GitPathAllowedForPaperPublish -Path $_ -PaperPathPrefix $PaperPathPrefix
+    })
+    $skippedPaperPaths = @($normalizedChangedPaths | Where-Object {
+        -not (Test-GitPathAllowedForPaperPublish -Path $_ -PaperPathPrefix $PaperPathPrefix)
+    })
+    $pathspecs = @(Get-GitPaperPublishPathspecs -PaperPathPrefix $PaperPathPrefix)
     $commitMessage = "Update paper recommendations for $AsOfDate"
     $commands = New-Object System.Collections.Generic.List[string]
 
-    if ($hasChanges) {
-        [void]$commands.Add("git add -A")
+    if ($allowlistedPaths.Count -gt 0) {
+        $quotedPathspecs = @($pathspecs | ForEach-Object { "`"$_`"" })
+        [void]$commands.Add("git add -- $($quotedPathspecs -join ' ')")
         [void]$commands.Add("git commit -m `"$commitMessage`"")
+        [void]$commands.Add("git push $RemoteName HEAD:$BranchName")
     }
 
-    [void]$commands.Add("git push $RemoteName HEAD:$BranchName")
-    [void]$commands.Add("git lfs push $RemoteName $BranchName")
-
     return [pscustomobject]@{
-        HasChanges = $hasChanges
+        HasChanges = $allowlistedPaths.Count -gt 0
         CommitMessage = $commitMessage
         Commands = $commands.ToArray()
+        Pathspecs = $pathspecs
+        AllowlistedPaths = $allowlistedPaths
+        SkippedPaperPaths = $skippedPaperPaths
     }
 }
 
-function Invoke-GitAutoCommitPush {
+function Assert-GitPaperPublishReady {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot,
+        [string]$RemoteName = "origin"
+    )
+
+    $state = Get-GitPaperRepositoryState -ProjectRoot $ProjectRoot
+    Get-GitPaperPublishPlan -AsOfDate "preflight" -PaperPathPrefix $state.PaperPathPrefix -ChangedPaths $state.ChangedPaths -StagedPaths $state.StagedPaths | Out-Null
+
+    $remoteNames = @(& git -C $state.GitRoot remote)
+    if ($LASTEXITCODE -ne 0 -or ($remoteNames -notcontains $RemoteName)) {
+        throw "Paper publishing requires remote '$RemoteName' to be configured."
+    }
+
+    return $state
+}
+
+function Invoke-GitPaperCommitPush {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
@@ -965,12 +1165,10 @@ function Invoke-GitAutoCommitPush {
         [Parameter(Mandatory = $true)]
         [string]$AsOfDate,
         [string]$RemoteName = "origin",
-        [string]$BranchName = "main",
-        [AllowEmptyString()]
-        [string]$InitialStatusPorcelain = ""
+        [string]$BranchName = "main"
     )
 
-    function Invoke-GitAutoPushCommand {
+    function Invoke-GitPaperCommand {
         param(
             [Parameter(Mandatory = $true)]
             [string[]]$Arguments,
@@ -978,7 +1176,7 @@ function Invoke-GitAutoCommitPush {
             [string]$FailureMessage
         )
 
-        $output = @(& git -C $ProjectRoot @Arguments 2>&1)
+        $output = @(& git @Arguments 2>&1)
         $exitCode = $LASTEXITCODE
         foreach ($line in $output) {
             if ($line) {
@@ -990,44 +1188,62 @@ function Invoke-GitAutoCommitPush {
         }
     }
 
-    $insideRepo = (& git -C $ProjectRoot rev-parse --is-inside-work-tree 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $insideRepo -ne "true") {
-        throw "Git auto-push requires '$ProjectRoot' to be inside a Git repository."
+    $state = Assert-GitPaperPublishReady -ProjectRoot $ProjectRoot -RemoteName $RemoteName
+    $plan = Get-GitPaperPublishPlan -AsOfDate $AsOfDate -RemoteName $RemoteName -BranchName $BranchName -PaperPathPrefix $state.PaperPathPrefix -ChangedPaths $state.ChangedPaths
+
+    if (-not $plan.HasChanges) {
+        Write-Host "No allowlisted Paper changes to commit; push skipped."
+        return [pscustomobject]@{
+            HasCommittedChanges = $false
+            HasPushed = $false
+            CommitMessage = $plan.CommitMessage
+            RemoteName = $RemoteName
+            BranchName = $BranchName
+            SkippedPaperPaths = $plan.SkippedPaperPaths
+        }
     }
 
-    $remoteNames = @(& git -C $ProjectRoot remote)
-    if ($LASTEXITCODE -ne 0 -or ($remoteNames -notcontains $RemoteName)) {
-        throw "Git auto-push requires remote '$RemoteName' to be configured."
+    $addArguments = @("-C", $state.GitRoot, "add", "--") + @($plan.Pathspecs)
+    Invoke-GitPaperCommand -Arguments $addArguments -FailureMessage "Git add failed during Paper publishing."
+
+    $stagedState = Get-GitPaperRepositoryState -ProjectRoot $ProjectRoot
+    $outsidePaperPaths = @($stagedState.ChangedPaths | Where-Object {
+        -not (Test-GitPathWithinPaper -Path $_ -PaperPathPrefix $stagedState.PaperPathPrefix)
+    })
+    if ($outsidePaperPaths.Count -gt 0) {
+        throw "Paper publishing stopped because changes appeared outside Paper: $($outsidePaperPaths -join ', ')"
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($InitialStatusPorcelain)) {
-        throw "Working tree had changes before report generation. Commit or stash them first, or rerun with -SkipGitPush."
+    $unexpectedStagedPaths = @($stagedState.StagedPaths | Where-Object {
+        -not (Test-GitPathAllowedForPaperPublish -Path $_ -PaperPathPrefix $stagedState.PaperPathPrefix)
+    })
+    if ($unexpectedStagedPaths.Count -gt 0) {
+        throw "Paper publishing stopped because non-allowlisted paths were staged: $($unexpectedStagedPaths -join ', ')"
     }
 
-    $statusPorcelain = ((& git -C $ProjectRoot status --porcelain) -join "`n")
-    if ($LASTEXITCODE -ne 0) {
-        throw "Unable to read Git working tree status."
+    if ($stagedState.StagedPaths.Count -eq 0) {
+        Write-Host "No allowlisted Paper changes were staged; commit and push skipped."
+        return [pscustomobject]@{
+            HasCommittedChanges = $false
+            HasPushed = $false
+            CommitMessage = $plan.CommitMessage
+            RemoteName = $RemoteName
+            BranchName = $BranchName
+            SkippedPaperPaths = $plan.SkippedPaperPaths
+        }
     }
 
-    $plan = Get-GitAutoPushPlan -AsOfDate $AsOfDate -RemoteName $RemoteName -BranchName $BranchName -StatusPorcelain $statusPorcelain
-
-    if ($plan.HasChanges) {
-        Invoke-GitAutoPushCommand -Arguments @("add", "-A") -FailureMessage "Git add failed during auto-push."
-        Invoke-GitAutoPushCommand -Arguments @("commit", "-m", $plan.CommitMessage) -FailureMessage "Git commit failed during auto-push."
-    }
-    else {
-        Write-Host "No generated changes to commit."
-    }
-
-    Invoke-GitAutoPushCommand -Arguments @("push", $RemoteName, "HEAD:$BranchName") -FailureMessage "Git push failed during auto-push."
-    Invoke-GitAutoPushCommand -Arguments @("lfs", "push", $RemoteName, $BranchName) -FailureMessage "Git LFS push failed during auto-push."
+    Invoke-GitPaperCommand -Arguments @("-C", $state.GitRoot, "commit", "-m", $plan.CommitMessage) -FailureMessage "Git commit failed during Paper publishing."
+    Invoke-GitPaperCommand -Arguments @("-C", $state.GitRoot, "push", $RemoteName, "HEAD:$BranchName") -FailureMessage "Git push failed during Paper publishing."
 
     return [pscustomobject]@{
-        HasCommittedChanges = $plan.HasChanges
+        HasCommittedChanges = $true
+        HasPushed = $true
         CommitMessage = $plan.CommitMessage
         RemoteName = $RemoteName
         BranchName = $BranchName
+        SkippedPaperPaths = $plan.SkippedPaperPaths
     }
 }
 
-Export-ModuleMember -Function Get-PaperSearchConfig, Merge-StringArray, Get-NormalizedTitle, Get-RelevanceRank, ConvertTo-ScoredPaperRecord, Merge-PaperRecords, New-DailyReportContent, New-GaussianMethodReviewContent, New-MasterIndexMarkdown, New-GaussianIndexMarkdown, New-GaussianImplementationNotesContent, New-GaussianQualityControlContent, New-GaussianUncertaintyNotesContent, New-GaussianDailyContent, New-CodeSuggestionContent, ConvertTo-CsvFriendlyRecords, ConvertTo-GaussianCsvFriendlyRecords, Get-GitAutoPushPlan, Invoke-GitAutoCommitPush, Get-ProjectRoot
+Export-ModuleMember -Function Get-PaperSearchConfig, Merge-StringArray, Get-NormalizedTitle, Get-RelevanceRank, ConvertTo-ScoredPaperRecord, Merge-PaperRecords, New-DailyReportContent, New-GaussianMethodReviewContent, New-MasterIndexMarkdown, New-GaussianIndexMarkdown, New-GaussianImplementationNotesContent, New-GaussianQualityControlContent, New-GaussianUncertaintyNotesContent, New-GaussianDailyContent, New-CodeSuggestionContent, ConvertTo-CsvFriendlyRecords, ConvertTo-GaussianCsvFriendlyRecords, Get-GitPaperPublishPlan, Assert-GitPaperPublishReady, Invoke-GitPaperCommitPush, Get-ProjectRoot

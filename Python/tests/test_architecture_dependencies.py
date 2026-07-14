@@ -7,7 +7,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = REPO_ROOT / "solar_toolkit"
-FORBIDDEN_ROOTS = {"examples", "legacy", "scripts"}
+FORBIDDEN_ROOTS = {"examples", "legacy", "scripts", "solar_apps"}
+FORBIDDEN_APPLICATION_IMPORTS = {"argparse", "flask", "streamlit", "webbrowser"}
 
 
 def _forbidden_imports(path: Path) -> list[tuple[int, str]]:
@@ -20,7 +21,11 @@ def _forbidden_imports(path: Path) -> list[tuple[int, str]]:
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             names = [node.module]
         for name in names:
-            if name.partition(".")[0] in FORBIDDEN_ROOTS:
+            if (
+                name.partition(".")[0] in FORBIDDEN_ROOTS
+                or name.partition(".")[0] in FORBIDDEN_APPLICATION_IMPORTS
+                or name == "http.server"
+            ):
                 found.append((node.lineno, name))
     return found
 

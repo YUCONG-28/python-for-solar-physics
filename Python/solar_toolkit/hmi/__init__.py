@@ -16,7 +16,6 @@ _SUBMODULES = {
     "fits_rename": "solar_toolkit.hmi.fits_rename",
     "magnetogram": "solar_toolkit.hmi.magnetogram",
     "overlay": "solar_toolkit.hmi.overlay",
-    "overlay_cli": "solar_toolkit.hmi.overlay_cli",
     "processing": "solar_toolkit.hmi.processing",
 }
 

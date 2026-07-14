@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
 from .config import (
-    DEFAULT_CONFIG_NAME,
+    ConfigSource,
     load_newkirk_height_comparison_config,
     load_radio_diagnostic_presentation_config,
     load_radio_output_config,
@@ -30,44 +29,16 @@ TRAJECTORY_PLOT_NAME = "gaussian_center_trajectory.png"
 DEFAULT_ANALYSIS_SUBDIR = "gaussian_spectrogram_overlay"
 
 __all__ = [
-    "build_parser",
     "build_quicklook_config",
     "build_quicklook_summary",
     "filter_valid_gaussian_centers",
     "plot_gaussian_center_trajectory",
     "resolve_gaussian_csv",
     "run_gaussian_newkirk_quicklook",
-    "main",
 ]
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the isolated Gaussian/Newkirk quicklook CLI parser."""
-
-    parser = argparse.ArgumentParser(
-        description="Generate Gaussian center and Newkirk quicklook products."
-    )
-    parser.add_argument("--gaussian-csv")
-    parser.add_argument("--config", default=DEFAULT_CONFIG_NAME)
-    parser.add_argument("--output-dir", default="quicklook_outputs")
-    return parser
-
-
-def main(argv: list[str] | None = None) -> int:
-    """Run the quicklook workflow from command-line arguments."""
-
-    args = build_parser().parse_args(argv)
-    result = run_gaussian_newkirk_quicklook(
-        gaussian_csv=args.gaussian_csv,
-        config_name=args.config,
-        output_dir=args.output_dir,
-    )
-    print(f"Quicklook input: {result['input_csv']}")
-    print(f"Quicklook output: {Path(args.output_dir).resolve()}")
-    return 0
-
-
-def build_quicklook_config(config_name: str = DEFAULT_CONFIG_NAME) -> dict[str, Any]:
+def build_quicklook_config(config_name: ConfigSource) -> dict[str, Any]:
     """Merge the config sections needed for isolated quicklook products."""
     _user_config, newkirk_config = load_radio_user_config(config_name)
     height_config = load_newkirk_height_comparison_config(config_name)
@@ -101,7 +72,7 @@ def build_quicklook_config(config_name: str = DEFAULT_CONFIG_NAME) -> dict[str, 
 def resolve_gaussian_csv(
     *,
     gaussian_csv: str | Path | None,
-    config_name: str = DEFAULT_CONFIG_NAME,
+    config_name: ConfigSource,
 ) -> Path:
     """Resolve a diagnostics CSV from an explicit path or event output config."""
     if gaussian_csv:
@@ -213,7 +184,7 @@ def build_quicklook_summary(
 def run_gaussian_newkirk_quicklook(
     *,
     gaussian_csv: str | Path | None = None,
-    config_name: str = DEFAULT_CONFIG_NAME,
+    config_name: ConfigSource,
     output_dir: str | Path,
 ) -> dict[str, Any]:
     """Generate isolated Gaussian/Newkirk quicklook CSV and PNG products."""

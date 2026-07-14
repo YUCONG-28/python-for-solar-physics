@@ -20,11 +20,10 @@ netCDF4>=1.6.0
 imageio>=2.31.0
 pillow>=10.0.0
 psutil>=5.9.0
-opencv-python>=4.8.0
 drms>=0.6.3
 requests>=2.31.0
 
 # Workflow-specific optional packages:
 # - hvpy: required only by SOHO/LASCO Helioviewer downloads.
-# - PyQt5 and pyqtgraph: required only by the CSO radio spectrum GUI.
-# - rebin: required by legacy CSO helper scripts when available in your setup.
+# Application, GUI, browser, and event-workflow dependencies live in
+# ../Local/requirements.local.txt and are not part of the public wheel.
