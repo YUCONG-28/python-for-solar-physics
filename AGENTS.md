@@ -20,6 +20,7 @@ $env:PATH="D:\miniforge3\envs\solarphysics_env;D:\miniforge3\envs\solarphysics_e
 - After that, prefer commands such as:
 
 ```powershell
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"
 D:\miniforge3\envs\solarphysics_env\python.exe -m pytest
 D:\miniforge3\envs\solarphysics_env\python.exe -m pip
 D:\miniforge3\envs\solarphysics_env\python.exe script.py

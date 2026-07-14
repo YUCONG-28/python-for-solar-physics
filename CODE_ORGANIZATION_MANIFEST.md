@@ -176,9 +176,17 @@ configuration, or bulk generated products. Use the interpreter defined in
 
 ```powershell
 $env:PATH="D:\miniforge3\envs\solarphysics_env;D:\miniforge3\envs\solarphysics_env\Library\mingw-w64\bin;D:\miniforge3\envs\solarphysics_env\Library\usr\bin;D:\miniforge3\envs\solarphysics_env\Library\bin;D:\miniforge3\envs\solarphysics_env\Scripts;$env:PATH"
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"
 D:\miniforge3\envs\solarphysics_env\python.exe -m compileall -q solar_toolkit scripts tests examples
 D:\miniforge3\envs\solarphysics_env\python.exe -m ruff check solar_toolkit scripts tests examples
 D:\miniforge3\envs\solarphysics_env\python.exe -m pytest -q tests
 ```
+
+Contributor setup and pre-commit details are maintained in
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+When public workflow surfaces change, keep `README.md`, `docs/script_index.md`,
+`docs/FUNCTION_MAP.md`, `docs/MAIN_FILES.md`, this manifest, and
+`solar_toolkit/webapp/registry.py` synchronized.
 
 代码检查验证结构和无数据逻辑；真实数据科学等价必须单独记录，不能由单元测试结果代替。
