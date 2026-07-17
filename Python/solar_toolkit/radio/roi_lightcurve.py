@@ -20,6 +20,7 @@ import pandas as pd
 from astropy.io import fits
 from matplotlib.path import Path as MplPath
 
+from ._image_naming import build_radio_image_filename
 from .centers import (
     POL_LCP,
     POL_RCP,
@@ -63,6 +64,12 @@ PRODUCT_FILENAMES = {
     "lightcurve_normalized_png": "radio_roi_lightcurve_normalized.png",
 }
 _DEFAULT_PRODUCT_KEYS = ("csv", "json", "reference_png", "lightcurve_png")
+_IMAGE_PRODUCT_NAMES = {
+    "reference_png": "roi_reference",
+    "lightcurve_png": "roi_lightcurve",
+    "lightcurve_detail_png": "roi_lightcurve_detail",
+    "lightcurve_normalized_png": "roi_lightcurve_normalized",
+}
 _ANGULAR_UNITS = {
     "arcsec",
     "arcsecs",
@@ -927,6 +934,12 @@ def write_radio_roi_products(
 
     product_keys = _normalize_selected_products(selected_products)
     target_dir = _unique_output_dir(Path(output_dir).expanduser(), unique=unique_run)
+    generated_at = datetime.now(timezone.utc)
+    artifact_filenames = build_radio_roi_product_filenames(
+        df,
+        selected_products=product_keys,
+        generated_at=generated_at,
+    )
     artifacts = build_radio_roi_artifacts(
         df,
         roi,
@@ -940,11 +953,12 @@ def write_radio_roi_products(
         lightcurve_marker_size=lightcurve_marker_size,
         lightcurve_detail_frequency_mhz=lightcurve_detail_frequency_mhz,
         selected_products=product_keys,
+        artifact_filenames=artifact_filenames,
     )
     target_dir.mkdir(parents=True, exist_ok=True)
     products: dict[str, Path] = {"output_dir": target_dir}
     for key, payload in artifacts.items():
-        path = target_dir / PRODUCT_FILENAMES[key]
+        path = target_dir / artifact_filenames[key]
         path.write_bytes(payload)
         products[key] = path
     return products
@@ -966,10 +980,19 @@ def build_radio_roi_artifacts(
     lightcurve_marker_size: float = 3.0,
     lightcurve_detail_frequency_mhz: float | None = None,
     selected_products: list[str] | tuple[str, ...] | set[str] | None = None,
+    artifact_filenames: Mapping[str, str] | None = None,
 ) -> dict[str, bytes]:
     """Build selected radio ROI export products as in-memory bytes."""
 
     product_keys = _normalize_selected_products(selected_products)
+    filenames = dict(
+        artifact_filenames
+        or build_radio_roi_product_filenames(
+            df,
+            selected_products=product_keys,
+            generated_at=datetime.now(timezone.utc),
+        )
+    )
     normalized_global_limits = _normalize_lightcurve_y_limits(lightcurve_y_limits)
     normalized_frequency_limits = _normalize_lightcurve_frequency_y_limits(
         lightcurve_frequency_y_limits
@@ -995,9 +1018,7 @@ def build_radio_roi_artifacts(
             "roi": roi.to_json_dict(),
             "settings": _json_safe(settings),
             "outputs": {
-                key: PRODUCT_FILENAMES[key]
-                for key in product_keys
-                if key in PRODUCT_FILENAMES
+                key: filenames[key] for key in product_keys if key in filenames
             },
         }
         artifacts["json"] = json.dumps(
@@ -1008,14 +1029,14 @@ def build_radio_roi_artifacts(
     with tempfile.TemporaryDirectory(prefix="radio_roi_artifacts_") as tmp:
         tmp_dir = Path(tmp)
         if "reference_png" in product_keys:
-            path = tmp_dir / PRODUCT_FILENAMES["reference_png"]
+            path = tmp_dir / filenames["reference_png"]
             refs = list(reference_images or [])
             if not refs:
                 refs = [reference_image or _load_reference_from_rows(df)]
             _plot_reference_images(refs, roi, path, display_config=display_config)
             artifacts["reference_png"] = path.read_bytes()
         if "lightcurve_png" in product_keys:
-            path = tmp_dir / PRODUCT_FILENAMES["lightcurve_png"]
+            path = tmp_dir / filenames["lightcurve_png"]
             _plot_radio_roi_lightcurve(
                 df,
                 path,
@@ -1026,7 +1047,7 @@ def build_radio_roi_artifacts(
             )
             artifacts["lightcurve_png"] = path.read_bytes()
         if "lightcurve_detail_png" in product_keys:
-            path = tmp_dir / PRODUCT_FILENAMES["lightcurve_detail_png"]
+            path = tmp_dir / filenames["lightcurve_detail_png"]
             _plot_radio_roi_lightcurve_detail(
                 df,
                 path,
@@ -1038,7 +1059,7 @@ def build_radio_roi_artifacts(
             )
             artifacts["lightcurve_detail_png"] = path.read_bytes()
         if "lightcurve_normalized_png" in product_keys:
-            path = tmp_dir / PRODUCT_FILENAMES["lightcurve_normalized_png"]
+            path = tmp_dir / filenames["lightcurve_normalized_png"]
             _plot_radio_roi_lightcurve_normalized(
                 df,
                 path,
@@ -1049,6 +1070,33 @@ def build_radio_roi_artifacts(
             )
             artifacts["lightcurve_normalized_png"] = path.read_bytes()
     return artifacts
+
+
+def build_radio_roi_product_filenames(
+    df: pd.DataFrame,
+    *,
+    selected_products: list[str] | tuple[str, ...] | set[str] | None = None,
+    generated_at: datetime | None = None,
+) -> dict[str, str]:
+    """Return deterministic filenames for one ROI export batch."""
+
+    product_keys = _normalize_selected_products(selected_products)
+    captured_at = generated_at or datetime.now(timezone.utc)
+    filenames: dict[str, str] = {}
+    image_sequence = 0
+    for key in product_keys:
+        product = _IMAGE_PRODUCT_NAMES.get(key)
+        if product is None:
+            filenames[key] = PRODUCT_FILENAMES[key]
+            continue
+        image_sequence += 1
+        filenames[key] = build_radio_image_filename(
+            df,
+            sequence=image_sequence,
+            product=product,
+            generated_at=captured_at,
+        )
+    return filenames
 
 
 def _resolve_radio_files(

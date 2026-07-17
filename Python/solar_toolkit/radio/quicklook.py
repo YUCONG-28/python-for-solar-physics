@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
+from ._image_naming import build_radio_image_filename
 from .config import (
     ConfigSource,
     load_newkirk_height_comparison_config,
@@ -209,7 +211,13 @@ def run_gaussian_newkirk_quicklook(
     height_rows_path = resolved_output_dir / HEIGHT_ROWS_NAME
     height_rows.to_csv(height_rows_path, index=False)
 
-    height_plot_path = resolved_output_dir / HEIGHT_PLOT_NAME
+    batch_generated_at = datetime.now(timezone.utc)
+    height_plot_path = resolved_output_dir / build_radio_image_filename(
+        height_rows,
+        sequence=1,
+        product="newkirk_height_comparison",
+        generated_at=batch_generated_at,
+    )
     height_result = plot_event_gaussian_newkirk_height_comparison(
         height_rows,
         height_plot_path,
@@ -222,7 +230,14 @@ def run_gaussian_newkirk_quicklook(
         )
 
     trajectory_plot_path = plot_gaussian_center_trajectory(
-        valid_centers, resolved_output_dir / TRAJECTORY_PLOT_NAME
+        valid_centers,
+        resolved_output_dir
+        / build_radio_image_filename(
+            valid_centers,
+            sequence=2,
+            product="source_trajectory",
+            generated_at=batch_generated_at,
+        ),
     )
 
     summary = build_quicklook_summary(gaussian_df, valid_centers, height_rows)

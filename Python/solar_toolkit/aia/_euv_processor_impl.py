@@ -6,6 +6,7 @@ layout helpers live in their semantic AIA modules; runtime dispatch and the CLI
 live in :mod:`solar_toolkit.aia.processor` and :mod:`solar_toolkit.aia.cli`.
 """
 
+import datetime as dt
 import gc
 import multiprocessing
 import re
@@ -24,6 +25,12 @@ import sunpy.map
 from astropy.coordinates import SkyCoord
 from sunpy.coordinates import propagate_with_solar_surface
 from tqdm import tqdm
+
+from solar_toolkit.visualization.image_naming import (
+    ImageFilenameSpec,
+    build_image_filename,
+    format_utc_filename_time,
+)
 
 from . import config as _config_helpers
 from . import difference as _difference_helpers
@@ -65,6 +72,7 @@ class PanelData:
     date_ymd: str
     cmap: str
     norm: mcolors.Normalize
+    observation_time: dt.datetime | None = None
     panel_kind: str = "original"
     panel_label: str | None = None
     is_difference: bool = False
@@ -533,6 +541,51 @@ def _obs_date_ymd(
         return ""
 
 
+def _observation_datetime(aia_map) -> dt.datetime | None:
+    try:
+        value = aia_map.date.to_datetime(timezone=dt.UTC)
+    except TypeError:
+        try:
+            value = aia_map.date.to_datetime()
+        except Exception:
+            return None
+    except Exception:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=dt.UTC)
+    return value.astimezone(dt.UTC)
+
+
+def _validated_filename_time(
+    value,
+    *,
+    generated_at: dt.datetime,
+) -> tuple[object, str]:
+    try:
+        format_utc_filename_time(value)
+    except (TypeError, ValueError):
+        return generated_at, "generated"
+    return value, "observation"
+
+
+def _validated_filename_interval(
+    first,
+    second,
+    *,
+    generated_at: dt.datetime,
+) -> tuple[object, object | None, str]:
+    """Return a chronological observation interval or one batch fallback."""
+
+    try:
+        first_text = format_utc_filename_time(first)
+        second_text = format_utc_filename_time(second)
+    except (TypeError, ValueError):
+        return generated_at, None, "generated"
+    if first_text <= second_text:
+        return first, second, "observation"
+    return second, first, "observation"
+
+
 def _hide_wcs_frame_for_seamless(ax) -> None:
     lon, lat = ax.coords
     lon.set_ticks_visible(False)
@@ -679,7 +732,12 @@ def _purge_stonyhurst_text_artists(ax) -> None:
             text.set_visible(False)
 
 
-def _process_single_worker(file_path: Path, cfg: AIAConfig) -> tuple[bool, str]:
+def _process_single_worker(
+    file_path: Path,
+    cfg: AIAConfig,
+    sequence: int = 1,
+    generated_at: dt.datetime | None = None,
+) -> tuple[bool, str]:
     current_map = None
     raw_cutout = None
     cutout_map = None
@@ -758,7 +816,22 @@ def _process_single_worker(file_path: Path, cfg: AIAConfig) -> tuple[bool, str]:
         if cfg.save_image:
             save_dir = file_path.parent / cfg.single_band_output_subdir
             save_dir.mkdir(parents=True, exist_ok=True)
-            save_path = save_dir / f"{time_str}.png"
+            batch_time = generated_at or dt.datetime.now(dt.UTC)
+            observation_time = _observation_datetime(current_map)
+            filename_time, time_source = _validated_filename_time(
+                observation_time,
+                generated_at=batch_time,
+            )
+            save_path = save_dir / build_image_filename(
+                ImageFilenameSpec(
+                    sequence=sequence,
+                    start_time=filename_time,
+                    instrument="aia",
+                    channel=f"{_unused_wave_val}a",
+                    product="intensity",
+                    time_source=time_source,
+                )
+            )
             fig.savefig(
                 save_path,
                 dpi=cfg.dpi,
@@ -820,6 +893,7 @@ def _load_aia_cutout_panel(path: Path, expected_wave: int, cfg: AIAConfig) -> Pa
             date_ymd=_obs_date_ymd(current_map, path),
             cmap=final_cmap,
             norm=final_norm,
+            observation_time=_observation_datetime(current_map),
             panel_kind="original",
             panel_label=f"{_obs_time_isot_label(current_map, path)} AIA {wave_val} original",
             is_difference=False,
@@ -866,6 +940,7 @@ def _load_difference_cutout_panel(
             date_ymd=_obs_date_ymd(diff_map, current_path),
             cmap=cmap,
             norm=norm,
+            observation_time=_observation_datetime(diff_map),
             panel_kind="difference",
             panel_label=panel_label,
             is_difference=True,
@@ -1018,6 +1093,7 @@ def _process_multi_band_worker(
     wavelengths: tuple[int, ...],
     cfg: AIAConfig,
     previous_paths: tuple[Path, ...] | None = None,
+    generated_at: dt.datetime | None = None,
 ) -> tuple[bool, str]:
     fig = None
     panels: list[PanelData] = []
@@ -1223,9 +1299,31 @@ def _process_multi_band_worker(
         if cfg.save_image:
             save_dir = _mosaic_save_dir(cfg)
             save_dir.mkdir(parents=True, exist_ok=True)
-            first_time = _parse_timestr(paths[0])
             prefix = _mosaic_save_prefix(cfg)
-            save_path = save_dir / f"{prefix}_{slot_idx + 1:04d}_{first_time}.png"
+            observation_times = sorted(
+                panel.observation_time
+                for panel in panels
+                if panel.observation_time is not None
+            )
+            if observation_times:
+                filename_start = observation_times[0]
+                filename_end = observation_times[-1]
+                time_source = "observation"
+            else:
+                filename_start = generated_at or dt.datetime.now(dt.UTC)
+                filename_end = None
+                time_source = "generated"
+            save_path = save_dir / build_image_filename(
+                ImageFilenameSpec(
+                    sequence=slot_idx + 1,
+                    start_time=filename_start,
+                    end_time=filename_end,
+                    instrument="aia",
+                    product="mosaic",
+                    qualifiers=prefix,
+                    time_source=time_source,
+                )
+            )
             _save_mosaic_figure(fig, save_path, cfg)
 
         if cfg.show_image:
@@ -1261,12 +1359,14 @@ def _difference_save_dir(data_path: Path, wave: int, cfg: AIAConfig) -> Path:
 def _process_difference_band_worker(
     wave: int,
     cfg: AIAConfig,
+    generated_at: dt.datetime | None = None,
 ) -> tuple[bool, str]:
     if not cfg.show_image:
         matplotlib.use("Agg", force=True)
     import matplotlib.pyplot as plt
 
     data_path = Path(cfg.data_path)
+    generated_at = generated_at or dt.datetime.now(dt.UTC)
     success_count = 0
     error_messages: list[str] = []
 
@@ -1298,9 +1398,12 @@ def _process_difference_band_worker(
 
             base_time = _parse_timestr(base_path)
 
-            for current_file in sliced_files:
-                if current_file == base_path and not cfg.difference_save_reference:
-                    continue
+            export_plan = [
+                current_file
+                for current_file in sliced_files
+                if current_file != base_path or cfg.difference_save_reference
+            ]
+            for sequence, current_file in enumerate(export_plan, start=1):
                 diff_map = None
                 try:
                     reference_path = None if current_file == base_path else base_path
@@ -1311,7 +1414,32 @@ def _process_difference_band_worker(
                         cfg,
                     )
                     current_time = _parse_timestr(current_file)
-                    save_path = save_dir / f"{current_time}_base_diff.png"
+                    if reference_path is None:
+                        filename_start, time_source = _validated_filename_time(
+                            _observation_datetime(diff_map) or current_time,
+                            generated_at=generated_at,
+                        )
+                        filename_end = None
+                    else:
+                        filename_start, filename_end, time_source = (
+                            _validated_filename_interval(
+                                base_time,
+                                _observation_datetime(diff_map) or current_time,
+                                generated_at=generated_at,
+                            )
+                        )
+                    save_path = save_dir / build_image_filename(
+                        ImageFilenameSpec(
+                            sequence=sequence,
+                            start_time=filename_start,
+                            end_time=filename_end,
+                            instrument="aia",
+                            channel=f"{wave}a",
+                            product="difference",
+                            qualifiers="base",
+                            time_source=time_source,
+                        )
+                    )
                     label = (
                         "reference frame, zero difference"
                         if reference_path is None
@@ -1347,7 +1475,21 @@ def _process_difference_band_worker(
                         cfg,
                     )
                     first_time = _parse_timestr(sliced_files[0])
-                    save_path = save_dir / f"{first_time}_running_diff.png"
+                    filename_time, time_source = _validated_filename_time(
+                        _observation_datetime(diff_map) or first_time,
+                        generated_at=generated_at,
+                    )
+                    save_path = save_dir / build_image_filename(
+                        ImageFilenameSpec(
+                            sequence=1,
+                            start_time=filename_time,
+                            instrument="aia",
+                            channel=f"{wave}a",
+                            product="difference",
+                            qualifiers=("running", "reference"),
+                            time_source=time_source,
+                        )
+                    )
                     _plot_difference_map(
                         diff_map,
                         wave,
@@ -1367,7 +1509,11 @@ def _process_difference_band_worker(
                     del diff_map
                     gc.collect()
 
-            for i in range(1, len(sliced_files)):
+            running_start = 2 if cfg.difference_save_reference else 1
+            for sequence, i in enumerate(
+                range(1, len(sliced_files)),
+                start=running_start,
+            ):
                 prev_file = sliced_files[i - 1]
                 current_file = sliced_files[i]
                 diff_map = None
@@ -1380,7 +1526,25 @@ def _process_difference_band_worker(
                     )
                     current_time = _parse_timestr(current_file)
                     prev_time = _parse_timestr(prev_file)
-                    save_path = save_dir / f"{current_time}_running_diff.png"
+                    filename_start, filename_end, time_source = (
+                        _validated_filename_interval(
+                            prev_time,
+                            _observation_datetime(diff_map) or current_time,
+                            generated_at=generated_at,
+                        )
+                    )
+                    save_path = save_dir / build_image_filename(
+                        ImageFilenameSpec(
+                            sequence=sequence,
+                            start_time=filename_start,
+                            end_time=filename_end,
+                            instrument="aia",
+                            channel=f"{wave}a",
+                            product="difference",
+                            qualifiers="running",
+                            time_source=time_source,
+                        )
+                    )
                     _plot_difference_map(
                         diff_map,
                         wave,
@@ -1442,14 +1606,21 @@ def _run_single_batch(cfg: AIAConfig) -> None:
     success_count = 0
     error_count = 0
     workers = _worker_count(cfg)
+    batch_generated_at = dt.datetime.now(dt.UTC)
 
     print(f"Single-band mode: {len(selected_files)} files")
     print(f"Starting multiprocessing, allocated cores: {workers} ...")
 
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = {
-            executor.submit(_process_single_worker, file_path, cfg): file_path
-            for file_path in selected_files
+            executor.submit(
+                _process_single_worker,
+                file_path,
+                cfg,
+                sequence,
+                batch_generated_at,
+            ): file_path
+            for sequence, file_path in enumerate(selected_files, start=1)
         }
         for future in tqdm(
             as_completed(futures),
@@ -1491,6 +1662,7 @@ def _run_mosaic_batch(cfg: AIAConfig) -> None:
     success_count = 0
     error_count = 0
     workers = _mosaic_worker_count(cfg)
+    batch_generated_at = dt.datetime.now(dt.UTC)
 
     print(f"Multi-band mosaic mode: slot wavelengths {waves}")
     if cfg.mosaic_difference_inline:
@@ -1510,6 +1682,7 @@ def _run_mosaic_batch(cfg: AIAConfig) -> None:
                 waves,
                 cfg,
                 slots[idx - 1] if idx > 0 else None,
+                batch_generated_at,
             ): idx
             for idx in range(len(slots))
         }
@@ -1568,10 +1741,16 @@ def _run_difference_batch(cfg: AIAConfig) -> None:
     start_time = time.time()
     success_count = 0
     error_count = 0
+    batch_generated_at = dt.datetime.now(dt.UTC)
 
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = {
-            executor.submit(_process_difference_band_worker, wave, cfg): wave
+            executor.submit(
+                _process_difference_band_worker,
+                wave,
+                cfg,
+                batch_generated_at,
+            ): wave
             for wave in waves
         }
         for future in tqdm(

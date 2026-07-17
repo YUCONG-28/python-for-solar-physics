@@ -10,7 +10,14 @@ filesystem or create figures.
 
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
+
+from solar_toolkit.visualization.image_naming import (
+    ImageFilenameSpec,
+    build_image_filename,
+    format_utc_filename_time,
+)
 
 DEFAULT_DATA_DIR = Path("data/hmi")
 DEFAULT_OUTPUT_DIR = Path("outputs/hmi")
@@ -33,7 +40,7 @@ def run_magnetogram_workflow(
     data_dir
         Directory containing the input ``.fits`` files.
     output_dir
-        Directory receiving images named ``<input-name>.png``.
+        Directory receiving images under the shared scientific naming contract.
     roi_bounds
         ``(x_min, y_min, x_max, y_max)`` in arcseconds. The default preserves
         the historical active-region crop.
@@ -91,13 +98,29 @@ def run_magnetogram_workflow(
     destination.mkdir(parents=True, exist_ok=True)
     output_paths: list[Path] = []
     limit = min(frame_count, len(aligned_sequence), len(file_paths))
+    batch_generated_at = dt.datetime.now(dt.UTC)
     for index in range(limit):
         figure = plt.figure()
         axes = figure.add_subplot(projection=aligned_sequence[index])
         aligned_sequence[index].plot(axes=axes)
 
         base_name = file_paths[index].name
-        output_path = destination / f"{base_name}.png"
+        observation_time = getattr(aligned_sequence[index], "date", None)
+        try:
+            format_utc_filename_time(observation_time)
+            time_source = "observation"
+        except (TypeError, ValueError):
+            observation_time = batch_generated_at
+            time_source = "generated"
+        output_path = destination / build_image_filename(
+            ImageFilenameSpec(
+                sequence=index + 1,
+                start_time=observation_time,
+                instrument="hmi",
+                product="magnetogram",
+                time_source=time_source,
+            )
+        )
         time_str = base_name.split(".")[2]
         plt.title(time_str)
         plt.savefig(output_path, dpi=dpi, bbox_inches="tight")

@@ -9,6 +9,7 @@ figures without depending on the historical plotting monolith.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import matplotlib.dates as mdates
@@ -16,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from ._image_naming import build_radio_image_filename, chronological_rows
 from .io import (
     DRIFT_RATE_DIAGNOSTIC_FIELDS,
     ensure_output_dir,
@@ -74,10 +76,38 @@ def save_drift_selection_artifacts(
     out_dir = ensure_output_dir(output_dir)
     display = _prepare_display(spectrogram_data, time_axis, frequency_axis_mhz)
     rows = _normalize_selections(selections)
+    batch_generated_at = datetime.now(timezone.utc)
+    display_frame = pd.DataFrame(
+        {
+            "obs_time": [
+                _num_to_iso(display["extent"][0]),
+                _num_to_iso(display["extent"][1]),
+            ]
+        }
+    )
 
     saved = []
-    raw_path = out_dir / RAW_PREVIEW_NAME
-    annotated_path = out_dir / ANNOTATED_PREVIEW_NAME
+    next_sequence = 1
+    raw_name = build_radio_image_filename(
+        display_frame,
+        sequence=next_sequence,
+        product="dynamic_spectrum",
+        qualifiers="raw",
+        generated_at=batch_generated_at,
+    )
+    if cfg.get("save_raw_preview", True):
+        next_sequence += 1
+    annotated_name = build_radio_image_filename(
+        display_frame,
+        sequence=next_sequence,
+        product="dynamic_spectrum",
+        qualifiers="annotated",
+        generated_at=batch_generated_at,
+    )
+    if cfg.get("save_annotated_preview", True):
+        next_sequence += 1
+    raw_path = out_dir / raw_name
+    annotated_path = out_dir / annotated_name
     csv_path = out_dir / SELECTION_CSV_NAME
     metadata_path = out_dir / METADATA_JSON_NAME
 
@@ -111,13 +141,21 @@ def save_drift_selection_artifacts(
 
     cutout_paths = []
     if cfg.get("save_per_drift_cutouts", True):
-        cutout_paths = _save_cutouts(display, rows, out_dir / "cutouts", cfg)
+        cutout_paths = _save_cutouts(
+            display,
+            chronological_rows(rows),
+            out_dir / "cutouts",
+            cfg,
+            sequence_start=next_sequence,
+            generated_at=batch_generated_at,
+        )
         saved.extend(str(path) for path in cutout_paths)
 
     metadata = _metadata_payload(
         display,
         rows,
         source_file,
+        raw_path,
         annotated_path,
         annotated_meta,
         cfg,
@@ -263,7 +301,15 @@ def _draw_selection_rows(ax, rows, cfg):
         )
 
 
-def _save_cutouts(display, rows, output_dir, cfg):
+def _save_cutouts(
+    display,
+    rows,
+    output_dir,
+    cfg,
+    *,
+    sequence_start,
+    generated_at,
+):
     out_dir = ensure_output_dir(output_dir)
     saved = []
     time_pad_days = float(cfg.get("cutout_time_padding_s", 2.0) or 0.0) / 86400.0
@@ -271,7 +317,18 @@ def _save_cutouts(display, rows, output_dir, cfg):
     x0, x1, y0, y1 = display["extent"]
     for idx, row in enumerate(rows, start=1):
         label = str(row.get("label") or f"drift_{idx:03d}")
-        path = out_dir / f"{label}_zoom.png"
+        row_frame = pd.DataFrame(
+            {
+                "obs_time": [row.get("t_start"), row.get("t_end")],
+            }
+        )
+        path = out_dir / build_radio_image_filename(
+            row_frame,
+            sequence=sequence_start + idx - 1,
+            product="drift_rate_cutout",
+            qualifiers=label or f"drift_{idx:03d}",
+            generated_at=generated_at,
+        )
         if not _should_write(path, cfg):
             continue
         t1 = _datetime_to_num(parse_datetime_value(row.get("t_start")))
@@ -315,7 +372,14 @@ def _save_cutouts(display, rows, output_dir, cfg):
 
 
 def _metadata_payload(
-    display, rows, source_file, png_path, plot_meta, cfg, cutout_paths
+    display,
+    rows,
+    source_file,
+    raw_path,
+    png_path,
+    plot_meta,
+    cfg,
+    cutout_paths,
 ):
     x_start, x_end, f_min, f_max = display["extent"]
     return {
@@ -335,8 +399,8 @@ def _metadata_payload(
             "vmax": cfg.get("vmax"),
             "colorbar_label": cfg.get("colorbar_label", "Intensity"),
         },
-        "raw_preview_png": RAW_PREVIEW_NAME,
-        "annotated_preview_png": ANNOTATED_PREVIEW_NAME,
+        "raw_preview_png": Path(raw_path).name,
+        "annotated_preview_png": Path(png_path).name,
         "selection_csv": SELECTION_CSV_NAME,
         "cutouts": [str(Path(path).name) for path in cutout_paths],
         "selections": rows,

@@ -19,6 +19,7 @@ _DEFAULT_CHINESE_FONT_CANDIDATES = [
 
 _SUBMODULES = {
     "frames": "solar_toolkit.visualization.frames",
+    "image_naming": "solar_toolkit.visualization.image_naming",
     "media": "solar_toolkit.visualization.media",
     "plotting": "solar_toolkit.visualization.plotting",
 }

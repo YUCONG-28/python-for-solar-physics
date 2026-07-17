@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -81,6 +82,7 @@ class ExistingFitOverlayResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "image_path": str(self.image_path),
+            "suggested_filename": self.image_path.name,
             "metadata_path": str(self.metadata_path),
             "rendered_rows": int(self.rendered_rows),
         }
@@ -98,6 +100,7 @@ def render_existing_fit_overlay(
         render_radio_source_overlay_png,
     )
 
+    from ._image_naming import build_radio_image_filename
     from .trajectory import load_centers_table
 
     frames: list[pd.DataFrame] = []
@@ -125,7 +128,12 @@ def render_existing_fit_overlay(
     )
     output_dir = request.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
-    image_path = output_dir / _OUTPUT_IMAGE
+    image_path = output_dir / build_radio_image_filename(
+        centers,
+        sequence=1,
+        product="source_map_overlay",
+        generated_at=datetime.now(timezone.utc),
+    )
     metadata_path = output_dir / _OUTPUT_METADATA
     display_time = pd.to_datetime(centers["obs_time"], errors="coerce").max()
     render_radio_source_overlay_png(

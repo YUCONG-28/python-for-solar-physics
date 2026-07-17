@@ -119,8 +119,6 @@ def test_quicklook_generates_isolated_outputs_from_gaussian_csv(tmp_path):
     expected_files = {
         "valid_centers_csv": "radio_gaussian_valid_centers.csv",
         "height_rows_csv": "gaussian_newkirk_height_rows.csv",
-        "height_plot": "event_gaussian_newkirk_height_comparison.png",
-        "trajectory_plot": "gaussian_center_trajectory.png",
     }
     for key, filename in expected_files.items():
         path = output_dir / filename
@@ -128,6 +126,19 @@ def test_quicklook_generates_isolated_outputs_from_gaussian_csv(tmp_path):
         assert path.exists()
         assert path.stat().st_size > 0
 
+    height_plot = Path(result["height_plot"])
+    trajectory_plot = Path(result["trajectory_plot"])
+    assert height_plot.name == (
+        "0001_20250124T044840Z-20250124T044842Z_" "radio_newkirk_height_comparison.png"
+    )
+    assert trajectory_plot.name == (
+        "0002_20250124T044840Z-20250124T044841Z_"
+        "radio_149mhz_lcp_plus_rcp_source_trajectory.png"
+    )
+    assert height_plot.exists()
+    assert trajectory_plot.exists()
+    assert not (output_dir / "event_gaussian_newkirk_height_comparison.png").exists()
+    assert not (output_dir / "gaussian_center_trajectory.png").exists()
     valid_centers = pd.read_csv(output_dir / "radio_gaussian_valid_centers.csv")
     height_rows = pd.read_csv(output_dir / "gaussian_newkirk_height_rows.csv")
 

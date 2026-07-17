@@ -23,6 +23,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+quality-autoencoder = [
+    "torch>=2.3,<3",
+]
+quality-ml = [
+    "scikit-learn>=1.6,<2",
+    "joblib>=1.4,<2",
+]
 dev = [
     "build>=1.2.0",
     "pytest>=7.0.0",

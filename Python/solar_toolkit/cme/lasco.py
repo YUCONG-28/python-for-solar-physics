@@ -9,6 +9,12 @@ from __future__ import annotations
 import datetime as dt
 from pathlib import Path
 
+from solar_toolkit.visualization.image_naming import (
+    ImageFilenameSpec,
+    build_image_filename,
+    format_utc_filename_time,
+)
+
 from .files import scan_lasco_files
 from .processing import running_difference
 
@@ -66,12 +72,27 @@ def plot_lasco_images(
     output_root.mkdir(parents=True, exist_ok=True)
     files = _scan_jp2(root, recursive=False)
     outputs: list[Path] = []
-    for file_path in files:
+    batch_generated_at = dt.datetime.now(dt.UTC)
+    for sequence, file_path in enumerate(files, start=1):
         lasco_map = Map(file_path)
         figure = plt.figure()
         axes = figure.add_subplot(projection=lasco_map)
         lasco_map.plot(axes=axes)
-        output_path = output_root / f"{file_path.stem}.png"
+        observation_time, time_source = _lasco_filename_time(
+            lasco_map,
+            file_path,
+            batch_generated_at,
+        )
+        output_path = output_root / build_image_filename(
+            ImageFilenameSpec(
+                sequence=sequence,
+                start_time=observation_time,
+                instrument="lasco",
+                channel="c2",
+                product="intensity",
+                time_source=time_source,
+            )
+        )
         plt.savefig(output_path, dpi=200, bbox_inches="tight")
         if show_plot:
             plt.show()
@@ -114,6 +135,7 @@ def render_lasco_running_differences(
 
     norm = colors.Normalize(vmin=vmin, vmax=vmax)
     outputs: list[Path] = []
+    batch_generated_at = dt.datetime.now(dt.UTC)
     for index, (previous_path, current_path) in enumerate(
         zip(files, files[1:], strict=False), start=1
     ):
@@ -140,7 +162,38 @@ def render_lasco_running_differences(
             image = difference_map.plot(axes=axes, norm=norm, cmap="gray")
             colorbar = plt.colorbar(image, ax=axes)
             colorbar.set_label("差分强度")
-            output_path = output_root / f"diff_bw_{current_path.stem}.png"
+            previous_time, previous_source = _lasco_filename_time(
+                previous_map,
+                previous_path,
+                batch_generated_at,
+            )
+            current_time, current_source = _lasco_filename_time(
+                current_map,
+                current_path,
+                batch_generated_at,
+            )
+            if "generated" in {previous_source, current_source}:
+                previous_time = batch_generated_at
+                current_time = None
+                time_source = "generated"
+            else:
+                if format_utc_filename_time(previous_time) > format_utc_filename_time(
+                    current_time
+                ):
+                    previous_time, current_time = current_time, previous_time
+                time_source = "observation"
+            output_path = output_root / build_image_filename(
+                ImageFilenameSpec(
+                    sequence=index,
+                    start_time=previous_time,
+                    end_time=current_time,
+                    instrument="lasco",
+                    channel="c2",
+                    product="difference",
+                    qualifiers="running",
+                    time_source=time_source,
+                )
+            )
             plt.savefig(output_path, dpi=300, bbox_inches="tight")
             if show_plot:
                 plt.show()
@@ -166,6 +219,22 @@ def _scan_jp2(root: Path, *, recursive: bool) -> list[Path]:
         for path in scan_lasco_files(root, recursive=recursive)
         if path.suffix.casefold() == ".jp2"
     ]
+
+
+def _lasco_filename_time(lasco_map, path: Path, generated_at: dt.datetime):
+    candidates = (getattr(lasco_map, "date", None), _time_from_lasco_stem(path.stem))
+    for candidate in candidates:
+        try:
+            format_utc_filename_time(candidate)
+        except (TypeError, ValueError):
+            continue
+        return candidate, "observation"
+    return generated_at, "generated"
+
+
+def _time_from_lasco_stem(stem: str) -> str | None:
+    prefix = "LASCO_C2_"
+    return stem[len(prefix) :] if stem.upper().startswith(prefix) else None
 
 
 __all__ = [

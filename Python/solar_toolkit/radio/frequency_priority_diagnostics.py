@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 import matplotlib.dates as mdates
@@ -14,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from .io import ensure_output_dir, parse_datetime_value
+from ._image_naming import build_radio_image_filename
 from .newkirk import (
     SPEED_OF_LIGHT_KM_S,
     effective_density_factor,
@@ -337,9 +339,10 @@ def plot_gaussian_center_trajectory_by_frequency(gaussian_df, output_dir, config
     ensure_output_dir(output_dir)
     name_template = cfg.get(
         "trajectory_by_frequency_name_template",
-        "gaussian_center_trajectory_time_colored_{frequency:g}MHz.png",
+        "source_trajectory",
     )
     paths = []
+    groups = []
     for freq in freqs:
         group = gaussian[gaussian["frequency_mhz"].eq(float(freq))].dropna(
             subset=["time_dt", "center_x_arcsec", "center_y_arcsec"]
@@ -347,7 +350,29 @@ def plot_gaussian_center_trajectory_by_frequency(gaussian_df, output_dir, config
         if group.empty:
             continue
         group = group.sort_values("time_dt")
-        path = output_dir / name_template.format(frequency=float(freq))
+        groups.append((float(freq), group))
+    batch_generated_at = datetime.now(timezone.utc)
+    for sequence, (freq, group) in enumerate(groups, start=1):
+        configured_name = str(name_template).format(frequency=freq)
+        if Path(configured_name).suffix.casefold() in {
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".tif",
+            ".tiff",
+            ".webp",
+        }:
+            filename = configured_name
+        else:
+            naming_frame = group.rename(columns={"time_dt": "obs_time"})
+            filename = build_radio_image_filename(
+                naming_frame,
+                sequence=sequence,
+                product=configured_name,
+                frequency_mhz=freq,
+                generated_at=batch_generated_at,
+            )
+        path = output_dir / filename
         _plot_single_frequency_time_trajectory(group, float(freq), path, cfg)
         paths.append(str(path))
 
