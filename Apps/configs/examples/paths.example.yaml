@@ -1,0 +1,8 @@
+# Copy this file to Local/configs/paths.local.yaml after running
+# `Apps/run.ps1 admin init`. Keep the copied file local and replace the empty
+# list with one or more absolute data/output directories approved for this
+# machine. An empty list intentionally fails closed.
+
+apps:
+  runtime_layout_version: 2
+  allowed_roots: []

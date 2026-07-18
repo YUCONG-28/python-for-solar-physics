@@ -1,0 +1,3 @@
+# Preserve the vendored media runtime byte-for-byte and ignore its upstream
+# indentation convention in Git whitespace checks.
+solar_apps/ui/media/mediabunny-1.50.8.cjs -text -whitespace
