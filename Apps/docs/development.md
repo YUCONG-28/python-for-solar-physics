@@ -8,7 +8,8 @@ source of truth for interpreter selection.
 ```powershell
 $Conda = "<miniforge-root>\Scripts\conda.exe"
 & $Conda env update -n solarphysics_env_latest -f .\Apps\environment.miniforge.yml
-& $Conda run -n solarphysics_env_latest python -m pip install -e .\Python -e .\Apps
+& $Conda run -n solarphysics_env_latest python -m pip install -e ".\Python[quality-ml]"
+& $Conda run -n solarphysics_env_latest python -m pip install -e ".\Apps[dev]"
 ```
 
 Use `solarphysics_env` only by passing it explicitly to `Apps/run.ps1` for a

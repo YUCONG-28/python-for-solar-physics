@@ -186,7 +186,9 @@ jobs:
           conda run --no-capture-output -n solarphysics_env_latest `
             python -m pip install --upgrade pip
           conda run --no-capture-output -n solarphysics_env_latest `
-            python -m pip install -e ".\Python[dev]" -e ".\Apps[dev]"
+            python -m pip install -e ".\Python[quality-ml]"
+          conda run --no-capture-output -n solarphysics_env_latest `
+            python -m pip install -e ".\Apps[dev]"
           conda run --no-capture-output -n solarphysics_env_latest `
             python -m pip check
 

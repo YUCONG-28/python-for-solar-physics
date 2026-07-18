@@ -6,6 +6,8 @@ import ast
 import re
 from pathlib import Path
 
+import yaml
+
 APPS_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = APPS_ROOT.parent
 APP_PACKAGE = APPS_ROOT / "solar_apps"
@@ -99,6 +101,25 @@ def test_apps_contains_one_fail_closed_public_config_template() -> None:
     content = (APPS_ROOT / templates[0]).read_text(encoding="utf-8")
     assert "allowed_roots: []" in content
     assert "Users/" not in content and "Users\\" not in content
+
+
+def test_miniforge_setup_and_editable_install_order_are_explicit() -> None:
+    environment_path = APPS_ROOT / "environment.miniforge.yml"
+    environment = yaml.safe_load(environment_path.read_text(encoding="utf-8"))
+    dependencies = environment["dependencies"]
+
+    assert "python=3.14" in dependencies
+    assert "pip" in dependencies
+    assert not any(isinstance(dependency, dict) for dependency in dependencies)
+
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+    python_install = 'python -m pip install -e ".\\Python[quality-ml]"'
+    apps_install = 'python -m pip install -e ".\\Apps[dev]"'
+    assert workflow.count(python_install) == 1
+    assert workflow.count(apps_install) == 1
+    assert workflow.index(python_install) < workflow.index(apps_install)
 
 
 def test_apps_has_no_historical_manifest_or_legacy_tree() -> None:

@@ -114,7 +114,7 @@ $env:PATH = (@($environmentPaths) + @($env:PATH)) -join [IO.Path]::PathSeparator
     --apps-root $appsRoot `
     --python-root $pythonRoot
 if ($LASTEXITCODE -ne 0) {
-    throw "Apps are not installed in '$EnvironmentName'. Install editable packages with that Miniforge Python: -m pip install -e <repo>\Python[quality-ml] -e <repo>\Apps"
+    throw "Apps are not installed in '$EnvironmentName'. With that Miniforge Python, install <repo>\Python[quality-ml] editable first, then install <repo>\Apps editable."
 }
 
 if (-not $Command -or $Command.Count -eq 0) {
