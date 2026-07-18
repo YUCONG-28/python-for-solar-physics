@@ -1,16 +1,9 @@
 # Public workflow index
 
-Version 0.3.0 has no public scripts or console entry points. Public users import
-`solar_toolkit` modules and pass paths/configuration explicitly.
+Version 0.3.0 has no library console entry points. Library users import
+`solar_toolkit` modules and pass paths and configuration explicitly.
 
-The four local replacement entry points are kept outside the public Git index:
-
-```text
-python -m solar_apps.aia.cli
-python -m solar_apps.radio.cli
-python -m solar_apps.image_viewer.cli
-python -m solar_apps.webapp.cli
-```
-
-They are listed here only to explain the boundary; their source and tests live
-in the independent ignored `Local` repository.
+Application source and its canonical Miniforge launcher are tracked in
+[`../../Apps`](../../Apps/README.md). Use `Apps/run.ps1` for frontends,
+workflows, administration, and tools. Private configuration, state, paths, and
+outputs remain in the ignored `Local` runtime partition.

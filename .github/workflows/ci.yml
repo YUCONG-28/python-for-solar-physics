@@ -157,6 +157,144 @@ jobs:
               "from pathlib import Path; import sys; import solar_toolkit; import solar_toolkit.radio; assert Path(solar_toolkit.__file__).is_relative_to(Path(sys.prefix)); print(solar_toolkit.__version__)"
           )
 
+  apps-miniforge:
+    name: Apps (Windows Miniforge)
+    runs-on: windows-latest
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Create Miniforge application environment
+        uses: conda-incubator/setup-miniconda@8ee1f361103df19b6f8c8655fd3967a8ecb162d5 # v4.0.1
+        with:
+          activate-environment: solarphysics_env_latest
+          environment-file: Apps/environment.miniforge.yml
+          python-version: "3.14"
+          miniforge-version: latest
+          channels: conda-forge
+          channel-priority: strict
+          conda-remove-defaults: "true"
+          auto-update-conda: false
+
+      - name: Install public library and applications
+        run: |
+          conda run --no-capture-output -n solarphysics_env_latest `
+            python -m pip install --upgrade pip
+          conda run --no-capture-output -n solarphysics_env_latest `
+            python -m pip install -e ".\Python[dev]" -e ".\Apps[dev]"
+          conda run --no-capture-output -n solarphysics_env_latest `
+            python -m pip check
+
+      - name: Initialize private CI runtime
+        run: |
+          $env:SOLAR_MINIFORGE_ROOT = $env:CONDA
+          conda run --no-capture-output -n solarphysics_env_latest `
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Apps\run.ps1 admin init
+
+      - name: Compile Apps sources and tests
+        run: |
+          conda run --no-capture-output -n solarphysics_env_latest `
+            python -m compileall -q Apps\solar_apps Apps\tests
+
+      - name: Run Apps Ruff checks
+        run: |
+          conda run --no-capture-output -n solarphysics_env_latest `
+            python -m ruff check Apps\solar_apps Apps\tests
+
+      - name: Check Apps formatting
+        run: |
+          conda run --no-capture-output -n solarphysics_env_latest `
+            python -m black --check Apps\solar_apps Apps\tests
+
+      - name: Run Apps tests and repository contracts
+        run: |
+          conda run --no-capture-output -n solarphysics_env_latest `
+            python -m pytest Apps\tests --basetemp Local\tmp\pytest-apps-ci
+
+      - name: Smoke canonical frontend help
+        run: |
+          $env:SOLAR_MINIFORGE_ROOT = $env:CONDA
+          $frontends = @(
+            "workbench",
+            "image-viewer",
+            "image-composer",
+            "bad-frame-review",
+            "source-map",
+            "dart-spectrogram",
+            "roi-lightcurve",
+            "source-trajectory"
+          )
+          foreach ($frontend in $frontends) {
+            conda run --no-capture-output -n solarphysics_env_latest `
+              powershell.exe -NoProfile -ExecutionPolicy Bypass `
+              -File .\Apps\run.ps1 frontend $frontend --help
+            if ($LASTEXITCODE -ne 0) {
+              throw "Frontend help failed: $frontend"
+            }
+          }
+
+      - name: Build and validate Apps wheel boundary
+        run: |
+          conda run --no-capture-output -n solarphysics_env_latest `
+            python -m build --wheel --outdir Apps\dist Apps
+          @'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheels = sorted(Path("Apps/dist").glob("*.whl"))
+          if len(wheels) != 1:
+              raise SystemExit(f"expected one Apps wheel, found {wheels}")
+
+          blocked_parts = {
+              "Local",
+              "Local-migration-backup",
+              "scripts",
+              "legacy",
+              "legacy_tests",
+              "history",
+              "outputs",
+              "logs",
+          }
+          blocked_suffixes = {
+              ".avi", ".csv", ".db", ".fit", ".fits", ".gif", ".h5",
+              ".hdf5", ".jpg", ".json", ".jsonl", ".mkv", ".mov", ".mp4",
+              ".nc", ".npy", ".npz", ".parquet", ".pdf", ".pkl", ".png",
+              ".sqlite", ".tsv", ".webp", ".xls", ".xlsx",
+          }
+          required_suffixes = (
+              ".html",
+              ".css",
+              ".js",
+              "mediabunny-1.50.8.cjs",
+              "mediabunny-MPL-2.0.txt",
+              "NOTICE.txt",
+          )
+
+          with ZipFile(wheels[0]) as archive:
+              names = archive.namelist()
+          forbidden = [
+              name
+              for name in names
+              if blocked_parts.intersection(Path(name).parts)
+              or Path(name).suffix.casefold() in blocked_suffixes
+          ]
+          if forbidden:
+              raise SystemExit(f"private or legacy content in Apps wheel: {forbidden}")
+          missing = [
+              suffix
+              for suffix in required_suffixes
+              if not any(name.endswith(suffix) for name in names)
+          ]
+          if missing:
+              raise SystemExit(f"required frontend assets missing from wheel: {missing}")
+          print(f"Apps wheel boundary ok: {wheels[0]}")
+          '@ | conda run --no-capture-output -n solarphysics_env_latest python -
+
   literature-catalog:
     name: Literature catalog
     runs-on: windows-latest

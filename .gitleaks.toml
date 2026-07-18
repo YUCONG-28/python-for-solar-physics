@@ -5,15 +5,6 @@ useDefault = true
 description = "Conda package metadata mistaken for a generic API key"
 targetRules = ["generic-api-key"]
 condition = "AND"
-paths = ['''^(?:Python/)?environment\.yml$''']
+paths = ['''^(?:(?:Python|Apps)/)?environment(?:\.miniforge)?\.yml$''']
 regexTarget = "line"
 regexes = ['''^[[:space:]]*-[[:space:]]*_libavif_api=[0-9][0-9A-Za-z._+=-]*[[:space:]]*$''']
-
-[[allowlists]]
-description = "Historical curl documentation used an explicit YOUR_TOKEN placeholder"
-targetRules = ["curl-auth-header"]
-condition = "AND"
-commits = ["b1e589b686418b756edbe63aecf7eb8c15f17409"]
-paths = ['''^paper_reader_ollama/AGENTS\.md$''']
-regexTarget = "line"
-regexes = ['''Authorization:[[:space:]]*Bearer[[:space:]]+[A-Z0-9_-]*YOUR[A-Z0-9_-]*TOKEN[A-Z0-9_-]*''']

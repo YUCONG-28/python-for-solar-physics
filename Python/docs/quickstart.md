@@ -3,7 +3,8 @@
 Install from the unified repository root:
 
 ```powershell
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pip install -e .\Python
+$Conda = "<miniforge-root>\Scripts\conda.exe"
+& $Conda run -n solarphysics_env_latest python -m pip install -e .\Python
 ```
 
 Current commands default to `solarphysics_env_latest`. The retained
@@ -21,5 +22,5 @@ config = RadioEventConfig.from_mapping(
 )
 ```
 
-Local CLIs and GUI workflows are documented in `../Local/README.md`; they are
-not part of the public repository index or wheel.
+Tracked CLIs and GUI workflows are documented in `../../Apps/README.md`; their
+private configuration, state, and outputs remain under ignored `../../Local`.
