@@ -98,12 +98,8 @@ def test_read_window_parses_utc_and_keeps_partial_downsampling_bins(
     expected_first_block = np.mean([101.0, 101.0, 102.0])
     assert result.stokes_i_db[0, 0] == pytest.approx(expected_first_block)
     assert result.stokes_i_db[-1, -1] == pytest.approx(106.5)
-    assert result.time_utc[0] == datetime(
-        2025, 1, 24, 4, 45, 0, 750000, tzinfo=UTC
-    )
-    assert result.time_utc[1] == datetime(
-        2025, 1, 24, 4, 45, 2, 750000, tzinfo=UTC
-    )
+    assert result.time_utc[0] == datetime(2025, 1, 24, 4, 45, 0, 750000, tzinfo=UTC)
+    assert result.time_utc[1] == datetime(2025, 1, 24, 4, 45, 2, 750000, tzinfo=UTC)
 
 
 def test_read_window_normalizes_descending_frequency_orientation(

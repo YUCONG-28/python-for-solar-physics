@@ -129,7 +129,9 @@ def _calculate_drift_rate_from_line(
     bandwidth_mhz = float(f_end - f_start)
     if abs(duration_s) <= profile.zero_duration_tolerance_s:
         if profile.zero_duration_policy == "raise":
-            raise ValueError(f"Cannot calculate drift rate for zero-duration line: {line}")
+            raise ValueError(
+                f"Cannot calculate drift rate for zero-duration line: {line}"
+            )
         drift_rate = np.nan
         quality_flag = "invalid_zero_duration"
         warning = ";".join(filter(None, [warning, "zero_duration"]))
@@ -253,7 +255,9 @@ def _load_drift_selection_payload(path) -> dict:
     return {"lines": payload} if isinstance(payload, list) else dict(payload)
 
 
-def get_or_load_drift_rate_results(cache, cfg, launch_func=None) -> list[DriftRateResult]:
+def get_or_load_drift_rate_results(
+    cache, cfg, launch_func=None
+) -> list[DriftRateResult]:
     """Load drift lines or use a caller-injected interactive selector."""
 
     if not cfg.get("enable_drift_rate_overlay", False):
@@ -277,7 +281,9 @@ def get_or_load_drift_rate_results(cache, cfg, launch_func=None) -> list[DriftRa
         if source_file and os.path.abspath(str(source_file)) != os.path.abspath(
             cache.source_file
         ):
-            warnings.warn("selection source differs from current spectrogram", stacklevel=2)
+            warnings.warn(
+                "selection source differs from current spectrogram", stacklevel=2
+            )
         return list(payload.get("lines", []) or [])
 
     if mode == "interactive_manual":

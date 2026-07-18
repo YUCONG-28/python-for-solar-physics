@@ -1,0 +1,1 @@
+"""Local radio application adapters."""

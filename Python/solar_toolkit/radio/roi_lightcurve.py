@@ -2816,4 +2816,4 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
-# Application entry points for this module live in the Local solar_apps layer.
+# Application entry points for this module live in the tracked Apps layer.

@@ -156,7 +156,9 @@ def nearest_time_index(
     if len(candidate_times) == 0:
         return None
 
-    deltas = [abs((candidate - target_time).total_seconds()) for candidate in candidate_times]
+    deltas = [
+        abs((candidate - target_time).total_seconds()) for candidate in candidate_times
+    ]
     index = int(np.argmin(deltas))
     if max_delta_seconds is not None and deltas[index] > max_delta_seconds:
         return None

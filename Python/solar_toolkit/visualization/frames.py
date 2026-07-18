@@ -1,8 +1,8 @@
 """Image-frame decoding and streaming helpers.
 
-This module owns the reusable image-sequence preparation previously embedded
-in ``scripts/tools/image_sequence_to_video.py``.  Optional image backends are
-imported only when a frame is read or encoded.
+This module owns reusable image-sequence preparation for library and Apps
+workflows. Optional image backends are imported only when a frame is read or
+encoded.
 """
 
 from __future__ import annotations

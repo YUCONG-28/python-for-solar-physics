@@ -1,0 +1,41 @@
+"""Frontend compatibility exports for workflow-owned source-map contracts."""
+
+from solar_apps.workflows.radio.artifacts import (
+    COORDINATE_SYSTEM,
+    POWER_OF_TEN_TICKS,
+    ROI_SCHEMA_VERSION,
+    SCIENTIFIC_OFFSET_TICKS,
+    SIDECAR_SCHEMA_VERSION,
+    UnitResolution,
+    apply_colorbar_tick_notation,
+    colorbar_label,
+    data_to_image_pixel,
+    image_pixel_to_data,
+    resolve_colorbar_unit,
+    save_figure_artifact,
+    sha256_file,
+    sidecar_path_for,
+    tick_notation_for_transform,
+    validate_roi_set,
+    validate_source_map_artifact,
+)
+
+__all__ = [
+    "COORDINATE_SYSTEM",
+    "POWER_OF_TEN_TICKS",
+    "ROI_SCHEMA_VERSION",
+    "SCIENTIFIC_OFFSET_TICKS",
+    "SIDECAR_SCHEMA_VERSION",
+    "UnitResolution",
+    "apply_colorbar_tick_notation",
+    "colorbar_label",
+    "data_to_image_pixel",
+    "image_pixel_to_data",
+    "resolve_colorbar_unit",
+    "save_figure_artifact",
+    "sha256_file",
+    "sidecar_path_for",
+    "tick_notation_for_transform",
+    "validate_roi_set",
+    "validate_source_map_artifact",
+]
