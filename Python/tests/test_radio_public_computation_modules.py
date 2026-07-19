@@ -68,7 +68,7 @@ def test_cso_block_rebin_and_numerical_helpers():
     )
     np.testing.assert_allclose(ratio[:1], [0.5])
     assert np.isnan(ratio[1:]).all()
-    np.testing.assert_allclose(safe_log10(np.array([1.0, 10.0])) , [0.0, 1.0])
+    np.testing.assert_allclose(safe_log10(np.array([1.0, 10.0])), [0.0, 1.0])
     assert np.isnan(safe_log10(np.array([0.0, -1.0]))).all()
     assert finite_color_limits(
         np.array([-2.0, 1.0, np.nan]),

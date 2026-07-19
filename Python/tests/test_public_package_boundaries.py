@@ -54,7 +54,9 @@ def test_application_surfaces_are_absent_from_public_source():
         PACKAGE_ROOT / "visualization" / "image_web_viewer",
         PACKAGE_ROOT / "visualization" / "_media_assets",
     ]
-    assert [path.relative_to(PYTHON_ROOT).as_posix() for path in forbidden if path.exists()] == []
+    assert [
+        path.relative_to(PYTHON_ROOT).as_posix() for path in forbidden if path.exists()
+    ] == []
 
 
 def test_public_source_does_not_reference_local_namespaces():

@@ -1,10 +1,7 @@
 """Reusable radio-analysis computation APIs.
 
 Event configuration, CLIs, servers, and workflow orchestration live in the
-local ``solar_apps`` application layer rather than this public package.
-
-中文：包内统一维护射电配置、科学计算、源图、pipeline、overlay、CSO、诊断与本地应用
-工作流；历史 ``scripts.radio`` 路径只作为兼容入口。
+tracked ``solar_apps`` application layer rather than this public package.
 """
 
 from __future__ import annotations

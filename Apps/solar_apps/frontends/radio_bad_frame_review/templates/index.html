@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en" data-frontend-id="bad-frame-review" data-interface-id="bad-frame-review">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Radio Bad Frame Review</title>
+  <link rel="stylesheet" href="/assets/solar-theme.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="/assets/solar-theme.js"></script>
+  <script src="/assets/solar-theme-state.js"></script>
+  <script src="/api/native-path-dialog/client.js"></script>
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>Radio Bad Frame Review</h1>
+      <p>Local FITS quality screening</p>
+    </div>
+    <div class="header-actions">
+      <div class="solar-ui-controls">
+        <label>Theme<select data-theme-selector><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+        <button type="button" data-reset-ui-state>Reset UI State</button>
+      </div>
+      <label for="recent-review">Saved review</label>
+      <select id="recent-review">
+        <option value="">No saved reviews</option>
+      </select>
+      <span id="service-status" class="service-status" data-state="loading">Connecting</span>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <aside class="control-rail" aria-label="Scan controls">
+      <section>
+        <h2>Data source</h2>
+        <label for="root-input">Radio root</label>
+        <div class="path-control">
+          <input id="root-input" type="text" autocomplete="off" placeholder="Select an allowed folder">
+          <button id="browse-root" type="button" class="secondary">Browse</button>
+        </div>
+        <button id="discover-button" type="button" class="secondary wide-button">Discover bands</button>
+      </section>
+
+      <section>
+        <h2>Frequency</h2>
+        <div id="frequency-options" class="option-grid empty-options">No bands discovered</div>
+      </section>
+
+      <section>
+        <h2>Polarization</h2>
+        <div id="polarization-options" class="option-grid empty-options">No polarizations discovered</div>
+      </section>
+
+      <section>
+        <h2>Frame range</h2>
+        <div class="range-grid">
+          <label>Start index<input id="start-index" type="number" min="0" value="0"></label>
+          <label>End index<input id="end-index" type="number" min="1" placeholder="All"></label>
+        </div>
+      </section>
+
+      <section>
+        <h2>Review sampling</h2>
+        <label>Strategy
+          <select id="candidate-strategy">
+            <option value="labeling" selected>Gold-label queue</option>
+            <option value="rules">Legacy rule candidates</option>
+            <option value="shadow">Rules + published model shadow</option>
+          </select>
+        </label>
+        <label>Target queue size
+          <input id="sample-count" type="number" min="1" max="10000" value="1200">
+        </label>
+        <p class="control-help">All automatic bad/uncertain frames are included. Good candidates are stratified and sampled to at least 30% when available.</p>
+      </section>
+
+      <section>
+        <h2>Review coverage</h2>
+        <label>Frames to browse
+          <select id="review-scope">
+            <option value="candidates" selected>Automatic review queue</option>
+            <option value="all_scanned">Every scanned frame</option>
+          </select>
+        </label>
+        <p class="control-help">Every scanned frame respects the selected frequency, polarization, and Start/End range. Viewed but unlabelled frames never become training labels.</p>
+        <p id="scan-estimate" class="scan-estimate">Discover bands to estimate the scan size.</p>
+      </section>
+
+      <button id="scan-button" type="button" class="primary wide-button" disabled>Build review queue</button>
+      <div id="scan-progress" class="scan-progress" role="status" hidden>
+        <span class="scan-progress-indicator" aria-hidden="true"></span>
+        <span id="scan-progress-label">Scanning FITS frames</span>
+        <strong id="scan-elapsed">0:00</strong>
+      </div>
+      <p id="scan-message" class="rail-message" role="status"></p>
+    </aside>
+
+    <section class="review-workspace" aria-live="polite">
+      <div id="empty-state" class="empty-state">
+        <strong>No review loaded</strong>
+        <span>Select a radio root and scan, or open a saved review.</span>
+      </div>
+
+      <div id="review-panel" hidden>
+        <div class="review-toolbar">
+          <div>
+            <div class="review-title-row">
+              <h2>Human quality review</h2>
+              <span id="review-status" class="status-badge"></span>
+            </div>
+            <p id="review-id" class="review-id"></p>
+          </div>
+          <div class="review-actions">
+            <a id="download-json" class="button-link secondary" href="#">JSON</a>
+            <a id="download-csv" class="button-link secondary" href="#">CSV</a>
+            <a id="download-audit" class="button-link secondary" href="#" hidden>Audit CSV</a>
+            <button id="skip-review" type="button" class="secondary">Skip review</button>
+            <button id="complete-review" type="button" class="primary">Complete</button>
+          </div>
+        </div>
+
+        <div class="summary-strip" aria-label="Review counts">
+          <div><span>Scanned</span><strong id="count-scanned">0</strong></div>
+          <div><span>Queue</span><strong id="count-candidates">0</strong></div>
+          <div><span>Auto bad</span><strong id="count-auto-bad">0</strong></div>
+          <div><span>Auto uncertain</span><strong id="count-auto-uncertain">0</strong></div>
+          <div><span>Sampled good</span><strong id="count-sampled-good">0</strong></div>
+          <div><span>Pending</span><strong id="count-pending">0</strong></div>
+          <div><span>Bad</span><strong id="count-bad">0</strong></div>
+          <div><span>Degraded</span><strong id="count-degraded">0</strong></div>
+          <div><span>Good</span><strong id="count-keep">0</strong></div>
+          <div><span>Viewed</span><strong id="count-viewed">0</strong></div>
+          <div><span>Remaining</span><strong id="count-remaining">0</strong></div>
+        </div>
+
+        <div class="review-view-tabs" aria-label="Review view">
+          <button id="show-candidates" type="button" class="secondary active" aria-pressed="true">Candidate queue</button>
+          <button id="show-all-frames" type="button" class="secondary" aria-pressed="false" hidden>All scanned frames</button>
+          <span id="coverage-message"></span>
+        </div>
+
+        <section class="preview-region" aria-label="Candidate preview">
+          <div class="preview-heading">
+            <div>
+              <h3 id="preview-title">Frame context</h3>
+              <p id="preview-meta"></p>
+            </div>
+            <span id="preview-state"></span>
+          </div>
+          <div class="preview-stage">
+            <img id="preview-image" alt="Previous, candidate, and next radio FITS frames" hidden>
+            <p id="preview-placeholder">Select a candidate row.</p>
+          </div>
+          <div class="assessment-grid">
+            <section class="assessment-card automatic-card">
+              <h4>Automatic pre-screen</h4>
+              <strong id="automatic-decision">Not selected</strong>
+              <p id="automatic-reasons">Rules are read-only and never become human truth.</p>
+              <small id="automatic-version"></small>
+            </section>
+            <section class="assessment-card human-card">
+              <h4>Human gold label</h4>
+              <fieldset id="quality-labels" class="quality-labels">
+                <legend>Quality</legend>
+                <label><input type="radio" name="quality-label" value="good"> Good</label>
+                <label><input type="radio" name="quality-label" value="degraded"> Degraded</label>
+                <label><input type="radio" name="quality-label" value="bad"> Bad</label>
+                <label><input type="radio" name="quality-label" value="uncertain"> Uncertain</label>
+              </fieldset>
+              <fieldset id="event-tags" class="tag-list">
+                <legend>Science event (does not change quality)</legend>
+                <label><input type="checkbox" value="solar_burst"> Solar burst</label>
+                <label><input type="checkbox" value="narrowband_event"> Narrowband event</label>
+                <label><input type="checkbox" value="strong_polarization"> Strong polarization</label>
+              </fieldset>
+              <fieldset id="artifact-tags" class="tag-list">
+                <legend>Artifact</legend>
+                <label><input type="checkbox" value="stripe"> Stripe</label>
+                <label><input type="checkbox" value="sidelobe"> Sidelobe</label>
+                <label><input type="checkbox" value="offset"> Offset</label>
+                <label><input type="checkbox" value="blur"> Blur</label>
+                <label><input type="checkbox" value="saturation"> Saturation</label>
+                <label><input type="checkbox" value="noise"> Noise</label>
+                <label><input type="checkbox" value="invalid_data"> Invalid data</label>
+                <label><input type="checkbox" value="other"> Other</label>
+              </fieldset>
+              <button id="save-label" type="button" class="primary">Save human label</button>
+            </section>
+            <section class="assessment-card ml-card">
+              <h4>ML shadow prediction</h4>
+              <strong id="ml-decision">No published model</strong>
+              <p id="ml-probabilities">ML never changes the final bad-frame list.</p>
+              <small id="ml-ood"></small>
+            </section>
+          </div>
+        </section>
+
+        <section id="candidate-table-region" class="table-region" aria-label="Review queue">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">Time</th>
+                <th scope="col">MHz</th>
+                <th scope="col">Pol</th>
+                <th scope="col">File</th>
+                <th scope="col">Automatic</th>
+                <th scope="col">Human</th>
+                <th scope="col">ML shadow</th>
+              </tr>
+            </thead>
+            <tbody id="candidate-rows"></tbody>
+          </table>
+          <div id="no-candidates" class="no-candidates" hidden>No frames were selected for this review strategy.</div>
+        </section>
+
+        <section id="all-frame-region" class="table-region all-frame-region" aria-label="All scanned frames" hidden>
+          <div class="frame-navigation">
+            <button id="previous-frame" type="button" class="secondary">Previous</button>
+            <label>Frame
+              <input id="frame-jump" type="number" min="1" value="1">
+            </label>
+            <span id="frame-position">0 / 0</span>
+            <button id="next-frame" type="button" class="secondary">Next</button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">Viewed</th>
+                <th scope="col">Time</th>
+                <th scope="col">MHz</th>
+                <th scope="col">Pol</th>
+                <th scope="col">File</th>
+                <th scope="col">Automatic</th>
+                <th scope="col">Human</th>
+              </tr>
+            </thead>
+            <tbody id="frame-rows"></tbody>
+          </table>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="folder-dialog" class="folder-dialog">
+    <form method="dialog">
+      <div class="dialog-header">
+        <div>
+          <h2>Select radio root</h2>
+          <p id="folder-path"></p>
+        </div>
+        <button value="cancel" class="secondary" aria-label="Close folder browser">Close</button>
+      </div>
+      <div class="folder-toolbar">
+        <button id="folder-parent" type="button" class="secondary">Parent</button>
+        <button id="folder-choose" type="button" class="primary">Use this folder</button>
+      </div>
+      <div id="folder-list" class="folder-list"></div>
+    </form>
+  </dialog>
+  <script>SolarTheme.init("bad-frame-review"); SolarUiState.init("bad-frame-review");</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+name: solarphysics_env_latest
+channels:
+  - conda-forge
+dependencies:
+  - python=3.14
+  - pip

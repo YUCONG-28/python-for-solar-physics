@@ -5,40 +5,26 @@ These instructions apply to this Python project and its subdirectories.
 ## Python environment
 
 - Always run Python through the Miniforge `solarphysics_env_latest` environment.
-- In a normal activated shell, use this interpreter explicitly for Python commands:
+- Resolve Miniforge explicitly in PowerShell:
 
 ```powershell
-D:\miniforge3\envs\solarphysics_env_latest\python.exe
+$Conda = "<miniforge-root>\Scripts\conda.exe"
 ```
 
-- Keep `solarphysics_env` as the formal backup environment. Switch to it only
-  through an explicit interpreter path or `conda run -n solarphysics_env` when
+- Keep `solarphysics_env` as the formal compatibility environment. Switch to it
+  only through explicit Miniforge `conda run -n solarphysics_env` when
   a comparison or compatibility fallback is required; it is not the default.
 
-- In a non-activated PowerShell session, first prepend the Conda environment
-  DLL paths before importing NumPy/SciPy, otherwise the OpenBLAS-backed binary
-  stack can fail during import:
+- Run commands through Miniforge so Conda supplies the environment DLL paths:
 
 ```powershell
-$env:PATH="D:\miniforge3\envs\solarphysics_env_latest;D:\miniforge3\envs\solarphysics_env_latest\Library\mingw-w64\bin;D:\miniforge3\envs\solarphysics_env_latest\Library\usr\bin;D:\miniforge3\envs\solarphysics_env_latest\Library\bin;D:\miniforge3\envs\solarphysics_env_latest\Scripts;$env:PATH"
+& $Conda run -n solarphysics_env_latest python -m pytest
+& $Conda run -n solarphysics_env_latest python -m pip
+& $Conda run -n solarphysics_env_latest python script.py
 ```
 
-- After that, prefer commands such as:
-
-```powershell
-$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pytest
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pip
-D:\miniforge3\envs\solarphysics_env_latest\python.exe script.py
-```
-
-- Alternatively, use `conda run` so conda supplies the environment paths:
-
-```powershell
-D:\miniforge3\Scripts\conda.exe run -n solarphysics_env_latest python -m pytest
-```
-
-- Do not rely on bare `python`, `pip`, or `pytest` unless they have first been verified to resolve to `D:\miniforge3\envs\solarphysics_env_latest`.
+- Do not fall back to a virtual environment, system Python, or bare
+  `python`/`pip`/`pytest` command.
 
 ## Codex agent behavior
 
@@ -66,8 +52,8 @@ guideline conflicts with them.
 ## Radio and verification workflow
 
 - Prefer `solar_toolkit.radio` for new reusable radio-processing imports.
-- Keep old `scripts.radio.core` import paths working during the migration
-  window with compatibility wrappers or aliases rather than symbol copies.
+- Do not add old internal `scripts.*` compatibility modules. Public application
+  aliases belong in the `Apps/run.ps1` CLI router.
 - For radio work, optimize for denoising and clear radio-source visibility on
   AIA imagery, not only for visually prettier Gaussian overlays.
 - Keep literature/formula notes mapped to the actual code path and clearly

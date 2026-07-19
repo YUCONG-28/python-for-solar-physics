@@ -28,17 +28,19 @@ def collect_records(
     records: list[tuple[str, Path]] = []
     for wave in waves:
         recset = f"{series}[{timerange}][{wave}]"
-        keys, segments = client.query(
-            recset, key="T_REC,WAVELNTH,QUALITY", seg="image"
-        )
+        keys, segments = client.query(recset, key="T_REC,WAVELNTH,QUALITY", seg="image")
         for row, segment in zip(
             keys.to_dict("records"), segments["image"].tolist(), strict=False
         ):
             if int(row.get("QUALITY", 0)) != 0:
                 continue
             record_time = str(row["T_REC"]).replace("-", "").replace(":", "")
-            name = f"{series.replace('.', '_')}_{record_time}_{int(row['WAVELNTH'])}.fits"
-            records.append((base_url.rstrip("/") + "/" + segment.lstrip("/"), output / name))
+            name = (
+                f"{series.replace('.', '_')}_{record_time}_{int(row['WAVELNTH'])}.fits"
+            )
+            records.append(
+                (base_url.rstrip("/") + "/" + segment.lstrip("/"), output / name)
+            )
     return records
 
 
@@ -60,9 +62,10 @@ def download_one(
     for attempt in range(1, attempts + 1):
         try:
             request = Request(url, headers={"User-Agent": "solar-physics-toolkit"})
-            with urlopen(request, timeout=timeout_s) as response, temporary.open(
-                "wb"
-            ) as handle:
+            with (
+                urlopen(request, timeout=timeout_s) as response,
+                temporary.open("wb") as handle,
+            ):
                 while chunk := response.read(1024 * 1024):
                     handle.write(chunk)
             if temporary.stat().st_size <= minimum_size:

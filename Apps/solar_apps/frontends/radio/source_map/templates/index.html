@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en" data-frontend-id="source-map" data-interface-id="source-map">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Radio Source Map</title>
+  <link rel="stylesheet" href="/assets/solar-theme.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>Radio Source Map</h1>
+      <span id="serverState" class="server-state">Connecting</span>
+    </div>
+    <div class="header-actions">
+      <div class="solar-ui-controls">
+        <label>Theme<select data-theme-selector><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+        <button type="button" data-reset-ui-state>Reset UI State</button>
+      </div>
+      <button id="openSectionBtn" class="secondary">Open artifact</button>
+      <button id="saveFolderBtn" class="primary" disabled>Save bundle</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="config-panel" aria-label="Source map configuration">
+      <section>
+        <h2>Generate</h2>
+        <label>Event config<input id="configInput" type="text" autocomplete="off"></label>
+        <fieldset class="segmented" aria-label="Map mode">
+          <label><input type="radio" name="mode" value="single_band" checked><span>Single</span></label>
+          <label><input type="radio" name="mode" value="multi_band"><span>Multi</span></label>
+        </fieldset>
+        <label>Source
+          <span class="field-action three-actions"><input id="sourcePathInput" type="text"><button type="button" data-browse="sourcePathInput">Browse file</button><button type="button" data-browse="sourcePathInput" data-mode="select_directory">Browse folder</button></span>
+        </label>
+        <label>Output folder
+          <span class="field-action"><input id="outputPathInput" type="text"><button type="button" data-browse="outputPathInput" data-mode="select_directory">Browse</button></span>
+        </label>
+        <label id="frequenciesField">Frequencies (MHz)<input id="frequenciesInput" type="text" placeholder="149, 164, 190"></label>
+        <label>Polarization
+          <select id="polarizationInput"><option>RR+LL</option><option>RR</option><option>LL</option></select>
+        </label>
+      </section>
+
+      <section>
+        <h2>Display</h2>
+        <label>Color map<select id="cmapInput"></select></label>
+        <label>Color range<select id="rangeModeInput"><option value="auto">Auto</option><option value="fixed">Fixed</option><option value="global">Global</option></select></label>
+        <div class="two-columns" id="fixedRangeFields">
+          <label>Minimum<input id="vminInput" type="number" step="any"></label>
+          <label>Maximum<input id="vmaxInput" type="number" step="any"></label>
+        </div>
+        <label>Radio unit<input id="radioUnitInput" type="text" placeholder="From FITS BUNIT"></label>
+        <label class="toggle"><input id="gaussianInput" type="checkbox" checked><span>Gaussian overlay</span></label>
+        <label>Background<select id="backgroundModeInput"><option value="off">Off</option><option value="noise_map_only">Noise map</option><option value="local_mesh">Local mesh</option><option value="local_median">Local median</option></select></label>
+        <div class="two-columns">
+          <label class="toggle"><input id="backgroundDisplayInput" type="checkbox"><span>Display</span></label>
+          <label class="toggle"><input id="backgroundFitInput" type="checkbox"><span>Fit</span></label>
+        </div>
+        <label class="toggle"><input id="spectrogramInput" type="checkbox"><span>Spectrogram panel</span></label>
+        <label id="spectrogramPathField">Spectrogram FITS
+          <span class="field-action"><input id="spectrogramPathInput" type="text"><button type="button" data-browse="spectrogramPathInput">Browse</button></span>
+        </label>
+        <label id="spectrogramUnitField">Spectrogram unit<input id="spectrogramUnitInput" type="text" placeholder="From FITS BUNIT"></label>
+        <details>
+          <summary>Advanced JSON</summary>
+          <textarea id="advancedInput" rows="7" spellcheck="false">{}</textarea>
+        </details>
+      </section>
+
+      <section class="generation-actions">
+        <button id="discoverBtn" class="primary">Discover</button>
+        <label>Candidate<select id="candidateInput" disabled></select></label>
+        <div class="two-columns range-fields" aria-label="Sequence range">
+          <label>Start frame<input id="sequenceStartInput" type="number" min="1" step="1" value="1" disabled></label>
+          <label>End frame<input id="sequenceEndInput" type="number" min="1" step="1" value="1" disabled></label>
+        </div>
+        <div class="button-row wrap">
+          <button id="generateBtn" class="primary" disabled>Generate current</button>
+          <button id="prepareSequenceBtn" disabled>Prepare sequence</button>
+          <button id="cancelBtn" class="danger" disabled>Cancel</button>
+        </div>
+        <div id="sequenceProgressGroup" class="progress-group" hidden>
+          <progress id="sequenceProgress" max="1" value="0"></progress>
+          <button id="cancelSequenceBtn" class="danger" disabled>Cancel sequence</button>
+        </div>
+        <output id="generationStatus" class="status-line"></output>
+      </section>
+    </aside>
+
+    <section class="map-panel" aria-label="Source map canvas">
+      <div class="canvas-toolbar">
+        <fieldset class="segmented compact" aria-label="Canvas tool">
+          <label><input type="radio" name="tool" value="rectangle" checked><span>Rectangle</span></label>
+          <label><input type="radio" name="tool" value="lasso"><span>Lasso</span></label>
+          <label><input type="radio" name="tool" value="pan"><span>Pan</span></label>
+        </fieldset>
+        <div class="icon-actions">
+          <button id="undoBtn" class="icon-button" title="Undo" aria-label="Undo" disabled>&#8630;</button>
+          <button id="redoBtn" class="icon-button" title="Redo" aria-label="Redo" disabled>&#8631;</button>
+          <button id="resetViewBtn" class="icon-button" title="Reset view" aria-label="Reset view">&#8962;</button>
+        </div>
+        <div class="frame-navigation" aria-label="Prepared sequence navigation">
+          <button id="previousFrameBtn" class="icon-button" title="Previous frame" aria-label="Previous frame" disabled>&#8249;</button>
+          <label>Frame<input id="frameIndexInput" type="number" min="1" step="1" value="1" disabled></label>
+          <span id="frameCountLabel">/ 1</span>
+          <button id="nextFrameBtn" class="icon-button" title="Next frame" aria-label="Next frame" disabled>&#8250;</button>
+        </div>
+        <label class="zoom-control">Zoom<input id="zoomInput" type="range" min="25" max="200" value="100"><span id="zoomValue">100%</span></label>
+      </div>
+      <div id="canvasViewport" class="canvas-viewport">
+        <div id="emptyState" class="empty-state"><strong>No source map loaded</strong></div>
+        <canvas id="mapCanvas" hidden></canvas>
+      </div>
+      <div class="map-status">
+        <output id="mapStatus">No artifact</output>
+        <span id="coordinateReadout">HPLN -- / HPLT --</span>
+      </div>
+      <div id="artifactWarnings" class="warnings" hidden></div>
+    </section>
+
+    <aside class="roi-panel" aria-label="ROI collection">
+      <section>
+        <div class="section-heading"><h2>Regions</h2><button id="clearRoisBtn" class="secondary" disabled>Clear</button></div>
+        <div id="roiList" class="roi-list"><p class="muted">No regions</p></div>
+      </section>
+      <section>
+        <h2>Selected ROI</h2>
+        <label>Name<input id="roiNameInput" type="text" disabled></label>
+        <div class="two-columns">
+          <label>Stroke<input id="roiColorInput" type="color" value="#00d4ff" disabled></label>
+          <label>Width<input id="roiWidthInput" type="number" min="1" max="12" value="3" disabled></label>
+        </div>
+        <label class="toggle"><input id="roiVisibleInput" type="checkbox" checked disabled><span>Visible</span></label>
+        <label class="toggle"><input id="roiLabelInput" type="checkbox" checked disabled><span>Show label</span></label>
+        <div class="button-row">
+          <button id="updateRoiBtn" class="primary" disabled>Update</button>
+          <button id="deleteRoiBtn" class="danger" disabled>Delete</button>
+        </div>
+      </section>
+      <section>
+        <h2>Numeric rectangle</h2>
+        <div class="coordinate-grid">
+          <label>Left<input id="rectLeftInput" type="number" step="any"></label>
+          <label>Right<input id="rectRightInput" type="number" step="any"></label>
+          <label>Bottom<input id="rectBottomInput" type="number" step="any"></label>
+          <label>Top<input id="rectTopInput" type="number" step="any"></label>
+        </div>
+        <button id="addNumericBtn" class="secondary" disabled>Add rectangle</button>
+      </section>
+      <section>
+        <h2>Export</h2>
+        <label>Source
+          <select id="exportSourceInput">
+            <option value="artifact">Current artifact</option>
+            <option value="sequence_job">Prepared sequence</option>
+            <option value="directory">External Source Map directory</option>
+          </select>
+        </label>
+        <label id="exportDirectoryField">External directory
+          <span class="field-action"><input id="exportDirectoryInput" type="text"><button type="button" data-browse="exportDirectoryInput" data-mode="select_directory">Browse</button></span>
+        </label>
+        <label>Frames<select id="exportScopeInput"><option value="current">Current frame</option><option value="range">Frame range</option></select></label>
+        <div id="exportRangeFields" class="two-columns range-fields">
+          <label>Start<input id="exportStartInput" type="number" min="1" step="1" value="1"></label>
+          <label>End<input id="exportEndInput" type="number" min="1" step="1" value="1"></label>
+        </div>
+        <label>Content<select id="exportContentInput"><option value="original">Original</option><option value="roi">With ROI overlay</option></select></label>
+        <label id="exportRoiPathField">Historical ROI JSON (optional template)
+          <span class="field-action"><input id="exportRoiPathInput" type="text"><button type="button" data-browse="exportRoiPathInput">Browse</button></span>
+        </label>
+        <p id="roiTemplateHint" class="hint">A selected JSON is explicitly imported as a sequence template; its source image hash is retained as provenance.</p>
+        <label>Product<select id="exportKindInput"><option value="image">Single PNG</option><option value="image_sequence">PNG sequence</option><option value="video">MP4 video</option></select></label>
+        <label>Destination
+          <span class="field-action"><input id="exportDestinationInput" type="text"><button id="browseExportDestinationBtn" type="button">Browse</button></span>
+        </label>
+        <div id="videoOptions" class="two-columns">
+          <label>FPS<input id="exportFpsInput" type="number" min="1" max="60" step="1" value="10"></label>
+          <label>Quality<select id="exportQualityInput"><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
+        </div>
+        <div class="button-row">
+          <button id="startExportBtn" class="primary" disabled>Start export</button>
+          <button id="cancelExportBtn" class="danger" disabled>Cancel</button>
+        </div>
+        <div id="exportProgressGroup" class="progress-group" hidden><progress id="exportProgress" max="1" value="0"></progress></div>
+        <p class="hint">Manual paths remain editable. Native-dialog failure never opens an in-page file browser.</p>
+        <details>
+          <summary>Legacy downloads</summary>
+          <div class="button-stack legacy-actions">
+            <button id="downloadPngBtn" disabled>Download PNG</button>
+            <button id="downloadJsonBtn" disabled>Download ROI JSON</button>
+            <button id="saveBundleBtn" class="primary" disabled>Save to folder</button>
+          </div>
+        </details>
+        <output id="exportStatus" class="status-line"></output>
+      </section>
+    </aside>
+  </main>
+
+  <dialog id="openDialog">
+    <form method="dialog" class="dialog-shell">
+      <div class="section-heading"><h2>Open artifact</h2><button class="icon-button" value="cancel" title="Close" aria-label="Close">&times;</button></div>
+      <label>PNG image<span class="field-action"><input id="openImageInput" type="text"><button type="button" data-browse="openImageInput">Browse</button></span></label>
+      <label>Sidecar JSON<span class="field-action"><input id="openSidecarInput" type="text"><button type="button" data-browse="openSidecarInput">Browse</button></span></label>
+      <label>ROI set JSON (optional)<span class="field-action"><input id="openRoiInput" type="text"><button type="button" data-browse="openRoiInput">Browse</button></span></label>
+      <label class="toggle"><input id="openRoiTemplateInput" type="checkbox"><span>Import ROI JSON as a sequence template (allow a different source image hash)</span></label>
+      <output id="openStatus" class="status-line"></output>
+      <div class="dialog-actions"><button value="cancel">Cancel</button><button id="openArtifactBtn" type="button" class="primary">Open</button></div>
+    </form>
+  </dialog>
+
+  <script src="/assets/solar-theme.js"></script>
+  <script src="/assets/solar-theme-state.js"></script>
+  <script src="/api/native-path-dialog/client.js"></script>
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  <script>SolarTheme.init("source-map"); SolarUiState.init("source-map");</script>
+</body>
+</html>

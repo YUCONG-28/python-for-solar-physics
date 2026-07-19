@@ -1,2 +1,29 @@
-# Local application integration layer; versioned only by Local/.git.
+# Private runtime state and migration evidence. These trees must never be
+# published by the outer repository.
 /Local/
+/Local-migration-backup/
+
+# Observation data remain local and outside the public source partitions.
+/2023/
+/2024/
+/2025/
+/2026/
+/overview/
+
+# Repository-local test and lint caches.
+/.pytest_cache/
+/.ruff_cache/
+
+# Application build/test products and machine-specific configuration.
+/Apps/.pytest_cache/
+/Apps/.ruff_cache/
+/Apps/build/
+/Apps/dist/
+/Apps/*.egg-info/
+/Apps/**/__pycache__/
+/Apps/**/.coverage
+/Apps/**/htmlcov/
+/Apps/configs/paths.local.yaml
+/Apps/outputs/
+/Apps/logs/
+/Apps/tmp/

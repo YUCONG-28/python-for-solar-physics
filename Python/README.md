@@ -23,9 +23,10 @@ includes the explicit modules:
 
 Event configuration, machine-specific path configuration, CLIs, GUI/Web
 servers, browser launchers, static assets and cross-domain orchestration are
-intentionally not distributed.
-They live in the ignored, independent local application repository at
-`../Local` and depend on this package in the direction `Local -> solar_toolkit`.
+intentionally not distributed in the library wheel. Their tracked source lives
+in `../Apps` and depends on this package in the direction
+`solar_apps -> solar_toolkit`; private runtime state remains under ignored
+`../Local`.
 There are no public console scripts in version 0.3.0.
 
 ## Install
@@ -33,7 +34,8 @@ There are no public console scripts in version 0.3.0.
 From the unified repository root:
 
 ```powershell
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pip install -e .\Python
+$Conda = "<miniforge-root>\Scripts\conda.exe"
+& $Conda run -n solarphysics_env_latest python -m pip install -e .\Python
 ```
 
 The radio-quality pipeline deliberately keeps automatic rules, human truth and
@@ -44,7 +46,7 @@ model. Supervised training is optional and accepts only explicit human
 `good` / `degraded` / `bad` labels:
 
 ```powershell
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pip install -e ".\Python[quality-ml]"
+& $Conda run -n solarphysics_env_latest python -m pip install -e ".\Python[quality-ml]"
 ```
 
 `quality_ml` uses observation-batch splits, an independently calibrated
@@ -56,7 +58,7 @@ After enough human-confirmed good frames exist, the separate
 `quality_autoencoder` extra can train a small CPU convolutional autoencoder:
 
 ```powershell
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pip install -e ".\Python[quality-autoencoder]"
+& $Conda run -n solarphysics_env_latest python -m pip install -e ".\Python[quality-autoencoder]"
 ```
 
 It accepts only human `good` images and emits reconstruction and latent-distance
@@ -64,9 +66,9 @@ features for the calibrated tree model. It has no bad-frame classification API.
 
 `solarphysics_env_latest` is the default environment for current development
 and validation. The retained `solarphysics_env` environment is the formal
-backup and can be selected at any time with its explicit interpreter path or
+compatibility fallback and can be selected explicitly with Miniforge
 `conda run -n solarphysics_env`; it is not updated or activated by default.
-The backup retains known Conda ownership warnings and lacks newer optional
+That environment retains known Conda ownership warnings and lacks newer optional
 packages including FITSIO and PyQtGraph, so workflows that need those packages
 must use `solarphysics_env_latest`.
 
@@ -126,14 +128,13 @@ Examples:
 ## Verify
 
 ```powershell
-$env:PATH="D:\miniforge3\envs\solarphysics_env_latest;D:\miniforge3\envs\solarphysics_env_latest\Library\mingw-w64\bin;D:\miniforge3\envs\solarphysics_env_latest\Library\usr\bin;D:\miniforge3\envs\solarphysics_env_latest\Library\bin;D:\miniforge3\envs\solarphysics_env_latest\Scripts;$env:PATH"
-$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pip check
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -c "import ssl; ssl.create_default_context(); import sunpy.map; from sunpy.net import Fido"
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -m compileall -q solar_toolkit tests examples\public_api
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -m ruff check solar_toolkit tests examples\public_api
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pytest tests
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -m build --wheel --no-isolation --outdir dist .
+$Conda = "<miniforge-root>\Scripts\conda.exe"
+& $Conda run -n solarphysics_env_latest python -m pip check
+& $Conda run -n solarphysics_env_latest python -c "import ssl; ssl.create_default_context(); import sunpy.map; from sunpy.net import Fido"
+& $Conda run -n solarphysics_env_latest python -m compileall -q solar_toolkit tests examples\public_api
+& $Conda run -n solarphysics_env_latest python -m ruff check solar_toolkit tests examples\public_api
+& $Conda run -n solarphysics_env_latest python -m pytest tests
+& $Conda run -n solarphysics_env_latest python -m build --wheel --no-isolation --outdir dist .
 ```
 
 ## License and citation

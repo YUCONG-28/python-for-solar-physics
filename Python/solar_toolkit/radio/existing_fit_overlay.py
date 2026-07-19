@@ -96,7 +96,7 @@ def render_existing_fit_overlay(
     import pandas as pd
 
     from solar_toolkit.aia.background import read_aia_background
-    from solar_toolkit.visualization.radio_source_video import (
+    from solar_toolkit.visualization.radio_source_overlay import (
         render_radio_source_overlay_png,
     )
 

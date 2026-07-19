@@ -1,0 +1,438 @@
+"""Tests for the standalone radio bad-frame review application."""
+
+from __future__ import annotations
+
+import io
+import json
+from pathlib import Path
+
+import numpy as np
+import pytest
+from astropy.io import fits
+from PIL import Image
+
+from solar_apps.frontends.radio_bad_frame_review import (
+    BadFrameReviewStore,
+    StaleReviewError,
+    extract_training_examples,
+    final_bad_frame_paths,
+    load_bad_frame_review,
+)
+from solar_apps.frontends.radio_bad_frame_review.server import create_app
+from solar_apps.frontends.radio_bad_frame_review import (
+    application as review_application,
+)
+
+APPS_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _compact_source(shape: tuple[int, int] = (64, 64)) -> np.ndarray:
+    y, x = np.indices(shape)
+    source = 1.0e6 * np.exp(-(((x - 32) ** 2) + ((y - 32) ** 2)) / (2 * 2.4**2))
+    return 1.0e3 + 10.0 * x + 5.0 * y + source
+
+
+def _striped_bad_source(shape: tuple[int, int] = (64, 64)) -> np.ndarray:
+    data = _compact_source(shape)
+    data[:, 6::12] += 1.5e7
+    data[5::13, :] += 1.1e7
+    return data
+
+
+def _write_fits(path: Path, data: np.ndarray, *, second: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image = fits.ImageHDU(data=np.asarray(data, dtype=np.float32))
+    image.header["DATE-OBS"] = f"2025-05-03T07:20:{second:02d}.000Z"
+    fits.HDUList([fits.PrimaryHDU(), image]).writeto(path)
+
+
+def _radio_dataset(root: Path, *, include_bad: bool = True) -> tuple[Path, Path | None]:
+    folder = root / "149MHz" / "RR"
+    bad_path = None
+    for index in range(5):
+        path = folder / f"149MHz_20250503_0720{index:02d}_000.fits"
+        is_bad = include_bad and index == 2
+        _write_fits(
+            path, _striped_bad_source() if is_bad else _compact_source(), second=index
+        )
+        if is_bad:
+            bad_path = path
+    return root, bad_path
+
+
+def _create_review(store: BadFrameReviewStore, root: Path) -> dict:
+    return store.create_review(
+        {
+            "root": str(root),
+            "frequencies_mhz": [149],
+            "polarizations": ["RR"],
+            "start_index": 0,
+            "end_index": None,
+        }
+    )
+
+
+def test_discovery_scan_preview_and_completed_manifest(tmp_path: Path) -> None:
+    root, bad_path = _radio_dataset(tmp_path / "radio")
+    store = BadFrameReviewStore(tmp_path / "reviews", [tmp_path])
+
+    discovery = store.discover(root)
+    assert discovery["bands"] == [
+        {
+            "frequency_mhz": 149.0,
+            "label": "149 MHz",
+            "polarizations": [{"name": "RR", "file_count": 5}],
+        }
+    ]
+
+    review = _create_review(store, root)
+    assert review["status"] == "draft"
+    assert review["summary"]["scanned_file_count"] == 5
+    assert len(review["candidates"]) == 1
+    candidate = review["candidates"][0]
+    assert Path(candidate["source_file"]) == bad_path.resolve()
+    assert candidate["context_file_ids"][0] is not None
+    assert candidate["context_file_ids"][2] is not None
+
+    preview = store.render_candidate_preview(
+        review["review_id"], candidate["candidate_id"]
+    )
+    image = Image.open(io.BytesIO(preview)).convert("RGB")
+    assert image.width > 1000
+    assert image.height > 400
+    assert float(np.asarray(image).std()) > 5.0
+
+    updated = store.update_decisions(
+        review["review_id"], {candidate["candidate_id"]: "good"}
+    )
+    assert updated["summary"]["pending_count"] == 0
+    assert updated["summary"]["kept_count"] == 1
+    completed = store.finalize(review["review_id"], "completed")
+    assert completed["status"] == "completed"
+    assert completed["final_bad_files"] == []
+
+    manifest_path = tmp_path / "reviews" / review["review_id"] / "review.json"
+    persisted = load_bad_frame_review(manifest_path)
+    assert persisted["input_fingerprint"].startswith("sha256:")
+    assert final_bad_frame_paths(persisted) == ()
+    csv_text = (manifest_path.parent / "candidates.csv").read_text(encoding="utf-8")
+    assert "human_decision" in csv_text
+    assert ",good,human,ok," in csv_text
+
+
+def test_review_requires_all_decisions_and_skip_keeps_automatic_bad(
+    tmp_path: Path,
+) -> None:
+    root, bad_path = _radio_dataset(tmp_path / "radio")
+    store = BadFrameReviewStore(tmp_path / "reviews", [tmp_path])
+    review = _create_review(store, root)
+
+    with pytest.raises(ValueError, match="Every candidate"):
+        store.finalize(review["review_id"], "completed")
+
+    skipped = store.finalize(review["review_id"], "skipped")
+    assert skipped["status"] == "skipped"
+    assert skipped["summary"]["pending_count"] == 0
+    assert skipped["summary"]["confirmed_bad_count"] == 0
+    assert skipped["summary"]["final_bad_count"] == 1
+    assert final_bad_frame_paths(skipped) == (bad_path.resolve(),)
+    assert skipped["candidates"][0]["decision_source"] == "automatic_on_skip"
+    with pytest.raises(ValueError, match="read-only"):
+        store.update_decisions(
+            review["review_id"], {review["candidates"][0]["candidate_id"]: "good"}
+        )
+
+
+def test_no_candidates_auto_completes_and_changed_inputs_are_stale(
+    tmp_path: Path,
+) -> None:
+    clean_root, _ = _radio_dataset(tmp_path / "clean", include_bad=False)
+    store = BadFrameReviewStore(tmp_path / "reviews", [tmp_path])
+    clean_review = _create_review(store, clean_root)
+    assert clean_review["status"] == "completed"
+    assert clean_review["summary"]["candidate_count"] == 0
+
+    bad_root, bad_path = _radio_dataset(tmp_path / "bad")
+    bad_review = _create_review(store, bad_root)
+    assert bad_path is not None
+    bad_path.write_bytes(bad_path.read_bytes() + b"changed")
+    candidate_id = bad_review["candidates"][0]["candidate_id"]
+    with pytest.raises(StaleReviewError, match="scan again"):
+        store.update_decisions(bad_review["review_id"], {candidate_id: "bad"})
+
+
+def test_all_frame_review_persists_coverage_and_promotes_explicit_labels(
+    tmp_path: Path,
+) -> None:
+    root, _bad_path = _radio_dataset(tmp_path / "radio")
+    output_root = tmp_path / "reviews"
+    store = BadFrameReviewStore(output_root, [tmp_path])
+    review = store.create_review(
+        {
+            "root": str(root),
+            "frequencies_mhz": [149],
+            "polarizations": ["RR"],
+            "candidate_strategy": "rules",
+            "review_scope": "all_scanned",
+        }
+    )
+    review_id = review["review_id"]
+    assert review["status"] == "draft"
+    assert review["input"]["review_scope"] == "all_scanned"
+    assert store.public_payload(review)["summary"]["remaining_frame_count"] == 5
+
+    page = store.list_frames(review_id, offset=0, limit=2)
+    assert page["total"] == 5
+    assert [item["ordinal"] for item in page["frames"]] == [1, 2]
+    first_frame = page["frames"][0]
+    assert first_frame["viewed"] is False
+    preview = store.render_frame_preview(review_id, first_frame["file_id"])
+    assert Image.open(io.BytesIO(preview)).width > 1000
+    assert store.public_payload(review)["summary"]["viewed_frame_count"] == 0
+
+    automatic_candidate = review["candidates"][0]
+    store.update_decisions(review_id, {automatic_candidate["candidate_id"]: "good"})
+    with pytest.raises(ValueError, match="must be viewed"):
+        store.finalize(review_id, "completed")
+
+    all_frames = store.list_frames(review_id, offset=0, limit=100)["frames"]
+    clean_frame = next(frame for frame in all_frames if frame["candidate_id"] is None)
+    labelled = store.update_frame_label(
+        review_id,
+        clean_frame["file_id"],
+        {
+            "quality_label": "bad",
+            "event_tags": [],
+            "artifact_tags": ["stripe"],
+        },
+    )
+    promoted = next(
+        item
+        for item in labelled["candidates"]
+        if item["file_id"] == clean_frame["file_id"]
+    )
+    assert promoted["selection_source"] == "manual_full_review"
+
+    for frame in all_frames:
+        store.mark_frame_viewed(review_id, frame["file_id"])
+    resumed = BadFrameReviewStore(output_root, [tmp_path])
+    resumed_page = resumed.list_frames(review_id, offset=0, limit=100)
+    assert all(frame["viewed"] for frame in resumed_page["frames"])
+    assert resumed_page["first_unviewed_index"] is None
+
+    completed = resumed.finalize(review_id, "completed")
+    assert completed["audit"]["coverage_fingerprint"].startswith("sha256:")
+    assert final_bad_frame_paths(completed) == (
+        Path(promoted["source_file"]).resolve(),
+    )
+    examples = extract_training_examples(completed)
+    assert len(examples) == 2
+    assert {item["quality_label"] for item in examples} == {"good", "bad"}
+    audit_csv = output_root / review_id / "viewed_frames.csv"
+    assert len(audit_csv.read_text(encoding="utf-8").splitlines()) == 6
+
+
+def test_empty_selected_range_is_rejected(tmp_path: Path) -> None:
+    root, _ = _radio_dataset(tmp_path / "radio", include_bad=False)
+    store = BadFrameReviewStore(tmp_path / "reviews", [tmp_path])
+    with pytest.raises(ValueError, match="No FITS files"):
+        store.create_review(
+            {
+                "root": str(root),
+                "frequencies_mhz": [149],
+                "polarizations": ["RR"],
+                "start_index": 10,
+                "end_index": 20,
+            }
+        )
+
+
+def test_api_flow_and_path_boundaries(tmp_path: Path) -> None:
+    root, _bad_path = _radio_dataset(tmp_path / "radio")
+    output_root = tmp_path / "reviews"
+    app = create_app(
+        allowed_roots=[tmp_path],
+        output_root=output_root,
+        stop_on_client_close=False,
+    )
+    client = app.test_client()
+
+    assert client.get("/api/health").get_json() == {"ok": True}
+    assert client.get("/").headers["Cache-Control"] == "no-store, max-age=0"
+    assert (
+        client.get("/static/app.js").headers["Cache-Control"] == "no-store, max-age=0"
+    )
+    assert client.get("/api/files", query_string={"path": str(root)}).status_code == 200
+    outside = tmp_path.parent / "outside-review-input"
+    outside.mkdir(exist_ok=True)
+    assert (
+        client.get("/api/files", query_string={"path": str(outside)}).status_code == 403
+    )
+
+    discovery = client.post("/api/discover", json={"root": str(root)})
+    assert discovery.status_code == 200
+    response = client.post(
+        "/api/reviews",
+        json={
+            "root": str(root),
+            "frequencies_mhz": [149],
+            "polarizations": ["RR"],
+            "start_index": 0,
+        },
+    )
+    assert response.status_code == 201
+    review = response.get_json()["review"]
+    candidate = review["candidates"][0]
+
+    preview = client.get(
+        f"/api/reviews/{review['review_id']}/candidates/{candidate['candidate_id']}/preview"
+    )
+    assert preview.status_code == 200
+    assert preview.mimetype == "image/png"
+    assert (
+        client.get(
+            f"/api/reviews/{review['review_id']}/candidates/not-a-candidate/preview"
+        ).status_code
+        == 404
+    )
+
+    patched = client.patch(
+        f"/api/reviews/{review['review_id']}",
+        json={"decisions": {candidate["candidate_id"]: "bad"}},
+    )
+    assert patched.status_code == 200
+    finalized = client.post(
+        f"/api/reviews/{review['review_id']}/finalize",
+        json={"mode": "completed"},
+    )
+    assert finalized.status_code == 200
+    assert finalized.get_json()["review"]["summary"]["final_bad_count"] == 1
+
+    manifest = client.get(f"/api/reviews/{review['review_id']}/manifest.json")
+    table = client.get(f"/api/reviews/{review['review_id']}/table.csv")
+    assert manifest.status_code == 200
+    assert table.status_code == 200
+    assert json.loads(manifest.data)["status"] == "completed"
+    assert b"final_quality" in table.data
+
+
+def test_open_browser_happens_after_server_binding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+
+    class DummyServer:
+        def serve_forever(self) -> None:
+            events.append("serve")
+
+        def server_close(self) -> None:
+            events.append("close")
+
+        def shutdown(self) -> None:
+            events.append("shutdown")
+
+    def fake_make_server(*_args, **_kwargs):
+        events.append("bind")
+        return DummyServer()
+
+    monkeypatch.setattr("werkzeug.serving.make_server", fake_make_server)
+    monkeypatch.setattr(
+        review_application.webbrowser,
+        "open",
+        lambda _url: events.append("browser"),
+    )
+    result = review_application.main(
+        [
+            "--allowed-roots",
+            str(tmp_path),
+            "--output-root",
+            str(tmp_path / "reviews"),
+            "--open-browser",
+        ]
+    )
+    assert result == 0
+    assert events == ["bind", "browser", "serve", "close"]
+
+
+def test_all_frame_http_endpoints_are_paginated_and_idempotent(tmp_path: Path) -> None:
+    root, _ = _radio_dataset(tmp_path / "radio")
+    app = create_app(
+        allowed_roots=[tmp_path],
+        output_root=tmp_path / "reviews",
+        stop_on_client_close=False,
+    )
+    client = app.test_client()
+    response = client.post(
+        "/api/reviews",
+        json={
+            "root": str(root),
+            "frequencies_mhz": [149],
+            "polarizations": ["RR"],
+            "candidate_strategy": "rules",
+            "review_scope": "all_scanned",
+        },
+    )
+    assert response.status_code == 201
+    review = response.get_json()["review"]
+    review_id = review["review_id"]
+    page = client.get(
+        f"/api/reviews/{review_id}/frames",
+        query_string={"offset": 1, "limit": 2},
+    )
+    assert page.status_code == 200
+    frames = page.get_json()["frames"]
+    assert [frame["ordinal"] for frame in frames] == [2, 3]
+    frame = frames[0]
+
+    preview = client.get(f"/api/reviews/{review_id}/frames/{frame['file_id']}/preview")
+    assert preview.status_code == 200
+    assert preview.mimetype == "image/png"
+    for _ in range(2):
+        viewed = client.post(
+            f"/api/reviews/{review_id}/frames/{frame['file_id']}/viewed"
+        )
+        assert viewed.status_code == 200
+    assert viewed.get_json()["review"]["summary"]["viewed_frame_count"] == 1
+
+    labelled = client.patch(
+        f"/api/reviews/{review_id}/frames/{frame['file_id']}",
+        json={
+            "label": {
+                "quality_label": "degraded",
+                "event_tags": [],
+                "artifact_tags": ["noise"],
+            }
+        },
+    )
+    assert labelled.status_code == 200
+    audit = client.get(f"/api/reviews/{review_id}/audit.csv")
+    assert audit.status_code == 200
+    assert audit.data.count(frame["file_id"].encode()) == 1
+
+
+def test_frontend_is_independent_and_exposes_review_controls() -> None:
+    package = APPS_ROOT / "solar_apps" / "frontends" / "radio_bad_frame_review"
+    html = (package / "templates" / "index.html").read_text(encoding="utf-8")
+    javascript = (package / "static" / "app.js").read_text(encoding="utf-8")
+    stylesheet = (package / "static" / "style.css").read_text(encoding="utf-8")
+
+    assert "Radio Bad Frame Review" in html
+    assert 'id="candidate-rows"' in html
+    assert 'id="complete-review"' in html
+    assert 'id="skip-review"' in html
+    assert 'id="review-scope"' in html
+    assert 'id="frame-rows"' in html
+    assert 'id="scan-progress"' in html
+    assert 'API + "/reviews/"' in javascript
+    assert "saveDecision" in javascript
+    assert "finalizeReview" in javascript
+    assert "createClientId" in javascript
+    assert "selectedFrameEstimate" in javascript
+    assert "markFrameViewed" in javascript
+    assert "initializeAllFrameView" in javascript
+    assert 'review.status === "skipped" ? summary.final_bad_count' in javascript
+    assert "[hidden] { display: none !important; }" in stylesheet
+    assert "grid-template-columns: 310px" in stylesheet
+    assert "solar_apps.frontends.workbench" not in (package / "server.py").read_text(
+        encoding="utf-8"
+    )

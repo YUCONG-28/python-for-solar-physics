@@ -1,0 +1,1 @@
+"""Local HMI application adapters."""

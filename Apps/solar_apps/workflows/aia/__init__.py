@@ -1,0 +1,1 @@
+"""Local AIA application adapters."""

@@ -974,4 +974,4 @@ def _parse_float_csv(raw: str | None) -> list[float]:
     return [float(item) for item in _parse_str_csv(raw)]
 
 
-# Application entry points for this module live in the Local solar_apps layer.
+# Application entry points for this module live in the tracked Apps layer.

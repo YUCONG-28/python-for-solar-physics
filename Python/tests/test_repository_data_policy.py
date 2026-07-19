@@ -51,9 +51,21 @@ MEDIA_AND_DATA_SUFFIXES = (
     ".xlsx",
 )
 
-# Every tracked media/data artifact must be individually reviewed. This is
-# deliberately empty after the public-repository privacy cleanup.
+# Every tracked media/data artifact in the Python and Apps source partitions
+# must be individually reviewed. This is deliberately empty after the public
+# repository privacy cleanup.
 ALLOWED_MEDIA_AND_DATA_PATHS: frozenset[str] = frozenset()
+
+PUBLIC_SOURCE_PREFIXES = ("Python/", "Apps/")
+PRIVATE_REPOSITORY_PREFIXES = (
+    "Local/",
+    "Local-migration-backup/",
+    "2023/",
+    "2024/",
+    "2025/",
+    "2026/",
+    "overview/",
+)
 
 SENSITIVE_BASENAME_GLOBS = (
     "*.cer",
@@ -138,8 +150,25 @@ def _tracked_paths() -> list[str]:
     return [
         path
         for path in tracked
-        if path.startswith("Python/")
+        if path.startswith(PUBLIC_SOURCE_PREFIXES)
         if (REPO_ROOT / path).is_file() or (REPO_ROOT / path).is_symlink()
+    ]
+
+
+def _all_tracked_paths() -> list[str]:
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=True,
+        )
+    except FileNotFoundError:
+        pytest.skip("git is not available in this environment")
+    return [
+        raw.decode("utf-8", errors="surrogateescape").replace("\\", "/")
+        for raw in result.stdout.split(b"\0")
+        if raw
     ]
 
 
@@ -162,6 +191,16 @@ def test_git_does_not_track_unreviewed_generated_products():
         for path in tracked
         if path.lower().endswith(MEDIA_AND_DATA_SUFFIXES)
         and path not in ALLOWED_MEDIA_AND_DATA_PATHS
+    ]
+
+    assert unexpected == []
+
+
+def test_git_does_not_track_private_runtime_or_observation_trees():
+    unexpected = [
+        path
+        for path in _all_tracked_paths()
+        if path.startswith(PRIVATE_REPOSITORY_PREFIXES)
     ]
 
     assert unexpected == []

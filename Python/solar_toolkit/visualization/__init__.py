@@ -1,9 +1,4 @@
-"""Public visualization helper namespace.
-
-English: Shared plotting, font configuration, frame, and media helpers.
-
-中文：共享绘图、字体配置、媒体生成和交互式可视化工具的公共命名空间。
-"""
+"""Shared plotting, font, frame, media, and overlay helpers."""
 
 from __future__ import annotations
 
@@ -22,6 +17,7 @@ _SUBMODULES = {
     "image_naming": "solar_toolkit.visualization.image_naming",
     "media": "solar_toolkit.visualization.media",
     "plotting": "solar_toolkit.visualization.plotting",
+    "radio_source_overlay": "solar_toolkit.visualization.radio_source_overlay",
 }
 
 __all__ = ["configure_chinese_fonts", *_SUBMODULES]

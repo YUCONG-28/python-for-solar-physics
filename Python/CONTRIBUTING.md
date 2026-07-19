@@ -1,15 +1,16 @@
 # Contributing
 
-Thank you for helping improve this solar-physics toolkit. The repository is organized as a research-tool project: reusable helpers live in `solar_toolkit/`, runnable workflows live in `scripts/`, and lightweight checks live in `tests/`.
+Thank you for helping improve this solar-physics toolkit. Reusable helpers live
+in `solar_toolkit/`, tracked application workflows live in `../Apps/`, and
+data-independent library checks live in `tests/`.
 
 ## Environment
 
 The project is developed with Miniforge and the `solarphysics_env_latest` environment:
 
 ```powershell
-conda activate solarphysics_env_latest
-python -m pip install -r requirements.txt
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pip install -e ".[dev]"
+$Conda = "<miniforge-root>\Scripts\conda.exe"
+& $Conda run -n solarphysics_env_latest python -m pip install -e ".[dev]"
 ```
 
 The retained `solarphysics_env` environment is the formal backup. Select it
@@ -20,22 +21,17 @@ The `.[dev]` extra is the minimum contributor install for tests and style
 checks. Use `.[dev,full]` when validating broader science workflows that need
 the optional NetCDF, image, radio, or download helpers.
 
-When running checks from a non-activated PowerShell session, prepend the
-Miniforge DLL and script paths before calling the project interpreter:
-
-```powershell
-$env:PATH="D:\miniforge3\envs\solarphysics_env_latest;D:\miniforge3\envs\solarphysics_env_latest\Library\mingw-w64\bin;D:\miniforge3\envs\solarphysics_env_latest\Library\usr\bin;D:\miniforge3\envs\solarphysics_env_latest\Library\bin;D:\miniforge3\envs\solarphysics_env_latest\Scripts;$env:PATH"
-```
+Use the same Miniforge executable with `conda run` from non-activated shells;
+do not fall back to a system interpreter.
 
 ## Before Committing
 
 Run the lightweight checks that do not require local FITS/NetCDF data:
 
 ```powershell
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -m compileall -q solar_toolkit scripts tests examples
-$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"; D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pytest -q tests
-D:\miniforge3\envs\solarphysics_env_latest\python.exe -m pip install pre-commit
-pre-commit run --all-files
+& $Conda run -n solarphysics_env_latest python -m compileall -q solar_toolkit tests examples
+& $Conda run -n solarphysics_env_latest python -m pytest -q tests
+& $Conda run -n solarphysics_env_latest python -m pre_commit run --all-files
 ```
 
 `pre-commit` runs whitespace, end-of-file, YAML, large-file, Gitleaks, Ruff, and
@@ -53,11 +49,11 @@ before code reaches shared branches.
 ## Data and Paths
 
 - Do not commit FITS, NetCDF, generated plots, videos, Excel files, caches, or local data products.
-- Copy `configs/paths.example.yaml` to `configs/paths.local.yaml` for personal paths.
-- Keep `configs/paths.local.yaml` untracked.
+- Keep machine paths in ignored `../Local/configs/paths.local.yaml`.
+- Start from the fail-closed template in `../Apps/configs/examples`.
 
-## Script Changes
+## Workflow Changes
 
-- Keep scripts runnable from the repository root.
-- Prefer adding reusable helpers to `solar_toolkit/` only when multiple scripts need them.
+- Keep Apps workflows runnable through `Apps/run.ps1`.
+- Prefer adding reusable helpers to `solar_toolkit/` when multiple workflows need them.
 - Examples that require local data belong in `examples/`; tests in `tests/` must be data-independent.

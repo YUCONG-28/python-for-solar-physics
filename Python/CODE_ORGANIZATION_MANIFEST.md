@@ -26,13 +26,14 @@ instrument packages, and application workflows live outside the public library.
 
 The public package has no event discovery, local path overrides, CLI adapters,
 browser/server code, GUI assets or workflow orchestration. Those components are
-kept in the ignored independent `../Local` repository under `solar_apps`.
+kept in the public `../Apps` source partition under `solar_apps`; their machine
+configuration and runtime state live in the ignored `../Local` partition.
 
 Dependency direction is enforced as:
 
 ```text
-Local/solar_apps  --->  Python/solar_toolkit
-Python/solar_toolkit  -X->  Local, scripts, legacy
+Apps/solar_apps  --->  Python/solar_toolkit
+Python/solar_toolkit  -X->  Apps/solar_apps
 ```
 
 See `docs/FUNCTION_MAP.md`, `docs/MAIN_FILES.md`, and `docs/script_index.md` for

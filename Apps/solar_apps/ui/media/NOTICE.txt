@@ -1,0 +1,5 @@
+Mediabunny v1.50.8
+Source: https://github.com/Vanilagy/mediabunny/releases/tag/v1.50.8
+Asset: mediabunny-1.50.8.cjs
+SHA-256: 33CE958766413E6EDCFFAA41E0C3D40401A4160F0C253A570EDCE32EFECE1F2F
+License: MPL-2.0; see mediabunny-MPL-2.0.txt

@@ -1,6 +1,6 @@
 # Paper Evidence Library Instructions
 
-These instructions apply to `D:\solarphysics\Paper` and its subdirectories.
+These instructions apply to the repository's `Paper` partition and its subdirectories.
 
 ## Static evidence boundary
 

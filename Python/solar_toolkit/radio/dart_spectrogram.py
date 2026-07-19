@@ -319,9 +319,7 @@ def _read_frequency_axis(path: Path) -> np.ndarray:
     if values.size == 0 or not np.all(np.isfinite(values)):
         raise ValueError(f"DART frequency axis must contain finite values: {path}")
     differences = np.diff(values)
-    if differences.size and not (
-        np.all(differences > 0) or np.all(differences < 0)
-    ):
+    if differences.size and not (np.all(differences > 0) or np.all(differences < 0)):
         raise ValueError(f"DART frequency axis must be strictly monotonic: {path}")
     return values
 
@@ -415,9 +413,7 @@ def _frequency_index_range(
             )
     indices = np.flatnonzero((frequency_mhz >= low) & (frequency_mhz <= high))
     if not indices.size:
-        raise ValueError(
-            f"No frequency samples fall inside {low:.9g}-{high:.9g} MHz"
-        )
+        raise ValueError(f"No frequency samples fall inside {low:.9g}-{high:.9g} MHz")
     return int(indices[0]), int(indices[-1])
 
 
@@ -613,9 +609,7 @@ def _finite_frequency_mean(
     n_time = ti1 - ti0 + 1
     output = np.full(n_time, np.nan, dtype=np.float64)
     bytes_per_time = max(1, n_frequency * np.dtype(np.float32).itemsize)
-    columns_per_chunk = max(
-        1, int(chunk_memory_mb * 1024 * 1024 // bytes_per_time)
-    )
+    columns_per_chunk = max(1, int(chunk_memory_mb * 1024 * 1024 // bytes_per_time))
     for local_t0 in range(0, n_time, columns_per_chunk):
         local_t1 = min(n_time, local_t0 + columns_per_chunk)
         chunk = np.array(

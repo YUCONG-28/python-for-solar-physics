@@ -15,8 +15,7 @@ AIA_EUV_WAVELENGTHS = {"94", "131", "171", "193", "211", "304", "335"}
 KNOWN_PREFIXES = (AIA_UV_PREFIX, AIA_EUV_PREFIX, HMI_PREFIX)
 
 AIA_IMAGE_PATTERN = re.compile(
-    r"^(?P<time>\d{4}-\d{2}-\d{2}T\d{6}Z)\."
-    r"(?P<wavelength>\d+)\.image_lev1\.fits$",
+    r"^(?P<time>\d{4}-\d{2}-\d{2}T\d{6}Z)\." r"(?P<wavelength>\d+)\.image_lev1\.fits$",
     re.IGNORECASE,
 )
 HMI_MAGNETOGRAM_PATTERN = re.compile(

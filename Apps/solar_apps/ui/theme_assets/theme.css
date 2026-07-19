@@ -1,0 +1,133 @@
+:root {
+  color-scheme: light;
+  --solar-bg: #f4f7fb;
+  --solar-surface: #ffffff;
+  --solar-surface-muted: #edf2f8;
+  --solar-surface-raised: #ffffff;
+  --solar-text: #172033;
+  --solar-text-muted: #5d6b80;
+  --solar-border: #c9d4e3;
+  --solar-border-strong: #9cabc0;
+  --solar-accent: #2563eb;
+  --solar-accent-hover: #1d4ed8;
+  --solar-accent-soft: #dbeafe;
+  --solar-success: #15803d;
+  --solar-warning: #a16207;
+  --solar-danger: #b91c1c;
+  --solar-focus: #60a5fa;
+  --solar-shadow: 0 14px 36px rgba(26, 42, 68, 0.11);
+  --solar-radius-sm: 6px;
+  --solar-radius: 10px;
+  --solar-radius-lg: 16px;
+  --solar-space-1: 0.25rem;
+  --solar-space-2: 0.5rem;
+  --solar-space-3: 0.75rem;
+  --solar-space-4: 1rem;
+  --solar-space-5: 1.5rem;
+  --solar-space-6: 2rem;
+  --solar-font: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --solar-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --solar-bg: #0b1120;
+  --solar-surface: #111a2c;
+  --solar-surface-muted: #182338;
+  --solar-surface-raised: #162137;
+  --solar-text: #e7edf7;
+  --solar-text-muted: #a9b5c8;
+  --solar-border: #33435d;
+  --solar-border-strong: #53647e;
+  --solar-accent: #60a5fa;
+  --solar-accent-hover: #93c5fd;
+  --solar-accent-soft: #172f55;
+  --solar-success: #4ade80;
+  --solar-warning: #facc15;
+  --solar-danger: #f87171;
+  --solar-focus: #93c5fd;
+  --solar-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme-mode="light"]):not([data-theme-mode="dark"]) {
+    color-scheme: dark;
+    --solar-bg: #0b1120;
+    --solar-surface: #111a2c;
+    --solar-surface-muted: #182338;
+    --solar-surface-raised: #162137;
+    --solar-text: #e7edf7;
+    --solar-text-muted: #a9b5c8;
+    --solar-border: #33435d;
+    --solar-border-strong: #53647e;
+    --solar-accent: #60a5fa;
+    --solar-accent-hover: #93c5fd;
+    --solar-accent-soft: #172f55;
+    --solar-success: #4ade80;
+    --solar-warning: #facc15;
+    --solar-danger: #f87171;
+    --solar-focus: #93c5fd;
+    --solar-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+  }
+}
+
+html, body {
+  background: var(--solar-bg);
+  color: var(--solar-text);
+  font-family: var(--solar-font);
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+button, input, select, textarea, [role="button"] {
+  border-radius: var(--solar-radius-sm);
+}
+
+input, select, textarea {
+  color: var(--solar-text);
+  background: var(--solar-surface);
+  border-color: var(--solar-border);
+}
+
+:where(button, input, select, textarea, a, [tabindex]):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--solar-focus) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.solar-ui-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--solar-space-2);
+  padding: var(--solar-space-2);
+  color: var(--solar-text-muted);
+  background: var(--solar-surface-muted);
+  border: 1px solid var(--solar-border);
+  border-radius: var(--solar-radius);
+}
+
+.solar-ui-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--solar-space-2);
+  margin: 0;
+}
+
+.solar-ui-controls button,
+.solar-ui-controls select {
+  min-height: 2rem;
+  padding: 0.35rem 0.65rem;
+}
+
+.solar-card {
+  background: var(--solar-surface);
+  border: 1px solid var(--solar-border);
+  border-radius: var(--solar-radius-lg);
+  box-shadow: var(--solar-shadow);
+}
+
+/* Scientific images and canvases are deliberately never filtered or inverted. */
+img, canvas, video, svg[data-scientific-figure] {
+  filter: none;
+}
