@@ -145,8 +145,7 @@ class _ThumbnailTask(QRunnable):
     def mark_dequeued(self) -> None:
         """Settle a cancelled task removed before its worker started."""
 
-        self._done_event.set()
-        _release_retired_thumbnail_task(self)
+        _settle_thumbnail_task(self)
 
     def run(self) -> None:
         payload: QByteArray | None = None
@@ -170,12 +169,11 @@ class _ThumbnailTask(QRunnable):
                 # Defensive fallback if Qt is already tearing down at process exit.
                 pass
             finally:
-                self._done_event.set()
                 try:
                     self.signals.settled.emit(self.task_id)
                 except RuntimeError:
                     pass
-                _release_retired_thumbnail_task(self)
+                _settle_thumbnail_task(self)
 
 
 _RETIRED_THUMBNAIL_TASKS: set[_ThumbnailTask] = set()
@@ -190,9 +188,12 @@ def _retain_running_thumbnail_task(task: _ThumbnailTask) -> None:
             _RETIRED_THUMBNAIL_TASKS.add(task)
 
 
-def _release_retired_thumbnail_task(task: _ThumbnailTask) -> None:
+def _settle_thumbnail_task(task: _ThumbnailTask) -> None:
+    """Publish completion only after retired-task ownership is released."""
+
     with _RETIRED_THUMBNAIL_TASKS_LOCK:
         _RETIRED_THUMBNAIL_TASKS.discard(task)
+        task._done_event.set()
 
 
 class _ExportSignals(QObject):
@@ -1022,6 +1023,8 @@ class ImageComposerWindow(QMainWindow):
         self._folder_selection_changed()
 
     def _folder_selection_changed(self) -> None:
+        if self._updating:
+            return
         folder = self._current_folder()
         self._updating = True
         self._detach_thumbnail_tasks()
