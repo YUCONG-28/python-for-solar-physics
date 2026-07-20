@@ -12,8 +12,8 @@ import re
 import shutil
 import threading
 import uuid
-from collections.abc import Callable
-from dataclasses import asdict
+from collections.abc import Callable, Mapping
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -27,6 +27,10 @@ from solar_toolkit.radio.raw_quality import (
     RawQualityThresholds,
     analyze_radio_raw_quality,
     read_radio_fits_image,
+)
+from solar_toolkit.map.coordinates import (
+    calculate_fits_extent_from_header,
+    infer_image_origin_from_header,
 )
 
 BAD_FRAME_REVIEW_SCHEMA_VERSION = 3
@@ -54,6 +58,18 @@ DEFAULT_LABELING_SAMPLE_COUNT = 1200
 MINIMUM_AUTOMATIC_GOOD_FRACTION = 0.30
 VIEWED_FRAMES_FILENAME = "viewed_frames.csv"
 VIEWED_FRAME_FIELDS = ("file_id", "relative_path", "viewed_at")
+PREVIEW_COLORMAPS = (
+    "coolwarm",
+    "hot",
+    "inferno",
+    "magma",
+    "viridis",
+    "plasma",
+    "jet",
+    "cividis",
+)
+PREVIEW_TRANSFORMS = ("robust_asinh", "linear")
+PREVIEW_RANGE_MODES = ("auto", "fixed")
 _IDENTIFIER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
 _FREQUENCY_DIR_RE = re.compile(r"^([0-9]+(?:\.[0-9]+)?)MHz$", re.IGNORECASE)
 _RAW_METRIC_FIELDS = (
@@ -114,6 +130,89 @@ _CSV_FIELDS = (
     "ml_prediction",
 )
 
+_PREVIEW_FIGURE_FACE = "#f4f6f8"
+_PREVIEW_TEXT_COLOR = "#13202b"
+_PREVIEW_TICK_COLOR = "#243746"
+_PREVIEW_CONTEXT_BORDER = "#43596b"
+_PREVIEW_CANDIDATE_BORDER = "#007f73"
+_PREVIEW_PLACEHOLDER_FACE = "#101820"
+_PREVIEW_PLACEHOLDER_TEXT = "#f3f6f8"
+_PREVIEW_WCS_WARNING = "#8b1d1d"
+_ANGULAR_TO_ARCSEC = {
+    "arcsec": 1.0,
+    "arcsecond": 1.0,
+    "arcseconds": 1.0,
+    "asec": 1.0,
+    "arcmin": 60.0,
+    "arcminute": 60.0,
+    "arcminutes": 60.0,
+    "amin": 60.0,
+    "deg": 3600.0,
+    "degree": 3600.0,
+    "degrees": 3600.0,
+    "rad": 206264.80624709636,
+    "radian": 206264.80624709636,
+    "radians": 206264.80624709636,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class PreviewDisplaySettings:
+    """Validated presentation-only settings for one preview triptych."""
+
+    cmap: str = "coolwarm"
+    transform: str = "robust_asinh"
+    range_mode: str = "auto"
+    vmin: float | None = None
+    vmax: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.cmap not in PREVIEW_COLORMAPS:
+            raise ValueError("cmap must be one of: " + ", ".join(PREVIEW_COLORMAPS))
+        if self.transform not in PREVIEW_TRANSFORMS:
+            raise ValueError("transform must be robust_asinh or linear")
+        if self.range_mode not in PREVIEW_RANGE_MODES:
+            raise ValueError("range_mode must be auto or fixed")
+        if self.range_mode == "fixed":
+            if self.vmin is None or self.vmax is None:
+                raise ValueError("Fixed intensity range requires both vmin and vmax")
+            if not math.isfinite(float(self.vmin)) or not math.isfinite(
+                float(self.vmax)
+            ):
+                raise ValueError("vmin and vmax must be finite")
+            if float(self.vmin) >= float(self.vmax):
+                raise ValueError("vmin must be less than vmax")
+
+    @classmethod
+    def from_mapping(
+        cls, value: Mapping[str, Any] | PreviewDisplaySettings | None
+    ) -> PreviewDisplaySettings:
+        if isinstance(value, cls):
+            return value
+        raw = value or {}
+        range_mode = str(raw.get("range_mode") or "auto").strip().lower()
+        vmin = _optional_finite_float(raw.get("vmin"), label="vmin")
+        vmax = _optional_finite_float(raw.get("vmax"), label="vmax")
+        if range_mode != "fixed":
+            vmin = None
+            vmax = None
+        return cls(
+            cmap=str(raw.get("cmap") or "coolwarm").strip(),
+            transform=str(raw.get("transform") or "robust_asinh").strip().lower(),
+            range_mode=range_mode,
+            vmin=vmin,
+            vmax=vmax,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
+class _PreviewGeometry:
+    extent_arcsec: tuple[float, float, float, float]
+    origin: str
+
 
 class StaleReviewError(RuntimeError):
     """Raised when a reviewed input changed after its scan."""
@@ -126,6 +225,103 @@ def _utc_now() -> str:
 def _format_frequency(value: float) -> str:
     number = float(value)
     return str(int(number)) if number.is_integer() else f"{number:g}"
+
+
+def _optional_finite_float(value: Any, *, label: str) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must be a finite number") from exc
+    if not math.isfinite(numeric):
+        raise ValueError(f"{label} must be a finite number")
+    return numeric
+
+
+def _arcsec_factor(unit: Any, *, axis: str) -> float:
+    normalized = str(unit or "").strip().lower()
+    try:
+        return _ANGULAR_TO_ARCSEC[normalized]
+    except KeyError as exc:
+        raise ValueError(f"{axis} WCS unit is not a supported angular unit") from exc
+
+
+def _axis_aligned_wcs_header(header: Mapping[str, Any]) -> dict[str, Any]:
+    normalized = dict(header)
+    cd_keys = ("CD1_1", "CD1_2", "CD2_1", "CD2_2")
+    pc_keys = ("PC1_1", "PC1_2", "PC2_1", "PC2_2")
+    has_cd = any(key in header for key in cd_keys)
+    has_pc = any(key in header for key in pc_keys)
+    if has_cd:
+        if not all(key in header for key in cd_keys):
+            raise ValueError("incomplete CD matrix")
+        cd12 = float(header["CD1_2"])
+        cd21 = float(header["CD2_1"])
+        if not math.isclose(cd12, 0.0, abs_tol=1e-12) or not math.isclose(
+            cd21, 0.0, abs_tol=1e-12
+        ):
+            raise ValueError(
+                "rotated CD matrix is not representable by an image extent"
+            )
+        normalized["CDELT1"] = float(header["CD1_1"])
+        normalized["CDELT2"] = float(header["CD2_2"])
+    elif has_pc:
+        pc11 = float(header.get("PC1_1", 1.0))
+        pc12 = float(header.get("PC1_2", 0.0))
+        pc21 = float(header.get("PC2_1", 0.0))
+        pc22 = float(header.get("PC2_2", 1.0))
+        if not math.isclose(pc12, 0.0, abs_tol=1e-12) or not math.isclose(
+            pc21, 0.0, abs_tol=1e-12
+        ):
+            raise ValueError(
+                "rotated PC matrix is not representable by an image extent"
+            )
+        normalized["CDELT1"] = float(header["CDELT1"]) * pc11
+        normalized["CDELT2"] = float(header["CDELT2"]) * pc22
+    elif not math.isclose(
+        float(header.get("CROTA2", header.get("CROTA1", 0.0))),
+        0.0,
+        abs_tol=1e-12,
+    ):
+        raise ValueError("rotated CROTA WCS is not representable by an image extent")
+    return normalized
+
+
+def _preview_geometry(
+    header: Mapping[str, Any], image_shape: tuple[int, int]
+) -> _PreviewGeometry:
+    ctype1 = str(header.get("CTYPE1", "")).strip().upper()
+    ctype2 = str(header.get("CTYPE2", "")).strip().upper()
+    if not any(marker in ctype1 for marker in ("HPLN", "SOLX")):
+        raise ValueError("CTYPE1 is not HPLN/SOLX")
+    if not any(marker in ctype2 for marker in ("HPLT", "SOLY")):
+        raise ValueError("CTYPE2 is not HPLT/SOLY")
+    x_factor = _arcsec_factor(header.get("CUNIT1"), axis="X")
+    y_factor = _arcsec_factor(header.get("CUNIT2"), axis="Y")
+    normalized = _axis_aligned_wcs_header(header)
+    native_extent = calculate_fits_extent_from_header(
+        normalized,
+        image_shape=image_shape,
+        preserve_orientation=True,
+    )
+    extent = (
+        float(native_extent[0]) * x_factor,
+        float(native_extent[1]) * x_factor,
+        float(native_extent[2]) * y_factor,
+        float(native_extent[3]) * y_factor,
+    )
+    if not all(math.isfinite(value) for value in extent):
+        raise ValueError("WCS extent is not finite")
+    if extent[0] == extent[1] or extent[2] == extent[3]:
+        raise ValueError("WCS extent is degenerate")
+    return _PreviewGeometry(
+        extent_arcsec=extent,
+        origin=infer_image_origin_from_header(
+            normalized,
+            preserve_orientation=True,
+        ),
+    )
 
 
 def _json_safe(value: Any) -> Any:
@@ -915,7 +1111,12 @@ class BadFrameReviewStore:
         self._save(manifest)
         return manifest
 
-    def render_candidate_preview(self, review_id: str, candidate_id: str) -> bytes:
+    def render_candidate_preview(
+        self,
+        review_id: str,
+        candidate_id: str,
+        display: Mapping[str, Any] | PreviewDisplaySettings | None = None,
+    ) -> bytes:
         manifest = self.load_review(review_id)
         candidate = next(
             (
@@ -936,9 +1137,18 @@ class BadFrameReviewStore:
             files.get(file_id) if file_id else None
             for file_id in candidate["context_file_ids"]
         ]
-        return self._render_triptych(candidate, context)
+        return self._render_triptych(
+            candidate,
+            context,
+            display=PreviewDisplaySettings.from_mapping(display),
+        )
 
-    def render_frame_preview(self, review_id: str, file_id: str) -> bytes:
+    def render_frame_preview(
+        self,
+        review_id: str,
+        file_id: str,
+        display: Mapping[str, Any] | PreviewDisplaySettings | None = None,
+    ) -> bytes:
         manifest = self.load_review(review_id)
         if self._review_scope(manifest) != "all_scanned":
             raise ValueError("This review was not created for all-frame browsing")
@@ -948,7 +1158,11 @@ class BadFrameReviewStore:
             manifest,
             file_ids={str(item["file_id"]) for item in context if item is not None},
         )
-        return self._render_triptych(frame, context)
+        return self._render_triptych(
+            frame,
+            context,
+            display=PreviewDisplaySettings.from_mapping(display),
+        )
 
     @staticmethod
     def _candidate_sort_key(item: dict[str, Any]) -> tuple[Any, ...]:
@@ -1695,65 +1909,99 @@ class BadFrameReviewStore:
                 )
 
     def _render_triptych(
-        self, candidate: dict[str, Any], context: list[dict[str, Any] | None]
+        self,
+        candidate: dict[str, Any],
+        context: list[dict[str, Any] | None],
+        *,
+        display: PreviewDisplaySettings,
     ) -> bytes:
+        from matplotlib import colormaps
         from matplotlib.backends.backend_agg import FigureCanvasAgg
         from matplotlib.figure import Figure
 
         import numpy as np
 
-        images: list[tuple[Any | None, str]] = []
-        finite_values = []
+        images: list[tuple[Any | None, str, _PreviewGeometry | None, str | None]] = []
+        finite_values: list[Any] = []
         for item in context:
             if item is None:
-                images.append((None, "Frame unavailable"))
+                images.append((None, "Frame unavailable", None, None))
                 continue
             path = self.resolve_input(item["source_file"])
             try:
-                data, _header = read_radio_fits_image(path)
+                data, header = read_radio_fits_image(path)
                 array = np.asarray(data, dtype=float)
                 finite = np.isfinite(array)
                 transformed = np.full(array.shape, np.nan, dtype=float)
                 if np.any(finite):
                     finite_data = array[finite]
-                    center = float(np.median(finite_data))
-                    mad = float(np.median(np.abs(finite_data - center)))
-                    scale = 1.4826 * mad
-                    if not np.isfinite(scale) or scale <= np.finfo(float).eps:
-                        scale = float(np.std(finite_data))
-                    if not np.isfinite(scale) or scale <= np.finfo(float).eps:
-                        scale = 1.0
-                    transformed[finite] = np.arcsinh((finite_data - center) / scale)
+                    if display.transform == "robust_asinh":
+                        center = float(np.median(finite_data))
+                        mad = float(np.median(np.abs(finite_data - center)))
+                        scale = 1.4826 * mad
+                        if not np.isfinite(scale) or scale <= np.finfo(float).eps:
+                            scale = float(np.std(finite_data))
+                        if not np.isfinite(scale) or scale <= np.finfo(float).eps:
+                            scale = 1.0
+                        transformed[finite] = np.arcsinh((finite_data - center) / scale)
+                    else:
+                        transformed[finite] = finite_data
                     finite_values.append(transformed[finite])
-                    images.append((transformed, path.name))
+                    try:
+                        geometry = _preview_geometry(header, transformed.shape)
+                    except KeyError, TypeError, ValueError:
+                        geometry = None
+                    unit = str(header.get("BUNIT") or "").strip() or None
+                    images.append((transformed, path.name, geometry, unit))
                 else:
-                    images.append((None, "No finite pixels"))
+                    images.append((None, "No finite pixels", None, None))
             except Exception as exc:  # noqa: BLE001 - show unreadable candidates
-                images.append((None, f"Unreadable frame\n{type(exc).__name__}"))
+                images.append(
+                    (None, f"Unreadable frame\n{type(exc).__name__}", None, None)
+                )
 
-        if finite_values:
+        if display.range_mode == "fixed":
+            vmin, vmax = float(display.vmin), float(display.vmax)
+        elif finite_values:
             combined = np.concatenate(finite_values)
             low, high = np.percentile(combined, [0.3, 99.7])
-            limit = max(abs(float(low)), abs(float(high)))
-            if not np.isfinite(limit) or limit <= np.finfo(float).eps:
-                limit = 1.0
-            vmin, vmax = -limit, limit
+            if display.transform == "robust_asinh":
+                limit = max(abs(float(low)), abs(float(high)))
+                if not np.isfinite(limit) or limit <= np.finfo(float).eps:
+                    limit = 1.0
+                vmin, vmax = -limit, limit
+            else:
+                vmin, vmax = float(low), float(high)
+                if not np.isfinite(vmin) or not np.isfinite(vmax):
+                    vmin, vmax = 0.0, 1.0
+                elif vmin >= vmax:
+                    delta = max(abs(vmin) * 1e-6, 1e-12)
+                    vmin, vmax = vmin - delta, vmax + delta
         else:
-            vmin, vmax = -1.0, 1.0
+            vmin, vmax = (
+                (-1.0, 1.0) if display.transform == "robust_asinh" else (0.0, 1.0)
+            )
 
-        figure = Figure(figsize=(12, 4.15), dpi=120, layout="constrained")
+        figure = Figure(figsize=(12, 4.55), dpi=120, layout="constrained")
+        figure.patch.set_facecolor(_PREVIEW_FIGURE_FACE)
         FigureCanvasAgg(figure)
         axes = figure.subplots(1, 3)
         labels = ("Previous", "Candidate", "Next")
         image_artist = None
-        for index, (axis, (image, detail)) in enumerate(zip(axes, images, strict=True)):
-            axis.set_facecolor("#071019")
+        cmap = colormaps.get_cmap(display.cmap).with_extremes(
+            bad=_PREVIEW_PLACEHOLDER_FACE
+        )
+        for index, (axis, panel) in enumerate(zip(axes, images, strict=True)):
+            image, detail, geometry, _unit = panel
+            axis.set_facecolor(_PREVIEW_PLACEHOLDER_FACE)
             if image is None:
                 axis.text(
                     0.5,
                     0.5,
                     detail,
-                    color="#9baab7",
+                    color=_PREVIEW_PLACEHOLDER_TEXT,
+                    fontsize=10,
+                    fontweight="bold",
                     ha="center",
                     va="center",
                     transform=axis.transAxes,
@@ -1761,18 +2009,80 @@ class BadFrameReviewStore:
                 axis.set_xticks([])
                 axis.set_yticks([])
             else:
+                image_kwargs: dict[str, Any] = {
+                    "origin": geometry.origin if geometry is not None else "lower",
+                    "cmap": cmap,
+                    "vmin": vmin,
+                    "vmax": vmax,
+                    "interpolation": "nearest",
+                }
+                if geometry is not None:
+                    image_kwargs["extent"] = geometry.extent_arcsec
                 image_artist = axis.imshow(
                     image,
-                    origin="lower",
-                    cmap="coolwarm",
-                    vmin=vmin,
-                    vmax=vmax,
-                    interpolation="nearest",
+                    **image_kwargs,
                 )
-                axis.tick_params(labelsize=7, colors="#8fa0ad")
-            axis.set_title(f"{labels[index]}\n{detail}", fontsize=9, color="#e8edf1")
-            border = "#51d3c4" if index == 1 else "#334552"
-            width = 3.0 if index == 1 else 1.0
+                if geometry is not None:
+                    axis.set_xlabel(
+                        "HPLN / arcsec",
+                        fontsize=9,
+                        color=_PREVIEW_TICK_COLOR,
+                        fontweight="bold",
+                    )
+                    axis.set_ylabel(
+                        "HPLT / arcsec",
+                        fontsize=9,
+                        color=_PREVIEW_TICK_COLOR,
+                        fontweight="bold",
+                    )
+                    axis.ticklabel_format(axis="both", style="plain", useOffset=False)
+                else:
+                    axis.set_xlabel(
+                        "Pixel X — WCS unavailable",
+                        fontsize=9,
+                        color=_PREVIEW_WCS_WARNING,
+                        fontweight="bold",
+                    )
+                    axis.set_ylabel(
+                        "Pixel Y — WCS unavailable",
+                        fontsize=9,
+                        color=_PREVIEW_WCS_WARNING,
+                        fontweight="bold",
+                    )
+                    axis.text(
+                        0.02,
+                        0.98,
+                        "WCS unavailable",
+                        transform=axis.transAxes,
+                        ha="left",
+                        va="top",
+                        fontsize=8.5,
+                        color=_PREVIEW_WCS_WARNING,
+                        fontweight="bold",
+                        bbox={
+                            "facecolor": _PREVIEW_FIGURE_FACE,
+                            "edgecolor": _PREVIEW_WCS_WARNING,
+                            "alpha": 0.92,
+                            "pad": 2.0,
+                        },
+                    )
+                axis.tick_params(
+                    labelsize=8.5,
+                    colors=_PREVIEW_TICK_COLOR,
+                    width=1.0,
+                    length=3.5,
+                )
+            axis.set_title(
+                f"{labels[index]}\n{detail}",
+                fontsize=10,
+                color=_PREVIEW_TEXT_COLOR,
+                fontweight="bold",
+                pad=8,
+            )
+            border = (
+                _PREVIEW_CANDIDATE_BORDER if index == 1 else _PREVIEW_CONTEXT_BORDER
+            )
+            width = 3.0 if index == 1 else 1.5
             for spine in axis.spines.values():
                 spine.set_color(border)
                 spine.set_linewidth(width)
@@ -1780,15 +2090,41 @@ class BadFrameReviewStore:
             colorbar = figure.colorbar(
                 image_artist, ax=list(axes), shrink=0.78, pad=0.02
             )
-            colorbar.set_label("signed asinh robust intensity", fontsize=8)
-            colorbar.ax.tick_params(labelsize=7)
+            if display.transform == "robust_asinh":
+                colorbar_label = "signed asinh robust intensity"
+            else:
+                units = {unit for _image, _detail, _geometry, unit in images if unit}
+                colorbar_label = (
+                    f"Intensity [{next(iter(units))}]"
+                    if len(units) == 1
+                    else "Raw FITS intensity"
+                )
+            colorbar.set_label(
+                colorbar_label,
+                fontsize=9,
+                color=_PREVIEW_TICK_COLOR,
+                fontweight="bold",
+            )
+            colorbar.ax.tick_params(
+                labelsize=8.5,
+                colors=_PREVIEW_TICK_COLOR,
+                width=1.0,
+            )
+            colorbar.outline.set_edgecolor(_PREVIEW_CONTEXT_BORDER)
         figure.suptitle(
             f"{_format_frequency(candidate['frequency_mhz'])} MHz  |  "
             f"{candidate['polarization']}  |  {candidate['time'] or 'unknown time'}",
-            fontsize=11,
+            fontsize=12,
+            color=_PREVIEW_TEXT_COLOR,
+            fontweight="bold",
         )
         buffer = io.BytesIO()
-        figure.savefig(buffer, format="png", dpi=120, facecolor="#f6f8fa")
+        figure.savefig(
+            buffer,
+            format="png",
+            dpi=120,
+            facecolor=_PREVIEW_FIGURE_FACE,
+        )
         figure.clear()
         return buffer.getvalue()
 

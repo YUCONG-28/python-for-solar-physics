@@ -44,6 +44,19 @@ def test_streamlit_controls_use_source_map_semantic_accent() -> None:
     assert "background: var(--solar-accent) !important" in css
 
 
+def test_streamlit_light_overrides_framework_text_inputs_and_buttons() -> None:
+    css = streamlit_theme_css("light")
+
+    assert '[data-testid="stWidgetLabel"] p' in css
+    assert '[data-testid="stCaptionContainer"] p' in css
+    assert '[data-baseweb="input"] input' in css
+    assert '[data-baseweb="select"] input' in css
+    assert '[data-testid="stBaseButton-secondary"]' in css
+    assert "-webkit-text-fill-color: var(--solar-text) !important" in css
+    assert 'button[kind="primary"] :where(p, span)' in css
+    assert "color: #ffffff !important" in css
+
+
 def test_plotly_chrome_does_not_change_scientific_trace_values() -> None:
     import plotly.graph_objects as go
 

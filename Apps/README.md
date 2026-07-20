@@ -55,7 +55,7 @@ There is no fallback to another Python installation.
 
 ## Applications and interfaces
 
-Eight launchable applications provide nine visible interfaces:
+Nine launchable applications provide ten visible interfaces:
 
 | Frontend ID | Interface | Framework | Start command |
 | --- | --- | --- | --- |
@@ -67,6 +67,7 @@ Eight launchable applications provide nine visible interfaces:
 | `source-map` | Radio source-map preparation and ROI annotation | Flask | `... -File .\Apps\run.ps1 frontend source-map` |
 | `dart-spectrogram` | DART spectrogram analysis | Streamlit | `... -File .\Apps\run.ps1 frontend dart-spectrogram` |
 | `roi-lightcurve` | Multi-region import and one-ROI light-curve analysis | Streamlit | `... -File .\Apps\run.ps1 frontend roi-lightcurve` |
+| `radio-composite` | Source Map, one-ROI curve, and DART narrowband composite | Streamlit | `... -File .\Apps\run.ps1 frontend radio-composite` |
 | `source-trajectory` | Radio-source trajectory inspection | Streamlit | `... -File .\Apps\run.ps1 frontend source-trajectory` |
 
 Replace `...` in the table with `powershell.exe -NoProfile -ExecutionPolicy
@@ -116,7 +117,7 @@ and documentation should use canonical commands.
 
 ## Theme system
 
-All nine interfaces use the Radio Source Map semantic design system. Each
+All ten interfaces use the Radio Source Map semantic design system. Each
 frontend offers:
 
 - `Auto` (default), which follows operating-system color-scheme changes;
@@ -232,13 +233,30 @@ by time or relative index. Project content is saved explicitly as `.fic.json`;
 general UI state is stored separately. Output file selection always uses Save
 As behavior and explicit overwrite confirmation.
 
-### Source Map and ROI Light Curve
+### Source Map, ROI Light Curve, and Radio Composite
 
 Source Map prepares single- or synchronized multi-band images and matching
 coordinate sidecars, then supports rectangle/lasso ROI annotation. ROI Light
 Curve may import a multi-region ROI JSON, but stages and analyzes exactly one
 selected ROI after the existing confirmation step. Upload priority and
 allowed-root checks are unchanged; failed imports preserve current state.
+
+Radio Composite keeps the complete operation in one Streamlit page: it renders
+one selected Source Map frequency and time, confirms one rectangle or lasso ROI,
+selects one DART frequency band graphically or numerically, and exports a
+three-row PNG. The radio ROI and DART panels share the radio sequence's UTC
+axis and mark the selected Source Map time with the same thin vertical line.
+DART values remain source Stokes I dB intensity rather than calibrated physical
+flux. The reproducibility bundle includes both curve CSV files, ROI JSON,
+schema-versioned metadata JSON, and a ZIP archive.
+
+When Miniforge is already activated and the prompt is in the `Python`
+directory, use the exact relative launcher form:
+
+```powershell
+# (solarphysics_env_latest) <repo>\Python>
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ..\Apps\run.ps1 frontend radio-composite
+```
 
 ### Bad Frame, DART, and Source Trajectory
 

@@ -92,6 +92,72 @@ function updateScanEstimate() {
   output.textContent = estimate.toLocaleString() + " FITS frame(s) selected for " + scope + ".";
 }
 
+function updatePreviewDisplayControls() {
+  const fixed = $("#preview-range-mode").value === "fixed";
+  const fields = $("#preview-fixed-range");
+  fields.hidden = !fixed;
+  $("#preview-vmin").disabled = !fixed;
+  $("#preview-vmax").disabled = !fixed;
+  const help = $("#preview-display-help");
+  help.dataset.kind = "";
+  help.textContent = $("#preview-transform").value === "linear"
+    ? "Linear raw uses FITS intensity and BUNIT. Auto uses one shared 0.3–99.7 percentile range."
+    : "Robust asinh preserves faint artifacts. Auto uses one shared symmetric range for all three frames.";
+}
+
+function previewDisplayParameters() {
+  const params = new URLSearchParams({
+    cmap: $("#preview-cmap").value,
+    transform: $("#preview-transform").value,
+    range_mode: $("#preview-range-mode").value,
+  });
+  if ($("#preview-range-mode").value !== "fixed") return params;
+  const vminText = $("#preview-vmin").value.trim();
+  const vmaxText = $("#preview-vmax").value.trim();
+  const vmin = Number(vminText);
+  const vmax = Number(vmaxText);
+  if (!vminText || !vmaxText || !Number.isFinite(vmin) || !Number.isFinite(vmax) || vmin >= vmax) {
+    const help = $("#preview-display-help");
+    help.dataset.kind = "error";
+    help.textContent = "Fixed range requires finite Minimum and Maximum values with Minimum < Maximum.";
+    return null;
+  }
+  params.set("vmin", String(vmin));
+  params.set("vmax", String(vmax));
+  return params;
+}
+
+function previewImageUrl(path) {
+  const params = previewDisplayParameters();
+  if (!params) return null;
+  params.set("v", String(state.review?.updated_at || "preview"));
+  return path + "?" + params.toString();
+}
+
+function refreshActivePreview() {
+  if (!state.review) return;
+  updatePreviewDisplayControls();
+  if (state.reviewView === "frames") {
+    const frame = frameFromCurrentPage(state.selectedFrameIndex);
+    if (frame) renderFramePreview(frame);
+    return;
+  }
+  if (state.selectedCandidateId) renderCandidatePreview();
+}
+
+function configurePreviewDisplay(config) {
+  const display = config.preview_display || {};
+  const defaults = display.defaults || {};
+  const select = $("#preview-cmap");
+  const current = select.value;
+  const colormaps = Array.isArray(display.colormaps) ? display.colormaps : [];
+  if (colormaps.length) {
+    select.replaceChildren(...colormaps.map((value) => new Option(value, value)));
+    select.value = colormaps.includes(current) ? current : (defaults.cmap || "coolwarm");
+  }
+  updatePreviewDisplayControls();
+}
+
 function renderDiscovery(discovery) {
   state.discovery = discovery;
   const frequencyContainer = $("#frequency-options");
@@ -400,16 +466,25 @@ function renderCandidatePreview() {
   image.hidden = false;
   image.onload = () => { $("#preview-state").textContent = ""; };
   image.onerror = previewError;
-  image.src =
+  const url = previewImageUrl(
     API + "/reviews/" + state.review.review_id + "/candidates/" +
-    candidate.candidate_id + "/preview?v=" + encodeURIComponent(state.review.updated_at);
+    candidate.candidate_id + "/preview"
+  );
+  if (!url) {
+    image.hidden = true;
+    $("#preview-placeholder").hidden = false;
+    $("#preview-placeholder").textContent = "Enter a valid fixed intensity range.";
+    $("#preview-state").textContent = "Display settings incomplete";
+    return;
+  }
+  image.src = url;
 }
 
 function previewError() {
   const image = $("#preview-image");
   image.hidden = true;
   $("#preview-placeholder").hidden = false;
-  $("#preview-placeholder").textContent = "Preview could not be rendered. The review may be stale.";
+  $("#preview-placeholder").textContent = "Preview could not be rendered. Check the display settings or rescan if the data changed.";
   $("#preview-state").textContent = "Preview failed";
 }
 
@@ -573,9 +648,18 @@ function renderFramePreview(frame) {
     void markFrameViewed(frame);
   };
   image.onerror = previewError;
-  image.src =
+  const url = previewImageUrl(
     API + "/reviews/" + state.review.review_id + "/frames/" +
-    frame.file_id + "/preview?v=" + encodeURIComponent(state.review.updated_at);
+    frame.file_id + "/preview"
+  );
+  if (!url) {
+    image.hidden = true;
+    $("#preview-placeholder").hidden = false;
+    $("#preview-placeholder").textContent = "Enter a valid fixed intensity range.";
+    $("#preview-state").textContent = "Display settings incomplete";
+    return;
+  }
+  image.src = url;
 }
 
 async function markFrameViewed(frame) {
@@ -826,6 +910,18 @@ async function initialize() {
   $("#start-index").addEventListener("input", updateScanEstimate);
   $("#end-index").addEventListener("input", updateScanEstimate);
   $("#review-scope").addEventListener("change", updateScanEstimate);
+  $("#preview-cmap").addEventListener("change", refreshActivePreview);
+  $("#preview-range-mode").addEventListener("change", refreshActivePreview);
+  $("#preview-transform").addEventListener("change", () => {
+    if ($("#preview-range-mode").value === "fixed") {
+      $("#preview-vmin").value = "";
+      $("#preview-vmax").value = "";
+    }
+    refreshActivePreview();
+  });
+  $("#preview-vmin").addEventListener("change", refreshActivePreview);
+  $("#preview-vmax").addEventListener("change", refreshActivePreview);
+  window.addEventListener("solar-ui-state-restored", refreshActivePreview);
   $("#folder-parent").addEventListener("click", (event) => loadDirectories(event.currentTarget.dataset.path));
   $("#folder-choose").addEventListener("click", () => {
     if (!state.browserPath) return;
@@ -858,6 +954,7 @@ async function initialize() {
   try {
     const config = await requestJson(API + "/config");
     state.config = config;
+    configurePreviewDisplay(config);
     if (config.allowed_roots?.length === 1) $("#root-input").value = config.allowed_roots[0];
     const shadowOption = $("#candidate-strategy option[value='shadow']");
     shadowOption.disabled = !config.active_model_id;

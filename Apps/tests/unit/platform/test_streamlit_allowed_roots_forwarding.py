@@ -1,9 +1,10 @@
-"""Allowed-root forwarding for the three managed Streamlit launchers."""
+"""Allowed-root forwarding for the managed Streamlit launchers."""
 
 from __future__ import annotations
 
 import pytest
 
+from solar_apps.frontends.radio.composite_figure import composite_figure_launcher
 from solar_apps.frontends.radio.dart_spectrogram import dart_spectrogram_launcher
 from solar_apps.frontends.radio.roi_lightcurve import roi_lightcurve_launcher
 from solar_apps.frontends.radio.source_trajectory import source_app_launcher
@@ -12,6 +13,7 @@ from solar_apps.frontends.radio.source_trajectory import source_app_launcher
 @pytest.mark.parametrize(
     ("launcher", "extra_args"),
     [
+        (composite_figure_launcher, []),
         (dart_spectrogram_launcher, []),
         (roi_lightcurve_launcher, []),
         (source_app_launcher, []),

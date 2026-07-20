@@ -283,6 +283,15 @@ MODULE_SPECS = (
         launch_mode="interactive",
     ),
     _spec(
+        "radio-composite-figure-app",
+        "Radio Composite Figure App",
+        "Radio Analysis",
+        "solar_apps.frontends.radio.composite_figure.composite_figure_launcher",
+        "Launch the Source Map, ROI curve, and DART narrowband composite workflow.",
+        status="main",
+        launch_mode="interactive",
+    ),
+    _spec(
         "rrll-percentile-preview",
         "RR/LL Percentile Preview",
         "Radio Analysis",

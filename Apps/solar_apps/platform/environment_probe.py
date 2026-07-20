@@ -9,17 +9,19 @@ from pathlib import Path
 
 
 def _editable_distribution(name: str) -> bool:
-    try:
-        direct_url = metadata.distribution(name).read_text("direct_url.json")
-    except metadata.PackageNotFoundError:
-        return False
-    if not direct_url:
-        return False
-    try:
-        payload = json.loads(direct_url)
-    except json.JSONDecodeError:
-        return False
-    return bool(payload.get("dir_info", {}).get("editable"))
+    """Accept an editable installation even when cwd exposes a shadow egg-info."""
+
+    for distribution in metadata.distributions(name=name):
+        direct_url = distribution.read_text("direct_url.json")
+        if not direct_url:
+            continue
+        try:
+            payload = json.loads(direct_url)
+        except json.JSONDecodeError:
+            continue
+        if payload.get("dir_info", {}).get("editable"):
+            return True
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from solar_apps.frontends.radio.composite_figure import composite_figure_launcher
 from solar_apps.frontends.radio.roi_lightcurve import roi_lightcurve_launcher
 from solar_apps.frontends.radio.source_map import jobs as source_map_jobs
 from solar_apps.frontends.radio.source_trajectory import source_app_launcher
@@ -64,8 +65,8 @@ def _assert_selected_miniforge_child(
 
 @pytest.mark.parametrize(
     "launcher",
-    [roi_lightcurve_launcher, source_app_launcher],
-    ids=["roi-lightcurve", "source-trajectory"],
+    [composite_figure_launcher, roi_lightcurve_launcher, source_app_launcher],
+    ids=["radio-composite", "roi-lightcurve", "source-trajectory"],
 )
 def test_streamlit_launchers_use_selected_miniforge_environment(
     launcher, monkeypatch: pytest.MonkeyPatch

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +12,7 @@ import pytest
 from astropy.io import fits
 from matplotlib.colors import TwoSlopeNorm
 from matplotlib.patches import Rectangle
-from matplotlib.ticker import ScalarFormatter
+from matplotlib.ticker import FixedLocator, ScalarFormatter
 from PIL import Image
 from solar_toolkit.radio.dart_spectrogram import (
     extract_dart_narrowband_lightcurves,
@@ -35,6 +36,7 @@ from solar_apps.frontends.radio.dart_spectrogram.dart_spectrogram_app import (
     build_zip_bytes,
     inspect_dart_dataset,
     parse_center_frequencies,
+    parse_marked_times,
     resolve_display_limits,
     resolve_selected_frequency_range,
     save_artifacts,
@@ -99,6 +101,39 @@ def test_parse_center_frequencies_enforces_limit_and_uniqueness() -> None:
         parse_center_frequencies("149,")
 
 
+def test_parse_marked_times_normalizes_deduplicates_and_validates_range() -> None:
+    observation_range = (
+        datetime(2025, 1, 24, 4, 45, tzinfo=UTC),
+        datetime(2025, 1, 24, 4, 45, 3, tzinfo=UTC),
+    )
+
+    assert parse_marked_times(
+        "04:45:01.5, 2025-01-24T05:45:02+01:00, 04:45:01.500",
+        observation_range,
+    ) == (
+        datetime(2025, 1, 24, 4, 45, 1, 500000, tzinfo=UTC),
+        datetime(2025, 1, 24, 4, 45, 2, tzinfo=UTC),
+    )
+    assert parse_marked_times("", observation_range) == ()
+    assert parse_marked_times(
+        "2025-01-24T04:45:03",
+        observation_range,
+    ) == (datetime(2025, 1, 24, 4, 45, 3, tzinfo=UTC),)
+
+    with pytest.raises(ValueError, match="outside the observation range"):
+        parse_marked_times("04:46:00", observation_range)
+    with pytest.raises(ValueError, match="HH:MM:SS"):
+        parse_marked_times("not-a-time", observation_range)
+    with pytest.raises(ValueError, match="more than one observation date"):
+        parse_marked_times(
+            "04:45:01",
+            (
+                datetime(2025, 1, 24, tzinfo=UTC),
+                datetime(2025, 1, 25, 23, 59, 59, tzinfo=UTC),
+            ),
+        )
+
+
 def test_stokes_i_display_conversion_and_color_limit_resolution(
     tmp_path: Path,
 ) -> None:
@@ -151,6 +186,50 @@ def test_stokes_i_display_conversion_and_color_limit_resolution(
             limit_mode="direct",
             stokes_i_bounds=(np.nan, 10.0),
         )
+
+
+def test_custom_time_ticks_and_short_markers_apply_to_all_plot_types(
+    tmp_path: Path,
+) -> None:
+    folder = _write_dataset(tmp_path / "data")
+    window, narrowband = _analysis_products(folder)
+    markers = (window.time_utc[1], window.time_utc[2])
+
+    spectrum = build_dynamic_spectrum_figure(
+        window,
+        x_tick_interval_seconds=1.5,
+        marked_times_utc=markers,
+    )
+    spectrum_axes = [axis for axis in spectrum.axes if axis.images]
+    assert isinstance(spectrum_axes[1].xaxis.get_major_locator(), FixedLocator)
+    tick_locations = spectrum_axes[1].xaxis.get_majorticklocs()
+    assert len(tick_locations) == 3
+    assert np.diff(tick_locations) * 86400.0 == pytest.approx([1.5, 1.5])
+    for axis in spectrum_axes:
+        marker_lines = [line for line in axis.lines if line.get_color() == "#facc15"]
+        assert len(marker_lines) == 2
+        assert all(
+            line.get_ydata() == pytest.approx([0.0, 0.06]) for line in marker_lines
+        )
+    labels = {text.get_text() for text in spectrum_axes[1].texts}
+    assert {"04:45:01", "04:45:02"} <= labels
+
+    lightcurve = build_narrowband_figure(
+        narrowband,
+        x_tick_interval_seconds=1.5,
+        marked_times_utc=(*markers, window.time_utc[-1] + timedelta(seconds=10)),
+    )
+    marker_lines = [
+        line for line in lightcurve.axes[0].lines if line.get_color() == "#facc15"
+    ]
+    assert len(marker_lines) == 2
+    assert {text.get_text() for text in lightcurve.axes[0].texts} == {
+        "04:45:01",
+        "04:45:02",
+    }
+
+    with pytest.raises(ValueError, match="major ticks"):
+        build_dynamic_spectrum_figure(window, x_tick_interval_seconds=0.01)
 
 
 def test_selected_frequency_range_combines_all_bands_and_validates_override(
@@ -470,6 +549,17 @@ def test_streamlit_app_load_validation_generation_and_downloads(
     assert not any("V/I" in widget.label for widget in app.number_input)
     assert app.radio(key="analysis_mode").value == "Full spectrum only"
     assert not any(widget.key == "center_frequencies" for widget in app.text_input)
+    assert app.radio(key="x_tick_mode").value == "Auto"
+    assert app.text_input(key="marked_times") is not None
+    assert not any(
+        widget.key == "x_tick_interval_seconds" for widget in app.number_input
+    )
+
+    app.radio(key="x_tick_mode").set_value("Custom").run()
+    app.number_input(key="x_tick_interval_seconds").set_value(1.5).run()
+    app.text_input(key="marked_times").set_value(
+        "04:45:01.5, 2025-01-24T04:45:02Z"
+    ).run()
 
     app.button(key="generate_figures").click().run(timeout=40)
     assert len(app.exception) == 0
@@ -478,6 +568,12 @@ def test_streamlit_app_load_validation_generation_and_downloads(
     assert len(app.download_button) == 1
     assert app.download_button(key="download_spectrum") is not None
     assert not any(button.key == "download_zip" for button in app.download_button)
+
+    app.number_input(key="x_tick_interval_seconds").set_value(1.0).run()
+    assert len(app.image) == 0
+    assert any("Parameters changed" in warning.value for warning in app.warning)
+    app.button(key="generate_figures").click().run(timeout=40)
+    assert len(app.image) == 1
 
     app.radio(key="display_mode").set_value("Relative linear").run()
     assert len(app.image) == 0
@@ -499,6 +595,10 @@ def test_streamlit_app_load_validation_generation_and_downloads(
     assert len(app.download_button) == 0
     assert any("Parameters changed" in warning.value for warning in app.warning)
     assert app.text_input(key="center_frequencies") is not None
+    app.checkbox(key="limit_time").check().run()
+    app.text_input(key="time_start").set_value("2025-01-24T04:45:01+00:00").run()
+    app.text_input(key="time_end").set_value("2025-01-24T04:45:03+00:00").run()
+    app.text_input(key="marked_times").set_value("04:45:00, 04:45:02").run()
 
     app.text_input(key="center_frequencies").set_value("149,149").run()
     app.button(key="generate_figures").click().run()
@@ -514,6 +614,7 @@ def test_streamlit_app_load_validation_generation_and_downloads(
     assert app.download_button(key="download_selected_spectrum") is not None
     assert app.download_button(key="download_lightcurves") is not None
     assert app.download_button(key="download_zip") is not None
+    assert any("appear only" in warning.value for warning in app.warning)
 
     app.radio(key="analysis_mode").set_value("Full spectrum only").run()
     assert len(app.image) == 0

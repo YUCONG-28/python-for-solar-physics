@@ -15,7 +15,14 @@ from solar_apps.ui.theme import register_theme_assets
 
 from .lifecycle import ClientLifecycle
 from .model_registry import QualityModelRegistry
-from .review import BadFrameReviewStore, StaleReviewError
+from .review import (
+    PREVIEW_COLORMAPS,
+    PREVIEW_RANGE_MODES,
+    PREVIEW_TRANSFORMS,
+    BadFrameReviewStore,
+    PreviewDisplaySettings,
+    StaleReviewError,
+)
 from .training import load_published_quality_model, predict_review_candidate
 
 __all__ = ["create_app"]
@@ -161,6 +168,12 @@ def create_app(
                 "output_root": str(review_store.output_root),
                 "active_model_id": shadow_model_id,
                 "model_warning": model_warning,
+                "preview_display": {
+                    "colormaps": list(PREVIEW_COLORMAPS),
+                    "transforms": list(PREVIEW_TRANSFORMS),
+                    "range_modes": list(PREVIEW_RANGE_MODES),
+                    "defaults": PreviewDisplaySettings().to_dict(),
+                },
             }
         )
 
@@ -236,7 +249,11 @@ def create_app(
 
     @app.get("/api/reviews/<review_id>/candidates/<candidate_id>/preview")
     def candidate_preview(review_id: str, candidate_id: str):
-        payload = review_store.render_candidate_preview(review_id, candidate_id)
+        payload = review_store.render_candidate_preview(
+            review_id,
+            candidate_id,
+            display=_preview_display_query(request),
+        )
         return send_file(
             io.BytesIO(payload),
             mimetype="image/png",
@@ -247,7 +264,11 @@ def create_app(
 
     @app.get("/api/reviews/<review_id>/frames/<file_id>/preview")
     def frame_preview(review_id: str, file_id: str):
-        payload = review_store.render_frame_preview(review_id, file_id)
+        payload = review_store.render_frame_preview(
+            review_id,
+            file_id,
+            display=_preview_display_query(request),
+        )
         return send_file(
             io.BytesIO(payload),
             mimetype="image/png",
@@ -337,3 +358,12 @@ def _json_object(request) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise TypeError("Request body must be a JSON object")
     return payload
+
+
+def _preview_display_query(request) -> PreviewDisplaySettings:
+    return PreviewDisplaySettings.from_mapping(
+        {
+            key: request.args.get(key)
+            for key in ("cmap", "transform", "range_mode", "vmin", "vmax")
+        }
+    )

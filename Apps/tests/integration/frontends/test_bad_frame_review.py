@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from astropy.io import fits
+from matplotlib.colors import to_hex
 from PIL import Image
 
 from solar_apps.frontends.radio_bad_frame_review import (
@@ -21,6 +22,10 @@ from solar_apps.frontends.radio_bad_frame_review import (
 from solar_apps.frontends.radio_bad_frame_review.server import create_app
 from solar_apps.frontends.radio_bad_frame_review import (
     application as review_application,
+)
+from solar_apps.frontends.radio_bad_frame_review.review import (
+    PreviewDisplaySettings,
+    _preview_geometry,
 )
 
 APPS_ROOT = Path(__file__).resolve().parents[3]
@@ -39,21 +44,44 @@ def _striped_bad_source(shape: tuple[int, int] = (64, 64)) -> np.ndarray:
     return data
 
 
-def _write_fits(path: Path, data: np.ndarray, *, second: int) -> None:
+def _write_fits(
+    path: Path, data: np.ndarray, *, second: int, with_wcs: bool = False
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     image = fits.ImageHDU(data=np.asarray(data, dtype=np.float32))
     image.header["DATE-OBS"] = f"2025-05-03T07:20:{second:02d}.000Z"
+    if with_wcs:
+        image.header.update(
+            {
+                "CTYPE1": "HPLN-TAN",
+                "CTYPE2": "HPLT-TAN",
+                "CUNIT1": "arcsec",
+                "CUNIT2": "arcsec",
+                "CRPIX1": 33.0,
+                "CRPIX2": 33.0,
+                "CRVAL1": 0.0,
+                "CRVAL2": 0.0,
+                "CDELT1": 156.573805638268,
+                "CDELT2": 156.573805638268,
+                "BUNIT": "K",
+            }
+        )
     fits.HDUList([fits.PrimaryHDU(), image]).writeto(path)
 
 
-def _radio_dataset(root: Path, *, include_bad: bool = True) -> tuple[Path, Path | None]:
+def _radio_dataset(
+    root: Path, *, include_bad: bool = True, with_wcs: bool = False
+) -> tuple[Path, Path | None]:
     folder = root / "149MHz" / "RR"
     bad_path = None
     for index in range(5):
         path = folder / f"149MHz_20250503_0720{index:02d}_000.fits"
         is_bad = include_bad and index == 2
         _write_fits(
-            path, _striped_bad_source() if is_bad else _compact_source(), second=index
+            path,
+            _striped_bad_source() if is_bad else _compact_source(),
+            second=index,
+            with_wcs=with_wcs,
         )
         if is_bad:
             bad_path = path
@@ -118,6 +146,208 @@ def test_discovery_scan_preview_and_completed_manifest(tmp_path: Path) -> None:
     csv_text = (manifest_path.parent / "candidates.csv").read_text(encoding="utf-8")
     assert "human_decision" in csv_text
     assert ",good,human,ok," in csv_text
+
+
+def test_preview_wcs_geometry_converts_to_arcsec_and_rejects_rotation() -> None:
+    header = fits.Header(
+        {
+            "CTYPE1": "HPLN-TAN",
+            "CTYPE2": "HPLT-TAN",
+            "CUNIT1": "arcsec",
+            "CUNIT2": "arcsec",
+            "CRPIX1": 129.0,
+            "CRPIX2": 129.0,
+            "CRVAL1": 0.0,
+            "CRVAL2": 0.0,
+            "CDELT1": 156.573805638268,
+            "CDELT2": 156.573805638268,
+        }
+    )
+
+    geometry = _preview_geometry(header, (256, 256))
+
+    assert geometry.extent_arcsec == pytest.approx(
+        (-20119.73402451744, 19963.16021887917) * 2
+    )
+    assert geometry.origin == "lower"
+
+    degree_header = header.copy()
+    degree_header["CUNIT1"] = "deg"
+    degree_header["CUNIT2"] = "arcmin"
+    degree_header["CDELT1"] = header["CDELT1"] / 3600.0
+    degree_header["CDELT2"] = header["CDELT2"] / 60.0
+    converted = _preview_geometry(degree_header, (256, 256))
+    assert converted.extent_arcsec == pytest.approx(geometry.extent_arcsec)
+
+    inverted = header.copy()
+    inverted["CDELT2"] = -abs(float(inverted["CDELT2"]))
+    inverted_geometry = _preview_geometry(inverted, (256, 256))
+    assert inverted_geometry.extent_arcsec[2] > inverted_geometry.extent_arcsec[3]
+
+    rotated = header.copy()
+    rotated["PC1_2"] = 0.1
+    with pytest.raises(ValueError, match="rotated PC matrix"):
+        _preview_geometry(rotated, (256, 256))
+
+    missing_unit = header.copy()
+    del missing_unit["CUNIT1"]
+    with pytest.raises(ValueError, match="supported angular unit"):
+        _preview_geometry(missing_unit, (256, 256))
+
+
+def test_preview_display_settings_validate_fixed_ranges_and_colormaps() -> None:
+    assert PreviewDisplaySettings().to_dict() == {
+        "cmap": "coolwarm",
+        "transform": "robust_asinh",
+        "range_mode": "auto",
+        "vmin": None,
+        "vmax": None,
+    }
+    for cmap in (
+        "coolwarm",
+        "hot",
+        "inferno",
+        "magma",
+        "viridis",
+        "plasma",
+        "jet",
+        "cividis",
+    ):
+        assert PreviewDisplaySettings(cmap=cmap).cmap == cmap
+    assert PreviewDisplaySettings.from_mapping(
+        {
+            "cmap": "viridis",
+            "transform": "linear",
+            "range_mode": "fixed",
+            "vmin": "10",
+            "vmax": "20",
+        }
+    ).to_dict() == {
+        "cmap": "viridis",
+        "transform": "linear",
+        "range_mode": "fixed",
+        "vmin": 10.0,
+        "vmax": 20.0,
+    }
+    with pytest.raises(ValueError, match="cmap must be one of"):
+        PreviewDisplaySettings(cmap="not-a-map")
+    with pytest.raises(ValueError, match="requires both"):
+        PreviewDisplaySettings(range_mode="fixed")
+    with pytest.raises(ValueError, match="less than"):
+        PreviewDisplaySettings(range_mode="fixed", vmin=20.0, vmax=10.0)
+
+
+def test_preview_renderer_uses_shared_arcsec_range_and_high_contrast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from matplotlib.figure import Figure
+
+    root, _bad_path = _radio_dataset(tmp_path / "radio", with_wcs=True)
+    store = BadFrameReviewStore(tmp_path / "reviews", [tmp_path])
+    review = _create_review(store, root)
+    candidate = review["candidates"][0]
+    captured: dict[str, object] = {}
+    original_savefig = Figure.savefig
+
+    def capture(figure, *args, **kwargs):
+        result = original_savefig(figure, *args, **kwargs)
+        axes = figure.axes[:3]
+        captured["figure_face"] = to_hex(figure.get_facecolor())
+        captured["suptitle_color"] = figure._suptitle.get_color()
+        captured["suptitle_size"] = figure._suptitle.get_fontsize()
+        captured["title_colors"] = [axis.title.get_color() for axis in axes]
+        captured["title_sizes"] = [axis.title.get_fontsize() for axis in axes]
+        captured["xlabels"] = [axis.get_xlabel() for axis in axes]
+        captured["ylabels"] = [axis.get_ylabel() for axis in axes]
+        captured["ranges"] = [
+            (axis.images[0].norm.vmin, axis.images[0].norm.vmax) for axis in axes
+        ]
+        captured["extents"] = [tuple(axis.images[0].get_extent()) for axis in axes]
+        captured["cmaps"] = [axis.images[0].get_cmap().name for axis in axes]
+        captured["candidate_border"] = to_hex(axes[1].spines["left"].get_edgecolor())
+        captured["colorbar_label"] = figure.axes[3].get_ylabel()
+        captured["minimum_tick_size"] = min(
+            label.get_fontsize()
+            for axis in axes
+            for label in (*axis.get_xticklabels(), *axis.get_yticklabels())
+        )
+        return result
+
+    monkeypatch.setattr(Figure, "savefig", capture)
+    preview = store.render_candidate_preview(
+        review["review_id"],
+        candidate["candidate_id"],
+        display=PreviewDisplaySettings(
+            cmap="viridis",
+            transform="linear",
+            range_mode="fixed",
+            vmin=0.0,
+            vmax=2.0e7,
+        ),
+    )
+
+    assert Image.open(io.BytesIO(preview)).size[0] > 1000
+    assert captured["figure_face"] == "#f4f6f8"
+    assert captured["suptitle_color"] == "#13202b"
+    assert captured["suptitle_size"] == pytest.approx(12.0)
+    assert captured["title_colors"] == ["#13202b"] * 3
+    assert captured["title_sizes"] == pytest.approx([10.0] * 3)
+    assert captured["xlabels"] == ["HPLN / arcsec"] * 3
+    assert captured["ylabels"] == ["HPLT / arcsec"] * 3
+    assert captured["ranges"] == [(0.0, 2.0e7)] * 3
+    assert len(set(captured["extents"])) == 1
+    assert captured["cmaps"] == ["viridis"] * 3
+    assert captured["candidate_border"] == "#007f73"
+    assert captured["colorbar_label"] == "Intensity [K]"
+    assert captured["minimum_tick_size"] >= 8.5
+
+
+def test_all_preview_colormaps_render_with_explicit_pixel_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from matplotlib.figure import Figure
+
+    root, _bad_path = _radio_dataset(tmp_path / "radio")
+    store = BadFrameReviewStore(tmp_path / "reviews", [tmp_path])
+    review = _create_review(store, root)
+    candidate = review["candidates"][0]
+    observed: dict[str, object] = {}
+    original_savefig = Figure.savefig
+
+    def capture(figure, *args, **kwargs):
+        result = original_savefig(figure, *args, **kwargs)
+        axes = figure.axes[:3]
+        observed.setdefault("xlabels", [axis.get_xlabel() for axis in axes])
+        observed.setdefault("ylabels", [axis.get_ylabel() for axis in axes])
+        observed.setdefault(
+            "ranges",
+            [(axis.images[0].norm.vmin, axis.images[0].norm.vmax) for axis in axes],
+        )
+        return result
+
+    monkeypatch.setattr(Figure, "savefig", capture)
+    for cmap in (
+        "coolwarm",
+        "hot",
+        "inferno",
+        "magma",
+        "viridis",
+        "plasma",
+        "jet",
+        "cividis",
+    ):
+        preview = store.render_candidate_preview(
+            review["review_id"],
+            candidate["candidate_id"],
+            display=PreviewDisplaySettings(cmap=cmap),
+        )
+        assert Image.open(io.BytesIO(preview)).format == "PNG"
+
+    assert observed["xlabels"] == ["Pixel X — WCS unavailable"] * 3
+    assert observed["ylabels"] == ["Pixel Y — WCS unavailable"] * 3
+    assert len(set(observed["ranges"])) == 1
+    vmin, vmax = observed["ranges"][0]
+    assert vmin == pytest.approx(-vmax)
 
 
 def test_review_requires_all_decisions_and_skip_keeps_automatic_bad(
@@ -258,6 +488,20 @@ def test_api_flow_and_path_boundaries(tmp_path: Path) -> None:
     client = app.test_client()
 
     assert client.get("/api/health").get_json() == {"ok": True}
+    config = client.get("/api/config").get_json()["preview_display"]
+    assert config["colormaps"] == [
+        "coolwarm",
+        "hot",
+        "inferno",
+        "magma",
+        "viridis",
+        "plasma",
+        "jet",
+        "cividis",
+    ]
+    assert config["transforms"] == ["robust_asinh", "linear"]
+    assert config["range_modes"] == ["auto", "fixed"]
+    assert config["defaults"] == PreviewDisplaySettings().to_dict()
     assert client.get("/").headers["Cache-Control"] == "no-store, max-age=0"
     assert (
         client.get("/static/app.js").headers["Cache-Control"] == "no-store, max-age=0"
@@ -289,6 +533,33 @@ def test_api_flow_and_path_boundaries(tmp_path: Path) -> None:
     )
     assert preview.status_code == 200
     assert preview.mimetype == "image/png"
+    fixed_preview = client.get(
+        f"/api/reviews/{review['review_id']}/candidates/"
+        f"{candidate['candidate_id']}/preview",
+        query_string={
+            "cmap": "viridis",
+            "transform": "linear",
+            "range_mode": "fixed",
+            "vmin": "0",
+            "vmax": "20000000",
+        },
+    )
+    assert fixed_preview.status_code == 200
+    assert fixed_preview.mimetype == "image/png"
+    invalid_cmap = client.get(
+        f"/api/reviews/{review['review_id']}/candidates/"
+        f"{candidate['candidate_id']}/preview",
+        query_string={"cmap": "invalid"},
+    )
+    assert invalid_cmap.status_code == 400
+    assert "cmap must be one of" in invalid_cmap.get_json()["error"]
+    invalid_range = client.get(
+        f"/api/reviews/{review['review_id']}/candidates/"
+        f"{candidate['candidate_id']}/preview",
+        query_string={"range_mode": "fixed", "vmin": "10", "vmax": "5"},
+    )
+    assert invalid_range.status_code == 400
+    assert "vmin must be less than vmax" in invalid_range.get_json()["error"]
     assert (
         client.get(
             f"/api/reviews/{review['review_id']}/candidates/not-a-candidate/preview"
@@ -421,6 +692,11 @@ def test_frontend_is_independent_and_exposes_review_controls() -> None:
     assert 'id="complete-review"' in html
     assert 'id="skip-review"' in html
     assert 'id="review-scope"' in html
+    assert 'id="preview-cmap"' in html
+    assert 'id="preview-transform"' in html
+    assert 'id="preview-range-mode"' in html
+    assert 'id="preview-vmin"' in html
+    assert 'id="preview-vmax"' in html
     assert 'id="frame-rows"' in html
     assert 'id="scan-progress"' in html
     assert 'API + "/reviews/"' in javascript
@@ -430,9 +706,14 @@ def test_frontend_is_independent_and_exposes_review_controls() -> None:
     assert "selectedFrameEstimate" in javascript
     assert "markFrameViewed" in javascript
     assert "initializeAllFrameView" in javascript
+    assert "previewDisplayParameters" in javascript
+    assert "refreshActivePreview" in javascript
+    assert 'params.set("vmin", String(vmin))' in javascript
+    assert 'window.addEventListener("solar-ui-state-restored"' in javascript
     assert 'review.status === "skipped" ? summary.final_bad_count' in javascript
     assert "[hidden] { display: none !important; }" in stylesheet
     assert "grid-template-columns: 310px" in stylesheet
+    assert '#preview-display-help[data-kind="error"]' in stylesheet
     assert "solar_apps.frontends.workbench" not in (package / "server.py").read_text(
         encoding="utf-8"
     )

@@ -61,6 +61,39 @@
       </section>
 
       <section>
+        <h2>Display</h2>
+        <label>Color map
+          <select id="preview-cmap">
+            <option value="coolwarm" selected>coolwarm</option>
+            <option value="hot">hot</option>
+            <option value="inferno">inferno</option>
+            <option value="magma">magma</option>
+            <option value="viridis">viridis</option>
+            <option value="plasma">plasma</option>
+            <option value="jet">jet</option>
+            <option value="cividis">cividis</option>
+          </select>
+        </label>
+        <label>Transform
+          <select id="preview-transform">
+            <option value="robust_asinh" selected>Robust asinh</option>
+            <option value="linear">Linear raw</option>
+          </select>
+        </label>
+        <label>Intensity range
+          <select id="preview-range-mode">
+            <option value="auto" selected>Auto</option>
+            <option value="fixed">Fixed</option>
+          </select>
+        </label>
+        <div id="preview-fixed-range" class="range-grid" hidden>
+          <label>Minimum<input id="preview-vmin" type="number" step="any"></label>
+          <label>Maximum<input id="preview-vmax" type="number" step="any"></label>
+        </div>
+        <p id="preview-display-help" class="control-help">Robust asinh preserves faint artifacts. Auto uses one shared range for all three frames.</p>
+      </section>
+
+      <section>
         <h2>Review sampling</h2>
         <label>Strategy
           <select id="candidate-strategy">

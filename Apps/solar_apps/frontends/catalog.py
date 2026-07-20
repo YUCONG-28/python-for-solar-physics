@@ -1,4 +1,4 @@
-"""Single source of truth for the eight applications and nine interfaces."""
+"""Single source of truth for the nine applications and ten interfaces."""
 
 from __future__ import annotations
 
@@ -74,6 +74,13 @@ FRONTENDS: tuple[FrontendSpec, ...] = (
         "solar_apps.frontends.radio.roi_lightcurve.roi_lightcurve_launcher",
         "streamlit",
         (InterfaceSpec("roi-lightcurve", "ROI Light Curve", "browser"),),
+    ),
+    FrontendSpec(
+        "radio-composite",
+        "Radio Composite Figure",
+        "solar_apps.frontends.radio.composite_figure.composite_figure_launcher",
+        "streamlit",
+        (InterfaceSpec("radio-composite", "Radio Composite Figure", "browser"),),
     ),
     FrontendSpec(
         "source-trajectory",

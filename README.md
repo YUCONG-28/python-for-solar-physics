@@ -45,8 +45,16 @@ See the [quickstart](Python/docs/quickstart.md),
 ## Frontend applications
 
 The versioned [`Apps`](Apps) partition contains the Miniforge-launched desktop,
-Web, and Streamlit applications. Its eight launchable applications expose nine
+Web, and Streamlit applications. Its nine launchable applications expose ten
 interfaces, including the shared Workbench and Radio Workspace server.
+
+From an activated Miniforge Prompt whose current directory is `Python`, launch
+the all-in-one radio composite frontend with:
+
+```powershell
+# (solarphysics_env_latest) <repo>\Python>
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ..\Apps\run.ps1 frontend radio-composite
+```
 
 Installation, commands, theme behavior, state and path memory, scientific
 display controls, privacy rules, and troubleshooting are documented in the

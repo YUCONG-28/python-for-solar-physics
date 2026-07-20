@@ -68,15 +68,57 @@ def streamlit_theme_css(mode: object = "auto") -> str:
   color: var(--solar-text);
   border-color: var(--solar-border);
 }
-[data-testid="stSidebar"] input,
-[data-testid="stSidebar"] textarea,
-[data-testid="stSidebar"] select {
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"],
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+[data-testid="stAppViewContainer"] [data-testid="stWidgetLabel"],
+[data-testid="stAppViewContainer"] [data-testid="stWidgetLabel"] p,
+[data-testid="stAppViewContainer"] [data-testid="stCaptionContainer"],
+[data-testid="stAppViewContainer"] [data-testid="stCaptionContainer"] p,
+[data-testid="stAppViewContainer"] h1,
+[data-testid="stAppViewContainer"] h2,
+[data-testid="stAppViewContainer"] h3,
+[data-testid="stAppViewContainer"] h4,
+[data-testid="stAppViewContainer"] h5,
+[data-testid="stAppViewContainer"] h6 {
+  color: var(--solar-text) !important;
+}
+[data-testid="stSidebar"] [data-baseweb="input"] > div,
+[data-testid="stSidebar"] [data-baseweb="textarea"] > div,
+[data-testid="stAppViewContainer"] [data-baseweb="input"] > div,
+[data-testid="stAppViewContainer"] [data-baseweb="textarea"] > div {
   background: var(--solar-surface-raised);
-  color: var(--solar-text);
+  border-color: var(--solar-border) !important;
+  color: var(--solar-text) !important;
+}
+[data-baseweb="input"] input,
+[data-baseweb="textarea"] textarea,
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input {
+  background: transparent !important;
+  color: var(--solar-text) !important;
+  -webkit-text-fill-color: var(--solar-text) !important;
+}
+[data-testid="stBaseButton-secondary"],
+[data-testid="stBaseButton-tertiary"],
+button[kind="secondary"],
+button[kind="tertiary"] {
+  background: var(--solar-surface-raised) !important;
+  border-color: var(--solar-border) !important;
+  color: var(--solar-text) !important;
+}
+[data-testid="stBaseButton-secondary"] :where(p, span),
+[data-testid="stBaseButton-tertiary"] :where(p, span),
+button[kind="secondary"] :where(p, span),
+button[kind="tertiary"] :where(p, span) {
+  color: inherit !important;
 }
 button[kind="primary"] {
   background: var(--solar-accent) !important;
   border-color: var(--solar-accent) !important;
+  color: #ffffff !important;
+}
+button[kind="primary"] :where(p, span),
+[data-testid="stBaseButton-primary"] :where(p, span) {
   color: #ffffff !important;
 }
 button[kind="primary"]:hover {
@@ -87,6 +129,10 @@ button[kind="primary"]:hover {
   background: var(--solar-surface-raised) !important;
   border-color: var(--solar-border) !important;
   color: var(--solar-text) !important;
+}
+[data-baseweb="select"] input {
+  color: var(--solar-text) !important;
+  -webkit-text-fill-color: var(--solar-text) !important;
 }
 [data-baseweb="select"]:focus-within > div {
   border-color: var(--solar-focus) !important;
@@ -113,6 +159,13 @@ button[kind="primary"]:hover {
 }
 [data-testid="stSlider"] [role="group"] > div > div:has(input[type="range"]) {
   background: var(--solar-accent) !important;
+}
+[data-testid="stAlert"] {
+  color: var(--solar-text);
+  border-color: var(--solar-border);
+}
+[data-testid="stAlert"] :where(p, span) {
+  color: inherit !important;
 }
 """
     if selected == "auto":

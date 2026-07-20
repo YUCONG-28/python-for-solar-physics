@@ -22,6 +22,9 @@ FRONTEND_TARGETS = {
     "roi-lightcurve": (
         "solar_apps.frontends.radio.roi_lightcurve.roi_lightcurve_launcher"
     ),
+    "radio-composite": (
+        "solar_apps.frontends.radio.composite_figure.composite_figure_launcher"
+    ),
     "source-map": "solar_apps.frontends.radio.source_map.cli",
     "source-trajectory": (
         "solar_apps.frontends.radio.source_trajectory.source_app_launcher"

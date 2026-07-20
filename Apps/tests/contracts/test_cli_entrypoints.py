@@ -49,13 +49,14 @@ def test_direct_cli_rejects_an_unsupported_python(
     assert "not Miniforge" in capsys.readouterr().err
 
 
-def test_frontend_catalog_has_all_eight_launchable_apps() -> None:
+def test_frontend_catalog_has_all_nine_launchable_apps() -> None:
     assert set(router.FRONTEND_TARGETS) == {
         "bad-frame-review",
         "dart-spectrogram",
         "image-composer",
         "image-viewer",
         "roi-lightcurve",
+        "radio-composite",
         "source-map",
         "source-trajectory",
         "workbench",
@@ -187,7 +188,14 @@ def test_launcher_rejects_historical_backup_before_starting_python() -> None:
 
 
 @pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher is Windows-only")
-def test_launcher_runs_from_the_current_supported_miniforge() -> None:
+@pytest.mark.parametrize(
+    "working_directory",
+    [REPO_ROOT, REPO_ROOT / "Python"],
+    ids=["repository-root", "python-directory"],
+)
+def test_launcher_runs_from_the_current_supported_miniforge(
+    working_directory: Path,
+) -> None:
     runtime = inspect_miniforge_runtime(sys.executable)
     completed = subprocess.run(
         [
@@ -202,7 +210,7 @@ def test_launcher_runs_from_the_current_supported_miniforge() -> None:
             "frontend",
             "--help",
         ],
-        cwd=REPO_ROOT,
+        cwd=working_directory,
         capture_output=True,
         text=True,
         check=False,

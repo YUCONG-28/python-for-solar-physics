@@ -9,20 +9,21 @@ import json
 import logging
 import math
 import zipfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
 import matplotlib.dates as mdates
+import matplotlib.patheffects as mpatheffects
 import numpy as np
 from astropy.io import fits
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.colors import TwoSlopeNorm
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
-from matplotlib.ticker import ScalarFormatter
+from matplotlib.ticker import FixedLocator, ScalarFormatter
 from solar_apps.platform.layout import RuntimeLayout
 from solar_apps.platform.paths.allowed_roots import AllowedRootPolicyError
 from solar_apps.ui.state import (
@@ -68,6 +69,7 @@ __all__ = [
     "inspect_dart_dataset",
     "main",
     "parse_center_frequencies",
+    "parse_marked_times",
     "resolve_display_limits",
     "resolve_selected_frequency_range",
     "save_artifacts",
@@ -91,6 +93,9 @@ DART_UI_FIELD_KEYS = (
     "limit_time",
     "time_start",
     "time_end",
+    "x_tick_mode",
+    "x_tick_interval_seconds",
+    "marked_times",
     "max_frequency_samples",
     "max_time_samples",
     "chunk_memory_mb",
@@ -114,6 +119,10 @@ _FULL_ANALYSIS_PRODUCT_KEYS = (
     SELECTED_SPECTRUM_PRODUCT_KEY,
     LIGHTCURVE_PRODUCT_KEY,
 )
+_MAX_CUSTOM_X_TICKS = 200
+_TIME_MARKER_HEIGHT = 0.06
+_TIME_MARKER_COLOR = "#facc15"
+_TIME_MARKER_EDGE_COLOR = "#111827"
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -224,6 +233,53 @@ def parse_center_frequencies(value: str) -> tuple[float, ...]:
     return centers
 
 
+def parse_marked_times(
+    value: str | None,
+    observation_range_utc: tuple[datetime, datetime],
+) -> tuple[datetime, ...]:
+    """Parse optional comma-separated UTC marker times inside an observation."""
+
+    text = str(value or "").strip()
+    if not text:
+        return ()
+    start, end = (_as_utc(item) for item in observation_range_utc)
+    if start > end:
+        raise ValueError("Observation UTC range must start before it ends")
+    parts = [part.strip() for part in text.split(",")]
+    if any(not part for part in parts):
+        raise ValueError("Enter marked UTC times separated by commas")
+
+    resolved: list[datetime] = []
+    out_of_range: list[str] = []
+    for part in parts:
+        time_only = _parse_time_only(part)
+        if time_only is None:
+            marked = _parse_iso_utc(part)
+            matches = [marked] if start <= marked <= end else []
+        else:
+            matches = []
+            day_count = (end.date() - start.date()).days
+            for day_offset in range(day_count + 1):
+                day = start.date() + timedelta(days=day_offset)
+                candidate = datetime.combine(day, time_only, tzinfo=UTC)
+                if start <= candidate <= end:
+                    matches.append(candidate)
+        if len(matches) > 1:
+            raise ValueError(
+                f"Marked UTC time {part!r} matches more than one observation "
+                "date; enter a full ISO-8601 timestamp"
+            )
+        if not matches:
+            out_of_range.append(part)
+        else:
+            resolved.append(matches[0])
+    if out_of_range:
+        raise ValueError(
+            "Marked UTC times outside the observation range: " + ", ".join(out_of_range)
+        )
+    return tuple(sorted(set(resolved)))
+
+
 def resolve_display_limits(
     full_window: DartSpectrogramWindow,
     *,
@@ -303,6 +359,8 @@ def build_dynamic_spectrum_figure(
     selected_frequency_range_mhz: tuple[float, float] | None = None,
     selected_time_range_utc: tuple[datetime, datetime] | None = None,
     region_label: str = "Full observation",
+    x_tick_interval_seconds: float | None = None,
+    marked_times_utc: tuple[datetime, ...] = (),
 ) -> Figure:
     """Build one unit-aware Stokes I and Stokes V/I dynamic spectrum."""
 
@@ -433,10 +491,13 @@ def build_dynamic_spectrum_figure(
         axis.grid(alpha=0.18, linestyle=":", linewidth=0.6)
     axes[1].set_xlabel("Time (UTC)")
     axes[1].set_xlim(x_limits)
-    axes[1].xaxis_date()
-    locator = mdates.AutoDateLocator(minticks=3, maxticks=8)
-    axes[1].xaxis.set_major_locator(locator)
-    axes[1].xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator, tz=UTC))
+    _configure_time_axis(
+        axes[1],
+        window.time_utc,
+        x_tick_interval_seconds=x_tick_interval_seconds,
+    )
+    visible_markers = _visible_marked_times(marked_times_utc, window.time_utc)
+    _add_time_markers(axes, visible_markers, label_axis=axes[1])
     observation_date = window.time_utc[0].strftime("%Y-%m-%d")
     figure.suptitle(
         f"DART Dynamic Spectrum | {region_label} | {observation_date}",
@@ -455,6 +516,8 @@ def build_dynamic_spectrum_png(
     selected_frequency_range_mhz: tuple[float, float] | None = None,
     selected_time_range_utc: tuple[datetime, datetime] | None = None,
     region_label: str = "Full observation",
+    x_tick_interval_seconds: float | None = None,
+    marked_times_utc: tuple[datetime, ...] = (),
 ) -> bytes:
     """Render one deterministic dynamic-spectrum PNG payload."""
 
@@ -466,6 +529,8 @@ def build_dynamic_spectrum_png(
         selected_frequency_range_mhz=selected_frequency_range_mhz,
         selected_time_range_utc=selected_time_range_utc,
         region_label=region_label,
+        x_tick_interval_seconds=x_tick_interval_seconds,
+        marked_times_utc=marked_times_utc,
     )
     return _figure_to_png(figure, dpi=dpi)
 
@@ -474,6 +539,8 @@ def build_narrowband_figure(
     result: DartNarrowbandResult,
     *,
     display_mode: str = "db",
+    x_tick_interval_seconds: float | None = None,
+    marked_times_utc: tuple[datetime, ...] = (),
 ) -> Figure:
     """Build narrowband light curves without changing the source calculation."""
 
@@ -509,9 +576,13 @@ def build_narrowband_figure(
     if mode == "linear":
         axis.yaxis.set_major_formatter(_scientific_formatter())
     axis.grid(alpha=0.28, linestyle=":", linewidth=0.7)
-    locator = mdates.AutoDateLocator(minticks=3, maxticks=8)
-    axis.xaxis.set_major_locator(locator)
-    axis.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator, tz=UTC))
+    _configure_time_axis(
+        axis,
+        result.time_utc,
+        x_tick_interval_seconds=x_tick_interval_seconds,
+    )
+    visible_markers = _visible_marked_times(marked_times_utc, result.time_utc)
+    _add_time_markers((axis,), visible_markers, label_axis=axis)
     axis.legend(
         loc="best",
         frameon=False,
@@ -526,11 +597,18 @@ def build_narrowband_png(
     *,
     dpi: int = 160,
     display_mode: str = "db",
+    x_tick_interval_seconds: float | None = None,
+    marked_times_utc: tuple[datetime, ...] = (),
 ) -> bytes:
     """Render one deterministic narrowband light-curve PNG payload."""
 
     return _figure_to_png(
-        build_narrowband_figure(result, display_mode=display_mode),
+        build_narrowband_figure(
+            result,
+            display_mode=display_mode,
+            x_tick_interval_seconds=x_tick_interval_seconds,
+            marked_times_utc=marked_times_utc,
+        ),
         dpi=dpi,
     )
 
@@ -726,6 +804,7 @@ def _run_streamlit_app(argv: list[str] | None = None) -> None:
                 )
                 selected_frequency_range: tuple[float, float] | None = None
                 selected_time_range: tuple[datetime, datetime] | None = None
+                omitted_marked_times = 0
                 if request["analysis_mode"] == FULL_SPECTRUM_MODE:
                     artifacts = {
                         DYNAMIC_SPECTRUM_PRODUCT_KEY: build_dynamic_spectrum_png(
@@ -734,6 +813,8 @@ def _run_streamlit_app(argv: list[str] | None = None) -> None:
                             display_mode=request["display_mode"],
                             display_limits=display_limits,
                             region_label="Full observation",
+                            x_tick_interval_seconds=request["x_tick_interval_seconds"],
+                            marked_times_utc=request["marked_times_utc"],
                         )
                     }
                 else:
@@ -760,6 +841,10 @@ def _run_streamlit_app(argv: list[str] | None = None) -> None:
                         selected_window.time_utc[0],
                         selected_window.time_utc[-1],
                     )
+                    omitted_marked_times = _count_marked_times_outside_range(
+                        request["marked_times_utc"],
+                        selected_time_range,
+                    )
                     artifacts = {
                         DYNAMIC_SPECTRUM_PRODUCT_KEY: build_dynamic_spectrum_png(
                             full_window,
@@ -770,6 +855,8 @@ def _run_streamlit_app(argv: list[str] | None = None) -> None:
                             selected_frequency_range_mhz=selected_frequency_range,
                             selected_time_range_utc=selected_time_range,
                             region_label="Full observation",
+                            x_tick_interval_seconds=request["x_tick_interval_seconds"],
+                            marked_times_utc=request["marked_times_utc"],
                         ),
                         SELECTED_SPECTRUM_PRODUCT_KEY: build_dynamic_spectrum_png(
                             selected_window,
@@ -782,11 +869,15 @@ def _run_streamlit_app(argv: list[str] | None = None) -> None:
                                 f"{selected_frequency_range[0]:g}-"
                                 f"{selected_frequency_range[1]:g} MHz"
                             ),
+                            x_tick_interval_seconds=request["x_tick_interval_seconds"],
+                            marked_times_utc=request["marked_times_utc"],
                         ),
                         LIGHTCURVE_PRODUCT_KEY: build_narrowband_png(
                             narrowband,
                             dpi=request["dpi"],
                             display_mode=request["display_mode"],
+                            x_tick_interval_seconds=request["x_tick_interval_seconds"],
+                            marked_times_utc=request["marked_times_utc"],
                         ),
                     }
                 artifact_filenames = build_dart_artifact_filenames(
@@ -816,6 +907,7 @@ def _run_streamlit_app(argv: list[str] | None = None) -> None:
                 "selected_frequency_range_mhz": selected_frequency_range,
                 "selected_time_range_utc": selected_time_range,
                 "display_limits": display_limits,
+                "omitted_marked_times": omitted_marked_times,
             }
             st.session_state["dart_artifacts"] = artifacts
             st.session_state["dart_artifact_filenames"] = artifact_filenames
@@ -866,6 +958,12 @@ def _run_streamlit_app(argv: list[str] | None = None) -> None:
         return
 
     result_mode = _normalize_analysis_mode(result_context["analysis_mode"])
+    omitted_marked_times = int(result_context.get("omitted_marked_times", 0))
+    if omitted_marked_times:
+        st.warning(
+            f"{omitted_marked_times} marked UTC time(s) are outside the selected "
+            "time window and appear only in the full-observation spectrum."
+        )
 
     st.subheader("4. Results")
     if result_mode == FULL_SPECTRUM_MODE:
@@ -1106,6 +1204,42 @@ def _render_configuration(
                 key="stokes_i_direct_high",
             )
 
+    time_axis_columns = st.columns([1, 2])
+    with time_axis_columns[0]:
+        x_tick_mode = st.radio(
+            "X-axis tick spacing",
+            options=("Auto", "Custom"),
+            horizontal=True,
+            key="x_tick_mode",
+            help=(
+                "Auto uses Matplotlib date ticks. Custom starts at the first "
+                "visible sample and advances by the requested number of seconds."
+            ),
+        )
+        x_tick_interval_seconds: float | None = None
+        if x_tick_mode == "Custom":
+            x_tick_interval_seconds = float(
+                st.number_input(
+                    "X-axis interval (seconds)",
+                    min_value=0.001,
+                    value=10.0,
+                    step=0.001,
+                    format="%.3f",
+                    key="x_tick_interval_seconds",
+                )
+            )
+    with time_axis_columns[1]:
+        marked_times_text = st.text_input(
+            "Marked UTC times (comma separated, optional)",
+            value="",
+            key="marked_times",
+            placeholder="04:45:01.5, 2025-01-24T04:45:02Z",
+            help=(
+                "Accepts HH:MM:SS[.fraction] or ISO-8601. Time-only values use "
+                "the unique matching date inside this observation."
+            ),
+        )
+
     centers_text: str | None = None
     bandwidth_mhz: float | None = None
     frequency_range: tuple[float, float] | None = None
@@ -1231,6 +1365,10 @@ def _render_configuration(
         "bandwidth_mhz": bandwidth_mhz,
         "frequency_range_mhz": frequency_range,
         "time_range_utc": time_range,
+        "observation_time_range_utc": summary.time_range_utc,
+        "x_tick_mode": x_tick_mode,
+        "x_tick_interval_seconds": x_tick_interval_seconds,
+        "marked_times_text": marked_times_text,
         "max_frequency_samples": max_frequency_samples,
         "max_time_samples": max_time_samples,
         "chunk_memory_mb": chunk_memory_mb,
@@ -1249,6 +1387,20 @@ def _request_from_controls(controls: dict[str, Any]) -> dict[str, Any]:
         _validate_direct_limits(stokes_i_bounds, "Stokes I display")
     else:
         raise ValueError("Color limit mode must be Percentile or Direct")
+    x_tick_mode = str(controls["x_tick_mode"]).strip().lower()
+    if x_tick_mode == "auto":
+        x_tick_interval_seconds = None
+    elif x_tick_mode == "custom":
+        x_tick_interval_seconds = _validate_x_tick_interval(
+            controls["x_tick_interval_seconds"],
+            controls["observation_time_range_utc"],
+        )
+    else:
+        raise ValueError("X-axis tick spacing must be Auto or Custom")
+    marked_times = parse_marked_times(
+        controls["marked_times_text"],
+        controls["observation_time_range_utc"],
+    )
     centers: tuple[float, ...] = ()
     bandwidth: float | None = None
     frequency_range: tuple[float, float] | None = None
@@ -1283,6 +1435,8 @@ def _request_from_controls(controls: dict[str, Any]) -> dict[str, Any]:
         "frequency_range_mhz": frequency_range,
         "effective_selected_frequency_range_mhz": effective_frequency_range,
         "time_range_utc": time_range,
+        "x_tick_interval_seconds": x_tick_interval_seconds,
+        "marked_times_utc": marked_times,
         "max_frequency_samples": int(controls["max_frequency_samples"]),
         "max_time_samples": int(controls["max_time_samples"]),
         "chunk_memory_mb": int(controls["chunk_memory_mb"]),
@@ -1297,7 +1451,7 @@ def _request_signature(
     payload = {
         "dataset": _dataset_signature(summary),
         "request": request,
-        "version": "dart-spectrogram-render-v4",
+        "version": "dart-spectrogram-render-v5",
     }
     encoded = json.dumps(
         payload,
@@ -1324,7 +1478,7 @@ def _render_signature(
         "selected_time_range_utc": selected_time_range_utc,
         "resolved_stokes_i_limits": display_limits.stokes_i,
         "stokes_v_over_i_limits": (-1.0, 1.0),
-        "version": "dart-spectrogram-render-v4",
+        "version": "dart-spectrogram-render-v5",
     }
     encoded = json.dumps(
         payload,
@@ -1412,6 +1566,156 @@ def _time_row_to_datetime(row: np.ndarray) -> datetime:
     return datetime(year, month, day, hour, minute, tzinfo=UTC) + timedelta(
         seconds=second
     )
+
+
+def _as_utc(value: datetime) -> datetime:
+    if not isinstance(value, datetime):
+        raise ValueError("UTC time values must be datetime instances")
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _parse_time_only(value: str) -> time | None:
+    for template in ("%H:%M:%S.%f", "%H:%M:%S"):
+        try:
+            return datetime.strptime(value, template).time()
+        except ValueError:
+            continue
+    return None
+
+
+def _parse_iso_utc(value: str) -> datetime:
+    normalized = value[:-1] + "+00:00" if value.upper().endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid marked UTC time {value!r}; use HH:MM:SS[.fraction] " "or ISO-8601"
+        ) from exc
+    return _as_utc(parsed)
+
+
+def _validate_x_tick_interval(
+    value: object,
+    time_range_utc: tuple[datetime, datetime],
+) -> float:
+    try:
+        interval = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("X-axis interval seconds must be numeric") from exc
+    if not np.isfinite(interval) or interval <= 0:
+        raise ValueError("X-axis interval seconds must be finite and greater than zero")
+    start, end = (_as_utc(item) for item in time_range_utc)
+    if start > end:
+        raise ValueError("Time axis must start before it ends")
+    tick_count = int(math.floor((end - start).total_seconds() / interval)) + 1
+    if tick_count > _MAX_CUSTOM_X_TICKS:
+        raise ValueError(
+            f"X-axis interval would create {tick_count} major ticks; increase the "
+            f"interval to keep at most {_MAX_CUSTOM_X_TICKS}"
+        )
+    return interval
+
+
+def _configure_time_axis(
+    axis: Any,
+    time_utc: Sequence[datetime],
+    *,
+    x_tick_interval_seconds: float | None,
+) -> None:
+    if not time_utc:
+        raise ValueError("The UTC time axis is empty")
+    values = tuple(_as_utc(item) for item in time_utc)
+    axis.xaxis_date()
+    if x_tick_interval_seconds is None:
+        locator = mdates.AutoDateLocator(minticks=3, maxticks=8)
+    else:
+        interval = _validate_x_tick_interval(
+            x_tick_interval_seconds,
+            (values[0], values[-1]),
+        )
+        span_seconds = (values[-1] - values[0]).total_seconds()
+        tick_count = int(math.floor(span_seconds / interval)) + 1
+        tick_times = tuple(
+            values[0] + timedelta(seconds=index * interval)
+            for index in range(tick_count)
+        )
+        locator = FixedLocator(mdates.date2num(tick_times))
+    axis.xaxis.set_major_locator(locator)
+    axis.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator, tz=UTC))
+
+
+def _visible_marked_times(
+    marked_times_utc: Iterable[datetime],
+    visible_time_utc: Sequence[datetime],
+) -> tuple[datetime, ...]:
+    if not visible_time_utc:
+        return ()
+    start = _as_utc(visible_time_utc[0])
+    end = _as_utc(visible_time_utc[-1])
+    return tuple(
+        marked
+        for marked in sorted({_as_utc(item) for item in marked_times_utc})
+        if start <= marked <= end
+    )
+
+
+def _count_marked_times_outside_range(
+    marked_times_utc: Iterable[datetime],
+    visible_range_utc: tuple[datetime, datetime],
+) -> int:
+    start, end = (_as_utc(item) for item in visible_range_utc)
+    return sum(not (start <= _as_utc(marked) <= end) for marked in marked_times_utc)
+
+
+def _format_marked_time(value: datetime) -> str:
+    return _as_utc(value).strftime("%H:%M:%S.%f").rstrip("0").rstrip(".")
+
+
+def _add_time_markers(
+    axes: Sequence[Any],
+    marked_times_utc: Iterable[datetime],
+    *,
+    label_axis: Any,
+) -> None:
+    path_effects = [
+        mpatheffects.Stroke(linewidth=3.2, foreground=_TIME_MARKER_EDGE_COLOR),
+        mpatheffects.Normal(),
+    ]
+    for marked in marked_times_utc:
+        for axis in axes:
+            line = axis.axvline(
+                marked,
+                ymin=0.0,
+                ymax=_TIME_MARKER_HEIGHT,
+                color=_TIME_MARKER_COLOR,
+                linewidth=1.6,
+                zorder=8,
+            )
+            line.set_path_effects(path_effects)
+        label = label_axis.annotate(
+            _format_marked_time(marked),
+            xy=(marked, _TIME_MARKER_HEIGHT),
+            xycoords=("data", "axes fraction"),
+            xytext=(0, 3),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            rotation=90,
+            fontsize=7,
+            color=_TIME_MARKER_EDGE_COLOR,
+            annotation_clip=True,
+            zorder=9,
+            bbox={
+                "boxstyle": "round,pad=0.12",
+                "facecolor": "#fef3c7",
+                "edgecolor": _TIME_MARKER_EDGE_COLOR,
+                "alpha": 0.9,
+                "linewidth": 0.6,
+            },
+        )
+        label.set_in_layout(True)
 
 
 def _validate_plot_inputs(

@@ -32,7 +32,7 @@ def test_apps_manual_documents_complete_public_contract() -> None:
     required = (
         "solarphysics_env_latest",
         "solarphysics_env",
-        "Eight launchable applications provide nine visible interfaces",
+        "Nine launchable applications provide ten visible interfaces",
         "frontend workbench",
         "frontend image-viewer",
         "frontend image-composer",
@@ -40,6 +40,7 @@ def test_apps_manual_documents_complete_public_contract() -> None:
         "frontend source-map",
         "frontend dart-spectrogram",
         "frontend roi-lightcurve",
+        "frontend radio-composite",
         "frontend source-trajectory",
         "Compatibility aliases",
         "Auto",
@@ -95,6 +96,8 @@ def test_documented_python_commands_use_miniforge() -> None:
                 continue
             if stripped == "```":
                 in_powershell = False
+                continue
+            if stripped.startswith("#"):
                 continue
             if not in_powershell or "python" not in stripped.casefold():
                 continue
