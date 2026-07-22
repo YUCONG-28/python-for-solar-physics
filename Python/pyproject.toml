@@ -40,6 +40,7 @@ dev = [
     "ipython>=8.14.0",
 ]
 full = [
+    "av>=16,<19",
     "xarray>=2023.6.0",
     "netCDF4>=1.6.0",
     "imageio>=2.31.0",
