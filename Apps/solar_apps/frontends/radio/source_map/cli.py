@@ -15,7 +15,7 @@ from solar_apps.platform.paths.allowed_roots import (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 frontend source-map",
+        prog="solar-apps frontend source-map",
         description="Run the standalone radio source-map and ROI annotation app.",
         epilog="Additional arguments are forwarded to the Flask application parser.",
     )

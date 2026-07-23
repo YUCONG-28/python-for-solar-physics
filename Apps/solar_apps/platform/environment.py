@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -25,6 +26,43 @@ class MiniforgeRuntime:
     miniforge_root: Path
 
 
+def launcher_program() -> str:
+    """Return the public launcher name selected by the wrapper."""
+
+    configured = os.environ.get("SOLAR_APPS_LAUNCHER", "").strip()
+    if configured:
+        return configured
+    return "Apps/run.ps1" if os.name == "nt" else "Apps/run.sh"
+
+
+def launcher_command(suffix: str = "") -> str:
+    """Build a platform-appropriate public command name."""
+
+    return f"{launcher_program()} {suffix}".rstrip()
+
+
+def _environment_root(selected: Path) -> Path:
+    if selected.name.casefold() == "python.exe":
+        return selected.parent
+    if selected.name.startswith("python") and selected.parent.name == "bin":
+        return selected.parent.parent
+    return selected.parent
+
+
+def _has_miniforge_provenance(root: Path) -> bool:
+    metadata = root / "conda-meta"
+    if any(metadata.glob("miniforge_console_shortcut-*.json")):
+        return True
+    history = metadata / "history"
+    if not history.is_file():
+        return False
+    try:
+        opening = history.read_text(encoding="utf-8", errors="replace")[:8192]
+    except OSError:
+        return False
+    return bool(re.search(r"(?im)^# cmd:.*\bMiniforge3?\b", opening))
+
+
 def inspect_miniforge_runtime(
     executable: str | os.PathLike[str] | None = None,
     *,
@@ -38,7 +76,7 @@ def inspect_miniforge_runtime(
     selected = Path(executable or sys.executable).expanduser().resolve(strict=False)
     if require_exists and not selected.is_file():
         raise UnsupportedPythonEnvironment(f"Python interpreter not found: {selected}")
-    environment_root = selected.parent
+    environment_root = _environment_root(selected)
     environment_name = environment_root.name
     if environment_name not in SUPPORTED_ENVIRONMENTS:
         raise UnsupportedPythonEnvironment(
@@ -61,10 +99,7 @@ def inspect_miniforge_runtime(
         raise UnsupportedPythonEnvironment(
             "Interpreter environment is not below the explicitly selected Conda root"
         )
-    base_metadata = installation_root / "conda-meta"
-    if require_exists and not any(
-        base_metadata.glob("miniforge_console_shortcut-*.json")
-    ):
+    if require_exists and not _has_miniforge_provenance(installation_root):
         raise UnsupportedPythonEnvironment(
             f"Conda installation is not marked as Miniforge: {installation_root}"
         )
@@ -87,4 +122,6 @@ __all__ = [
     "SUPPORTED_ENVIRONMENTS",
     "UnsupportedPythonEnvironment",
     "inspect_miniforge_runtime",
+    "launcher_command",
+    "launcher_program",
 ]

@@ -11,6 +11,8 @@ Initialize the private runtime through the public launcher first:
 .\Apps\run.ps1 admin init
 ```
 
+On macOS use `./Apps/run.sh admin init`.
+
 The examples are developer entry points rather than public application
 commands. Run them with the same Miniforge environment used by the launcher:
 
@@ -18,6 +20,9 @@ commands. Run them with the same Miniforge environment used by the launcher:
 & "<miniforge-root>\Scripts\conda.exe" run -n solarphysics_env_latest python .\Apps\examples\synthetic_radio_display.py
 & "<miniforge-root>\Scripts\conda.exe" run -n solarphysics_env_latest python .\Apps\examples\synthetic_state_and_paths.py
 ```
+
+On macOS replace the Conda executable with
+`<miniforge-root>/bin/conda` and use POSIX paths.
 
 ## Spatial radio display
 

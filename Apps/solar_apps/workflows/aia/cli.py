@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 def build_parser() -> argparse.ArgumentParser:
     return argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow aia",
+        prog="solar-apps workflow aia",
         description="Run the local AIA processing application.",
         epilog="Non-help arguments are forwarded to the AIA application parser.",
     )

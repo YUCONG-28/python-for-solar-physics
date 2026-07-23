@@ -23,7 +23,13 @@ def process_hxi_fits(input_dir, output_dir):
     import matplotlib.dates as mdates
     import matplotlib.pyplot as plt
 
-    plt.rcParams["font.family"] = ["SimHei", "Microsoft YaHei", "sans-serif"]
+    plt.rcParams["font.family"] = [
+        "PingFang SC",
+        "Hiragino Sans GB",
+        "SimHei",
+        "Microsoft YaHei",
+        "sans-serif",
+    ]
     plt.rcParams["axes.unicode_minus"] = False
 
     # Check if input directory exists

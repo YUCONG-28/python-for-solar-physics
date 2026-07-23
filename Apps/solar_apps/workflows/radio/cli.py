@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 def build_parser() -> argparse.ArgumentParser:
     return argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow radio",
+        prog="solar-apps workflow radio",
         description="Run local radio-analysis workflows.",
         epilog=(
             "Pass a workflow name and its arguments after this wrapper. "

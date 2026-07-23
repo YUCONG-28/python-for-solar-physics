@@ -229,6 +229,7 @@ jobs:
             "source-map",
             "dart-spectrogram",
             "roi-lightcurve",
+            "radio-composite",
             "source-trajectory"
           )
           foreach ($frontend in $frontends) {
@@ -296,6 +297,76 @@ jobs:
               raise SystemExit(f"required frontend assets missing from wheel: {missing}")
           print(f"Apps wheel boundary ok: {wheels[0]}")
           '@ | conda run --no-capture-output -n solarphysics_env_latest python -
+
+  apps-macos-miniforge:
+    name: Apps (macOS arm64 Miniforge)
+    runs-on: macos-15
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      QT_QPA_PLATFORM: "offscreen"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Create Miniforge application environment
+        uses: conda-incubator/setup-miniconda@8ee1f361103df19b6f8c8655fd3967a8ecb162d5 # v4.0.1
+        with:
+          activate-environment: solarphysics_env_latest
+          environment-file: Apps/environment.miniforge.yml
+          python-version: "3.14"
+          miniforge-version: latest
+          channels: conda-forge
+          channel-priority: strict
+          conda-remove-defaults: "true"
+          auto-update-conda: false
+
+      - name: Install public library and applications
+        run: |
+          conda run --no-capture-output -n solarphysics_env_latest \
+            python -m pip install --upgrade pip
+          conda run --no-capture-output -n solarphysics_env_latest \
+            python -m pip install -e "./Python[quality-ml]"
+          conda run --no-capture-output -n solarphysics_env_latest \
+            python -m pip install -e "./Apps[dev]"
+          conda run --no-capture-output -n solarphysics_env_latest \
+            python -m pip check
+
+      - name: Initialize private CI runtime
+        run: |
+          chmod +x Apps/run.sh
+          export SOLAR_MINIFORGE_ROOT="$CONDA"
+          conda run --no-capture-output -n solarphysics_env_latest \
+            ./Apps/run.sh admin init
+
+      - name: Compile, lint, format-check, and test Apps
+        run: |
+          conda run --no-capture-output -n solarphysics_env_latest \
+            python -m compileall -q Apps/solar_apps Apps/tests
+          conda run --no-capture-output -n solarphysics_env_latest \
+            python -m ruff check Apps/solar_apps Apps/tests
+          conda run --no-capture-output -n solarphysics_env_latest \
+            python -m black --check Apps/solar_apps Apps/tests
+          conda run --no-capture-output -n solarphysics_env_latest \
+            python -m pytest Apps/tests --basetemp Local/tmp/pytest-apps-macos-ci
+
+      - name: Smoke all canonical frontend help
+        run: |
+          export SOLAR_MINIFORGE_ROOT="$CONDA"
+          for frontend in \
+            workbench image-viewer image-composer bad-frame-review source-map \
+            dart-spectrogram roi-lightcurve radio-composite source-trajectory
+          do
+            conda run --no-capture-output -n solarphysics_env_latest \
+              ./Apps/run.sh frontend "$frontend" --help
+          done
+
+      - name: Build Apps wheel
+        run: |
+          conda run --no-capture-output -n solarphysics_env_latest \
+            python -m build --wheel --outdir Apps/dist Apps
 
   literature-catalog:
     name: Literature catalog

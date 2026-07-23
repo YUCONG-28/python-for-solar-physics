@@ -20,7 +20,7 @@ __all__ = ["build_parser", "main", "make_relative_symlink", "read_metadata"]
 def build_parser() -> argparse.ArgumentParser:
     """Build the event-recipe parser without touching local data."""
     return argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow data stereo-manifest",
+        prog="solar-apps workflow data stereo-manifest",
         description="Create the STEREO/EUVI wavelength manifest and symlink view.",
     )
 

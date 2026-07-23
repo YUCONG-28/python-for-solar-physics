@@ -134,7 +134,7 @@ TRANSIENT_KEYS = (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 frontend radio-composite",
+        prog="solar-apps frontend radio-composite",
         description="Build a Source Map, ROI curve, and DART narrowband composite.",
     )
     parser.add_argument("--radio-dir", default=None)
@@ -432,9 +432,11 @@ def _render_source_map_configuration(
             "Input organization",
             options=("single_band", "multi_band"),
             key="source_mode",
-            format_func=lambda value: "Single-band sequence"
-            if value == "single_band"
-            else "Synchronized multi-band",
+            format_func=lambda value: (
+                "Single-band sequence"
+                if value == "single_band"
+                else "Synchronized multi-band"
+            ),
         )
     with main_columns[1]:
         selected_frequencies = st.multiselect(
@@ -469,7 +471,9 @@ def _render_source_map_configuration(
             options=("hot", "inferno", "magma", "viridis", "plasma", "jet", "cividis"),
             key="map_cmap",
         )
-        bad_color = st.color_picker("Bad-value color", value="#000080", key="map_bad_color")
+        bad_color = st.color_picker(
+            "Bad-value color", value="#000080", key="map_bad_color"
+        )
     with display_columns[1]:
         range_mode = st.selectbox(
             "Color range",
@@ -529,7 +533,9 @@ def _render_source_map_configuration(
     ):
         with column:
             fov_values.append(
-                float(st.number_input(label, value=default, key=key, disabled=not use_fov))
+                float(
+                    st.number_input(label, value=default, key=key, disabled=not use_fov)
+                )
             )
     advanced = st.text_area(
         "Advanced Source Map JSON",
@@ -566,7 +572,9 @@ def _render_source_map_configuration(
             if not selected_frequencies:
                 raise ValueError("Select at least one radio frequency")
             if mode == "single_band" and len(selected_frequencies) > 1:
-                raise ValueError("Single-band organization accepts one selected frequency")
+                raise ValueError(
+                    "Single-band organization accepts one selected frequency"
+                )
             preview_dir = (
                 RuntimeLayout.discover().outputs_dir / "radio_composite" / "source_map"
             )
@@ -616,7 +624,9 @@ def _render_source_map_configuration(
                 if any(_candidate_has_frequency(candidate, value) for value in selected)
             ]
             if not candidates:
-                raise ValueError("No Source Map candidates match the selected frequencies")
+                raise ValueError(
+                    "No Source Map candidates match the selected frequencies"
+                )
             signature = build_request_signature(
                 {
                     "inspection": st.session_state.get("inspection_signature"),
@@ -705,18 +715,24 @@ def _render_map_candidate_step(
                 output_directory=preview_dir,
             )
             policy = PathPolicy(path_policy.output_roots)
-            policy.resolve(preview_dir, must_exist=False).mkdir(parents=True, exist_ok=True)
+            policy.resolve(preview_dir, must_exist=False).mkdir(
+                parents=True, exist_ok=True
+            )
             with st.spinner("Rendering the selected Source Map and sidecar..."):
                 result = run_job(
                     {"config": render_cfg, "candidate": render_candidate, "sequence": 1}
                 )
-            image_path = policy.resolve(result["image_path"], must_exist=True, kind="file")
+            image_path = policy.resolve(
+                result["image_path"], must_exist=True, kind="file"
+            )
             sidecar_path = policy.resolve(
                 result["sidecar_path"], must_exist=True, kind="file"
             )
             metadata = validate_source_map_artifact(image_path, sidecar_path)
             if len(metadata.get("panels", [])) != 1:
-                raise ValueError("Rendered Source Map did not contain exactly one panel")
+                raise ValueError(
+                    "Rendered Source Map did not contain exactly one panel"
+                )
             observed = _utc_datetime(candidate["observation_time"])
         except Exception as exc:
             st.error(str(exc))
@@ -812,7 +828,9 @@ def _render_roi_step(st: Any, theme_mode: str) -> None:
         st.warning("ROI is staged. Confirm it before analysis.")
 
 
-def _render_dart_band_step(st: Any, window: DartSpectrogramWindow, theme_mode: str) -> None:
+def _render_dart_band_step(
+    st: Any, window: DartSpectrogramWindow, theme_mode: str
+) -> None:
     st.subheader("5. Select one DART frequency band")
     observed_low = float(np.nanmin(window.frequency_mhz))
     observed_high = float(np.nanmax(window.frequency_mhz))
@@ -967,11 +985,15 @@ def _render_analysis_step(
         end = _utc_datetime(end_text)
         map_time = _utc_datetime(map_time_text)
         if start < radio_coverage[0] or end > radio_coverage[1]:
-            raise ValueError("Shared time range must stay inside the radio sequence coverage")
+            raise ValueError(
+                "Shared time range must stay inside the radio sequence coverage"
+            )
         if start >= end:
             raise ValueError("Shared UTC start must be before the end")
         if not start <= map_time <= end:
-            raise ValueError("Selected Source Map time must lie inside the shared range")
+            raise ValueError(
+                "Selected Source Map time must lie inside the shared range"
+            )
         overlap_start, overlap_end, partial_dart_coverage = select_dart_time_overlap(
             dart_window.time_utc,
             start,
@@ -1038,13 +1060,19 @@ def _render_analysis_step(
                 and st.session_state.get("composite_signature") == signature
             ):
                 bundle = cached
-                st.success("Reused the current composite; no FITS files were read again.")
+                st.success(
+                    "Reused the current composite; no FITS files were read again."
+                )
             else:
-                with st.spinner("Extracting the radio ROI and DART narrowband curves..."):
+                with st.spinner(
+                    "Extracting the radio ROI and DART narrowband curves..."
+                ):
                     radio_df = extract_radio_roi_lightcurve(
                         radio_dir,
                         confirmed_roi,
-                        pattern=str(st.session_state.get("radio_pattern", DEFAULT_PATTERN)),
+                        pattern=str(
+                            st.session_state.get("radio_pattern", DEFAULT_PATTERN)
+                        ),
                         recursive=bool(st.session_state.get("radio_recursive", True)),
                         files=radio_paths,
                         freqs=[map_frequency],
@@ -1232,7 +1260,11 @@ def _candidate_frequency_paths(
         if index >= len(slot):
             raise ValueError("Source Map slot metadata does not match its frequencies")
         item = slot[index]
-        paths = [str(value) for value in item] if isinstance(item, list | tuple) else [str(item)]
+        paths = (
+            [str(value) for value in item]
+            if isinstance(item, list | tuple)
+            else [str(item)]
+        )
         return paths, paths if len(paths) > 1 else paths[0]
     paths = [str(value) for value in candidate.get("paths", [])]
     return paths, paths if len(paths) > 1 else paths[0]
@@ -1296,9 +1328,8 @@ def _manifest_paths_for_request(
     frequencies = pd.to_numeric(data.get(frequency_column), errors="coerce")
     times = pd.to_datetime(data.get("inferred_obs_time"), errors="coerce", utc=True)
     tolerance = max(1e-6, abs(float(frequency_mhz)) * 1e-5)
-    frequency_mask = (
-        np.isfinite(frequencies.to_numpy(dtype=float, na_value=np.nan))
-        & (np.abs(frequencies - float(frequency_mhz)) <= tolerance)
+    frequency_mask = np.isfinite(frequencies.to_numpy(dtype=float, na_value=np.nan)) & (
+        np.abs(frequencies - float(frequency_mhz)) <= tolerance
     )
     if times.notna().any():
         time_mask = times.isna() | (

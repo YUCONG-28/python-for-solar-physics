@@ -11,13 +11,10 @@ from typing import Any
 
 from ..layout import RuntimeLayout
 from ..state import StateStore
+from .semantics import path_is_within
 
 _CONTEXT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
 _DIALOG_MODES = frozenset({"open_file", "open_files", "select_directory", "save_file"})
-
-
-def _path_key(path: Path) -> str:
-    return os.path.normcase(str(path))
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,19 +244,13 @@ class RecentPathMemory:
         return directory
 
     def _within_roots(self, candidate: Path) -> bool:
-        key = _path_key(candidate)
         for root in self.allowed_roots:
             try:
                 resolved_root = root.resolve(strict=True)
             except FileNotFoundError, OSError:
                 continue
-            try:
-                if os.path.commonpath((key, _path_key(resolved_root))) == _path_key(
-                    resolved_root
-                ):
-                    return True
-            except ValueError:
-                continue
+            if path_is_within(candidate, resolved_root):
+                return True
         return False
 
 

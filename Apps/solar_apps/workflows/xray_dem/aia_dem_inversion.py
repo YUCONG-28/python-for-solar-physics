@@ -44,8 +44,16 @@ __all__ = [
 #  字体配置（必须在其他 matplotlib 调用之前执行）
 # ============================================================
 def _setup_font() -> None:
-    """为 Windows 环境配置中文字体，并修复负号显示问题。"""
-    candidates = ["Microsoft YaHei", "SimHei", "SimSun", "KaiTi", "FangSong"]
+    """为 Windows/macOS 环境配置中文字体，并修复负号显示问题。"""
+    candidates = [
+        "PingFang SC",
+        "Hiragino Sans GB",
+        "Microsoft YaHei",
+        "SimHei",
+        "SimSun",
+        "KaiTi",
+        "FangSong",
+    ]
     available = {f.name for f in matplotlib.font_manager.fontManager.ttflist}
     for font in candidates:
         if font in available:

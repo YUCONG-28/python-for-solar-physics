@@ -18,6 +18,7 @@ from solar_apps.platform.layout import RuntimeLayout
 APPS_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = APPS_ROOT.parent
 LAUNCHER = APPS_ROOT / "run.ps1"
+SHELL_LAUNCHER = APPS_ROOT / "run.sh"
 
 
 def test_canonical_cli_help_is_import_safe() -> None:
@@ -33,7 +34,8 @@ def test_canonical_cli_help_is_import_safe() -> None:
     assert "frontend" in completed.stdout
     assert "workflow" in completed.stdout
     assert "admin" in completed.stdout
-    assert completed.stdout.startswith("usage: Apps/run.ps1")
+    expected_launcher = "Apps/run.ps1" if os.name == "nt" else "Apps/run.sh"
+    assert completed.stdout.startswith(f"usage: {expected_launcher}")
     assert "python -m solar_apps" not in completed.stdout
 
 
@@ -132,6 +134,7 @@ def test_admin_init_creates_only_private_runtime_contract(tmp_path: Path) -> Non
 
     assert layout.config_path in created
     assert (local / "run.ps1") in created
+    assert (local / "run.sh") in created
     assert layout.config_path.read_text(encoding="utf-8") == template.read_text(
         encoding="utf-8"
     )
@@ -144,6 +147,8 @@ def test_admin_init_creates_only_private_runtime_contract(tmp_path: Path) -> Non
     ):
         assert directory.is_dir()
     assert "Apps\\run.ps1" in (local / "run.ps1").read_text(encoding="utf-8")
+    assert "Apps/run.sh" in (local / "run.sh").read_text(encoding="utf-8")
+    assert os.access(local / "run.sh", os.X_OK)
 
 
 def test_launcher_has_no_arbitrary_python_or_path_fallback() -> None:
@@ -152,15 +157,19 @@ def test_launcher_has_no_arbitrary_python_or_path_fallback() -> None:
     assert "solarphysics_backup" not in text
     assert ".venv" not in text
     assert "$sourceRoots" not in text
-    assert "Remove-Item Env:PYTHONPATH" in text
     assert "solarphysics_env_latest" in text
     assert "solarphysics_env" in text
+    shell_text = SHELL_LAUNCHER.read_text(encoding="utf-8")
+    assert "solarphysics_env_latest" in shell_text
+    assert "solarphysics_backup" not in shell_text
+    assert ".venv" not in shell_text
     probe = (APPS_ROOT / "solar_apps" / "platform" / "environment_probe.py").read_text(
         encoding="utf-8"
     )
     assert "solarphysics-apps" in probe
     assert "solar-physics-toolkit" in probe
-    assert "python -m solar_apps.cli" not in text
+    assert "solar_apps.launcher" in text
+    assert "solar_apps.launcher" in shell_text
 
 
 @pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher is Windows-only")

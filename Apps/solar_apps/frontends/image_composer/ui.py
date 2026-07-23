@@ -1191,6 +1191,10 @@ class ImageComposerWindow(QMainWindow):
         item = self._slot_items.get(slot_id)
         if item is None:
             return
+        if item.isSelected():
+            self._selected_slot_id = slot_id
+            self._update_slot_inspector()
+            return
         self.scene.clearSelection()
         item.setSelected(True)
         self._selected_slot_id = slot_id

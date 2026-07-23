@@ -28,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build parser for static trajectory HTML export."""
 
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow radio trajectory",
+        prog="solar-apps workflow radio trajectory",
         description="Export radio-source trajectory centers to a Plotly HTML file.",
     )
     parser.add_argument("--centers", required=True, help="Input center CSV/XLSX table.")

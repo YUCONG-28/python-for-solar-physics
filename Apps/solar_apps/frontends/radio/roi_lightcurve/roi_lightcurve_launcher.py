@@ -24,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build parser for the managed Streamlit launcher."""
 
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 frontend roi-lightcurve",
+        prog="solar-apps frontend roi-lightcurve",
         description="Launch the radio ROI light-curve Streamlit app as a managed process.",
     )
     parser.add_argument("--radio-dir", default=None, help="Default radio FITS folder.")

@@ -88,7 +88,7 @@ class JobContext:
         requested = Path(self.python_executable).expanduser().resolve(strict=False)
         if os.path.normcase(str(requested)) != os.path.normcase(str(selected)):
             raise ValueError(
-                "Workbench jobs must use the interpreter selected by Apps/run.ps1."
+                "Workbench jobs must use the interpreter selected by the public Apps launcher."
             )
         object.__setattr__(self, "python_executable", str(selected))
 

@@ -54,6 +54,6 @@ before code reaches shared branches.
 
 ## Workflow Changes
 
-- Keep Apps workflows runnable through `Apps/run.ps1`.
+- Keep Apps workflows runnable through `Apps/run.ps1` and `Apps/run.sh`.
 - Prefer adding reusable helpers to `solar_toolkit/` when multiple workflows need them.
 - Examples that require local data belong in `examples/`; tests in `tests/` must be data-independent.

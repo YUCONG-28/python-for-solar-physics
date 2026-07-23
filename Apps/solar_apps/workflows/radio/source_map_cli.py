@@ -21,7 +21,7 @@ def build_parser():
 
     return build_common_parser(
         "Run radio source maps with Gaussian overlay.",
-        prog="Apps/run.ps1 workflow radio source-map",
+        prog="solar-apps workflow radio source-map",
         default_config=DEFAULT_CONFIG_NAME,
     )
 

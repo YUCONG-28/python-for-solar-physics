@@ -972,7 +972,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser for threshold center extraction."""
 
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow radio centers",
+        prog="solar-apps workflow radio centers",
         description="Extract threshold radio-source centers from FITS files.",
     )
     parser.add_argument(

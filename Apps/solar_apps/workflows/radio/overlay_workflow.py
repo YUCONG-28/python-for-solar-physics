@@ -127,7 +127,13 @@ def _configure_plotting() -> None:
     """Apply the historical non-interactive plotting policy at run time."""
 
     matplotlib.use("Agg", force=True)
-    plt.rcParams["font.family"] = ["SimHei", "Microsoft YaHei", "sans-serif"]
+    plt.rcParams["font.family"] = [
+        "PingFang SC",
+        "Hiragino Sans GB",
+        "SimHei",
+        "Microsoft YaHei",
+        "sans-serif",
+    ]
     plt.rcParams["axes.unicode_minus"] = False
 
 

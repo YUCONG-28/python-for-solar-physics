@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from .environment import inspect_miniforge_runtime
+from .environment import inspect_miniforge_runtime, launcher_program
 
 PYTHON_EXECUTABLE_ENV = "SOLAR_APPS_PYTHON_EXECUTABLE"
 
@@ -27,7 +27,7 @@ def selected_python_executable(
         if os.path.normcase(str(runtime.executable)) != os.path.normcase(str(current)):
             raise RuntimeError(
                 "Selected child interpreter differs from the running application; "
-                "restart through Apps/run.ps1."
+                f"restart through {launcher_program()}."
             )
     return runtime.executable
 
@@ -43,13 +43,16 @@ def miniforge_subprocess_environment(
     env = dict(os.environ if base is None else base)
     runtime = inspect_miniforge_runtime(python_executable or sys.executable)
     prefix = runtime.environment_root
-    conda_paths = (
-        prefix,
-        prefix / "Library" / "mingw-w64" / "bin",
-        prefix / "Library" / "usr" / "bin",
-        prefix / "Library" / "bin",
-        prefix / "Scripts",
-    )
+    if runtime.executable.name.casefold() == "python.exe":
+        conda_paths = (
+            prefix,
+            prefix / "Library" / "mingw-w64" / "bin",
+            prefix / "Library" / "usr" / "bin",
+            prefix / "Library" / "bin",
+            prefix / "Scripts",
+        )
+    else:
+        conda_paths = (runtime.executable.parent,)
     existing = env.get("PATH", "")
     env["PATH"] = os.pathsep.join(
         [

@@ -267,7 +267,7 @@ def write_video_from_paths(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow visualization video",
+        prog="solar-apps workflow visualization video",
         description=__doc__,
     )
     parser.add_argument("input_dir", nargs="?")

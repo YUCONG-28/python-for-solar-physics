@@ -25,7 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the top-level radio command parser."""
 
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow radio",
+        prog="solar-apps workflow radio",
         description="Run local radio-analysis workflows.",
     )
     parser.add_argument("command", nargs="?", choices=sorted(_COMMANDS))
@@ -51,7 +51,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"(choose from {', '.join(sorted(_COMMANDS))})"
         )
     original_program = sys.argv[0]
-    sys.argv[0] = f"Apps/run.ps1 workflow radio {command}"
+    sys.argv[0] = f"solar-apps workflow radio {command}"
     try:
         result = _command_callable(command)(args)
     finally:

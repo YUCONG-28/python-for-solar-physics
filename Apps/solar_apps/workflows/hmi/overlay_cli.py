@@ -33,7 +33,7 @@ _DEFAULT_CONFIG = {
 
 def _build_parser(config: dict) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow hmi overlay",
+        prog="solar-apps workflow hmi overlay",
         description="Render time-matched HMI magnetic contours over AIA images.",
     )
     parser.add_argument("--input-dir-aia", default=config["input_dir_AIA"])

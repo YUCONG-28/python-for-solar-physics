@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build parser for the managed Streamlit launcher."""
 
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 frontend source-trajectory",
+        prog="solar-apps frontend source-trajectory",
         description="Launch the radio-source Streamlit app as a managed process.",
     )
     parser.add_argument("--centers", default=None, help="Center CSV/XLSX path.")

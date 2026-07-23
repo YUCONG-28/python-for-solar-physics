@@ -15,7 +15,7 @@ from solar_apps.platform.paths.allowed_roots import (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 frontend bad-frame-review",
+        prog="solar-apps frontend bad-frame-review",
         description="Run the standalone radio bad-frame review web application.",
         epilog="Additional arguments are forwarded to the application parser.",
     )

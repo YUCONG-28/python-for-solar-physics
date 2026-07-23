@@ -9,6 +9,8 @@ from collections.abc import Sequence
 from solar_apps.platform.environment import (
     UnsupportedPythonEnvironment,
     inspect_miniforge_runtime,
+    launcher_command,
+    launcher_program,
 )
 from solar_apps.platform.dispatch import forward_main
 
@@ -77,7 +79,7 @@ LEGACY_RADIO_FRONTENDS = {
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1",
+        prog=launcher_program(),
         description="Run Solar Physics frontends and workflows through Miniforge.",
     )
     parser.add_argument(
@@ -100,9 +102,9 @@ def _print_group_help(group: str) -> None:
         values = sorted(TOOL_TARGETS)
         usage = "tools <tool-id> [arguments]"
     else:
-        print("usage: Apps/run.ps1 admin init [--force-config]")
+        print(f"usage: {launcher_command('admin init [--force-config]')}")
         return
-    print(f"usage: Apps/run.ps1 {usage}")
+    print(f"usage: {launcher_command(usage)}")
     print("\navailable:")
     for value in values:
         print(f"  {value}")
@@ -145,7 +147,7 @@ def _dispatch_frontend(arguments: list[str]) -> int:
     return forward_main(
         target,
         arguments,
-        program=f"Apps/run.ps1 frontend {frontend}",
+        program=launcher_command(f"frontend {frontend}"),
     )
 
 
@@ -158,13 +160,13 @@ def _dispatch_workflow(arguments: list[str]) -> int:
         return forward_main(
             WORKFLOW_TARGETS[domain],
             arguments,
-            program=f"Apps/run.ps1 workflow {domain}",
+            program=launcher_command(f"workflow {domain}"),
         )
     commands = WORKFLOW_COMMAND_TARGETS.get(domain)
     if commands is None:
         return _error(f"unknown workflow domain {domain!r}")
     if not arguments or arguments[0] in {"-h", "--help"}:
-        print(f"usage: Apps/run.ps1 workflow {domain} <command> [arguments]")
+        print(f"usage: {launcher_command(f'workflow {domain} <command> [arguments]')}")
         print("\navailable:")
         for command in sorted(commands):
             print(f"  {command}")
@@ -176,7 +178,7 @@ def _dispatch_workflow(arguments: list[str]) -> int:
     return forward_main(
         target,
         arguments,
-        program=f"Apps/run.ps1 workflow {domain} {command}",
+        program=launcher_command(f"workflow {domain} {command}"),
     )
 
 
@@ -191,7 +193,7 @@ def _dispatch_tools(arguments: list[str]) -> int:
     return forward_main(
         target,
         arguments,
-        program=f"Apps/run.ps1 tools {tool}",
+        program=launcher_command(f"tools {tool}"),
     )
 
 

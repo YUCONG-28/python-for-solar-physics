@@ -20,6 +20,7 @@ from solar_apps.platform.paths.native_dialog import (
 )
 from solar_apps.platform.paths.flask_dialog import register_native_path_dialog
 from solar_apps.platform.paths.memory import PathMemoryContext, RecentPathMemory
+from solar_apps.platform.paths.semantics import path_key
 from solar_apps.platform.state import StateStore
 
 
@@ -45,6 +46,18 @@ def test_request_normalizes_extensions_and_rejects_invalid_fields() -> None:
         DialogRequest.from_payload({"mode": "open_file", "extensions": "fits"})
 
 
+def test_path_identity_uses_windows_and_macos_case_semantics() -> None:
+    assert path_key("/Volumes/Data/File.FITS", platform="darwin") == path_key(
+        "/volumes/data/file.fits", platform="darwin"
+    )
+    assert path_key(r"C:\Data\File.FITS", platform="win32") == path_key(
+        r"c:\data\file.fits", platform="win32"
+    )
+    assert path_key("/Data/File.FITS", platform="linux") != path_key(
+        "/data/file.fits", platform="linux"
+    )
+
+
 def test_service_selects_file_folder_many_and_save_path(tmp_path: Path) -> None:
     folder = tmp_path / "data"
     folder.mkdir()
@@ -61,7 +74,9 @@ def test_service_selects_file_folder_many_and_save_path(tmp_path: Path) -> None:
         ]
     )
     service = NativePathDialogService(
-        [tmp_path], runner=lambda *args, **kwargs: next(responses), platform_name="nt"
+        [tmp_path],
+        runner=lambda *args, **kwargs: next(responses),
+        platform_name="win32",
     )
     assert service.select({"mode": "open_file"}).paths == (first.resolve(),)
     assert service.select({"mode": "open_files"}).paths == (
@@ -78,7 +93,7 @@ def test_cancel_keeps_empty_selection(tmp_path: Path) -> None:
     service = NativePathDialogService(
         [tmp_path],
         runner=lambda *args, **kwargs: _completed({"status": "cancelled", "paths": []}),
-        platform_name="nt",
+        platform_name="darwin",
     )
     assert service.select({"mode": "select_directory"}).to_dict() == {
         "ok": True,
@@ -116,7 +131,7 @@ def test_service_uses_recent_memory_and_new_worker_module(tmp_path: Path) -> Non
     service = NativePathDialogService(
         (root,),
         runner=runner,
-        platform_name="nt",
+        platform_name="darwin",
         memory=memory,
     )
     selection = service.select(
@@ -176,7 +191,7 @@ def test_outside_root_missing_kind_and_symlink_escape_are_rejected(
         runner=lambda *args, **kwargs: _completed(
             {"status": "selected", "paths": [str(outside_file)]}
         ),
-        platform_name="nt",
+        platform_name="win32",
     )
     with pytest.raises(NativeDialogForbiddenError):
         service.select({"mode": "open_file"})
@@ -194,7 +209,7 @@ def test_outside_root_missing_kind_and_symlink_escape_are_rejected(
 
 
 def test_worker_failures_and_platform_are_explicit(tmp_path: Path) -> None:
-    unsupported = NativePathDialogService([tmp_path], platform_name="posix")
+    unsupported = NativePathDialogService([tmp_path], platform_name="linux")
     with pytest.raises(NativeDialogUnsupportedError):
         unsupported.select({"mode": "select_directory"})
     malformed = NativePathDialogService(
@@ -202,7 +217,7 @@ def test_worker_failures_and_platform_are_explicit(tmp_path: Path) -> None:
         runner=lambda *args, **kwargs: subprocess.CompletedProcess(
             args=[], returncode=0, stdout="not-json", stderr=""
         ),
-        platform_name="nt",
+        platform_name="win32",
     )
     with pytest.raises(NativeDialogUnavailableError):
         malformed.select({"mode": "select_directory"})
@@ -217,7 +232,7 @@ def test_service_rejects_concurrent_dialogs(tmp_path: Path) -> None:
         release.wait(timeout=5)
         return _completed({"status": "cancelled", "paths": []})
 
-    service = NativePathDialogService([tmp_path], runner=runner, platform_name="nt")
+    service = NativePathDialogService([tmp_path], runner=runner, platform_name="darwin")
     thread = threading.Thread(
         target=lambda: service.select({"mode": "select_directory"}), daemon=True
     )

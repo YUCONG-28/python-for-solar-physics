@@ -287,12 +287,12 @@ def test_radio_workspace_runner_uses_selected_miniforge_environment(
 def test_workbench_runners_reject_an_alternate_python(tmp_path: Path) -> None:
     alternate = tmp_path / "other-environment" / "python.exe"
 
-    with pytest.raises(ValueError, match="selected by Apps/run.ps1"):
+    with pytest.raises(ValueError, match="selected by the public Apps launcher"):
         workbench_runner.JobContext(
             repo_root=tmp_path,
             python_executable=alternate,
         )
-    with pytest.raises(ValueError, match="selected by Apps/run.ps1"):
+    with pytest.raises(ValueError, match="selected by the public Apps launcher"):
         radio_runner.RadioRunManager(
             SimpleNamespace(),
             repo_root=tmp_path,

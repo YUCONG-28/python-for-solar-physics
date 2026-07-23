@@ -1,4 +1,4 @@
-"""Isolated PyQt5 worker for Windows-native file and folder dialogs."""
+"""Isolated PySide6 worker for Windows/macOS native file and folder dialogs."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def _name_filters(extensions: list[str]) -> list[str]:
 def run_dialog(payload: dict[str, Any]) -> dict[str, Any]:
     """Run one QFileDialog and return its small JSON-compatible result."""
 
-    from PyQt5.QtWidgets import QApplication, QFileDialog
+    from PySide6.QtWidgets import QApplication, QFileDialog
 
     app = QApplication.instance() or QApplication(["solar-native-path-dialog"])
     dialog = QFileDialog()
@@ -48,7 +48,7 @@ def run_dialog(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         raise ValueError(f"Unsupported dialog mode: {mode!r}")
     try:
-        accepted = dialog.exec_() == QFileDialog.Accepted
+        accepted = dialog.exec() == QFileDialog.Accepted
         return {
             "status": "selected" if accepted else "cancelled",
             "paths": [str(path) for path in dialog.selectedFiles()] if accepted else [],

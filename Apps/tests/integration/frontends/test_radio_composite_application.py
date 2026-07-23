@@ -75,7 +75,9 @@ def _roi() -> RadioRoi:
 def _radio_frame(start: datetime) -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "obs_time": [(start + timedelta(seconds=index)).isoformat() for index in range(5)],
+            "obs_time": [
+                (start + timedelta(seconds=index)).isoformat() for index in range(5)
+            ],
             "freq_mhz": [149.0] * 5,
             "polarization": ["RR+LL"] * 5,
             "raw_sum": [10.0, 12.0, 14.0, 13.0, 11.0],
@@ -115,9 +117,7 @@ def test_frequency_band_selection_and_original_channel_validation() -> None:
 
 def test_pending_plotly_band_synchronizes_numeric_inputs() -> None:
     class StreamlitStub:
-        session_state = {
-            "_pending_dart_band": {"low_mhz": 148.25, "high_mhz": 149.75}
-        }
+        session_state = {"_pending_dart_band": {"low_mhz": 148.25, "high_mhz": 149.75}}
 
     st = StreamlitStub()
     _apply_pending_band(st)
@@ -229,7 +229,9 @@ def test_artifact_bundle_uses_v1_schema_and_conflict_safe_save(tmp_path: Path) -
     assert (first / bundle.zip_filename).is_file()
 
 
-def test_request_signature_invalidates_for_controls_and_file_identity(tmp_path: Path) -> None:
+def test_request_signature_invalidates_for_controls_and_file_identity(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "radio.fits"
     source.write_bytes(b"first")
     original = build_request_signature({"frequency": 149.0}, source_paths=[source])
@@ -432,10 +434,7 @@ def _write_dart_fits(folder: Path) -> None:
     sample_index = np.arange(3, dtype=float)
     stokes_i = frequency[:, None] - 129.0 + sample_index[None, :]
     time_rows = np.asarray(
-        [
-            [25.0, 1.0, 24.0, 4.0, 48.0, 30.0 + index]
-            for index in sample_index
-        ]
+        [[25.0, 1.0, 24.0, 4.0, 48.0, 30.0 + index] for index in sample_index]
     )
     payloads = {
         "synthetic_SpecDataIdB.fits": stokes_i,
