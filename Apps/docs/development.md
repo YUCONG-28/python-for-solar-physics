@@ -12,7 +12,14 @@ $Conda = "<miniforge-root>\Scripts\conda.exe"
 & $Conda run -n solarphysics_env_latest python -m pip install -e ".\Apps[dev]"
 ```
 
-Use `solarphysics_env` only by passing it explicitly to `Apps/run.ps1` for a
+```bash
+/Users/<user>/miniforge3/bin/conda env update -n solarphysics_env_latest -f Apps/environment.miniforge.yml
+/Users/<user>/miniforge3/bin/conda run -n solarphysics_env_latest python -m pip install -e "./Python[quality-ml]"
+/Users/<user>/miniforge3/bin/conda run -n solarphysics_env_latest python -m pip install -e "./Apps[dev]"
+```
+
+Use `solarphysics_env` only by passing it explicitly to `Apps/run.ps1` or
+`Apps/run.sh` for a
 compatibility comparison. No other environment is supported by the Apps CLI.
 
 ## Checks
@@ -23,6 +30,9 @@ $Conda = "<miniforge-root>\Scripts\conda.exe"
 & $Conda run -n solarphysics_env_latest python -m ruff check Apps/solar_apps Apps/tests
 & $Conda run -n solarphysics_env_latest python -m pytest Apps/tests --basetemp .\Local\tmp\pytest-apps
 ```
+
+The same checks run unchanged through `conda run` on macOS. Use
+`./Apps/run.sh frontend <id> --help` for macOS frontend smoke tests.
 
 Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File Apps/run.ps1
 frontend <id> --help` for each frontend and exercise the

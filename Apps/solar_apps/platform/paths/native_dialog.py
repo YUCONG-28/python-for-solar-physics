@@ -1,4 +1,4 @@
-"""Windows-native local path selection with fail-closed root validation."""
+"""Windows/macOS native path selection with fail-closed root validation."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from ..processes import (
     selected_python_executable,
 )
 from .memory import PathMemoryContext, RecentPathMemory
+from .semantics import path_is_within, path_key
 
 __all__ = [
     "DialogRequest",
@@ -155,7 +157,7 @@ def _normalize_roots(values: Iterable[str | os.PathLike[str]]) -> tuple[Path, ..
     seen: set[str] = set()
     for value in values:
         root = Path(value).expanduser().resolve(strict=False)
-        key = os.path.normcase(str(root))
+        key = path_key(root)
         if key not in seen:
             seen.add(key)
             roots.append(root)
@@ -168,15 +170,10 @@ def is_path_within_roots(
     """Return whether a resolved path stays inside at least one allowed root."""
 
     candidate = Path(path).expanduser().resolve(strict=False)
-    candidate_text = os.path.normcase(str(candidate))
     for raw_root in roots:
         root = Path(raw_root).expanduser().resolve(strict=False)
-        root_text = os.path.normcase(str(root))
-        try:
-            if os.path.commonpath((candidate_text, root_text)) == root_text:
-                return True
-        except ValueError:
-            continue
+        if path_is_within(candidate, root):
+            return True
     return False
 
 
@@ -245,7 +242,7 @@ def validate_allowed_path(
 
 
 class NativePathDialogService:
-    """Spawn and validate one Windows-native dialog at a time."""
+    """Spawn and validate one platform-native dialog at a time."""
 
     def __init__(
         self,
@@ -287,13 +284,13 @@ class NativePathDialogService:
             if worker_environment is not None
             else default_worker_environment
         )
-        self.platform_name = platform_name or os.name
+        self.platform_name = platform_name or sys.platform
         self.memory = memory
         self._lock = threading.Lock()
 
     @property
     def supported(self) -> bool:
-        return self.platform_name == "nt"
+        return self.platform_name in {"win32", "darwin"}
 
     def select(self, payload: Mapping[str, Any] | DialogRequest) -> DialogSelection:
         request = (
@@ -303,7 +300,7 @@ class NativePathDialogService:
         )
         if not self.supported:
             raise NativeDialogUnsupportedError(
-                "Windows native path dialogs are only available on Windows."
+                "Native path dialogs are only available on Windows and macOS."
             )
         if not self.allowed_roots:
             raise NativeDialogForbiddenError(

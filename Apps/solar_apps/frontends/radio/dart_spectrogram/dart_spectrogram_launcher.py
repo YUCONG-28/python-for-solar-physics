@@ -22,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the managed-launcher parser."""
 
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 frontend dart-spectrogram",
+        prog="solar-apps frontend dart-spectrogram",
         description="Launch the standalone DART spectrogram Streamlit app.",
     )
     parser.add_argument(

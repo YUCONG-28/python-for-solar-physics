@@ -19,7 +19,7 @@ DEFAULT_RAW_QUALITY_CONFIG = "radio_20250503_config"
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow radio raw-quality",
+        prog="solar-apps workflow radio raw-quality",
         description="Scan radio FITS directories and report raw-data quality issues.",
     )
     parser.add_argument("--config", default=DEFAULT_RAW_QUALITY_CONFIG)

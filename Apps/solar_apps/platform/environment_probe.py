@@ -1,4 +1,4 @@
-"""Internal editable-install probe used exclusively by ``Apps/run.ps1``."""
+"""Internal editable-install probe used by both public launchers."""
 
 from __future__ import annotations
 

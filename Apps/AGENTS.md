@@ -16,7 +16,7 @@ These instructions apply to the public application partition.
 
 ## Runtime and commands
 
-- Use `run.ps1` as the public entry point.
+- Use `run.ps1` on Windows and `run.sh` on macOS as the public entry points.
 - Use `solarphysics_env_latest` by default. Use `solarphysics_env` only for an
   explicit compatibility check.
 - Do not add a virtual-environment, system-Python, or arbitrary-interpreter

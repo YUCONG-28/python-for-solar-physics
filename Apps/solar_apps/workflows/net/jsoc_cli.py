@@ -96,7 +96,7 @@ def download_one(item: tuple[str, Path]) -> tuple[str, str, int | str]:
 def build_parser() -> argparse.ArgumentParser:
     """Build the event-compatible JSOC downloader parser."""
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow net jsoc",
+        prog="solar-apps workflow net jsoc",
         description="Download selected SDO/AIA level-1 EUV FITS records.",
     )
     parser.add_argument("--output-dir", default=str(OUT))

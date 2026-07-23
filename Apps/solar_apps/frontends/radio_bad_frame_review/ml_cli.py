@@ -22,7 +22,7 @@ __all__ = ["build_parser", "main"]
 def build_parser() -> argparse.ArgumentParser:
     local_root = RuntimeLayout.discover().local_root
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 tools bad-frame-ml",
+        prog="solar-apps tools bad-frame-ml",
         description=(
             "Build human-only radio-quality datasets, train shadow models, and "
             "manually publish models that pass locked-test gates."

@@ -30,6 +30,8 @@ FIG_NAME = "SXR分析结果.png"
 FONT_CANDIDATES = [
     "Arial",
     "Times New Roman",
+    "PingFang SC",
+    "Hiragino Sans GB",
     "SimHei",
     "Microsoft YaHei",
     "DejaVu Sans",

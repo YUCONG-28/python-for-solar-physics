@@ -25,7 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the overlay parser without importing its scientific renderer."""
 
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow radio overlay",
+        prog="solar-apps workflow radio overlay",
         description="Generate an AIA/radio/HMI overlay.",
         add_help=True,
     )

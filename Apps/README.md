@@ -8,7 +8,7 @@ scientific data belong in the ignored `../Local` runtime tree.
 
 ## Requirements
 
-- Windows with PowerShell
+- Windows with PowerShell, or Apple Silicon macOS 15+
 - Miniforge
 - the primary environment `solarphysics_env_latest`
 - local observation and output directories selected by the user
@@ -28,16 +28,28 @@ $Conda = "<miniforge-root>\Scripts\conda.exe"
 & $Conda run -n solarphysics_env_latest python -m pip install -e .\Apps
 ```
 
+On macOS:
+
+```bash
+/Users/<user>/miniforge3/bin/conda env update -n solarphysics_env_latest -f Apps/environment.miniforge.yml
+/Users/<user>/miniforge3/bin/conda run -n solarphysics_env_latest python -m pip install -e "./Python[quality-ml]"
+/Users/<user>/miniforge3/bin/conda run -n solarphysics_env_latest python -m pip install -e "./Apps"
+```
+
 Initialize the private runtime tree:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Apps\run.ps1 admin init
 ```
 
+```bash
+./Apps/run.sh admin init
+```
+
 This creates `Local/configs`, `state`, `workspaces`, `outputs`, `logs`, and
 `tmp`, copies the single fail-closed configuration template to
-`Local/configs/paths.local.yaml`, and writes a private `Local/run.ps1` forwarder
-for previous local launch habits. Add one or more absolute data/output
+`Local/configs/paths.local.yaml`, and writes private `Local/run.ps1` and
+`Local/run.sh` forwarders for local launch habits. Add one or more absolute data/output
 directories to `apps.allowed_roots`; an empty list fails closed.
 
 If Miniforge is not in its usual location, pass `-MiniforgeRoot
@@ -49,9 +61,70 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Apps\run.ps1 -Environm
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Apps\run.ps1 -EnvironmentName solarphysics_env frontend workbench --help
 ```
 
+The equivalent macOS option is
+`./Apps/run.sh --environment-name solarphysics_env frontend workbench --help`.
+Pass `--miniforge-root` when Miniforge is outside the default user directory.
+
 Every Flask server, Streamlit process, Qt application, Workbench job, native
 path dialog, and media worker inherits the interpreter resolved by the launcher.
 There is no fallback to another Python installation.
+
+## macOS quick start checklist
+
+Run every command from the repository root.
+
+- [ ] Confirm Miniforge is installed and the primary environment is available:
+
+  ```bash
+  /Users/<user>/miniforge3/bin/conda run -n solarphysics_env_latest python --version
+  ```
+
+- [ ] On first use, or after dependency changes, create or update the
+  environment and install both source partitions:
+
+  ```bash
+  /Users/<user>/miniforge3/bin/conda env update -n solarphysics_env_latest -f Apps/environment.miniforge.yml
+  /Users/<user>/miniforge3/bin/conda run -n solarphysics_env_latest python -m pip install -e "./Python[quality-ml]"
+  /Users/<user>/miniforge3/bin/conda run -n solarphysics_env_latest python -m pip install -e "./Apps"
+  ```
+
+- [ ] Initialize the private runtime once:
+
+  ```bash
+  ./Apps/run.sh admin init
+  ```
+
+- [ ] Edit `Local/configs/paths.local.yaml` and replace the empty
+  `apps.allowed_roots` list with absolute data and output directories:
+
+  ```yaml
+  apps:
+    runtime_layout_version: 2
+    allowed_roots:
+      - /absolute/path/to/data
+      - /absolute/path/to/output
+  ```
+
+  Keep this file private. For a one-off launch, pass one absolute directory
+  with `--allowed-roots /absolute/path/to/data` instead.
+
+- [ ] Inspect a frontend's options, then launch it by removing `--help`:
+
+  ```bash
+  ./Apps/run.sh frontend <frontend-id> --help
+  ./Apps/run.sh frontend <frontend-id>
+  ```
+
+  For example, launch Source Map with a one-off filesystem boundary:
+
+  ```bash
+  ./Apps/run.sh frontend source-map --allowed-roots /absolute/path/to/data
+  ```
+
+- [ ] If Miniforge is outside its default user location, add
+  `--miniforge-root /absolute/path/to/miniforge3` before `frontend`.
+- [ ] Stop a browser or Streamlit frontend with `Ctrl+C` in its supervising
+  terminal. Close a Qt frontend through its application window.
 
 ## Applications and interfaces
 
@@ -84,6 +157,10 @@ Apps/run.ps1 frontend <frontend-id> [arguments]
 Apps/run.ps1 workflow <domain> <command> [arguments]
 Apps/run.ps1 admin <command> [arguments]
 Apps/run.ps1 tools <command> [arguments]
+Apps/run.sh frontend <frontend-id> [arguments]
+Apps/run.sh workflow <domain> <command> [arguments]
+Apps/run.sh admin <command> [arguments]
+Apps/run.sh tools <command> [arguments]
 ```
 
 Workflow domains are `aia`, `radio`, `hmi`, `net`, `data`, `visualization`, and
@@ -155,7 +232,7 @@ field. A native dialog starts from the first valid choice in this order:
 Files remember their parent directory; folder selectors remember the folder.
 Save As remembers only its directory and never silently overwrites an existing
 file. Single-value fields replace their value. Multi-path fields append and
-deduplicate with Windows path semantics. Cancelled or failed dialogs leave
+deduplicate with native Windows/macOS path semantics. Cancelled or failed dialogs leave
 manual input untouched.
 
 Remembered paths are re-resolved and revalidated against the current allowed
@@ -299,7 +376,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Apps\run.ps1 frontend 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Apps\run.ps1 frontend source-map --help
 ```
 
-CI performs the same Apps checks in a Windows Miniforge environment and also
+CI performs the same Apps checks in Windows and macOS arm64 Miniforge
+environments and also
 enforces repository boundaries, package contents, documentation privacy, and
 the public Python package contract.
 
@@ -307,7 +385,9 @@ the public Python package contract.
 
 **The launcher cannot find Miniforge**
 
-Pass `-MiniforgeRoot "<miniforge-root>"` or set `SOLAR_MINIFORGE_ROOT`. Do not
+Pass `-MiniforgeRoot "<miniforge-root>"` on Windows,
+`--miniforge-root "<miniforge-root>"` on macOS, or set
+`SOLAR_MINIFORGE_ROOT`. Do not
 work around the error with system Python.
 
 **The environment is rejected**

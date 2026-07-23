@@ -47,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the isolated Gaussian/Newkirk quicklook CLI parser."""
 
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow radio quicklook",
+        prog="solar-apps workflow radio quicklook",
         description="Generate Gaussian center and Newkirk quicklook products.",
     )
     parser.add_argument("--gaussian-csv")

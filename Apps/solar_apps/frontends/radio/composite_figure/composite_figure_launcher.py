@@ -20,12 +20,14 @@ __all__ = ["build_parser", "build_streamlit_command", "main"]
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 frontend radio-composite",
+        prog="solar-apps frontend radio-composite",
         description="Launch the all-in-one radio/DART composite Streamlit app.",
     )
     parser.add_argument("--radio-dir", default=None, help="Default radio FITS folder.")
     parser.add_argument(
-        "--dart-dir", default=None, help="Default directory containing four DART FITS files."
+        "--dart-dir",
+        default=None,
+        help="Default directory containing four DART FITS files.",
     )
     parser.add_argument("--output-dir", default=None, help="Default output folder.")
     parser.add_argument(

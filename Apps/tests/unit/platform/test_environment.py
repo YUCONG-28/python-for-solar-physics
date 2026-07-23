@@ -23,6 +23,21 @@ def _fake_environment(root: Path, name: str) -> Path:
     return python
 
 
+def _fake_posix_environment(root: Path, name: str) -> Path:
+    history = root / "conda-meta" / "history"
+    history.parent.mkdir(parents=True, exist_ok=True)
+    history.write_text(
+        "# cmd: constructor /tmp/Miniforge3 --platform osx-arm64\n",
+        encoding="utf-8",
+    )
+    environment = root / "envs" / name
+    (environment / "conda-meta").mkdir(parents=True)
+    python = environment / "bin" / "python"
+    python.parent.mkdir()
+    python.touch()
+    return python
+
+
 def test_primary_and_explicit_standby_are_supported(tmp_path: Path) -> None:
     root = tmp_path / "miniforge3"
     latest = _fake_environment(root, "solarphysics_env_latest")
@@ -31,6 +46,17 @@ def test_primary_and_explicit_standby_are_supported(tmp_path: Path) -> None:
         inspect_miniforge_runtime(latest).environment_name == "solarphysics_env_latest"
     )
     assert inspect_miniforge_runtime(standby).environment_name == "solarphysics_env"
+
+
+def test_posix_bin_interpreter_and_constructor_provenance_are_supported(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "miniforge3"
+    python = _fake_posix_environment(root, "solarphysics_env_latest")
+    runtime = inspect_miniforge_runtime(python)
+    assert runtime.executable == python.resolve()
+    assert runtime.environment_root == python.parent.parent.resolve()
+    assert runtime.miniforge_root == root.resolve()
 
 
 def test_backup_venv_and_system_interpreters_are_rejected(tmp_path: Path) -> None:

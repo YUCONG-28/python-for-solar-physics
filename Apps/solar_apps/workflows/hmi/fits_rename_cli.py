@@ -176,7 +176,7 @@ def print_summary(summary: RenameSummary, dry_run: bool = False) -> None:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments for recursive FITS normalization."""
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow hmi fits-rename",
+        prog="solar-apps workflow hmi fits-rename",
         description="递归扫描指定文件夹，规范命名 SDO/AIA 与 SDO/HMI FITS 文件。",
     )
     parser.add_argument(

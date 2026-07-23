@@ -19,7 +19,7 @@ __all__ = ["build_parser", "config_from_args", "main"]
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow aia",
+        prog="solar-apps workflow aia",
         description="Process exposure-normalized SDO/AIA EUV FITS files.",
     )
     parser.add_argument("--root", dest="root_dir", default=None)

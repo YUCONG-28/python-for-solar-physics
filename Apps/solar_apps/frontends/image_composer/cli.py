@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 frontend image-composer",
+        prog="solar-apps frontend image-composer",
         description="Run the local PySide6 free image composer.",
         epilog="Additional arguments are forwarded to the application parser.",
     )

@@ -16,7 +16,7 @@ def build_parser():
 
     return build_common_parser(
         "Run the full radio burst Gaussian, drift-rate, and Newkirk-height pipeline.",
-        prog="Apps/run.ps1 workflow radio pipeline",
+        prog="solar-apps workflow radio pipeline",
         default_config=DEFAULT_CONFIG_NAME,
         include_pipeline_outputs=True,
     )

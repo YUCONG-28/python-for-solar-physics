@@ -15,7 +15,7 @@ from solar_apps.platform.paths.allowed_roots import (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 frontend image-viewer",
+        prog="solar-apps frontend image-viewer",
         description="Run the local image-sequence web viewer.",
         epilog="Additional arguments are forwarded to the image-viewer parser.",
     )

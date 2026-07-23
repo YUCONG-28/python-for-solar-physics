@@ -288,7 +288,7 @@ def render_dem_radio_overlay(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="Apps/run.ps1 workflow xray-dem dem-radio",
+        prog="solar-apps workflow xray-dem dem-radio",
         description=(
             "Render a non-interactive DEM brightness-temperature/radio overlay."
         ),

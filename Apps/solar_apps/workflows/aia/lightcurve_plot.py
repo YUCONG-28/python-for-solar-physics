@@ -31,7 +31,13 @@ __all__ = [
 
 def _configure_plot_style() -> None:
     """Apply the historical font settings only when plotting is requested."""
-    plt.rcParams["font.family"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
+    plt.rcParams["font.family"] = [
+        "PingFang SC",
+        "Hiragino Sans GB",
+        "SimHei",
+        "Microsoft YaHei",
+        "DejaVu Sans",
+    ]
     plt.rcParams["axes.unicode_minus"] = False
 
 

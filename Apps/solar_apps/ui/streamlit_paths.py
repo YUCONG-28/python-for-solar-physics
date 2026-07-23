@@ -14,6 +14,7 @@ from solar_apps.platform.paths.native_dialog import (
     NativePathDialogService,
     validate_allowed_path,
 )
+from solar_apps.platform.paths.semantics import path_key
 from solar_apps.platform.processes import selected_python_executable
 from solar_apps.ui.state import frontend_path_memory
 
@@ -49,7 +50,7 @@ def append_unique_paths(existing: str, additions: list[str] | tuple[str, ...]) -
 
 
 def _path_key(value: str) -> str:
-    return os.path.normcase(os.path.normpath(str(value).strip()))
+    return path_key(value)
 
 
 @dataclass(frozen=True)
@@ -160,7 +161,7 @@ def render_native_path_input(
     state_store: Any | None = None,
     stacked: bool = False,
 ) -> str:
-    """Render an editable path plus a Windows-native Browse button."""
+    """Render an editable path plus a platform-native Browse button."""
 
     pending_key = f"_{key}_native_path_pending"
     if pending_key in st.session_state:

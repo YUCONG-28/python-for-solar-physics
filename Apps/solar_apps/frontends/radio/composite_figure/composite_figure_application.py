@@ -64,14 +64,19 @@ class FrequencyBand:
         observed_low = float(np.min(finite))
         observed_high = float(np.max(finite))
         tolerance = max(1e-9, abs(observed_high - observed_low) * 1e-12)
-        if self.low_mhz < observed_low - tolerance or self.high_mhz > observed_high + tolerance:
+        if (
+            self.low_mhz < observed_low - tolerance
+            or self.high_mhz > observed_high + tolerance
+        ):
             raise ValueError(
                 "Selected DART band is outside the observed frequency range: "
                 f"{observed_low:g}-{observed_high:g} MHz"
             )
         selected = finite[(finite >= self.low_mhz) & (finite <= self.high_mhz)]
         if not selected.size:
-            raise ValueError("Selected DART band contains no original frequency channel")
+            raise ValueError(
+                "Selected DART band contains no original frequency channel"
+            )
         return self
 
     def to_dict(self) -> dict[str, float]:
@@ -142,8 +147,7 @@ def frequency_band_from_selection(event: Any) -> FrequencyBand | None:
     ys = [
         float(value)
         for point in points
-        if (value := _event_get(point, "y")) is not None
-        and math.isfinite(float(value))
+        if (value := _event_get(point, "y")) is not None and math.isfinite(float(value))
     ]
     if len(ys) >= 2 and min(ys) < max(ys):
         return FrequencyBand(float(min(ys)), float(max(ys)))
@@ -588,15 +592,15 @@ def build_composite_artifacts(
         "composite_png": composite_png,
         "radio_csv": radio_df.to_csv(index=False).encode("utf-8-sig"),
         "dart_csv": dart_frame.to_csv(index=False).encode("utf-8-sig"),
-        "roi_json": (json.dumps(roi.to_json_dict(), indent=2) + "\n").encode(
-            "utf-8"
-        ),
+        "roi_json": (json.dumps(roi.to_json_dict(), indent=2) + "\n").encode("utf-8"),
         "metadata_json": (
             json.dumps(metadata, indent=2, ensure_ascii=True) + "\n"
         ).encode("utf-8"),
     }
     zip_output = io.BytesIO()
-    with zipfile.ZipFile(zip_output, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(
+        zip_output, mode="w", compression=zipfile.ZIP_DEFLATED
+    ) as archive:
         for key, payload in files.items():
             archive.writestr(filenames[key], payload)
     return CompositeArtifactBundle(
@@ -631,7 +635,9 @@ def save_composite_bundle(
 
 def _radio_plot_frame(df: pd.DataFrame, frequency_mhz: float) -> pd.DataFrame:
     data = df.copy()
-    data["obs_time_dt"] = pd.to_datetime(data.get("obs_time"), errors="coerce", utc=True)
+    data["obs_time_dt"] = pd.to_datetime(
+        data.get("obs_time"), errors="coerce", utc=True
+    )
     data["raw_sum"] = pd.to_numeric(data.get("raw_sum"), errors="coerce")
     frequencies = pd.to_numeric(data.get("freq_mhz"), errors="coerce")
     quality = (
@@ -660,11 +666,7 @@ def _radio_axis_label(df: pd.DataFrame) -> str:
     units = []
     if "bunit" in df:
         units = sorted(
-            {
-                str(value).strip()
-                for value in df["bunit"].dropna()
-                if str(value).strip()
-            }
+            {str(value).strip() for value in df["bunit"].dropna() if str(value).strip()}
         )
     if len(units) == 1:
         return f"ROI raw_sum ({units[0]} × pixel)"

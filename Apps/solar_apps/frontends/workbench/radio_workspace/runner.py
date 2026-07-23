@@ -126,7 +126,7 @@ class RadioRunManager:
         )
         if os.path.normcase(str(requested)) != os.path.normcase(str(selected)):
             raise ValueError(
-                "Radio workspace jobs must use the interpreter selected by Apps/run.ps1."
+                "Radio workspace jobs must use the interpreter selected by the public Apps launcher."
             )
         self.python_executable = str(selected)
         self.popen_factory = popen_factory or subprocess.Popen

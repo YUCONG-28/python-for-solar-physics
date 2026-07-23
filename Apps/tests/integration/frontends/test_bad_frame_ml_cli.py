@@ -27,9 +27,12 @@ def test_models_command_does_not_train_or_publish(tmp_path: Path, capsys):
     assert payload["models"] == {}
 
 
-def test_powershell_launcher_routes_bad_frame_ml() -> None:
+def test_public_launchers_route_through_shared_bootstrap() -> None:
     apps_root = Path(__file__).resolve().parents[3]
-    launcher = (apps_root / "run.ps1").read_text(encoding="utf-8")
+    powershell = (apps_root / "run.ps1").read_text(encoding="utf-8")
+    shell = (apps_root / "run.sh").read_text(encoding="utf-8")
 
-    assert "-m solar_apps.cli" in launcher
-    assert "solarphysics_env_latest" in launcher
+    assert "solar_apps.launcher" in powershell
+    assert "solar_apps.launcher" in shell
+    assert "solarphysics_env_latest" in powershell
+    assert "solarphysics_env_latest" in shell
