@@ -69,6 +69,63 @@ Every Flask server, Streamlit process, Qt application, Workbench job, native
 path dialog, and media worker inherits the interpreter resolved by the launcher.
 There is no fallback to another Python installation.
 
+## macOS quick start checklist
+
+Run every command from the repository root.
+
+- [ ] Confirm Miniforge is installed and the primary environment is available:
+
+  ```bash
+  /Users/<user>/miniforge3/bin/conda run -n solarphysics_env_latest python --version
+  ```
+
+- [ ] On first use, or after dependency changes, create or update the
+  environment and install both source partitions:
+
+  ```bash
+  /Users/<user>/miniforge3/bin/conda env update -n solarphysics_env_latest -f Apps/environment.miniforge.yml
+  /Users/<user>/miniforge3/bin/conda run -n solarphysics_env_latest python -m pip install -e "./Python[quality-ml]"
+  /Users/<user>/miniforge3/bin/conda run -n solarphysics_env_latest python -m pip install -e "./Apps"
+  ```
+
+- [ ] Initialize the private runtime once:
+
+  ```bash
+  ./Apps/run.sh admin init
+  ```
+
+- [ ] Edit `Local/configs/paths.local.yaml` and replace the empty
+  `apps.allowed_roots` list with absolute data and output directories:
+
+  ```yaml
+  apps:
+    runtime_layout_version: 2
+    allowed_roots:
+      - /absolute/path/to/data
+      - /absolute/path/to/output
+  ```
+
+  Keep this file private. For a one-off launch, pass one absolute directory
+  with `--allowed-roots /absolute/path/to/data` instead.
+
+- [ ] Inspect a frontend's options, then launch it by removing `--help`:
+
+  ```bash
+  ./Apps/run.sh frontend <frontend-id> --help
+  ./Apps/run.sh frontend <frontend-id>
+  ```
+
+  For example, launch Source Map with a one-off filesystem boundary:
+
+  ```bash
+  ./Apps/run.sh frontend source-map --allowed-roots /absolute/path/to/data
+  ```
+
+- [ ] If Miniforge is outside its default user location, add
+  `--miniforge-root /absolute/path/to/miniforge3` before `frontend`.
+- [ ] Stop a browser or Streamlit frontend with `Ctrl+C` in its supervising
+  terminal. Close a Qt frontend through its application window.
+
 ## Applications and interfaces
 
 Nine launchable applications provide ten visible interfaces:
